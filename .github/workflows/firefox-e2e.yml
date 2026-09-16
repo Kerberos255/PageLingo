@@ -2,6 +2,16 @@ name: Firefox E2E
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "tools/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/firefox-e2e.yml"
 
 permissions:
   contents: read
