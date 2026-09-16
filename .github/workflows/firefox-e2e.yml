@@ -1,0 +1,61 @@
+name: Firefox E2E
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firefox-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify source and build
+        run: npm run verify
+
+      - name: AMO lint
+        run: npx web-ext lint --source-dir dist
+
+      - name: Build unsigned XPI
+        run: |
+          mkdir -p artifacts
+          npx web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest
+          cp "$(find artifacts -maxdepth 1 -type f -name '*.zip' | head -n 1)" artifacts/PageLingo-e2e.xpi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Selenium client
+        run: python -m pip install --disable-pip-version-check 'selenium==4.49.0'
+
+      - name: Show Firefox toolchain
+        run: |
+          firefox --version
+          geckodriver --version
+
+      - name: Run real Firefox extension test
+        run: python tests/e2e_firefox.py artifacts/PageLingo-e2e.xpi
+
+      - name: Upload tested XPI
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PageLingo-firefox-e2e
+          path: artifacts/PageLingo-e2e.xpi
+          if-no-files-found: error

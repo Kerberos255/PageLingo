@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+import threading
+import time
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+from selenium import webdriver
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+
+ADDON_ID = "local-immersive-translate-dev@kerberos255.local"
+CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+
+
+class QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+def start_fixture_server(directory: Path) -> tuple[ThreadingHTTPServer, str]:
+    handler = lambda *args, **kwargs: QuietHandler(*args, directory=str(directory), **kwargs)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    return server, f"http://127.0.0.1:{port}/e2e.html"
+
+
+def get_extension_uuid(driver: webdriver.Firefox, addon_id: str) -> str:
+    with driver.context(driver.CONTEXT_CHROME):
+        raw = driver.execute_script(
+            """
+            const { Services } = ChromeUtils.importESModule(
+              'resource://gre/modules/Services.sys.mjs'
+            );
+            return Services.prefs.getStringPref('extensions.webextensions.uuids');
+            """
+        )
+    mapping = json.loads(raw)
+    if addon_id not in mapping:
+        raise AssertionError(f"Extension UUID not found for {addon_id}: {mapping}")
+    return mapping[addon_id]
+
+
+def extension_message(driver: webdriver.Firefox, target_url: str, message_type: str) -> dict:
+    driver.set_script_timeout(180)
+    result = driver.execute_async_script(
+        """
+        const targetUrl = arguments[0];
+        const messageType = arguments[1];
+        const done = arguments[arguments.length - 1];
+        browser.tabs.query({}).then((tabs) => {
+          const target = tabs.find((tab) => tab.url === targetUrl);
+          if (!target || target.id === undefined) {
+            throw new Error(`Target tab not found: ${targetUrl}`);
+          }
+          return browser.tabs.sendMessage(target.id, { type: messageType });
+        }).then((value) => done({ ok: true, value }))
+          .catch((error) => done({ ok: false, error: String(error) }));
+        """,
+        target_url,
+        message_type,
+    )
+    if not result.get("ok"):
+        raise AssertionError(f"Extension message {message_type} failed: {result}")
+    return result.get("value") or {}
+
+
+def wait_for_cjk_translation(driver: webdriver.Firefox, selector: str, timeout: int = 180) -> str:
+    def probe(drv: webdriver.Firefox) -> str | bool:
+        text = drv.execute_script(
+            "return document.querySelector(arguments[0])?.textContent || '';",
+            selector,
+        )
+        return text if CJK_RE.search(text) else False
+
+    return WebDriverWait(driver, timeout).until(probe)
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        raise SystemExit("Usage: python tests/e2e_firefox.py <unsigned.xpi>")
+
+    xpi = Path(sys.argv[1]).resolve()
+    if not xpi.is_file():
+        raise SystemExit(f"XPI not found: {xpi}")
+
+    fixture_dir = Path(__file__).resolve().parent / "fixtures"
+    server, target_url = start_fixture_server(fixture_dir)
+
+    options = Options()
+    options.add_argument("-headless")
+    service = Service(service_args=["--allow-system-access"])
+    driver = webdriver.Firefox(options=options, service=service)
+
+    try:
+        addon_id = driver.install_addon(str(xpi), temporary=True)
+        if addon_id != ADDON_ID:
+            raise AssertionError(f"Unexpected add-on id: {addon_id}")
+
+        driver.get(target_url)
+        target_handle = driver.current_window_handle
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+
+        original_href = driver.execute_script(
+            """
+            const link = document.getElementById('docs');
+            link.__pageLingoSentinel = 42;
+            window.__pageLingoClicks = 0;
+            link.addEventListener('click', (event) => {
+              event.preventDefault();
+              window.__pageLingoClicks += 1;
+            });
+            return link.href;
+            """
+        )
+
+        uuid = get_extension_uuid(driver, ADDON_ID)
+        driver.switch_to.new_window("tab")
+        extension_handle = driver.current_window_handle
+        driver.get(f"moz-extension://{uuid}/popup.html")
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script("return typeof browser !== 'undefined'")
+        )
+
+        response = extension_message(driver, target_url, "translate-page")
+        if not response.get("ok"):
+            raise AssertionError(f"translate-page returned failure: {response}")
+
+        driver.switch_to.window(target_handle)
+        translated = wait_for_cjk_translation(driver, "#rich + .flt-translation")
+        print(f"Translated rich text: {translated}")
+
+        source_state = driver.execute_script(
+            """
+            const link = document.getElementById('docs');
+            const translatedLink = document.querySelector('#rich + .flt-translation a');
+            return {
+              sourceHref: link.href,
+              sourceSentinel: link.__pageLingoSentinel,
+              translatedHref: translatedLink?.href || null,
+              translatedStrong: document.querySelector('#rich + .flt-translation strong')?.textContent || null,
+              generatedCount: document.querySelectorAll('.flt-translation').length,
+            };
+            """
+        )
+        assert source_state["sourceHref"] == original_href, source_state
+        assert source_state["sourceSentinel"] == 42, source_state
+        assert source_state["translatedHref"] == original_href, source_state
+        assert source_state["translatedStrong"], source_state
+        assert source_state["generatedCount"] >= 2, source_state
+
+        driver.execute_script("document.getElementById('docs').click();")
+        clicks = driver.execute_script("return window.__pageLingoClicks;")
+        assert clicks == 1, f"Original link listener was lost: clicks={clicks}"
+
+        driver.execute_script(
+            """
+            const p = document.createElement('p');
+            p.id = 'dynamic-added';
+            p.textContent = 'Dynamic content should be translated quickly without reloading the page.';
+            document.getElementById('dynamic-host').append(p);
+            """
+        )
+        dynamic_text = wait_for_cjk_translation(driver, "#dynamic-added + .flt-translation")
+        print(f"Translated dynamic text: {dynamic_text}")
+
+        driver.switch_to.window(extension_handle)
+        response = extension_message(driver, target_url, "restore-page")
+        if not response.get("ok"):
+            raise AssertionError(f"restore-page returned failure: {response}")
+
+        driver.switch_to.window(target_handle)
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script("return document.querySelectorAll('.flt-translation').length") == 0
+        )
+        restored = driver.execute_script(
+            """
+            const link = document.getElementById('docs');
+            return {
+              sentinel: link.__pageLingoSentinel,
+              href: link.href,
+              styleGone: !document.getElementById('flt-style'),
+            };
+            """
+        )
+        assert restored == {"sentinel": 42, "href": original_href, "styleGone": True}, restored
+
+        print("PageLingo Firefox E2E passed")
+    finally:
+        driver.quit()
+        server.shutdown()
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

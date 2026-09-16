@@ -8,3 +8,7 @@ Thumbs.db
 
 # Obsolete local Bergamot runtime artifact; PageLingo vendors the v4 build explicitly.
 vendor/bergamot/bergamot-translator.wasm
+
+# Python test cache
+__pycache__/
+*.pyc
