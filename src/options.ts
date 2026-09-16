@@ -4,11 +4,13 @@ import {
   saveAutoTranslateEnabled,
   saveDisplayMode,
   saveExcludedSites,
+  saveImageTranslationEnabled,
   saveLanguageRule,
   saveModelUpdatePolicy,
   type DisplayMode,
   type ModelUpdatePolicy,
 } from "./shared/settings";
+import { sendRuntimeMessage } from "./shared/runtime-message";
 
 interface LanguageOption { code: string; label: string }
 interface DirectionInfo {
@@ -40,6 +42,16 @@ interface Catalog {
   updateCheckedAt: number;
   updateCount: number;
 }
+interface ImageOcrStatus {
+  installed: boolean;
+  runtimeSupported: boolean;
+  totalBytes: number;
+}
+interface ImageOcrResponse {
+  ok?: boolean;
+  status?: ImageOcrStatus;
+  error?: string;
+}
 
 const radios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="display-mode"]'));
 const status = document.querySelector<HTMLElement>("#save-status");
@@ -53,6 +65,9 @@ const packList = document.querySelector<HTMLElement>("#language-pack-list");
 const updatePolicy = document.querySelector<HTMLSelectElement>("#model-update-policy");
 const checkUpdates = document.querySelector<HTMLButtonElement>("#check-model-updates");
 const updateStatus = document.querySelector<HTMLElement>("#model-update-status");
+const imageToggle = document.querySelector<HTMLInputElement>("#image-translation-enabled");
+const imageStatus = document.querySelector<HTMLElement>("#image-ocr-status");
+const deleteOcrModels = document.querySelector<HTMLButtonElement>("#delete-image-ocr-models");
 let excludedSites: string[] = [];
 let packs: PackInfo[] = [];
 
@@ -166,7 +181,7 @@ async function changePack(pack: PackInfo, button: HTMLButtonElement): Promise<vo
   button.textContent = deleting ? "删除中…" : "下载中…";
   showSaved(deleting ? `正在删除 ${pack.label}` : `正在下载 ${pack.label} · ${formatBytes(pack.totalBytes)}`, 30_000);
   try {
-    const response = await browser.runtime.sendMessage({ type: deleting ? "delete-language-pack" : "download-language-pack", language: pack.language }) as { ok?: boolean; pack?: PackInfo; error?: string };
+    const response = await sendRuntimeMessage<{ ok?: boolean; pack?: PackInfo; error?: string }>({ type: deleting ? "delete-language-pack" : "download-language-pack", language: pack.language });
     if (!response?.ok || !response.pack) throw new Error(response?.error ?? "语言包操作失败");
     packs = packs.map((item) => item.language === pack.language ? response.pack! : item);
     renderPacks();
@@ -183,7 +198,7 @@ async function updatePack(pack: PackInfo, button: HTMLButtonElement): Promise<vo
   button.textContent = "更新中…";
   showSaved(`正在安全更新 ${pack.label}`, 60_000);
   try {
-    const response = await browser.runtime.sendMessage({ type: "update-language-pack", language: pack.language }) as { ok?: boolean; catalog?: Catalog; error?: string };
+    const response = await sendRuntimeMessage<{ ok?: boolean; catalog?: Catalog; error?: string }>({ type: "update-language-pack", language: pack.language });
     if (!response?.ok || !response.catalog) throw new Error(response?.error ?? "模型更新失败");
     applyCatalog(response.catalog);
     showSaved(`${pack.label} 已更新`);
@@ -194,10 +209,28 @@ async function updatePack(pack: PackInfo, button: HTMLButtonElement): Promise<vo
   }
 }
 
+async function refreshImageOcrStatus(): Promise<void> {
+  if (!imageStatus || !deleteOcrModels) return;
+  try {
+    const response = await sendRuntimeMessage<ImageOcrResponse>({ type: "get-image-ocr-status" });
+    if (!response?.ok || !response.status) throw new Error(response?.error ?? "无法读取 OCR 状态");
+    const current = response.status;
+    imageStatus.textContent = !current.runtimeSupported
+      ? "当前 Firefox 环境不支持本地 WASM OCR"
+      : current.installed
+        ? `PP-OCRv5 Mobile · 已缓存 ${formatBytes(current.totalBytes)}`
+        : `PP-OCRv5 Mobile · 首次使用下载约 ${formatBytes(current.totalBytes)}`;
+    deleteOcrModels.disabled = !current.installed;
+  } catch (error) {
+    imageStatus.textContent = error instanceof Error ? error.message : String(error);
+    deleteOcrModels.disabled = true;
+  }
+}
+
 async function initialize(): Promise<void> {
   const [settings, response] = await Promise.all([
     loadSettings(),
-    browser.runtime.sendMessage({ type: "get-language-catalog" }) as Promise<{ ok?: boolean; catalog?: Catalog; error?: string }>,
+    sendRuntimeMessage<{ ok?: boolean; catalog?: Catalog; error?: string }>({ type: "get-language-catalog" }),
   ]);
   if (!response?.ok || !response.catalog) throw new Error(response?.error ?? "无法读取语言目录");
   const catalog = response.catalog;
@@ -209,14 +242,35 @@ async function initialize(): Promise<void> {
   if (sourceSelect) sourceSelect.value = catalog.sourceLanguages.some((item) => item.code === settings.autoSourceLanguage) ? settings.autoSourceLanguage : "en";
   if (targetSelect) targetSelect.value = catalog.targetLanguages.some((item) => item.code === settings.targetLanguage) ? settings.targetLanguage : "en";
   if (updatePolicy) updatePolicy.value = settings.modelUpdatePolicy;
+  if (imageToggle) imageToggle.checked = settings.imageTranslationEnabled;
   excludedSites = [...settings.excludedSites];
   renderExceptions();
+  await refreshImageOcrStatus();
 }
 
 for (const radio of radios) {
   radio.addEventListener("change", () => { if (radio.checked) void saveDisplayMode(radio.value as DisplayMode).then(() => showSaved()); });
 }
 autoToggle?.addEventListener("change", () => void saveAutoTranslateEnabled(autoToggle.checked).then(() => showSaved()));
+imageToggle?.addEventListener("change", () => {
+  void saveImageTranslationEnabled(imageToggle.checked).then(() => showSaved(imageToggle.checked ? "图片翻译已开启" : "图片翻译已关闭"));
+});
+
+deleteOcrModels?.addEventListener("click", () => {
+  void (async () => {
+    deleteOcrModels.disabled = true;
+    showSaved("正在删除 OCR 模型…", 30_000);
+    try {
+      const response = await sendRuntimeMessage<ImageOcrResponse>({ type: "delete-image-ocr-models" });
+      if (!response?.ok) throw new Error(response?.error ?? "删除 OCR 模型失败");
+      await refreshImageOcrStatus();
+      showSaved("OCR 模型已删除");
+    } catch (error) {
+      showSaved(error instanceof Error ? error.message : String(error), 5000);
+      await refreshImageOcrStatus();
+    }
+  })();
+});
 
 updatePolicy?.addEventListener("change", () => {
   void saveModelUpdatePolicy(updatePolicy.value as ModelUpdatePolicy).then(() => showSaved("模型更新策略已保存"));
@@ -228,7 +282,7 @@ checkUpdates?.addEventListener("click", () => {
     checkUpdates.textContent = "检查中…";
     showSaved("正在检查 Mozilla 模型更新…", 60_000);
     try {
-      const response = await browser.runtime.sendMessage({ type: "check-model-updates" }) as { ok?: boolean; catalog?: Catalog; error?: string };
+      const response = await sendRuntimeMessage<{ ok?: boolean; catalog?: Catalog; error?: string }>({ type: "check-model-updates" });
       if (!response?.ok || !response.catalog) throw new Error(response?.error ?? "检查更新失败");
       applyCatalog(response.catalog);
       showSaved(response.catalog.updateCount > 0 ? `发现 ${response.catalog.updateCount} 个模型方向有更新` : "所有已安装模型均为最新");

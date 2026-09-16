@@ -7,6 +7,7 @@ import {
   saveTargetLanguage,
   type DisplayMode,
 } from "./shared/settings";
+import { sendRuntimeMessage } from "./shared/runtime-message";
 
 const statusEl = document.querySelector<HTMLElement>("#status");
 const detectedEl = document.querySelector<HTMLElement>("#detected-language");
@@ -62,7 +63,7 @@ function setMode(mode: DisplayMode): void {
 
 async function routeSupported(source: string, target: string): Promise<boolean> {
   if (source === target) return false;
-  const response = await browser.runtime.sendMessage({ type: "can-translate", sourceLanguage: source, targetLanguage: target }) as { ok?: boolean; supported?: boolean };
+  const response = await sendRuntimeMessage<{ ok?: boolean; supported?: boolean }>({ type: "can-translate", sourceLanguage: source, targetLanguage: target });
   return response?.ok === true && response.supported === true;
 }
 
@@ -138,7 +139,7 @@ siteAuto?.addEventListener("change", () => {
 void (async () => {
   const [stored, catalogResponse] = await Promise.all([
     loadSettings(),
-    browser.runtime.sendMessage({ type: "get-language-catalog" }) as Promise<CatalogResponse>,
+    sendRuntimeMessage<CatalogResponse>({ type: "get-language-catalog" }),
   ]);
   const catalog = catalogResponse?.catalog;
   fillSelect(sourceSelect, catalog?.sourceLanguages ?? [{ code: "en", label: "English" }], true);

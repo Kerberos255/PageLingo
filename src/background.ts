@@ -25,6 +25,7 @@ import {
   type ModelCatalogOverrides,
   type ModelUpdateState,
 } from "./providers/bergamot/model-updates";
+import { handleImageRuntimeMessage, initializeImageTranslation } from "./image-translation/background-service";
 import { languageLabel, loadSettings, normalizeDetectedLanguage } from "./shared/settings";
 
 const bergamot = new BergamotClient();
@@ -309,8 +310,12 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 
 void syncModelUpdateAlarm();
 void currentUpdateState().then((state) => setUpdateState(state));
+initializeImageTranslation();
 
-browser.runtime.onMessage.addListener(async (message: RuntimeMessage) => {
+browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) => {
+  const imageResponse = await handleImageRuntimeMessage(message, sender);
+  if (imageResponse !== undefined) return imageResponse;
+
   if (message.type === "ping-backend") return { ok: true };
 
   try {

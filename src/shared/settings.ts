@@ -11,6 +11,7 @@ export interface PageLingoSettings {
   targetLanguage: string;
   excludedSites: string[];
   modelUpdatePolicy: ModelUpdatePolicy;
+  imageTranslationEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: PageLingoSettings = {
@@ -20,6 +21,7 @@ export const DEFAULT_SETTINGS: PageLingoSettings = {
   targetLanguage: "zh-Hans",
   excludedSites: [],
   modelUpdatePolicy: "auto",
+  imageTranslationEnabled: false,
 };
 
 const LABEL_OVERRIDES: Record<string, string> = {
@@ -102,6 +104,7 @@ export async function loadSettings(): Promise<PageLingoSettings> {
     targetLanguage: normalizeTargetLanguage(stored.targetLanguage),
     excludedSites: normalizeExcludedSites(stored.excludedSites),
     modelUpdatePolicy: normalizeModelUpdatePolicy(stored.modelUpdatePolicy),
+    imageTranslationEnabled: stored.imageTranslationEnabled === true,
   };
 }
 
@@ -126,6 +129,10 @@ export async function saveTargetLanguage(targetLanguage: string): Promise<void> 
 
 export async function saveModelUpdatePolicy(modelUpdatePolicy: ModelUpdatePolicy): Promise<void> {
   await browser.storage.local.set({ modelUpdatePolicy: normalizeModelUpdatePolicy(modelUpdatePolicy) });
+}
+
+export async function saveImageTranslationEnabled(imageTranslationEnabled: boolean): Promise<void> {
+  await browser.storage.local.set({ imageTranslationEnabled });
 }
 
 export async function saveExcludedSites(excludedSites: readonly string[]): Promise<void> {

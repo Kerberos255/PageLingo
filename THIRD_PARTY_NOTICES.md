@@ -19,6 +19,29 @@ The bundled raw v4 WebAssembly file is produced from Mozilla's current `translat
 
 Translation model payloads are not redistributed in this repository or extension package. The extension downloads model data directly from Mozilla's Firefox Settings attachment CDN when needed and verifies pinned byte sizes and SHA-256 hashes before use.
 
+## ONNX Runtime Web
+
+PageLingo bundles the ONNX Runtime Web WASM runtime used by the optional image OCR worker.
+
+- Project: Microsoft ONNX Runtime
+- Package: `onnxruntime-web`
+- License: MIT
+- Runtime code and WASM are bundled with the extension; no executable code is loaded remotely.
+
+## paddleocr.js
+
+PageLingo uses the `paddleocr` browser/runtime library to run the PP-OCR detection and recognition pipeline over ONNX Runtime.
+
+- Project: paddleocr.js by X3ZvaWQ
+- Package: `paddleocr`
+- License: MIT
+
+## PP-OCRv5 model data
+
+Image OCR model payloads are not redistributed in this repository. When image translation is enabled and first used, PageLingo downloads the official PaddlePaddle PP-OCRv5 Mobile ONNX detection and recognition models and a compatible PP-OCRv5 dictionary as data files, verifies pinned byte sizes and SHA-256 hashes, and caches them locally. These files are model/data payloads only and are never executed as extension code.
+
+PP-OCRv5 model assets are released by PaddlePaddle under the terms published with their upstream model repositories (Apache-2.0 at the time this notice was written).
+
 ## fzstd
 
 PageLingo bundles `fzstd` to decompress Mozilla's Zstandard-compressed Firefox translation model attachments locally in the extension.

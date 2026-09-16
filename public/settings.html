@@ -13,14 +13,15 @@
         <nav aria-label="设置导航">
           <a class="nav-item active" href="#translation">网页翻译</a>
           <a class="nav-item" href="#languages">语言包</a>
+          <a class="nav-item" href="#image-translation">图片翻译</a>
           <a class="nav-item" href="#display">显示方式</a>
           <a class="nav-item" href="#engine">翻译引擎</a>
         </nav>
-        <div class="local-badge">语言检测与翻译均在本地完成 · 不上传网页内容</div>
+        <div class="local-badge">语言检测、OCR 与翻译均在本地完成 · 不上传网页内容</div>
       </aside>
 
       <main class="content">
-        <header class="page-header"><div><p class="eyebrow">PAGELINGO</p><h1>设置</h1><p>配置自动翻译、目标语言、离线语言包和译文显示方式。</p></div></header>
+        <header class="page-header"><div><p class="eyebrow">PAGELINGO</p><h1>设置</h1><p>配置自动翻译、目标语言、离线语言包、图片翻译和译文显示方式。</p></div></header>
 
         <section id="translation" class="section">
           <div class="section-heading"><h2>网页翻译</h2><p>自动识别当前网页语言，并按你的规则翻译。</p></div>
@@ -61,6 +62,18 @@
           </div>
         </section>
 
+        <section id="image-translation" class="section">
+          <div class="section-heading"><h2>图片翻译</h2><p>右键网页中的图片，在本机识别文字并复用 PageLingo 当前翻译模型。</p></div>
+          <div class="setting-card stack-card">
+            <label class="setting-row"><span><strong>启用图片翻译</strong><small>默认关闭。开启后图片右键菜单会出现“PageLingo · 翻译图片”。</small></span><span class="switch"><input id="image-translation-enabled" type="checkbox" /><i></i></span></label>
+            <div class="ocr-status-row">
+              <div><span class="meta-label">文字识别</span><strong>PP-OCRv5 Mobile · WASM Worker</strong><small id="image-ocr-status">正在读取 OCR 状态…</small></div>
+              <button id="delete-image-ocr-models" type="button" disabled>删除 OCR 模型</button>
+            </div>
+            <div class="hint">OCR 模型在首次使用时单独下载并校验 SHA-256；识别结果仍交给现有本地 Bergamot 翻译。当前默认模型支持简中、繁中、英语和日语。后续高级设置会允许自定义 OCR 模型。</div>
+          </div>
+        </section>
+
         <section id="display" class="section">
           <div class="section-heading"><h2>翻译显示</h2><p>选择页面翻译完成后的呈现方式。</p></div>
           <div class="setting-card">
@@ -73,11 +86,12 @@
         </section>
 
         <section id="engine" class="section">
-          <div class="section-heading"><h2>翻译引擎</h2><p>语言识别和翻译均在 Firefox 内本地执行。</p></div>
+          <div class="section-heading"><h2>翻译引擎</h2><p>语言识别、OCR 和翻译均在 Firefox 内本地执行。</p></div>
           <div class="setting-card info-grid">
             <div><span class="meta-label">语言检测</span><strong>Firefox i18n / CLD</strong></div>
             <div><span class="meta-label">翻译引擎</span><strong>Bergamot WASM</strong></div>
-            <div><span class="meta-label">模型来源</span><strong>Mozilla Firefox 稳定模型</strong></div>
+            <div><span class="meta-label">图片 OCR</span><strong>PP-OCRv5 Mobile + ONNX Runtime WASM</strong></div>
+            <div><span class="meta-label">模型来源</span><strong>Mozilla / PaddlePaddle</strong></div>
             <div><span class="meta-label">非英语互译</span><strong>本地 English Pivot</strong></div>
           </div>
         </section>

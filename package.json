@@ -9,6 +9,10 @@
     "test": "vitest run",
     "verify": "npm run typecheck && npm test && npm run build"
   },
+  "dependencies": {
+    "onnxruntime-web": "1.30.0",
+    "paddleocr": "1.2.0"
+  },
   "devDependencies": {
     "@types/firefox-webext-browser": "^143.0.0",
     "esbuild": "^0.25.0",
