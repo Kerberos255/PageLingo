@@ -14,7 +14,7 @@ on:
       - ".github/workflows/firefox-e2e.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   firefox-e2e:
@@ -56,16 +56,56 @@ jobs:
 
       - name: Show Firefox toolchain
         run: |
-          firefox --version
-          geckodriver --version
+          {
+            firefox --version
+            geckodriver --version
+          } | tee artifacts/firefox-toolchain.txt
 
       - name: Run real Firefox extension test
-        run: python tests/e2e_firefox.py artifacts/PageLingo-e2e.xpi
+        id: e2e
+        run: |
+          set +e
+          python tests/e2e_firefox.py artifacts/PageLingo-e2e.xpi 2>&1 | tee artifacts/firefox-e2e.log
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
 
-      - name: Upload tested XPI
+      - name: Upload tested XPI and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: PageLingo-firefox-e2e
-          path: artifacts/PageLingo-e2e.xpi
-          if-no-files-found: error
+          path: |
+            artifacts/PageLingo-e2e.xpi
+            artifacts/firefox-toolchain.txt
+            artifacts/firefox-e2e.log
+          if-no-files-found: warn
+
+      - name: Publish readable E2E result branch
+        if: always()
+        env:
+          E2E_EXIT_CODE: ${{ steps.e2e.outputs.exit_code }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          code=${E2E_EXIT_CODE:-999}
+          mkdir -p /tmp/pagelingo-e2e-result
+          cp artifacts/firefox-e2e.log /tmp/pagelingo-e2e-result/firefox-e2e.log 2>/dev/null || true
+          cp artifacts/firefox-toolchain.txt /tmp/pagelingo-e2e-result/firefox-toolchain.txt 2>/dev/null || true
+          printf '{\n  "source_sha": "%s",\n  "run_id": "%s",\n  "e2e_exit_code": %s,\n  "timestamp_utc": "%s"\n}\n' \
+            "$SOURCE_SHA" "$RUN_ID" "$code" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > /tmp/pagelingo-e2e-result/result.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan ci/firefox-e2e-result
+          git rm -rf .
+          cp /tmp/pagelingo-e2e-result/* .
+          git add result.json firefox-e2e.log firefox-toolchain.txt 2>/dev/null || git add result.json
+          git commit -m "ci: Firefox E2E result for ${SOURCE_SHA}"
+          git push --force origin HEAD:ci/firefox-e2e-result
+
+      - name: Fail job if Firefox E2E failed
+        if: always()
+        env:
+          E2E_EXIT_CODE: ${{ steps.e2e.outputs.exit_code }}
+        run: test "${E2E_EXIT_CODE:-999}" = "0"
