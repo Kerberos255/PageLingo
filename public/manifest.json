@@ -5,6 +5,9 @@
   "description": "Fast local immersive translation with layout-preserving bilingual rendering.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["http://*/*", "https://*/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "background": {
     "scripts": ["background.js"]
   },
