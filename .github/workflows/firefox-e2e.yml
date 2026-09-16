@@ -20,6 +20,11 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Mark E2E started
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body "Firefox E2E started for \`${GITHUB_SHA}\` (run ${GITHUB_RUN_ID})"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
