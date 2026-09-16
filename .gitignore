@@ -12,3 +12,6 @@ vendor/bergamot/bergamot-translator.wasm
 # Python test cache
 __pycache__/
 *.pyc
+
+# Local build and browser-test artifacts
+artifacts/

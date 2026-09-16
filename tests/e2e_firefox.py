@@ -98,6 +98,13 @@ def main() -> None:
     server, target_url = start_fixture_server(fixture_dir)
 
     options = Options()
+    firefox_binary = os.environ.get("FIREFOX_BINARY")
+    if not firefox_binary:
+        local_firefox = Path("artifacts/firefox-test/core/firefox.exe").resolve()
+        if local_firefox.is_file():
+            firefox_binary = str(local_firefox)
+    if firefox_binary:
+        options.binary_location = firefox_binary
     options.add_argument("-headless")
     service = Service(service_args=["--allow-system-access"])
     driver = webdriver.Firefox(options=options, service=service)
