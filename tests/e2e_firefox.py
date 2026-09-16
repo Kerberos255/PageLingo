@@ -37,10 +37,12 @@ def get_extension_uuid(driver: webdriver.Firefox, addon_id: str) -> str:
     with driver.context(driver.CONTEXT_CHROME):
         raw = driver.execute_script(
             """
-            const { Services } = ChromeUtils.importESModule(
-              'resource://gre/modules/Services.sys.mjs'
-            );
-            return Services.prefs.getStringPref('extensions.webextensions.uuids');
+            if (typeof Services !== 'undefined') {
+              return Services.prefs.getStringPref('extensions.webextensions.uuids');
+            }
+            const prefs = Components.classes['@mozilla.org/preferences-service;1']
+              .getService(Components.interfaces.nsIPrefBranch);
+            return prefs.getStringPref('extensions.webextensions.uuids');
             """
         )
     mapping = json.loads(raw)
