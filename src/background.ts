@@ -12,6 +12,7 @@ interface TranslateHtmlMessage {
 }
 
 browser.runtime.onMessage.addListener(async (message: TranslateHtmlMessage) => {
+  if (message.type === "ping-backend") return { ok: true };
   if (message.type !== "translate-html") return undefined;
 
   try {

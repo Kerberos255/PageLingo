@@ -1,7 +1,31 @@
 import { PageTranslator } from "./core/page-translator";
 import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
+import {
+  isSiteExcluded,
+  loadSettings,
+  normalizeDetectedLanguage,
+  normalizeDisplayMode,
+  type ManualSourceLanguage,
+  type SupportedSourceLanguage,
+  type SupportedTargetLanguage,
+} from "./shared/settings";
 
 let translator: PageTranslator | null = null;
+
+interface PageLanguageInfo {
+  declaredLanguage: string | null;
+  detectedLanguage: string | null;
+  effectiveLanguage: string | null;
+  percentage: number;
+  isReliable: boolean;
+  sampleLength: number;
+}
+
+interface ContentMessage {
+  type?: string;
+  sourceLanguage?: ManualSourceLanguage;
+  targetLanguage?: SupportedTargetLanguage;
+}
 
 function ensureStyle(): void {
   if (document.getElementById("flt-style")) return;
@@ -17,22 +41,123 @@ function ensureStyle(): void {
       letter-spacing: inherit !important;
       text-transform: none !important;
     }
+    .flt-source-hidden {
+      display: none !important;
+    }
+    .flt-source-content-hidden {
+      font-size: 0 !important;
+      line-height: 0 !important;
+    }
+    .flt-source-content-hidden > :not(.flt-translation) {
+      display: none !important;
+    }
+    .flt-source-content-hidden > .flt-translation {
+      margin-block-start: 0 !important;
+      font-size: var(--pagelingo-source-font-size) !important;
+      line-height: var(--pagelingo-source-line-height) !important;
+    }
+    .flt-source-content-hidden::marker {
+      font-size: var(--pagelingo-source-font-size) !important;
+    }
   `;
   document.documentElement.append(style);
 }
 
-browser.runtime.onMessage.addListener(async (message: { type?: string }) => {
+function pageTextSample(): string {
+  const root = document.querySelector<HTMLElement>("article, main, [role='main']") ?? document.body;
+  if (!root) return "";
+  return (root.innerText || root.textContent || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 4096);
+}
+
+async function detectPageLanguage(): Promise<PageLanguageInfo> {
+  const declaredLanguage = normalizeDetectedLanguage(document.documentElement.lang);
+  const sample = pageTextSample();
+  if (!sample) {
+    return {
+      declaredLanguage,
+      detectedLanguage: null,
+      effectiveLanguage: declaredLanguage,
+      percentage: 0,
+      isReliable: false,
+      sampleLength: 0,
+    };
+  }
+
+  try {
+    const result = await browser.i18n.detectLanguage(sample);
+    const top = result.languages?.[0];
+    const detectedLanguage = normalizeDetectedLanguage(top?.language);
+    const percentage = Math.round(top?.percentage ?? 0);
+    const isReliable = Boolean(result.isReliable && sample.length >= 150 && percentage >= 60);
+    const effectiveLanguage = isReliable ? detectedLanguage : (declaredLanguage ?? detectedLanguage);
+    return {
+      declaredLanguage,
+      detectedLanguage,
+      effectiveLanguage,
+      percentage,
+      isReliable,
+      sampleLength: sample.length,
+    };
+  } catch {
+    return {
+      declaredLanguage,
+      detectedLanguage: null,
+      effectiveLanguage: declaredLanguage,
+      percentage: 0,
+      isReliable: false,
+      sampleLength: sample.length,
+    };
+  }
+}
+
+async function resolveSourceLanguage(sourceLanguage: ManualSourceLanguage): Promise<SupportedSourceLanguage> {
+  if (sourceLanguage !== "auto") return sourceLanguage;
+  const info = await detectPageLanguage();
+  if (info.effectiveLanguage === "en") return "en";
+  const label = info.effectiveLanguage ?? "未知语言";
+  throw new Error(`检测到 ${label}，当前本地模型暂未支持该语言`);
+}
+
+async function translatePage(
+  sourceLanguage: ManualSourceLanguage,
+  targetLanguage: SupportedTargetLanguage,
+): Promise<number> {
+  ensureStyle();
+  translator?.restore();
+  const settings = await loadSettings();
+  const resolvedSource = await resolveSourceLanguage(sourceLanguage);
+  translator = new PageTranslator(document, new RuntimeMessageProvider(), {
+    sourceLanguage: resolvedSource,
+    targetLanguage,
+    concurrency: 4,
+    displayMode: settings.displayMode,
+  });
+  const count = await translator.translateAll();
+  translator.observe();
+  return count;
+}
+
+browser.runtime.onMessage.addListener(async (message: ContentMessage) => {
+  if (message.type === "ping") return { ok: true };
+
+  if (message.type === "get-page-language") {
+    return { ok: true, language: await detectPageLanguage() };
+  }
+
   if (message.type === "translate-page") {
-    ensureStyle();
-    translator?.restore();
-    translator = new PageTranslator(document, new RuntimeMessageProvider(), {
-      sourceLanguage: "en",
-      targetLanguage: "zh-Hans",
-      concurrency: 4,
-    });
-    const count = await translator.translateAll();
-    translator.observe();
-    return { ok: true, count };
+    try {
+      const settings = await loadSettings();
+      const count = await translatePage(
+        message.sourceLanguage ?? "auto",
+        message.targetLanguage ?? settings.targetLanguage,
+      );
+      return { ok: true, count };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   if (message.type === "restore-page") {
@@ -44,3 +169,23 @@ browser.runtime.onMessage.addListener(async (message: { type?: string }) => {
 
   return undefined;
 });
+
+browser.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.displayMode || !translator) return;
+  translator.setDisplayMode(normalizeDisplayMode(changes.displayMode.newValue));
+});
+
+async function maybeAutoTranslate(): Promise<void> {
+  if (window.top !== window) return;
+  const settings = await loadSettings();
+  if (!settings.autoTranslateEnabled || isSiteExcluded(location.hostname, settings.excludedSites)) return;
+  const info = await detectPageLanguage();
+  if (info.effectiveLanguage !== settings.autoSourceLanguage) return;
+  try {
+    await translatePage(settings.autoSourceLanguage, settings.targetLanguage);
+  } catch (error) {
+    console.warn("[PageLingo] Automatic translation failed", error);
+  }
+}
+
+void maybeAutoTranslate();

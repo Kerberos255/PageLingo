@@ -17,6 +17,7 @@ await build({
     background: "src/background.ts",
     content: "src/content.ts",
     popup: "src/popup.ts",
+    options: "src/options.ts",
     "bergamot-worker": "src/workers/bergamot-worker.ts",
   },
   bundle: true,

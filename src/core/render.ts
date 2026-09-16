@@ -36,6 +36,14 @@ function restoreLinks(container: HTMLElement, links: LinkSnapshot[]): void {
     setOrRemove(anchor, "target", source.target);
     setOrRemove(anchor, "rel", source.rel);
     setOrRemove(anchor, "title", source.title);
+    anchor.addEventListener("click", (event) => {
+      if (
+        event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey ||
+        !source.sourceElement.isConnected
+      ) return;
+      event.preventDefault();
+      source.sourceElement.click();
+    });
   });
 }
 

@@ -75,6 +75,29 @@ def extension_message(driver: webdriver.Firefox, target_url: str, message_type: 
     return result.get("value") or {}
 
 
+def background_ready(driver: webdriver.Firefox) -> bool:
+    try:
+        result = driver.execute_async_script(
+            """
+            const done = arguments[arguments.length - 1];
+            browser.runtime.sendMessage({ type: 'ping-backend' })
+              .then((value) => done({ ok: true, value }))
+              .catch((error) => done({ ok: false, error: String(error) }));
+            """
+        )
+        return result.get("ok") is True and result.get("value", {}).get("ok") is True
+    except Exception:
+        return False
+
+
+def content_script_ready(driver: webdriver.Firefox, target_url: str) -> bool:
+    try:
+        response = extension_message(driver, target_url, "ping")
+        return response.get("ok") is True
+    except AssertionError:
+        return False
+
+
 def wait_for_cjk_translation(driver: webdriver.Firefox, selector: str, timeout: int = 180) -> str:
     def probe(drv: webdriver.Firefox) -> str | bool:
         text = drv.execute_script(
@@ -136,9 +159,27 @@ def main() -> None:
         uuid = get_extension_uuid(driver, ADDON_ID)
         driver.switch_to.new_window("tab")
         extension_handle = driver.current_window_handle
-        driver.get(f"moz-extension://{uuid}/popup.html")
+        driver.get(f"moz-extension://{uuid}/settings.html")
         WebDriverWait(driver, 30).until(
             lambda d: d.execute_script("return typeof browser !== 'undefined'")
+        )
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script(
+                "return document.querySelector('input[name=\"display-mode\"][value=\"bilingual\"]')?.checked === true"
+            )
+        )
+        WebDriverWait(driver, 30).until(lambda d: content_script_ready(d, target_url))
+        WebDriverWait(driver, 30).until(background_ready)
+
+        language = extension_message(driver, target_url, "get-page-language")
+        assert language.get("ok") is True, language
+        language_info = language.get("language") or {}
+        assert language_info.get("effectiveLanguage") == "en", language_info
+        print(
+            "Detected page language:",
+            language_info.get("effectiveLanguage"),
+            language_info.get("percentage"),
+            "reliable=", language_info.get("isReliable"),
         )
 
         response = extension_message(driver, target_url, "translate-page")
@@ -172,6 +213,54 @@ def main() -> None:
         clicks = driver.execute_script("return window.__pageLingoClicks;")
         assert clicks == 1, f"Original link listener was lost: clicks={clicks}"
 
+        driver.switch_to.window(extension_handle)
+        driver.execute_script(
+            "document.querySelector('input[name=\"display-mode\"][value=\"translation\"]').click();"
+        )
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_async_script(
+                "const done=arguments[0]; browser.storage.local.get('displayMode').then(v=>done(v.displayMode));"
+            ) == "translation"
+        )
+
+        driver.switch_to.window(target_handle)
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script(
+                "return document.getElementById('rich').classList.contains('flt-source-hidden')"
+            )
+        )
+        translation_only = driver.execute_script(
+            """
+            const source = document.getElementById('rich');
+            const translated = source.nextElementSibling;
+            return {
+              sourceNodeStillPresent: source === document.getElementById('rich'),
+              sourceHidden: source.classList.contains('flt-source-hidden'),
+              translatedVisible: translated?.classList.contains('flt-translation') || false,
+              translatedHref: translated?.querySelector('a')?.href || null,
+            };
+            """
+        )
+        assert translation_only["sourceNodeStillPresent"], translation_only
+        assert translation_only["sourceHidden"], translation_only
+        assert translation_only["translatedVisible"], translation_only
+        assert translation_only["translatedHref"] == original_href, translation_only
+
+        driver.execute_script("document.querySelector('#rich + .flt-translation a').click();")
+        clicks = driver.execute_script("return window.__pageLingoClicks;")
+        assert clicks == 2, f"Translated link did not preserve source click behavior: clicks={clicks}"
+
+        driver.switch_to.window(extension_handle)
+        driver.execute_script(
+            "document.querySelector('input[name=\"display-mode\"][value=\"bilingual\"]').click();"
+        )
+        driver.switch_to.window(target_handle)
+        WebDriverWait(driver, 30).until(
+            lambda d: not d.execute_script(
+                "return document.getElementById('rich').classList.contains('flt-source-hidden')"
+            )
+        )
+
         driver.execute_script(
             """
             const p = document.createElement('p');
@@ -204,7 +293,46 @@ def main() -> None:
         )
         assert restored == {"sentinel": 42, "href": original_href, "styleGone": True}, restored
 
-        print("PageLingo Firefox E2E passed")
+        # New auto-translation rule: English pages should translate on load.
+        driver.switch_to.window(extension_handle)
+        driver.execute_async_script(
+            """
+            const done = arguments[0];
+            browser.storage.local.set({
+              autoTranslateEnabled: true,
+              autoSourceLanguage: 'en',
+              targetLanguage: 'zh-Hans',
+              excludedSites: [],
+            }).then(() => done(true));
+            """
+        )
+        driver.switch_to.window(target_handle)
+        driver.get(target_url)
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        auto_text = wait_for_cjk_translation(driver, "#rich + .flt-translation")
+        print(f"Automatic translation: {auto_text}")
+
+        # The same page must remain untouched when its host is in the exception list.
+        driver.switch_to.window(extension_handle)
+        driver.execute_async_script(
+            """
+            const done = arguments[0];
+            browser.storage.local.set({ excludedSites: ['127.0.0.1'] }).then(() => done(true));
+            """
+        )
+        driver.switch_to.window(target_handle)
+        driver.get(target_url)
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        time.sleep(2)
+        excluded_count = driver.execute_script("return document.querySelectorAll('.flt-translation').length")
+        assert excluded_count == 0, f"Excluded site was auto-translated: {excluded_count}"
+        print("Exception rule prevented automatic translation")
+
+        print("PageLingo Firefox E2E passed (bilingual + translation-only + live mode switching)")
     finally:
         driver.quit()
         server.shutdown()

@@ -12,6 +12,7 @@ export interface LinkSnapshot {
   target: string | null;
   rel: string | null;
   title: string | null;
+  sourceElement: HTMLAnchorElement;
 }
 
 export interface OpaqueSnapshot {
@@ -31,6 +32,16 @@ function escapeHtml(value: string): string {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function snapshotLink(element: HTMLAnchorElement): LinkSnapshot {
+  return {
+    href: element.getAttribute("href"),
+    target: element.getAttribute("target"),
+    rel: element.getAttribute("rel"),
+    title: element.getAttribute("title"),
+    sourceElement: element,
+  };
 }
 
 function serializeChildren(
@@ -64,14 +75,7 @@ function serializeChildren(
       continue;
     }
 
-    if (tag === "A") {
-      links.push({
-        href: element.getAttribute("href"),
-        target: element.getAttribute("target"),
-        rel: element.getAttribute("rel"),
-        title: element.getAttribute("title"),
-      });
-    }
+    if (tag === "A") links.push(snapshotLink(element as HTMLAnchorElement));
 
     if (OPAQUE_TAGS.has(tag)) {
       const index = opaque.length;
@@ -89,7 +93,11 @@ function serializeChildren(
 export function serializeRichSegment(root: HTMLElement): RichSegment {
   const links: LinkSnapshot[] = [];
   const opaque: OpaqueSnapshot[] = [];
-  const html = serializeChildren(root, root, links, opaque).trim();
+  let html = serializeChildren(root, root, links, opaque).trim();
+  if (root.tagName === "A") {
+    links.unshift(snapshotLink(root as HTMLAnchorElement));
+    html = `<a>${html}</a>`;
+  }
   return {
     html,
     links,

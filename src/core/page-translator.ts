@@ -2,11 +2,13 @@ import { collectTranslationRoots, findTranslationRoot, isGeneratedNode } from ".
 import type { TranslationProvider } from "./provider";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { serializeRichSegment } from "./rich-segment";
+import type { DisplayMode } from "../shared/settings";
 
 export interface PageTranslatorOptions {
   sourceLanguage?: string;
   targetLanguage?: string;
   concurrency?: number;
+  displayMode?: DisplayMode;
 }
 
 interface RecordEntry {
@@ -20,6 +22,7 @@ export class PageTranslator {
   readonly #sourceLanguage: string;
   readonly #targetLanguage: string;
   readonly #concurrency: number;
+  #displayMode: DisplayMode;
   readonly #records = new Map<HTMLElement, RecordEntry>();
   readonly #pending = new Set<HTMLElement>();
   #observer: MutationObserver | null = null;
@@ -31,10 +34,19 @@ export class PageTranslator {
     this.#sourceLanguage = options.sourceLanguage ?? "en";
     this.#targetLanguage = options.targetLanguage ?? "zh";
     this.#concurrency = Math.max(1, options.concurrency ?? 4);
+    this.#displayMode = options.displayMode ?? "bilingual";
   }
 
   get translatedCount(): number {
     return this.#records.size;
+  }
+
+  setDisplayMode(displayMode: DisplayMode): void {
+    if (this.#displayMode === displayMode) return;
+    this.#displayMode = displayMode;
+    for (const [root, record] of this.#records) {
+      this.#applyDisplayMode(root, record.translationNode);
+    }
   }
 
   async translateAll(scope: ParentNode = this.#doc.body): Promise<number> {
@@ -59,6 +71,7 @@ export class PageTranslator {
     const previous = this.#records.get(root);
     if (previous?.fingerprint === segment.fingerprint) return;
     if (previous) {
+      this.#clearDisplayMode(root);
       previous.translationNode.remove();
       this.#records.delete(root);
     }
@@ -79,6 +92,7 @@ export class PageTranslator {
     );
     const translationNode = mountTranslation(root, fragment);
     this.#records.set(root, { translationNode, fingerprint: segment.fingerprint });
+    this.#applyDisplayMode(root, translationNode);
   }
 
   observe(): void {
@@ -111,13 +125,42 @@ export class PageTranslator {
     this.#observer?.disconnect();
     this.#observer = null;
     this.#pending.clear();
-    for (const { translationNode } of this.#records.values()) translationNode.remove();
+    for (const [root, { translationNode }] of this.#records) {
+      this.#clearDisplayMode(root);
+      translationNode.remove();
+    }
     this.#records.clear();
+  }
+
+  #applyDisplayMode(root: HTMLElement, translationNode: HTMLElement): void {
+    this.#clearDisplayMode(root);
+    if (this.#displayMode !== "translation") return;
+
+    if (["LI", "TD", "TH"].includes(root.tagName)) {
+      const computed = this.#doc.defaultView?.getComputedStyle(root);
+      if (computed) {
+        root.style.setProperty("--pagelingo-source-font-size", computed.fontSize);
+        root.style.setProperty("--pagelingo-source-line-height", computed.lineHeight);
+      }
+      root.classList.add("flt-source-content-hidden");
+      translationNode.dataset.fltDisplayMode = "translation";
+      return;
+    }
+
+    root.classList.add("flt-source-hidden");
+    translationNode.dataset.fltDisplayMode = "translation";
+  }
+
+  #clearDisplayMode(root: HTMLElement): void {
+    root.classList.remove("flt-source-hidden", "flt-source-content-hidden");
+    root.style.removeProperty("--pagelingo-source-font-size");
+    root.style.removeProperty("--pagelingo-source-line-height");
   }
 
   #queue(root: HTMLElement): void {
     const previous = this.#records.get(root);
     if (previous) {
+      this.#clearDisplayMode(root);
       previous.translationNode.remove();
       this.#records.delete(root);
     }

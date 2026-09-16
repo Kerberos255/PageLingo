@@ -90,6 +90,7 @@ describe("PageTranslator DOM preservation", () => {
     expect(next.nextElementSibling?.classList.contains("flt-translation")).toBe(true);
     expect(document.querySelectorAll(".flt-translation .flt-translation")).toHaveLength(0);
     expect(provider.requests.length).toBe(2);
+    translator.restore();
   });
 
   it("does not translate form controls, scripts or preformatted code blocks", async () => {
@@ -100,5 +101,44 @@ describe("PageTranslator DOM preservation", () => {
 
     expect(provider.requests).toHaveLength(1);
     expect(provider.requests[0]?.html).toContain("Translate me.");
+  });
+});
+
+
+describe("PageTranslator display modes", () => {
+  it("supports translation-only mode without replacing the original DOM", async () => {
+    document.body.innerHTML = `<p id="p">Read the <a id="link" href="/docs">documentation</a>.</p>`;
+    const paragraph = document.querySelector<HTMLElement>("#p")!;
+    const sourceLink = document.querySelector<HTMLAnchorElement>("#link")!;
+    let clicks = 0;
+    sourceLink.addEventListener("click", (event) => { event.preventDefault(); clicks += 1; });
+
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    expect(document.querySelector("#p")).toBe(paragraph);
+    expect(paragraph.classList.contains("flt-source-hidden")).toBe(true);
+    const translatedLink = document.querySelector<HTMLAnchorElement>(".flt-translation a")!;
+    expect(translatedLink.getAttribute("href")).toBe("/docs");
+    translatedLink.click();
+    expect(clicks).toBe(1);
+
+    translator.setDisplayMode("bilingual");
+    expect(paragraph.classList.contains("flt-source-hidden")).toBe(false);
+    expect(document.querySelector("#link")).toBe(sourceLink);
+  });
+
+  it("keeps list structure while hiding list source text in translation-only mode", async () => {
+    document.body.innerHTML = `<ul><li id="item">Install <strong>PageLingo</strong>.</li></ul>`;
+    const item = document.querySelector<HTMLElement>("#item")!;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    expect(item.classList.contains("flt-source-content-hidden")).toBe(true);
+    expect(item.querySelector(":scope > .flt-translation")).not.toBeNull();
+
+    translator.restore();
+    expect(item.classList.contains("flt-source-content-hidden")).toBe(false);
+    expect(item.querySelector(".flt-translation")).toBeNull();
   });
 });

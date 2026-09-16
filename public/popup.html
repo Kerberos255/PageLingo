@@ -4,16 +4,54 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <link rel="stylesheet" href="popup.css" />
-    <title>Local Immersive Translate</title>
+    <title>PageLingo</title>
   </head>
   <body>
     <main>
-      <h1>本地沉浸式翻译</h1>
-      <p class="sub">Firefox · Bergamot / Marian</p>
-      <div class="actions">
-        <button id="translate" type="button">翻译本页</button>
-        <button id="restore" type="button" class="secondary">恢复原文</button>
+      <header class="title-row">
+        <div>
+          <h1>PageLingo</h1>
+          <p class="sub">本地网页翻译</p>
+        </div>
+        <button id="settings" class="icon-button" type="button" aria-label="打开设置" title="设置">⚙</button>
+      </header>
+
+      <section class="language-pair" aria-label="翻译语言">
+        <label class="language-box">
+          <span>原文语言</span>
+          <select id="source-language">
+            <option value="auto">自动检测</option>
+            <option value="en">English</option>
+          </select>
+          <small id="detected-language">正在检测…</small>
+        </label>
+        <div class="arrow" aria-hidden="true">→</div>
+        <label class="language-box">
+          <span>目标语言</span>
+          <select id="target-language">
+            <option value="zh-Hans">简体中文</option>
+          </select>
+          <small>本地模型</small>
+        </label>
+      </section>
+
+      <div class="display-switch" aria-label="显示模式">
+        <button type="button" data-display-mode="translation">仅译文</button>
+        <button type="button" data-display-mode="bilingual">双语对照</button>
       </div>
+
+      <button id="translate" class="primary" type="button">翻译本页</button>
+      <button id="restore" class="secondary" type="button">显示原文</button>
+
+      <label class="site-auto-row">
+        <span>
+          <strong>自动翻译</strong>
+          <small id="site-auto-hint">此网站</small>
+        </span>
+        <input id="site-auto" type="checkbox" />
+        <i aria-hidden="true"></i>
+      </label>
+
       <p id="status" role="status">就绪</p>
     </main>
     <script src="popup.js"></script>
