@@ -90,6 +90,36 @@ def background_ready(driver: webdriver.Firefox) -> bool:
         return False
 
 
+def runtime_translate(
+    driver: webdriver.Firefox,
+    html: str,
+    source_language: str,
+    target_language: str,
+) -> str:
+    driver.set_script_timeout(300)
+    result = driver.execute_async_script(
+        """
+        const html = arguments[0];
+        const sourceLanguage = arguments[1];
+        const targetLanguage = arguments[2];
+        const done = arguments[arguments.length - 1];
+        browser.runtime.sendMessage({
+          type: 'translate-html',
+          request: { html, sourceLanguage, targetLanguage },
+        }).then((value) => done(value))
+          .catch((error) => done({ ok: false, error: String(error) }));
+        """,
+        html,
+        source_language,
+        target_language,
+    )
+    if not result or result.get("ok") is not True:
+        raise AssertionError(
+            f"Runtime translation failed {source_language}->{target_language}: {result}"
+        )
+    return result.get("html") or ""
+
+
 def content_script_ready(driver: webdriver.Firefox, target_url: str) -> bool:
     try:
         response = extension_message(driver, target_url, "ping")
@@ -170,6 +200,44 @@ def main() -> None:
         )
         WebDriverWait(driver, 30).until(lambda d: content_script_ready(d, target_url))
         WebDriverWait(driver, 30).until(background_ready)
+        catalog_response = driver.execute_async_script(
+            """
+            const done = arguments[0];
+            browser.runtime.sendMessage({ type: 'get-language-catalog' })
+              .then((value) => done(value))
+              .catch((error) => done({ ok: false, error: String(error) }));
+            """
+        )
+        assert catalog_response.get("ok") is True, catalog_response
+        initial_catalog = catalog_response.get("catalog") or {}
+        assert len(initial_catalog.get("sourceLanguages") or []) > 20, initial_catalog
+        assert len(initial_catalog.get("targetLanguages") or []) > 20, initial_catalog
+        assert len(initial_catalog.get("packs") or []) > 20, initial_catalog
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script("return document.querySelectorAll('#language-pack-list .pack-item').length") > 20
+        )
+        print(
+            "Language catalog:",
+            len(initial_catalog.get("sourceLanguages") or []),
+            "sources,",
+            len(initial_catalog.get("targetLanguages") or []),
+            "targets,",
+            len(initial_catalog.get("packs") or []),
+            "language packs",
+        )
+        # Keep the baseline E2E deterministic even though first install now chooses
+        # the browser's preferred target language.
+        driver.execute_async_script(
+            """
+            const done = arguments[0];
+            browser.storage.local.set({
+              targetLanguage: 'zh-Hans',
+              autoSourceLanguage: 'en',
+              autoTranslateEnabled: false,
+              excludedSites: [],
+            }).then(() => done(true));
+            """
+        )
 
         language = extension_message(driver, target_url, "get-page-language")
         assert language.get("ok") is True, language
@@ -331,6 +399,76 @@ def main() -> None:
         excluded_count = driver.execute_script("return document.querySelectorAll('.flt-translation').length")
         assert excluded_count == 0, f"Excluded site was auto-translated: {excluded_count}"
         print("Exception rule prevented automatic translation")
+
+        # Real multi-language model coverage: direct English -> Spanish, then
+        # Spanish -> Simplified Chinese through the local English pivot.
+        driver.switch_to.window(extension_handle)
+        spanish = runtime_translate(
+            driver,
+            "Hello world. This is a local translation test.",
+            "en",
+            "es",
+        )
+        assert spanish and spanish != "Hello world. This is a local translation test.", spanish
+        assert not CJK_RE.search(spanish), spanish
+        print(f"English -> Spanish: {spanish}")
+
+        chinese_via_pivot = runtime_translate(
+            driver,
+            "Hola mundo. Esta es una prueba de traducción local.",
+            "es",
+            "zh-Hans",
+        )
+        assert CJK_RE.search(chinese_via_pivot), chinese_via_pivot
+        print(f"Spanish -> Simplified Chinese via English pivot: {chinese_via_pivot}")
+
+        update_check = driver.execute_async_script(
+            """
+            const done = arguments[0];
+            browser.runtime.sendMessage({ type: 'check-model-updates' })
+              .then((value) => done(value))
+              .catch((error) => done({ ok: false, error: String(error) }));
+            """
+        )
+        assert update_check.get("ok") is True, update_check
+        catalog = update_check.get("catalog") or {}
+        assert isinstance(catalog.get("updateCount"), int), catalog
+        print(f"Model update check: {catalog.get('updateCount')} available")
+
+        # Model update policy controls the periodic alarm itself: manual means
+        # no background wake-up, notify/auto restore the daily check.
+        driver.execute_async_script(
+            """
+            const done = arguments[0];
+            browser.storage.local.set({ modelUpdatePolicy: 'manual' }).then(() => done(true));
+            """
+        )
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_async_script(
+                "const done=arguments[0]; browser.alarms.get('pagelingo-model-updates').then(v=>done(v || null));"
+            ) is None
+        )
+        print("Manual model update policy: periodic alarm disabled")
+
+        driver.execute_async_script(
+            """
+            const done = arguments[0];
+            browser.storage.local.set({ modelUpdatePolicy: 'notify' }).then(() => done(true));
+            """
+        )
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_async_script(
+                "const done=arguments[0]; browser.alarms.get('pagelingo-model-updates').then(v=>done(v || null));"
+            ) is not None
+        )
+        print("Notify model update policy: periodic alarm restored")
+
+        driver.execute_async_script(
+            """
+            const done = arguments[0];
+            browser.storage.local.set({ modelUpdatePolicy: 'auto' }).then(() => done(true));
+            """
+        )
 
         print("PageLingo Firefox E2E passed (bilingual + translation-only + live mode switching)")
     finally:

@@ -1,86 +1,92 @@
-import {
-  EN_TO_ZH_HANS_MODEL,
-  type BergamotModelAsset,
-  type BergamotModelFileType,
-} from "./model-manifest";
+import { decompress as decompressZstd } from "fzstd";
+import type { BergamotModelAsset, BergamotModelPair } from "./model-manifest";
+import type { WorkerModelBundle, WorkerModelFile } from "./protocol";
 
-const CACHE_NAME = "firefox-local-translate-models-v1";
+const CACHE_NAME = "pagelingo-models-v3";
 
-export interface CachedModelFile {
-  type: BergamotModelFileType;
-  alignment: 64 | 256;
-  buffer: ArrayBuffer;
+async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-function bytesToHex(bytes: Uint8Array): string {
-  let value = "";
-  for (const byte of bytes) value += byte.toString(16).padStart(2, "0");
-  return value;
-}
-
-async function sha256(buffer: ArrayBuffer): Promise<string> {
-  return bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", buffer)));
-}
-
-async function verify(asset: BergamotModelAsset, buffer: ArrayBuffer): Promise<void> {
+async function verify(buffer: ArrayBuffer, asset: BergamotModelAsset): Promise<void> {
   if (buffer.byteLength !== asset.bytes) {
-    throw new Error(
-      `Model ${asset.type} has wrong size: expected ${asset.bytes}, got ${buffer.byteLength}`,
-    );
+    throw new Error(`Model asset size mismatch for ${asset.type}: expected ${asset.bytes}, got ${buffer.byteLength}`);
   }
-  const actual = await sha256(buffer);
+  const actual = await sha256Hex(buffer);
   if (actual !== asset.sha256) {
-    throw new Error(`Model ${asset.type} failed SHA-256 verification`);
+    throw new Error(`Model asset SHA-256 mismatch for ${asset.type}`);
   }
 }
 
-async function readCached(cache: Cache, asset: BergamotModelAsset): Promise<ArrayBuffer | null> {
-  const response = await cache.match(asset.url);
-  if (!response) return null;
-
-  const buffer = await response.arrayBuffer();
-  try {
-    await verify(asset, buffer);
-    return buffer;
-  } catch {
-    await cache.delete(asset.url);
-    return null;
-  }
+async function decompressZstandard(response: Response, expectedBytes: number): Promise<ArrayBuffer> {
+  const compressed = new Uint8Array(await response.arrayBuffer());
+  if (compressed.byteLength === 0) throw new Error("Model download returned an empty response body");
+  const output = decompressZstd(compressed, new Uint8Array(expectedBytes));
+  return output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength) as ArrayBuffer;
 }
 
-async function download(cache: Cache, asset: BergamotModelAsset): Promise<ArrayBuffer> {
-  const response = await fetch(asset.url, { cache: "force-cache" });
-  if (!response.ok) {
-    throw new Error(`Model ${asset.type} download failed with HTTP ${response.status}`);
+async function loadAsset(asset: BergamotModelAsset): Promise<ArrayBuffer> {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(asset.url);
+  if (cached) {
+    const buffer = await cached.arrayBuffer();
+    try {
+      await verify(buffer, asset);
+      return buffer;
+    } catch {
+      await cache.delete(asset.url);
+    }
   }
 
-  const buffer = await response.arrayBuffer();
-  await verify(asset, buffer);
-
-  await cache.put(
-    asset.url,
-    new Response(buffer.slice(0), {
-      headers: {
-        "content-type": "application/octet-stream",
-        "x-flt-sha256": asset.sha256,
-      },
-    }),
-  );
+  const response = await fetch(asset.url);
+  if (!response.ok) throw new Error(`Model download failed (${asset.type}): HTTP ${response.status}`);
+  const buffer = asset.compression === "zstd"
+    ? await decompressZstandard(response, asset.bytes)
+    : await response.arrayBuffer();
+  await verify(buffer, asset);
+  await cache.put(asset.url, new Response(buffer, {
+    headers: {
+      "content-type": "application/octet-stream",
+      "x-pagelingo-sha256": asset.sha256,
+    },
+  }));
   return buffer;
 }
 
-async function loadAsset(cache: Cache, asset: BergamotModelAsset): Promise<CachedModelFile> {
-  const buffer = (await readCached(cache, asset)) ?? (await download(cache, asset));
-  return { type: asset.type, alignment: asset.alignment, buffer };
+export async function loadModelPair(pair: BergamotModelPair): Promise<WorkerModelBundle> {
+  const files: WorkerModelFile[] = [];
+  for (const asset of pair.assets) {
+    files.push({
+      type: asset.type,
+      alignment: asset.alignment,
+      buffer: await loadAsset(asset),
+    });
+  }
+  return {
+    sourceLanguage: pair.sourceLanguage,
+    targetLanguage: pair.targetLanguage,
+    files,
+  };
 }
 
-export async function loadEnglishToChineseModel(): Promise<CachedModelFile[]> {
+export async function isModelPairCached(pair: BergamotModelPair): Promise<boolean> {
   const cache = await caches.open(CACHE_NAME);
-  const files: CachedModelFile[] = [];
+  const matches = await Promise.all(pair.assets.map((asset) => cache.match(asset.url)));
+  return matches.every(Boolean);
+}
 
-  // Load sequentially to keep peak memory lower while the 44 MB model is verified/cached.
-  for (const asset of EN_TO_ZH_HANS_MODEL) {
-    files.push(await loadAsset(cache, asset));
-  }
-  return files;
+export async function deleteModelPair(pair: BergamotModelPair): Promise<void> {
+  const cache = await caches.open(CACHE_NAME);
+  await Promise.all(pair.assets.map((asset) => cache.delete(asset.url)));
+}
+
+export async function downloadModelPair(pair: BergamotModelPair): Promise<void> {
+  await loadModelPair(pair);
+}
+
+export async function pruneModelPair(oldPair: BergamotModelPair, replacement: BergamotModelPair): Promise<void> {
+  const keep = new Set(replacement.assets.map((asset) => asset.url));
+  const cache = await caches.open(CACHE_NAME);
+  await Promise.all(oldPair.assets.filter((asset) => !keep.has(asset.url)).map((asset) => cache.delete(asset.url)));
 }

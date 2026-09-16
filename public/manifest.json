@@ -3,7 +3,7 @@
   "name": "PageLingo",
   "version": "0.1.0",
   "description": "Fast local immersive translation with layout-preserving bilingual rendering.",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "alarms"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"

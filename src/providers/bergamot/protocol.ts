@@ -6,12 +6,17 @@ export interface WorkerModelFile {
   buffer: ArrayBuffer;
 }
 
+export interface WorkerModelBundle {
+  sourceLanguage: string;
+  targetLanguage: string;
+  files: WorkerModelFile[];
+}
+
 export type BergamotWorkerRequest =
   | {
       type: "initialize";
-      sourceLanguage: "en";
-      targetLanguage: "zh-Hans";
-      files: WorkerModelFile[];
+      routeKind: "direct" | "pivot";
+      models: WorkerModelBundle[];
     }
   | {
       type: "translate";

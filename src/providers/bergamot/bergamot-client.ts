@@ -1,21 +1,25 @@
-import { loadEnglishToChineseModel } from "./model-cache";
-import type { BergamotWorkerRequest, BergamotWorkerResponse } from "./protocol";
+import { loadModelPair } from "./model-cache";
+import type { TranslationRoute } from "./model-manifest";
+import type { BergamotWorkerRequest, BergamotWorkerResponse, WorkerModelBundle } from "./protocol";
 
 interface PendingRequest {
   resolve: (html: string) => void;
   reject: (error: Error) => void;
 }
 
-export class BergamotClient {
+class RouteSession {
+  readonly #route: TranslationRoute;
   #worker: Worker | null = null;
   #ready: Promise<void> | null = null;
   #nextId = 1;
   readonly #pending = new Map<number, PendingRequest>();
 
-  async translateHtml(html: string): Promise<string> {
-    if (!html.trim()) return html;
-    await this.#ensureReady();
+  constructor(route: TranslationRoute) {
+    this.#route = route;
+  }
 
+  async translateHtml(html: string): Promise<string> {
+    await this.#ensureReady();
     const worker = this.#worker;
     if (!worker) throw new Error("Bergamot worker is unavailable");
 
@@ -26,6 +30,15 @@ export class BergamotClient {
     const message: BergamotWorkerRequest = { type: "translate", id, html };
     worker.postMessage(message);
     return result;
+  }
+
+  terminate(): void {
+    this.#worker?.terminate();
+    this.#worker = null;
+    this.#ready = null;
+    const error = new Error("Bergamot session reset");
+    for (const pending of this.#pending.values()) pending.reject(error);
+    this.#pending.clear();
   }
 
   #ensureReady(): Promise<void> {
@@ -80,13 +93,13 @@ export class BergamotClient {
     });
 
     try {
-      const files = await loadEnglishToChineseModel();
-      const transfer = files.map((file) => file.buffer);
+      const models: WorkerModelBundle[] = [];
+      for (const pair of this.#route.models) models.push(await loadModelPair(pair));
+      const transfer = models.flatMap((model) => model.files.map((file) => file.buffer));
       const message: BergamotWorkerRequest = {
         type: "initialize",
-        sourceLanguage: "en",
-        targetLanguage: "zh-Hans",
-        files,
+        routeKind: this.#route.kind,
+        models,
       };
       worker.postMessage(message, transfer);
       await readySignal;
@@ -96,5 +109,24 @@ export class BergamotClient {
       this.#ready = null;
       throw error;
     }
+  }
+}
+
+export class BergamotClient {
+  readonly #sessions = new Map<string, RouteSession>();
+
+  async translateHtml(html: string, route: TranslationRoute): Promise<string> {
+    if (!html.trim() || route.sourceLanguage === route.targetLanguage) return html;
+    let session = this.#sessions.get(route.key);
+    if (!session) {
+      session = new RouteSession(route);
+      this.#sessions.set(route.key, session);
+    }
+    return session.translateHtml(html);
+  }
+
+  reset(): void {
+    for (const session of this.#sessions.values()) session.terminate();
+    this.#sessions.clear();
   }
 }

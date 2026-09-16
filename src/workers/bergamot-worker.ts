@@ -3,6 +3,7 @@
 import type {
   BergamotWorkerRequest,
   BergamotWorkerResponse,
+  WorkerModelBundle,
   WorkerModelFile,
 } from "../providers/bergamot/protocol";
 
@@ -14,8 +15,9 @@ importScripts("vendor/bergamot/bergamot-translator.js");
 
 interface Engine {
   bergamot: any;
-  model: any;
+  models: any[];
   service: any;
+  routeKind: "direct" | "pivot";
 }
 
 let engine: Engine | null = null;
@@ -27,9 +29,7 @@ function post(message: BergamotWorkerResponse): void {
 function textConfig(entries: Record<string, string>): string {
   const indent = "            ";
   let result = "\n";
-  for (const [key, value] of Object.entries(entries)) {
-    result += `${indent}${key}: ${value}\n`;
-  }
+  for (const [key, value] of Object.entries(entries)) result += `${indent}${key}: ${value}\n`;
   return result + indent;
 }
 
@@ -46,9 +46,7 @@ async function loadRuntime(): Promise<any> {
       wasmBinary,
       print: () => undefined,
       printErr: (...args: unknown[]) => console.warn("[Bergamot]", ...args),
-      onAbort: (reason: unknown) => reject(
-        new Error(`Bergamot WASM aborted during initialization: ${String(reason)}`),
-      ),
+      onAbort: (reason: unknown) => reject(new Error(`Bergamot WASM aborted during initialization: ${String(reason)}`)),
       onRuntimeInitialized: async () => {
         await Promise.resolve();
         resolve(module);
@@ -63,27 +61,24 @@ function allocate(bergamot: any, file: WorkerModelFile): any {
   return memory;
 }
 
-async function initialize(request: Extract<BergamotWorkerRequest, { type: "initialize" }>): Promise<void> {
-  if (engine) return;
-  const bergamot = await loadRuntime();
-  const byType = new Map(request.files.map((file) => [file.type, file] as const));
-
+function createModel(bergamot: any, bundle: WorkerModelBundle): any {
+  const byType = new Map(bundle.files.map((file) => [file.type, file] as const));
   const modelFile = byType.get("model");
   const lexFile = byType.get("lex");
-  const srcvocabFile = byType.get("srcvocab");
-  const trgvocabFile = byType.get("trgvocab");
-  if (!modelFile || !lexFile || !srcvocabFile || !trgvocabFile) {
-    throw new Error("Bergamot model bundle is incomplete");
-  }
-
-  const modelMemory = allocate(bergamot, modelFile);
-  const lexMemory = allocate(bergamot, lexFile);
-  const srcvocabMemory = allocate(bergamot, srcvocabFile);
-  const trgvocabMemory = allocate(bergamot, trgvocabFile);
+  if (!modelFile || !lexFile) throw new Error(`Incomplete Bergamot model bundle: ${bundle.sourceLanguage} → ${bundle.targetLanguage}`);
 
   const vocabList = new bergamot.AlignedMemoryList();
-  vocabList.push_back(srcvocabMemory);
-  vocabList.push_back(trgvocabMemory);
+  const sharedVocab = byType.get("vocab");
+  if (sharedVocab) {
+    vocabList.push_back(allocate(bergamot, sharedVocab));
+    vocabList.push_back(allocate(bergamot, sharedVocab));
+  } else {
+    const sourceVocab = byType.get("srcvocab");
+    const targetVocab = byType.get("trgvocab");
+    if (!sourceVocab || !targetVocab) throw new Error(`Missing vocab files: ${bundle.sourceLanguage} → ${bundle.targetLanguage}`);
+    vocabList.push_back(allocate(bergamot, sourceVocab));
+    vocabList.push_back(allocate(bergamot, targetVocab));
+  }
 
   const config = textConfig({
     "beam-size": "1",
@@ -101,22 +96,31 @@ async function initialize(request: Extract<BergamotWorkerRequest, { type: "initi
     alignment: "soft",
   });
 
-  const model = new bergamot.TranslationModel(
-    request.sourceLanguage,
-    request.targetLanguage,
+  return new bergamot.TranslationModel(
+    bundle.sourceLanguage,
+    bundle.targetLanguage,
     config,
-    modelMemory,
-    lexMemory,
+    allocate(bergamot, modelFile),
+    allocate(bergamot, lexFile),
     vocabList,
     null,
   );
+}
+
+async function initialize(request: Extract<BergamotWorkerRequest, { type: "initialize" }>): Promise<void> {
+  if (engine) return;
+  if (request.routeKind === "direct" && request.models.length !== 1) throw new Error("Direct route requires one model");
+  if (request.routeKind === "pivot" && request.models.length !== 2) throw new Error("Pivot route requires two models");
+
+  const bergamot = await loadRuntime();
+  const models = request.models.map((bundle) => createModel(bergamot, bundle));
   const service = new bergamot.BlockingService({ cacheSize: 0 });
-  engine = { bergamot, model, service };
+  engine = { bergamot, models, service, routeKind: request.routeKind };
 }
 
 function translateHtml(html: string): { html: string; inferenceMilliseconds: number } {
   if (!engine) throw new Error("Bergamot worker is not initialized");
-  const { bergamot, model, service } = engine;
+  const { bergamot, models, service, routeKind } = engine;
   const messages = new bergamot.VectorString();
   const options = new bergamot.VectorResponseOptions();
   let responses: any = null;
@@ -125,10 +129,11 @@ function translateHtml(html: string): { html: string; inferenceMilliseconds: num
     messages.push_back(html);
     options.push_back({ qualityScores: false, alignment: true, html: true });
     const started = performance.now();
-    responses = service.translate(model, messages, options);
+    responses = routeKind === "pivot"
+      ? service.translateViaPivoting(models[0], models[1], messages, options)
+      : service.translate(models[0], messages, options);
     const inferenceMilliseconds = performance.now() - started;
-    const translated = responses.get(0).getTranslatedText();
-    return { html: translated, inferenceMilliseconds };
+    return { html: responses.get(0).getTranslatedText(), inferenceMilliseconds };
   } finally {
     responses?.delete?.();
     messages.delete();
@@ -145,8 +150,7 @@ scope.addEventListener("message", async (event: MessageEvent<BergamotWorkerReque
       return;
     }
     if (message.type === "translate") {
-      const result = translateHtml(message.html);
-      post({ type: "result", id: message.id, ...result });
+      post({ type: "result", id: message.id, ...translateHtml(message.html) });
     }
   } catch (error) {
     post({

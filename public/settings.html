@@ -9,12 +9,10 @@
   <body>
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-mark">P</div>
-          <div><strong>PageLingo</strong><span>本地沉浸式翻译</span></div>
-        </div>
+        <div class="brand"><div class="brand-mark">P</div><div><strong>PageLingo</strong><span>本地沉浸式翻译</span></div></div>
         <nav aria-label="设置导航">
           <a class="nav-item active" href="#translation">网页翻译</a>
+          <a class="nav-item" href="#languages">语言包</a>
           <a class="nav-item" href="#display">显示方式</a>
           <a class="nav-item" href="#engine">翻译引擎</a>
         </nav>
@@ -22,31 +20,44 @@
       </aside>
 
       <main class="content">
-        <header class="page-header">
-          <div><p class="eyebrow">PAGELINGO</p><h1>设置</h1><p>配置自动翻译规则、例外网站和译文显示方式。</p></div>
-        </header>
+        <header class="page-header"><div><p class="eyebrow">PAGELINGO</p><h1>设置</h1><p>配置自动翻译、目标语言、离线语言包和译文显示方式。</p></div></header>
 
         <section id="translation" class="section">
-          <div class="section-heading"><h2>网页翻译</h2><p>像浏览器原生翻译一样自动识别语言，同时保留手动控制。</p></div>
+          <div class="section-heading"><h2>网页翻译</h2><p>自动识别当前网页语言，并按你的规则翻译。</p></div>
           <div class="setting-card stack-card">
-            <label class="setting-row">
-              <span><strong>自动翻译</strong><small>打开后，符合下方语言规则的网页会自动翻译。</small></span>
-              <span class="switch"><input id="auto-translate-enabled" type="checkbox" /><i></i></span>
-            </label>
+            <label class="setting-row"><span><strong>自动翻译</strong><small>打开后，检测到指定语言的网页会自动翻译。</small></span><span class="switch"><input id="auto-translate-enabled" type="checkbox" /><i></i></span></label>
             <div class="rule-row">
-              <span class="rule-label">检测到</span>
-              <select id="auto-source-language"><option value="en">English</option></select>
-              <span class="rule-arrow">→</span>
-              <span class="rule-label">自动翻译为</span>
-              <select id="target-language"><option value="zh-Hans">简体中文</option></select>
+              <span class="rule-label">检测到</span><select id="auto-source-language"></select><span class="rule-arrow">→</span><span class="rule-label">自动翻译为</span><select id="target-language"></select>
             </div>
-            <div class="hint">PageLingo 会结合网页声明语言与 Firefox 本地语言检测结果；正文足够长且检测可靠时，以正文为准。</div>
+            <div class="hint">首次安装会读取 Firefox 的界面/首选语言作为默认目标语言，并只预下载一套常用目标模型。其他模型按需下载。</div>
           </div>
-
           <div class="setting-card exception-card">
             <div class="setting-copy"><div><strong>例外网站</strong><span>这些网站不会自动翻译，仍可从工具栏手动翻译。</span></div></div>
             <div class="exception-add"><input id="exception-site" type="text" inputmode="url" placeholder="例如：github.com" /><button id="exception-add" type="button">添加</button></div>
             <div id="exception-list" class="exception-list"></div>
+          </div>
+        </section>
+
+        <section id="languages" class="section">
+          <div class="section-heading"><h2>离线语言包</h2><p>提前下载常用语言后，离线也能立即翻译。未下载的模型在首次使用时仍会自动获取。</p></div>
+          <div class="setting-card stack-card">
+            <div class="setting-row">
+              <span><strong>模型更新</strong><small>只更新模型数据；PageLingo 代码与 Bergamot WASM 仍随扩展版本更新。</small></span>
+              <select id="model-update-policy" aria-label="模型更新策略">
+                <option value="auto">自动更新（推荐）</option>
+                <option value="notify">仅提醒我</option>
+                <option value="manual">手动更新</option>
+              </select>
+            </div>
+            <div class="model-update-row">
+              <button id="check-model-updates" type="button">检查更新</button>
+              <span id="model-update-status">尚未检查更新</span>
+            </div>
+            <div class="hint">自动更新会先完整下载新模型并校验大小与 SHA-256，成功后再切换；失败时继续使用旧模型。</div>
+          </div>
+          <div class="setting-card">
+            <div class="setting-copy"><div><strong>Mozilla Firefox 稳定模型</strong><span>“↔”表示两个方向都可用；单箭头表示 Firefox 当前只发布了一个稳定方向。</span></div></div>
+            <div id="language-pack-list" class="pack-list"><div class="empty-state">正在读取语言包…</div></div>
           </div>
         </section>
 
@@ -55,19 +66,19 @@
           <div class="setting-card">
             <div class="setting-copy"><div><strong>显示模式</strong><span>“仅译文”只隐藏原文的视觉呈现，原始 DOM、链接与事件仍保留。</span></div></div>
             <fieldset class="segmented" aria-label="翻译显示模式">
-              <label><input type="radio" name="display-mode" value="translation" /><span><b>仅译文</b><small>只显示中文译文</small></span></label>
-              <label><input type="radio" name="display-mode" value="bilingual" /><span><b>双语对照</b><small>原文 + 中文译文</small></span></label>
+              <label><input type="radio" name="display-mode" value="translation" /><span><b>仅译文</b><small>只显示译文</small></span></label>
+              <label><input type="radio" name="display-mode" value="bilingual" /><span><b>双语对照</b><small>原文 + 译文</small></span></label>
             </fieldset>
           </div>
         </section>
 
         <section id="engine" class="section">
-          <div class="section-heading"><h2>翻译引擎</h2><p>语言识别和翻译均优先使用 Firefox 本地能力。</p></div>
+          <div class="section-heading"><h2>翻译引擎</h2><p>语言识别和翻译均在 Firefox 内本地执行。</p></div>
           <div class="setting-card info-grid">
             <div><span class="meta-label">语言检测</span><strong>Firefox i18n / CLD</strong></div>
             <div><span class="meta-label">翻译引擎</span><strong>Bergamot WASM</strong></div>
-            <div><span class="meta-label">当前模型</span><strong>English → 简体中文</strong></div>
-            <div><span class="meta-label">模型策略</span><strong>按语言按需下载</strong></div>
+            <div><span class="meta-label">模型来源</span><strong>Mozilla Firefox 稳定模型</strong></div>
+            <div><span class="meta-label">非英语互译</span><strong>本地 English Pivot</strong></div>
           </div>
         </section>
         <div id="save-status" class="save-toast" role="status">设置会自动保存并立即生效</div>

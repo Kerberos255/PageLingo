@@ -1,21 +1,17 @@
 export type DisplayMode = "translation" | "bilingual";
-export type SupportedSourceLanguage = "en";
-export type SupportedTargetLanguage = "zh-Hans";
-export type ManualSourceLanguage = "auto" | SupportedSourceLanguage;
+export type ModelUpdatePolicy = "auto" | "notify" | "manual";
+export type ManualSourceLanguage = "auto" | string;
+export type SupportedSourceLanguage = string;
+export type SupportedTargetLanguage = string;
 
 export interface PageLingoSettings {
   displayMode: DisplayMode;
   autoTranslateEnabled: boolean;
-  autoSourceLanguage: SupportedSourceLanguage;
-  targetLanguage: SupportedTargetLanguage;
+  autoSourceLanguage: string;
+  targetLanguage: string;
   excludedSites: string[];
+  modelUpdatePolicy: ModelUpdatePolicy;
 }
-
-export const LANGUAGE_LABELS: Record<string, string> = {
-  en: "English",
-  "zh-Hans": "简体中文",
-  "zh-Hant": "繁體中文",
-};
 
 export const DEFAULT_SETTINGS: PageLingoSettings = {
   displayMode: "bilingual",
@@ -23,29 +19,51 @@ export const DEFAULT_SETTINGS: PageLingoSettings = {
   autoSourceLanguage: "en",
   targetLanguage: "zh-Hans",
   excludedSites: [],
+  modelUpdatePolicy: "auto",
 };
+
+const LABEL_OVERRIDES: Record<string, string> = {
+  en: "English",
+  "zh-Hans": "简体中文",
+  "zh-Hant": "繁體中文",
+  nb: "挪威语（书面语）",
+};
+
+export function languageLabel(code: string): string {
+  if (LABEL_OVERRIDES[code]) return LABEL_OVERRIDES[code];
+  try {
+    return new Intl.DisplayNames(["zh-CN"], { type: "language" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
 
 export function normalizeDisplayMode(value: unknown): DisplayMode {
   return value === "translation" ? "translation" : "bilingual";
 }
 
-export function normalizeSourceLanguage(value: unknown): SupportedSourceLanguage {
-  return value === "en" ? "en" : "en";
-}
-
-export function normalizeTargetLanguage(value: unknown): SupportedTargetLanguage {
-  return value === "zh-Hans" ? "zh-Hans" : "zh-Hans";
+export function normalizeModelUpdatePolicy(value: unknown): ModelUpdatePolicy {
+  return value === "notify" || value === "manual" ? value : "auto";
 }
 
 export function normalizeDetectedLanguage(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const raw = value.trim();
   if (!raw) return null;
-  const lower = raw.toLowerCase();
-  if (lower === "en" || lower.startsWith("en-")) return "en";
-  if (["zh-cn", "zh-sg", "zh-hans"].includes(lower)) return "zh-Hans";
+  const lower = raw.toLowerCase().replaceAll("_", "-");
+  if (lower === "zh" || ["zh-cn", "zh-sg", "zh-hans"].includes(lower)) return "zh-Hans";
   if (["zh-tw", "zh-hk", "zh-mo", "zh-hant"].includes(lower)) return "zh-Hant";
+  if (lower === "no" || lower.startsWith("no-")) return "nb";
+  if (lower === "iw" || lower.startsWith("iw-")) return "he";
   return lower.split("-")[0] || null;
+}
+
+export function normalizeSourceLanguage(value: unknown): string {
+  return normalizeDetectedLanguage(value) ?? "en";
+}
+
+export function normalizeTargetLanguage(value: unknown): string {
+  return normalizeDetectedLanguage(value) ?? "zh-Hans";
 }
 
 export function normalizeSitePattern(value: string): string | null {
@@ -83,6 +101,7 @@ export async function loadSettings(): Promise<PageLingoSettings> {
     autoSourceLanguage: normalizeSourceLanguage(stored.autoSourceLanguage),
     targetLanguage: normalizeTargetLanguage(stored.targetLanguage),
     excludedSites: normalizeExcludedSites(stored.excludedSites),
+    modelUpdatePolicy: normalizeModelUpdatePolicy(stored.modelUpdatePolicy),
   };
 }
 
@@ -94,11 +113,19 @@ export async function saveAutoTranslateEnabled(autoTranslateEnabled: boolean): P
   await browser.storage.local.set({ autoTranslateEnabled });
 }
 
-export async function saveLanguageRule(
-  autoSourceLanguage: SupportedSourceLanguage,
-  targetLanguage: SupportedTargetLanguage,
-): Promise<void> {
-  await browser.storage.local.set({ autoSourceLanguage, targetLanguage });
+export async function saveLanguageRule(autoSourceLanguage: string, targetLanguage: string): Promise<void> {
+  await browser.storage.local.set({
+    autoSourceLanguage: normalizeSourceLanguage(autoSourceLanguage),
+    targetLanguage: normalizeTargetLanguage(targetLanguage),
+  });
+}
+
+export async function saveTargetLanguage(targetLanguage: string): Promise<void> {
+  await browser.storage.local.set({ targetLanguage: normalizeTargetLanguage(targetLanguage) });
+}
+
+export async function saveModelUpdatePolicy(modelUpdatePolicy: ModelUpdatePolicy): Promise<void> {
+  await browser.storage.local.set({ modelUpdatePolicy: normalizeModelUpdatePolicy(modelUpdatePolicy) });
 }
 
 export async function saveExcludedSites(excludedSites: readonly string[]): Promise<void> {
