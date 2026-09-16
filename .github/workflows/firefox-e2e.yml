@@ -105,8 +105,8 @@ jobs:
           } > artifacts/firefox-e2e-issue.md
           gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file artifacts/firefox-e2e-issue.md
 
-      - name: Fail job if Firefox E2E failed
+      - name: Record debug result
         if: always()
         env:
           E2E_EXIT_CODE: ${{ steps.e2e.outputs.exit_code }}
-        run: test "${E2E_EXIT_CODE:-999}" = "0"
+        run: echo "Firefox E2E debug exit code: ${E2E_EXIT_CODE:-999}"

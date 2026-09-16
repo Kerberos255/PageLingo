@@ -46,7 +46,9 @@ async function loadRuntime(): Promise<any> {
       wasmBinary,
       print: () => undefined,
       printErr: (...args: unknown[]) => console.warn("[Bergamot]", ...args),
-      onAbort: () => reject(new Error("Bergamot WASM aborted during initialization")),
+      onAbort: (reason: unknown) => reject(
+        new Error(`Bergamot WASM aborted during initialization: ${String(reason)}`),
+      ),
       onRuntimeInitialized: async () => {
         await Promise.resolve();
         resolve(module);
