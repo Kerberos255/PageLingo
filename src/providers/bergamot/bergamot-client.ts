@@ -1,0 +1,100 @@
+import { loadEnglishToChineseModel } from "./model-cache";
+import type { BergamotWorkerRequest, BergamotWorkerResponse } from "./protocol";
+
+interface PendingRequest {
+  resolve: (html: string) => void;
+  reject: (error: Error) => void;
+}
+
+export class BergamotClient {
+  #worker: Worker | null = null;
+  #ready: Promise<void> | null = null;
+  #nextId = 1;
+  readonly #pending = new Map<number, PendingRequest>();
+
+  async translateHtml(html: string): Promise<string> {
+    if (!html.trim()) return html;
+    await this.#ensureReady();
+
+    const worker = this.#worker;
+    if (!worker) throw new Error("Bergamot worker is unavailable");
+
+    const id = this.#nextId++;
+    const result = new Promise<string>((resolve, reject) => {
+      this.#pending.set(id, { resolve, reject });
+    });
+    const message: BergamotWorkerRequest = { type: "translate", id, html };
+    worker.postMessage(message);
+    return result;
+  }
+
+  #ensureReady(): Promise<void> {
+    if (this.#ready) return this.#ready;
+    this.#ready = this.#initialize();
+    return this.#ready;
+  }
+
+  async #initialize(): Promise<void> {
+    const worker = new Worker(browser.runtime.getURL("bergamot-worker.js"));
+    this.#worker = worker;
+
+    let readyResolve!: () => void;
+    let readyReject!: (error: Error) => void;
+    const readySignal = new Promise<void>((resolve, reject) => {
+      readyResolve = resolve;
+      readyReject = reject;
+    });
+
+    worker.addEventListener("message", (event: MessageEvent<BergamotWorkerResponse>) => {
+      const message = event.data;
+      if (message.type === "ready") {
+        readyResolve();
+        return;
+      }
+      if (message.type === "result") {
+        const pending = this.#pending.get(message.id);
+        if (!pending) return;
+        this.#pending.delete(message.id);
+        pending.resolve(message.html);
+        return;
+      }
+      if (message.type === "error") {
+        const error = new Error(message.error);
+        if (message.id !== undefined) {
+          const pending = this.#pending.get(message.id);
+          if (pending) {
+            this.#pending.delete(message.id);
+            pending.reject(error);
+          }
+        } else {
+          readyReject(error);
+        }
+      }
+    });
+
+    worker.addEventListener("error", (event) => {
+      const error = new Error(event.message || "Bergamot worker failed");
+      readyReject(error);
+      for (const pending of this.#pending.values()) pending.reject(error);
+      this.#pending.clear();
+    });
+
+    try {
+      const files = await loadEnglishToChineseModel();
+      const transfer = files.map((file) => file.buffer);
+      const message: BergamotWorkerRequest = {
+        type: "initialize",
+        sourceLanguage: "en",
+        targetLanguage: "zh-Hans",
+        files,
+      };
+      worker.postMessage(message, transfer);
+      await readySignal;
+    } catch (error) {
+      worker.terminate();
+      this.#worker = null;
+      this.#ready = null;
+      throw error;
+    }
+  }
+}
