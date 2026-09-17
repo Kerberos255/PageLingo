@@ -1,7 +1,7 @@
 import { collectTranslationRoots, findTranslationRoot, isGeneratedNode } from "./dom-policy";
 import type { TranslationProvider } from "./provider";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
-import { serializeRichSegment } from "./rich-segment";
+import { escapeHtml, serializeRichSegment } from "./rich-segment";
 import type { DisplayMode } from "../shared/settings";
 
 export interface PageTranslatorOptions {
@@ -17,6 +17,12 @@ interface RecordEntry {
   fingerprint: string;
 }
 
+function translatedPlainText(doc: Document, html: string): string {
+  const template = doc.createElement("template");
+  template.innerHTML = html;
+  return (template.content.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
 export class PageTranslator {
   readonly #doc: Document;
   readonly #provider: TranslationProvider;
@@ -29,6 +35,7 @@ export class PageTranslator {
   readonly #pending = new Set<HTMLElement>();
   #observer: MutationObserver | null = null;
   #flushQueued = false;
+  #disposed = false;
 
   constructor(doc: Document, provider: TranslationProvider, options: PageTranslatorOptions = {}) {
     this.#doc = doc;
@@ -45,20 +52,24 @@ export class PageTranslator {
   }
 
   setDisplayMode(displayMode: DisplayMode): void {
-    if (this.#displayMode === displayMode) return;
+    if (this.#disposed || this.#displayMode === displayMode) return;
     this.#displayMode = displayMode;
-    for (const [root, record] of this.#records) {
-      this.#applyDisplayMode(root, record.translationNode);
-    }
+    for (const [root, record] of this.#records) this.#applyDisplayMode(root, record.translationNode);
   }
 
   async translateAll(scope: ParentNode = this.#doc.body): Promise<number> {
+    if (this.#disposed) return this.#records.size;
     const roots = collectTranslationRoots(scope);
     let cursor = 0;
     const workers = Array.from({ length: Math.min(this.#concurrency, roots.length) }, async () => {
       while (cursor < roots.length) {
         const root = roots[cursor++];
-        if (root) await this.translateRoot(root);
+        if (!root) continue;
+        try {
+          await this.translateRoot(root);
+        } catch (error) {
+          console.warn("[PageLingo] Translation root failed", error);
+        }
       }
     });
     await Promise.all(workers);
@@ -66,8 +77,9 @@ export class PageTranslator {
   }
 
   async translateRoot(root: HTMLElement): Promise<void> {
-    if (!root.isConnected || isGeneratedNode(root)) return;
+    if (this.#disposed || !root.isConnected || isGeneratedNode(root)) return;
     if (this.#shouldTranslateRoot && !await this.#shouldTranslateRoot(root)) {
+      if (this.#disposed) return;
       const previous = this.#records.get(root);
       if (previous) {
         this.#clearDisplayMode(root);
@@ -93,14 +105,31 @@ export class PageTranslator {
       sourceLanguage: this.#sourceLanguage,
       targetLanguage: this.#targetLanguage,
     });
+    if (this.#disposed) return;
 
-    if (!root.isConnected || (root.textContent ?? "") !== segment.fingerprint) return;
+    const translatedLinkTexts = await Promise.all(segment.links.map(async (link) => {
+      if (!link.sourceText.trim()) return "";
+      try {
+        const linkHtml = await this.#provider.translateHtml({
+          html: escapeHtml(link.sourceText),
+          sourceLanguage: this.#sourceLanguage,
+          targetLanguage: this.#targetLanguage,
+        });
+        return translatedPlainText(this.#doc, linkHtml) || link.sourceText;
+      } catch (error) {
+        console.warn("[PageLingo] Link label translation failed", error);
+        return "";
+      }
+    }));
+
+    if (this.#disposed || !root.isConnected || (root.textContent ?? "") !== segment.fingerprint) return;
 
     const fragment = createSafeTranslatedFragment(
       this.#doc,
       translatedHtml,
       segment.links,
       segment.opaque,
+      translatedLinkTexts,
     );
     const translationNode = mountTranslation(root, fragment, this.#targetLanguage);
     this.#records.set(root, { translationNode, fingerprint: segment.fingerprint });
@@ -108,7 +137,7 @@ export class PageTranslator {
   }
 
   observe(): void {
-    if (this.#observer || !this.#doc.body) return;
+    if (this.#disposed || this.#observer || !this.#doc.body) return;
     this.#observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         if (isGeneratedNode(mutation.target)) continue;
@@ -125,7 +154,9 @@ export class PageTranslator {
             const root = findTranslationRoot(added as Text);
             if (root) this.#queue(root);
           } else if (added.nodeType === Node.ELEMENT_NODE) {
-            for (const root of collectTranslationRoots(added as Element)) this.#queue(root);
+            const element = added as Element;
+            if (element.matches("[data-flt-source-text-wrapper]")) continue;
+            for (const root of collectTranslationRoots(element)) this.#queue(root);
           }
         }
       }
@@ -134,14 +165,26 @@ export class PageTranslator {
   }
 
   restore(): void {
+    this.#disposed = true;
     this.#observer?.disconnect();
     this.#observer = null;
     this.#pending.clear();
+
     for (const [root, { translationNode }] of this.#records) {
       this.#clearDisplayMode(root);
       translationNode.remove();
     }
     this.#records.clear();
+
+    for (const translationNode of Array.from(this.#doc.querySelectorAll<HTMLElement>('[data-flt-generated="translation"]'))) {
+      translationNode.remove();
+    }
+    for (const root of Array.from(this.#doc.querySelectorAll<HTMLElement>(".flt-source-hidden, .flt-source-content-hidden"))) {
+      this.#clearDisplayMode(root);
+    }
+    for (const wrapper of Array.from(this.#doc.querySelectorAll<HTMLElement>("[data-flt-source-text-wrapper]"))) {
+      wrapper.replaceWith(...Array.from(wrapper.childNodes));
+    }
   }
 
   #applyDisplayMode(root: HTMLElement, translationNode: HTMLElement): void {
@@ -170,6 +213,7 @@ export class PageTranslator {
   }
 
   #queue(root: HTMLElement): void {
+    if (this.#disposed) return;
     const previous = this.#records.get(root);
     if (previous) {
       this.#clearDisplayMode(root);
@@ -190,7 +234,7 @@ export class PageTranslator {
       try {
         await this.translateRoot(root);
       } catch (error) {
-        console.warn("[Local Immersive Translate] Dynamic translation failed", error);
+        console.warn("[PageLingo] Dynamic translation failed", error);
       }
     }
   }

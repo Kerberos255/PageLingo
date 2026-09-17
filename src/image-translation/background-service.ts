@@ -2,7 +2,8 @@ import { getImageOcrBundle, getImageOcrStatus, deleteImageOcrModels, type ImageO
 import { mergeOcrRegions, type OcrRegion } from "./ocr-layout";
 import { loadSettings } from "../shared/settings";
 
-const MENU_ID = "pagelingo-translate-image";
+const IMAGE_MENU_ID = "pagelingo-translate-image";
+const PAGE_MENU_ID = "pagelingo-translate-page";
 
 interface ImageRuntimeMessage {
   type?: string;
@@ -205,25 +206,81 @@ export async function handleImageRuntimeMessage(
   return undefined;
 }
 
-async function syncContextMenu(): Promise<void> {
+async function removeContextMenu(id: string): Promise<void> {
   try {
-    await browser.contextMenus.remove(MENU_ID);
+    await browser.contextMenus.remove(id);
   } catch {
     // Missing menu is expected during first startup.
   }
+}
+
+async function syncContextMenu(): Promise<void> {
+  await Promise.all([removeContextMenu(IMAGE_MENU_ID), removeContextMenu(PAGE_MENU_ID)]);
   const settings = await loadSettings();
-  if (!settings.imageTranslationEnabled) return;
   browser.contextMenus.create({
-    id: MENU_ID,
-    title: "PageLingo · 翻译图片",
-    contexts: ["image"],
+    id: PAGE_MENU_ID,
+    title: "PageLingo · 翻译文字",
+    contexts: ["page", "selection", "link"],
   });
+  if (settings.imageTranslationEnabled) {
+    browser.contextMenus.create({
+      id: IMAGE_MENU_ID,
+      title: "PageLingo · 翻译图片",
+      contexts: ["image"],
+    });
+  }
+}
+
+function sendContextMessage(
+  tabId: number,
+  info: browser.contextMenus.OnClickData | browser.contextMenus.OnShownInfo,
+  message: unknown,
+): Promise<unknown> {
+  const options = typeof info.frameId === "number" ? { frameId: info.frameId } : undefined;
+  return browser.tabs.sendMessage(tabId, message, options);
+}
+
+async function refreshContextMenuTitles(
+  info: browser.contextMenus.OnShownInfo,
+  tab?: browser.tabs.Tab,
+): Promise<void> {
+  if (!tab?.id) return;
+  try {
+    const state = await sendContextMessage(tab.id, info, {
+      type: "get-context-menu-state",
+      srcUrl: typeof info.srcUrl === "string" ? info.srcUrl : undefined,
+    }) as { pageTranslated?: boolean; imageTranslated?: boolean } | undefined;
+    await browser.contextMenus.update(PAGE_MENU_ID, {
+      title: state?.pageTranslated ? "PageLingo · 显示原文" : "PageLingo · 翻译文字",
+    });
+    if (typeof info.srcUrl === "string") {
+      try {
+        await browser.contextMenus.update(IMAGE_MENU_ID, {
+          title: state?.imageTranslated ? "PageLingo · 还原图片" : "PageLingo · 翻译图片",
+        });
+      } catch {
+        // Image translation may be disabled, so the image menu may not exist.
+      }
+    }
+    if (typeof browser.contextMenus.refresh === "function") await browser.contextMenus.refresh();
+  } catch {
+    // Restricted pages have no content-script receiver; keep default titles.
+  }
 }
 
 export function initializeImageTranslation(): void {
   browser.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId !== MENU_ID || !tab?.id || typeof info.srcUrl !== "string") return;
-    void browser.tabs.sendMessage(tab.id, { type: "translate-image", srcUrl: info.srcUrl }).catch(() => undefined);
+    if (!tab?.id) return;
+    if (info.menuItemId === IMAGE_MENU_ID && typeof info.srcUrl === "string") {
+      void sendContextMessage(tab.id, info, { type: "toggle-image-translation", srcUrl: info.srcUrl }).catch(() => undefined);
+      return;
+    }
+    if (info.menuItemId === PAGE_MENU_ID) {
+      void sendContextMessage(tab.id, info, { type: "toggle-page-translation" }).catch(() => undefined);
+    }
+  });
+  browser.contextMenus.onShown?.addListener((info, tab) => {
+    void refreshContextMenuTitles(info, tab);
   });
   browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === "local" && changes.imageTranslationEnabled) void syncContextMenu();

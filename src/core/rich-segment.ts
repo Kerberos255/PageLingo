@@ -7,6 +7,15 @@ const INLINE_TAGS = new Set([
 ]);
 const OPAQUE_TAGS = new Set(["CODE", "KBD", "SAMP", "VAR"]);
 
+export interface LinkStyleSnapshot {
+  color: string;
+  textDecorationLine: string;
+  textDecorationStyle: string;
+  textDecorationColor: string;
+  textDecorationThickness: string;
+  textUnderlineOffset: string;
+}
+
 export interface LinkSnapshot {
   href: string | null;
   target: string | null;
@@ -14,6 +23,8 @@ export interface LinkSnapshot {
   title: string | null;
   className: string;
   sourceElement: HTMLAnchorElement;
+  sourceText: string;
+  linkStyle: LinkStyleSnapshot | null;
 }
 
 export interface OpaqueSnapshot {
@@ -28,7 +39,7 @@ export interface RichSegment {
   fingerprint: string;
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -36,6 +47,7 @@ function escapeHtml(value: string): string {
 }
 
 function snapshotLink(element: HTMLAnchorElement): LinkSnapshot {
+  const computed = element.ownerDocument.defaultView?.getComputedStyle(element);
   return {
     href: element.getAttribute("href"),
     target: element.getAttribute("target"),
@@ -43,6 +55,15 @@ function snapshotLink(element: HTMLAnchorElement): LinkSnapshot {
     title: element.getAttribute("title"),
     className: element.className,
     sourceElement: element,
+    sourceText: element.textContent ?? "",
+    linkStyle: computed ? {
+      color: computed.color,
+      textDecorationLine: computed.textDecorationLine,
+      textDecorationStyle: computed.textDecorationStyle,
+      textDecorationColor: computed.textDecorationColor,
+      textDecorationThickness: computed.textDecorationThickness,
+      textUnderlineOffset: computed.textUnderlineOffset,
+    } : null,
   };
 }
 

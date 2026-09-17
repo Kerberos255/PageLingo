@@ -70,13 +70,14 @@ describe("PageTranslator DOM preservation", () => {
     expect(document.querySelector<HTMLElement>(".flt-translation")?.lang).toBe("es");
   });
 
-  it("removes only generated translation nodes on restore", async () => {
-    document.body.innerHTML = `<section><p id="p">Hello <em>world</em>.</p></section>`;
+  it("removes generated nodes and temporary anchor wrappers on restore", async () => {
+    document.body.innerHTML = `<section><p id="p">Hello <a href="/docs">linked text</a>.</p></section>`;
     const before = document.querySelector("section")!.innerHTML;
     const paragraph = document.querySelector("#p");
     const translator = new PageTranslator(document, new FakeHtmlProvider());
     await translator.translateAll();
     expect(document.querySelector(".flt-translation")).not.toBeNull();
+    expect(document.querySelector("[data-flt-source-text-wrapper]")).not.toBeNull();
 
     translator.restore();
     expect(document.querySelector("section")!.innerHTML).toBe(before);
@@ -101,8 +102,8 @@ describe("PageTranslator DOM preservation", () => {
     translator.restore();
   });
 
-  it("does not translate form controls, scripts or preformatted code blocks", async () => {
-    document.body.innerHTML = `<button>Click me</button><pre>const x = 1;</pre><p>Translate me.</p>`;
+  it("does not translate form controls, scripts, preformatted code or CSS-hidden content", async () => {
+    document.body.innerHTML = `<button>Click me</button><pre>const x = 1;</pre><div style="display:none"><h1>Hidden title</h1></div><p>Translate me.</p>`;
     const provider = new FakeHtmlProvider();
     const translator = new PageTranslator(document, provider);
     await translator.translateAll();
@@ -110,8 +111,27 @@ describe("PageTranslator DOM preservation", () => {
     expect(provider.requests).toHaveLength(1);
     expect(provider.requests[0]?.html).toContain("Translate me.");
   });
-});
 
+  it("restores links by translated label even when translation reorders link positions", async () => {
+    document.body.innerHTML = `<p>Built by the <a href="https://openclaw.org">OpenClaw Foundation</a>. See the <a href="/gateway/telemetry">version check</a>.</p>`;
+    class ReorderingProvider implements TranslationProvider {
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        if (request.html === "OpenClaw Foundation") return "OpenClaw 基金会";
+        if (request.html === "version check") return "版本检查";
+        return `请参阅<a>版本检查</a>；由<a>OpenClaw 基金会</a>开发。`;
+      }
+    }
+
+    const translator = new PageTranslator(document, new ReorderingProvider());
+    await translator.translateAll();
+
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(".flt-translation a"));
+    expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["版本检查", "/gateway/telemetry"],
+      ["OpenClaw 基金会", "https://openclaw.org"],
+    ]);
+  });
+});
 
 describe("PageTranslator display modes", () => {
   it("supports translation-only mode without replacing the original DOM", async () => {
@@ -148,5 +168,43 @@ describe("PageTranslator display modes", () => {
     translator.restore();
     expect(item.classList.contains("flt-source-content-hidden")).toBe(false);
     expect(item.querySelector(".flt-translation")).toBeNull();
+  });
+
+  it("keeps card anchors visible and translates only their text", async () => {
+    document.body.innerHTML = `<a id="card" href="/start" style="display:block;border:1px solid;padding:20px"><span aria-hidden="true">★</span>Get Started</a>`;
+    const card = document.querySelector<HTMLAnchorElement>("#card")!;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    expect(card.classList.contains("flt-source-hidden")).toBe(false);
+    expect(card.style.display).toBe("block");
+    expect(card.querySelector(":scope > .flt-translation")?.textContent).toContain("译:Get Started");
+    expect(card.textContent).toContain("译:Get Started");
+
+    translator.restore();
+    expect(card.textContent).toBe("★Get Started");
+    expect(card.style.display).toBe("block");
+  });
+
+  it("does not mount late translations after restore", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    class DelayedProvider implements TranslationProvider {
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        await gate;
+        return `译:${request.html}`;
+      }
+    }
+
+    document.body.innerHTML = `<p>Delayed paragraph.</p>`;
+    const translator = new PageTranslator(document, new DelayedProvider(), { displayMode: "translation" });
+    const pending = translator.translateAll();
+    translator.restore();
+    release();
+    await pending;
+
+    expect(document.querySelectorAll("[data-flt-generated='translation']")).toHaveLength(0);
+    expect(document.querySelectorAll("[data-flt-source-text-wrapper]")).toHaveLength(0);
+    expect(document.querySelectorAll(".flt-source-hidden, .flt-source-content-hidden")).toHaveLength(0);
   });
 });

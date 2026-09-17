@@ -52,6 +52,7 @@ function ensureStyle(): void {
   style.dataset.fltGenerated = "style";
   style.textContent = `
     .flt-translation { display: block !important; margin-block-start: 0.28em !important; font: inherit !important; line-height: inherit !important; letter-spacing: inherit !important; text-transform: none !important; }
+    .flt-translation a { display: inline !important; }
     .flt-source-hidden { display: none !important; }
     .flt-source-content-hidden { font-size: 0 !important; line-height: 0 !important; }
     .flt-source-content-hidden > :not(.flt-translation) { display: none !important; }
@@ -345,15 +346,53 @@ async function translateImage(srcUrl: string): Promise<void> {
       pixels: input.pixels,
     });
     if (!response?.ok || !Array.isArray(response.regions)) throw new Error(response?.error ?? "图片文字识别失败");
+    if (!overlay.isConnected || imageOverlays.get(image) !== overlay) return;
     showImageStatus(overlay, "文字识别完成 · 正在翻译");
     const translated = await translateOcrRegions(response.regions);
+    if (!overlay.isConnected || imageOverlays.get(image) !== overlay) return;
     renderTranslatedRegions(image, overlay, translated, input.width, input.height);
   } catch (error) {
-    showImageStatus(overlay, error instanceof Error ? error.message : String(error));
+    if (overlay.isConnected && imageOverlays.get(image) === overlay) {
+      showImageStatus(overlay, error instanceof Error ? error.message : String(error));
+    }
     throw error;
   } finally {
     if (activeImageOverlay === overlay) activeImageOverlay = null;
   }
+}
+
+function restoreImage(srcUrl: string): boolean {
+  const image = findImage(srcUrl);
+  if (!image) return false;
+  const overlay = imageOverlays.get(image);
+  if (!overlay) return false;
+  overlay.remove();
+  imageOverlays.delete(image);
+  if (activeImageOverlay === overlay) activeImageOverlay = null;
+  return true;
+}
+
+async function toggleImageTranslation(srcUrl: string): Promise<boolean> {
+  const image = findImage(srcUrl);
+  if (!image) throw new Error("找不到当前图片，请重新右键后再试");
+  if (imageOverlays.has(image)) {
+    restoreImage(srcUrl);
+    return false;
+  }
+  await translateImage(srcUrl);
+  return imageOverlays.has(image);
+}
+
+async function togglePageTranslation(): Promise<{ translated: boolean; count: number }> {
+  if (translator) {
+    translator.restore();
+    translator = null;
+    document.getElementById("flt-style")?.remove();
+    return { translated: false, count: 0 };
+  }
+  const settings = await loadSettings();
+  const count = await translatePage("auto", settings.targetLanguage);
+  return { translated: true, count };
 }
 
 function refreshImageOverlayPositions(): void {
@@ -380,7 +419,35 @@ browser.runtime.onMessage.addListener(async (message: ContentMessage) => {
     try {
       if (typeof message.srcUrl !== "string") throw new Error("图片地址无效");
       await translateImage(message.srcUrl);
-      return { ok: true };
+      return { ok: true, translated: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  if (message.type === "toggle-image-translation") {
+    try {
+      if (typeof message.srcUrl !== "string") throw new Error("图片地址无效");
+      const translated = await toggleImageTranslation(message.srcUrl);
+      return { ok: true, translated };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  if (message.type === "get-context-menu-state") {
+    const image = typeof message.srcUrl === "string" ? findImage(message.srcUrl) : null;
+    return {
+      ok: true,
+      pageTranslated: Boolean(translator),
+      imageTranslated: Boolean(image && imageOverlays.has(image)),
+    };
+  }
+
+  if (message.type === "toggle-page-translation") {
+    try {
+      const result = await togglePageTranslation();
+      return { ok: true, ...result };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }

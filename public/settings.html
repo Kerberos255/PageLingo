@@ -18,41 +18,34 @@
         </nav>
         <div class="local-badge">Firefox 本地引擎可完全离线运行 · 外部引擎仅在选用后发送待翻译文本</div>
       </aside>
-
       <main class="content">
         <header class="page-header"><div><p class="eyebrow">PAGELINGO</p><h1>设置</h1><p>配置网页翻译、图片翻译、离线语言包和翻译引擎。</p></div></header>
-
         <section id="translation" class="section settings-page active">
           <div class="section-heading"><h2>网页翻译</h2></div>
           <div class="setting-card stack-card">
             <label class="setting-row"><span><strong>自动翻译</strong><small>开启后自动识别网页语言并翻译为目标语言。</small></span><span class="switch"><input id="auto-translate-enabled" type="checkbox" /><i></i></span></label>
             <div class="target-row"><span class="rule-label">自动翻译为</span><select id="target-language"></select></div>
           </div>
-
           <div class="setting-card rule-card">
             <div class="setting-copy"><div><strong>不自动翻译的网址</strong><span>当网站为下列域名时，将不会自动进行翻译。此规则优先于语言设置。</span></div></div>
             <div class="exception-add"><input id="never-site-input" type="text" inputmode="url" placeholder="例如：github.com" /><button id="never-site-add" type="button">添加</button></div>
             <div id="never-site-list" class="exception-list"></div>
           </div>
-
           <div class="setting-card rule-card">
             <div class="setting-copy"><div><strong>总是翻译的网址</strong><span>当网站为下列域名时，会自动翻译为目标语言。</span></div></div>
             <div class="exception-add"><input id="always-site-input" type="text" inputmode="url" placeholder="例如：docs.example.com" /><button id="always-site-add" type="button">添加</button></div>
             <div id="always-site-list" class="exception-list"></div>
           </div>
-
           <div class="setting-card rule-card">
             <div class="setting-copy"><div><strong>永不翻译的语言</strong><span>当页面中某一段落的语言为下列语言时，将跳过翻译。</span></div></div>
             <div class="exception-add"><select id="never-language-select"></select><button id="never-language-add" type="button">添加</button></div>
             <div id="never-language-list" class="exception-list"></div>
           </div>
-
           <div class="setting-card rule-card">
             <div class="setting-copy"><div><strong>总是翻译的语言</strong><span>当页面语言为下列语言时，会自动翻译为目标语言。注意：如果“不自动翻译的网址”与此设置冲突，将优先按网址规则执行。</span></div></div>
             <div class="exception-add"><select id="always-language-select"></select><button id="always-language-add" type="button">添加</button></div>
             <div id="always-language-list" class="exception-list"></div>
           </div>
-
           <div class="setting-card">
             <div class="setting-copy"><div><strong>显示模式</strong><span>“仅译文”只隐藏原文的视觉呈现，原始 DOM、链接与事件仍保留。</span></div></div>
             <fieldset class="segmented" aria-label="翻译显示模式">
@@ -61,7 +54,6 @@
             </fieldset>
           </div>
         </section>
-
         <section id="languages" class="section settings-page">
           <div class="section-heading"><h2>离线语言包</h2><p>下载常用语言包，离线也能立即翻译。</p></div>
           <div class="setting-card">
@@ -73,33 +65,18 @@
             <div id="language-pack-list" class="pack-list"><div class="empty-state">正在读取语言包…</div></div>
           </div>
           <div class="setting-card stack-card">
-            <div class="setting-row">
-              <span><strong>模型更新</strong><small>只更新模型数据；PageLingo 代码与 Bergamot WASM 仍随扩展版本更新。</small></span>
-              <select id="model-update-policy" aria-label="模型更新策略">
-                <option value="auto">自动更新（推荐）</option>
-                <option value="notify">仅提醒我</option>
-                <option value="manual">手动更新</option>
-              </select>
-            </div>
-            <div class="model-update-row">
-              <button id="check-model-updates" type="button">检查更新</button>
-              <span id="model-update-status">尚未检查更新</span>
-            </div>
+            <div class="setting-row"><span><strong>模型更新</strong><small>只更新模型数据；PageLingo 代码与 Bergamot WASM 仍随扩展版本更新。</small></span><select id="model-update-policy" aria-label="模型更新策略"><option value="auto">自动更新（推荐）</option><option value="notify">仅提醒我</option><option value="manual">手动更新</option></select></div>
+            <div class="model-update-row"><button id="check-model-updates" type="button">检查更新</button><span id="model-update-status">尚未检查更新</span></div>
           </div>
         </section>
-
         <section id="image-translation" class="section settings-page">
-          <div class="section-heading"><h2>图片翻译</h2><p>右键网页中的图片，选择“翻译图片”即可进行翻译</p></div>
+          <div class="section-heading"><h2>图片翻译</h2><p>右键网页中的图片可翻译；翻译完成后再次右键可还原图片</p></div>
           <div class="setting-card stack-card">
-            <label class="setting-row"><span><strong>启用图片翻译</strong><small>默认关闭。开启后图片右键菜单会出现“PageLingo · 翻译图片”。</small></span><span class="switch"><input id="image-translation-enabled" type="checkbox" /><i></i></span></label>
-            <div class="ocr-status-row">
-              <div><span class="meta-label">文字识别</span><strong>PP-OCRv5 Mobile · WASM Worker</strong><small id="image-ocr-status">正在读取 OCR 状态…</small></div>
-              <button id="delete-image-ocr-models" type="button" disabled>删除 OCR 模型</button>
-            </div>
+            <label class="setting-row"><span><strong>启用图片翻译</strong><small>默认关闭。开启后图片右键菜单会根据当前状态显示“PageLingo · 翻译图片”或“PageLingo · 还原图片”。</small></span><span class="switch"><input id="image-translation-enabled" type="checkbox" /><i></i></span></label>
+            <div class="ocr-status-row"><div><span class="meta-label">文字识别</span><strong>PP-OCRv5 Mobile · WASM Worker</strong><small id="image-ocr-status">正在读取 OCR 状态…</small></div><button id="delete-image-ocr-models" type="button" disabled>删除 OCR 模型</button></div>
             <div class="hint">当前默认模型支持简中、繁中、英语和日语</div>
           </div>
         </section>
-
         <section id="engine" class="section settings-page">
           <div class="section-heading"><h2>翻译引擎</h2><p>默认使用 Firefox 本地模型；也可以添加翻译 API、LLM 或自建服务。</p></div>
           <div class="setting-card stack-card">
