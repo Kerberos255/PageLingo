@@ -7,9 +7,11 @@ export type SupportedTargetLanguage = string;
 export interface PageLingoSettings {
   displayMode: DisplayMode;
   autoTranslateEnabled: boolean;
-  autoSourceLanguage: string;
   targetLanguage: string;
-  excludedSites: string[];
+  neverTranslateSites: string[];
+  alwaysTranslateSites: string[];
+  neverTranslateLanguages: string[];
+  alwaysTranslateLanguages: string[];
   modelUpdatePolicy: ModelUpdatePolicy;
   imageTranslationEnabled: boolean;
 }
@@ -17,9 +19,11 @@ export interface PageLingoSettings {
 export const DEFAULT_SETTINGS: PageLingoSettings = {
   displayMode: "bilingual",
   autoTranslateEnabled: false,
-  autoSourceLanguage: "en",
   targetLanguage: "zh-Hans",
-  excludedSites: [],
+  neverTranslateSites: [],
+  alwaysTranslateSites: [],
+  neverTranslateLanguages: [],
+  alwaysTranslateLanguages: [],
   modelUpdatePolicy: "auto",
   imageTranslationEnabled: false,
 };
@@ -90,19 +94,32 @@ export function normalizeExcludedSites(value: unknown): string[] {
   return Array.from(new Set(normalized)).sort();
 }
 
-export function isSiteExcluded(hostname: string, excludedSites: readonly string[]): boolean {
+export function normalizeLanguageList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const normalized = value
+    .map(normalizeDetectedLanguage)
+    .filter((item): item is string => Boolean(item));
+  return Array.from(new Set(normalized)).sort();
+}
+
+export function isSiteListed(hostname: string, sites: readonly string[]): boolean {
   const host = hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
-  return excludedSites.some((site) => host === site || host.endsWith(`.${site}`));
+  return sites.some((site) => host === site || host.endsWith(`.${site}`));
 }
 
 export async function loadSettings(): Promise<PageLingoSettings> {
-  const stored = await browser.storage.local.get(DEFAULT_SETTINGS);
+  const stored = await browser.storage.local.get();
+  const legacyExcludedSites = normalizeExcludedSites(stored.excludedSites);
   return {
     displayMode: normalizeDisplayMode(stored.displayMode),
     autoTranslateEnabled: stored.autoTranslateEnabled === true,
-    autoSourceLanguage: normalizeSourceLanguage(stored.autoSourceLanguage),
-    targetLanguage: normalizeTargetLanguage(stored.targetLanguage),
-    excludedSites: normalizeExcludedSites(stored.excludedSites),
+    targetLanguage: normalizeTargetLanguage(stored.targetLanguage ?? DEFAULT_SETTINGS.targetLanguage),
+    neverTranslateSites: Array.isArray(stored.neverTranslateSites)
+      ? normalizeExcludedSites(stored.neverTranslateSites)
+      : legacyExcludedSites,
+    alwaysTranslateSites: normalizeExcludedSites(stored.alwaysTranslateSites),
+    neverTranslateLanguages: normalizeLanguageList(stored.neverTranslateLanguages),
+    alwaysTranslateLanguages: normalizeLanguageList(stored.alwaysTranslateLanguages),
     modelUpdatePolicy: normalizeModelUpdatePolicy(stored.modelUpdatePolicy),
     imageTranslationEnabled: stored.imageTranslationEnabled === true,
   };
@@ -116,15 +133,28 @@ export async function saveAutoTranslateEnabled(autoTranslateEnabled: boolean): P
   await browser.storage.local.set({ autoTranslateEnabled });
 }
 
-export async function saveLanguageRule(autoSourceLanguage: string, targetLanguage: string): Promise<void> {
+export async function saveTargetLanguage(targetLanguage: string): Promise<void> {
+  await browser.storage.local.set({ targetLanguage: normalizeTargetLanguage(targetLanguage) });
+}
+
+export async function saveSiteRules(
+  neverTranslateSites: readonly string[],
+  alwaysTranslateSites: readonly string[],
+): Promise<void> {
   await browser.storage.local.set({
-    autoSourceLanguage: normalizeSourceLanguage(autoSourceLanguage),
-    targetLanguage: normalizeTargetLanguage(targetLanguage),
+    neverTranslateSites: normalizeExcludedSites(neverTranslateSites),
+    alwaysTranslateSites: normalizeExcludedSites(alwaysTranslateSites),
   });
 }
 
-export async function saveTargetLanguage(targetLanguage: string): Promise<void> {
-  await browser.storage.local.set({ targetLanguage: normalizeTargetLanguage(targetLanguage) });
+export async function saveLanguageRules(
+  neverTranslateLanguages: readonly string[],
+  alwaysTranslateLanguages: readonly string[],
+): Promise<void> {
+  await browser.storage.local.set({
+    neverTranslateLanguages: normalizeLanguageList(neverTranslateLanguages),
+    alwaysTranslateLanguages: normalizeLanguageList(alwaysTranslateLanguages),
+  });
 }
 
 export async function saveModelUpdatePolicy(modelUpdatePolicy: ModelUpdatePolicy): Promise<void> {
@@ -133,8 +163,4 @@ export async function saveModelUpdatePolicy(modelUpdatePolicy: ModelUpdatePolicy
 
 export async function saveImageTranslationEnabled(imageTranslationEnabled: boolean): Promise<void> {
   await browser.storage.local.set({ imageTranslationEnabled });
-}
-
-export async function saveExcludedSites(excludedSites: readonly string[]): Promise<void> {
-  await browser.storage.local.set({ excludedSites: normalizeExcludedSites(excludedSites) });
 }

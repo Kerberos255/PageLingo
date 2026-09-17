@@ -27,6 +27,16 @@ import {
 } from "./providers/bergamot/model-updates";
 import { handleImageRuntimeMessage, initializeImageTranslation } from "./image-translation/background-service";
 import { languageLabel, loadSettings, normalizeDetectedLanguage } from "./shared/settings";
+import { translateWithExternalEngine } from "./providers/external-translation";
+import {
+  LOCAL_TRANSLATION_ENGINE_ID,
+  deleteTranslationEngine,
+  loadTranslationEngineState,
+  normalizeTranslationEngineConfig,
+  saveTranslationEngine,
+  setActiveTranslationEngine,
+  setTranslationEngineEnabled,
+} from "./shared/translation-engine-settings";
 
 const bergamot = new BergamotClient();
 const MODEL_UPDATE_ALARM = "pagelingo-model-updates";
@@ -34,6 +44,7 @@ const MODEL_UPDATE_INTERVAL_MINUTES = 24 * 60;
 let overridesPromise = loadModelOverrides();
 let updateStatePromise = loadModelUpdateState();
 let updateRun: Promise<ModelUpdateState> | null = null;
+let translationEngineStatePromise = loadTranslationEngineState();
 
 interface RuntimeMessage {
   type?: string;
@@ -45,6 +56,9 @@ interface RuntimeMessage {
   sourceLanguage?: unknown;
   targetLanguage?: unknown;
   language?: unknown;
+  config?: unknown;
+  id?: unknown;
+  enabled?: unknown;
 }
 
 function asLanguage(value: unknown): string | null {
@@ -70,6 +84,49 @@ function routeFor(sourceLanguage: string, targetLanguage: string, overrides: Mod
 function modelPairsForLanguage(language: string, overrides: ModelCatalogOverrides): BergamotModelPair[] {
   return [effectivePair("en", language, overrides), effectivePair(language, "en", overrides)]
     .filter((pair): pair is BergamotModelPair => Boolean(pair));
+}
+
+async function isTranslationRouteCached(sourceLanguage: string, targetLanguage: string): Promise<boolean> {
+  const overrides = await currentOverrides();
+  const route = routeFor(sourceLanguage, targetLanguage, overrides);
+  if (!route) return false;
+  const cached = await Promise.all(route.models.map((pair) => isModelPairCached(pair)));
+  return cached.every(Boolean);
+}
+
+async function currentTranslationEngineState() {
+  return translationEngineStatePromise;
+}
+
+async function refreshTranslationEngineState() {
+  const state = await loadTranslationEngineState();
+  translationEngineStatePromise = Promise.resolve(state);
+  return state;
+}
+
+async function activeExternalEngine() {
+  const state = await currentTranslationEngineState();
+  if (state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID) return null;
+  return state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
+}
+
+async function externalEngineReady(): Promise<boolean> {
+  return Boolean(await activeExternalEngine());
+}
+
+async function translationEngineStateForUi() {
+  const state = await currentTranslationEngineState();
+  return {
+    activeEngineId: state.activeEngineId,
+    engines: state.engines.map((engine) => ({
+      id: engine.id,
+      name: engine.name,
+      type: engine.type,
+      enabled: engine.enabled,
+      model: engine.model,
+      hasApiKey: Boolean(engine.apiKey),
+    })),
+  };
 }
 
 async function setOverrides(overrides: ModelCatalogOverrides): Promise<void> {
@@ -308,6 +365,13 @@ browser.storage.onChanged.addListener((changes, areaName) => {
   if (changes.modelUpdatePolicy.newValue !== "manual") void runScheduledModelUpdate();
 });
 
+browser.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return;
+  if (changes.activeTranslationEngineId || changes.translationEngines) {
+    translationEngineStatePromise = loadTranslationEngineState();
+  }
+});
+
 void syncModelUpdateAlarm();
 void currentUpdateState().then((state) => setUpdateState(state));
 initializeImageTranslation();
@@ -325,6 +389,11 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const sourceLanguage = asLanguage(request.sourceLanguage);
       const targetLanguage = asLanguage(request.targetLanguage);
       if (!sourceLanguage || !targetLanguage) throw new Error("Invalid translation languages");
+      const external = await activeExternalEngine();
+      if (external) {
+        const html = await translateWithExternalEngine(external, { html: request.html, sourceLanguage, targetLanguage });
+        return { ok: true, html };
+      }
       const overrides = await currentOverrides();
       const route = routeFor(sourceLanguage, targetLanguage, overrides);
       if (!route) throw new Error(`当前本地模型不支持 ${languageLabel(sourceLanguage)} → ${languageLabel(targetLanguage)}`);
@@ -335,11 +404,64 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "can-translate") {
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
-      const overrides = await currentOverrides();
+      const externalReady = await externalEngineReady();
+      const overrides = externalReady ? null : await currentOverrides();
       return {
         ok: true,
-        supported: Boolean(sourceLanguage && targetLanguage && routeFor(sourceLanguage, targetLanguage, overrides)),
+        supported: Boolean(sourceLanguage && targetLanguage && sourceLanguage !== targetLanguage && (externalReady || (overrides && routeFor(sourceLanguage, targetLanguage, overrides)))),
       };
+    }
+
+    if (message.type === "is-translation-ready") {
+      const sourceLanguage = asLanguage(message.sourceLanguage);
+      const targetLanguage = asLanguage(message.targetLanguage);
+      const externalReady = await externalEngineReady();
+      return {
+        ok: true,
+        ready: Boolean(sourceLanguage && targetLanguage && sourceLanguage !== targetLanguage && (externalReady || await isTranslationRouteCached(sourceLanguage, targetLanguage))),
+      };
+    }
+
+    if (message.type === "get-translation-engines") {
+      return { ok: true, state: await translationEngineStateForUi() };
+    }
+
+    if (message.type === "save-translation-engine") {
+      await saveTranslationEngine(message.config);
+      await refreshTranslationEngineState();
+      return { ok: true, state: await translationEngineStateForUi() };
+    }
+
+    if (message.type === "delete-translation-engine") {
+      if (typeof message.id !== "string") throw new Error("Invalid engine id");
+      await deleteTranslationEngine(message.id);
+      await refreshTranslationEngineState();
+      return { ok: true, state: await translationEngineStateForUi() };
+    }
+
+    if (message.type === "set-translation-engine-enabled") {
+      if (typeof message.id !== "string" || typeof message.enabled !== "boolean") throw new Error("Invalid engine state");
+      await setTranslationEngineEnabled(message.id, message.enabled);
+      await refreshTranslationEngineState();
+      return { ok: true, state: await translationEngineStateForUi() };
+    }
+
+    if (message.type === "set-active-translation-engine") {
+      if (typeof message.id !== "string") throw new Error("Invalid engine id");
+      await setActiveTranslationEngine(message.id);
+      await refreshTranslationEngineState();
+      return { ok: true, state: await translationEngineStateForUi() };
+    }
+
+    if (message.type === "test-translation-engine") {
+      const config = normalizeTranslationEngineConfig(message.config);
+      if (!config) throw new Error("翻译引擎配置无效");
+      const html = await translateWithExternalEngine(config, {
+        html: "<strong>Hello</strong> world",
+        sourceLanguage: "en",
+        targetLanguage: "zh-Hans",
+      });
+      return { ok: true, preview: html };
     }
 
     if (message.type === "get-language-catalog") {

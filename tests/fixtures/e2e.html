@@ -3,15 +3,17 @@
 <head>
   <meta charset="utf-8">
   <title>PageLingo E2E</title>
+  <style>.docs-link{color:rgb(37,99,235);text-decoration:underline}</style>
 </head>
 <body>
   <main>
     <h1>Fast local translation</h1>
     <p id="rich">
-      Read the <a id="docs" href="/docs" target="_blank" rel="noopener" title="Documentation">documentation</a>
+      Read the <a id="docs" class="docs-link" href="/docs" target="_blank" rel="noopener" title="Documentation">documentation</a>
       and use <strong>fast mode</strong> while keeping the original page structure.
     </p>
     <p id="plain">PageLingo should translate this paragraph locally without replacing the original DOM nodes.</p>
+    <p id="french-segment" lang="fr">Ce paragraphe français sert à vérifier les règles de langue par segment.</p>
     <div id="dynamic-host"></div>
   </main>
 </body>

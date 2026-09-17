@@ -1,16 +1,19 @@
 import {
+  languageLabel,
   loadSettings,
   normalizeSitePattern,
   saveAutoTranslateEnabled,
   saveDisplayMode,
-  saveExcludedSites,
   saveImageTranslationEnabled,
-  saveLanguageRule,
+  saveLanguageRules,
   saveModelUpdatePolicy,
+  saveSiteRules,
+  saveTargetLanguage,
   type DisplayMode,
   type ModelUpdatePolicy,
 } from "./shared/settings";
 import { sendRuntimeMessage } from "./shared/runtime-message";
+import { initializeTranslationEngines } from "./options-engines";
 
 interface LanguageOption { code: string; label: string }
 interface DirectionInfo {
@@ -56,11 +59,21 @@ interface ImageOcrResponse {
 const radios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="display-mode"]'));
 const status = document.querySelector<HTMLElement>("#save-status");
 const autoToggle = document.querySelector<HTMLInputElement>("#auto-translate-enabled");
-const sourceSelect = document.querySelector<HTMLSelectElement>("#auto-source-language");
 const targetSelect = document.querySelector<HTMLSelectElement>("#target-language");
-const exceptionInput = document.querySelector<HTMLInputElement>("#exception-site");
-const exceptionAdd = document.querySelector<HTMLButtonElement>("#exception-add");
-const exceptionList = document.querySelector<HTMLElement>("#exception-list");
+const neverSiteInput = document.querySelector<HTMLInputElement>("#never-site-input");
+const neverSiteAdd = document.querySelector<HTMLButtonElement>("#never-site-add");
+const neverSiteList = document.querySelector<HTMLElement>("#never-site-list");
+const alwaysSiteInput = document.querySelector<HTMLInputElement>("#always-site-input");
+const alwaysSiteAdd = document.querySelector<HTMLButtonElement>("#always-site-add");
+const alwaysSiteList = document.querySelector<HTMLElement>("#always-site-list");
+const neverLanguageSelect = document.querySelector<HTMLSelectElement>("#never-language-select");
+const neverLanguageAdd = document.querySelector<HTMLButtonElement>("#never-language-add");
+const neverLanguageList = document.querySelector<HTMLElement>("#never-language-list");
+const alwaysLanguageSelect = document.querySelector<HTMLSelectElement>("#always-language-select");
+const alwaysLanguageAdd = document.querySelector<HTMLButtonElement>("#always-language-add");
+const alwaysLanguageList = document.querySelector<HTMLElement>("#always-language-list");
+const packSelect = document.querySelector<HTMLSelectElement>("#language-pack-select");
+const downloadPackButton = document.querySelector<HTMLButtonElement>("#download-language-pack");
 const packList = document.querySelector<HTMLElement>("#language-pack-list");
 const updatePolicy = document.querySelector<HTMLSelectElement>("#model-update-policy");
 const checkUpdates = document.querySelector<HTMLButtonElement>("#check-model-updates");
@@ -68,7 +81,13 @@ const updateStatus = document.querySelector<HTMLElement>("#model-update-status")
 const imageToggle = document.querySelector<HTMLInputElement>("#image-translation-enabled");
 const imageStatus = document.querySelector<HTMLElement>("#image-ocr-status");
 const deleteOcrModels = document.querySelector<HTMLButtonElement>("#delete-image-ocr-models");
-let excludedSites: string[] = [];
+const navItems = Array.from(document.querySelectorAll<HTMLAnchorElement>("[data-settings-page]"));
+const pages = Array.from(document.querySelectorAll<HTMLElement>(".settings-page"));
+let neverTranslateSites: string[] = [];
+let alwaysTranslateSites: string[] = [];
+let neverTranslateLanguages: string[] = [];
+let alwaysTranslateLanguages: string[] = [];
+let sourceLanguages: LanguageOption[] = [];
 let packs: PackInfo[] = [];
 
 function setChecked(mode: DisplayMode): void {
@@ -93,13 +112,17 @@ function formatCheckedAt(value: number): string {
 }
 
 function applyCatalog(catalog: Catalog): void {
-  packs = catalog.packs.sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
+  packs = [...catalog.packs].sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
+  sourceLanguages = [...catalog.sourceLanguages];
+  fillSelect(neverLanguageSelect, sourceLanguages);
+  fillSelect(alwaysLanguageSelect, sourceLanguages);
   if (updateStatus) {
     updateStatus.textContent = catalog.updateCount > 0
       ? `${formatCheckedAt(catalog.updateCheckedAt)} · ${catalog.updateCount} 个方向有更新`
       : `${formatCheckedAt(catalog.updateCheckedAt)} · 已是最新`;
   }
   renderPacks();
+  renderPackPicker();
 }
 
 function fillSelect(select: HTMLSelectElement | null, languages: LanguageOption[]): void {
@@ -113,22 +136,53 @@ function fillSelect(select: HTMLSelectElement | null, languages: LanguageOption[
   }
 }
 
-function renderExceptions(): void {
-  if (!exceptionList) return;
-  exceptionList.replaceChildren();
-  if (excludedSites.length === 0) {
-    const empty = document.createElement("div"); empty.className = "empty-state"; empty.textContent = "暂无例外网站"; exceptionList.append(empty); return;
+function renderRuleList(
+  container: HTMLElement | null,
+  values: readonly string[],
+  emptyText: string,
+  labelFor: (value: string) => string,
+  removeValue: (value: string) => void,
+): void {
+  if (!container) return;
+  container.replaceChildren();
+  if (values.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = emptyText;
+    container.append(empty);
+    return;
   }
-  for (const site of excludedSites) {
-    const row = document.createElement("div"); row.className = "exception-item";
-    const label = document.createElement("span"); label.textContent = site;
-    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "移除";
-    remove.addEventListener("click", () => {
-      excludedSites = excludedSites.filter((item) => item !== site);
-      void saveExcludedSites(excludedSites).then(() => { renderExceptions(); showSaved("已移除例外网站"); });
-    });
-    row.append(label, remove); exceptionList.append(row);
+  for (const value of values) {
+    const row = document.createElement("div");
+    row.className = "exception-item";
+    const label = document.createElement("span");
+    label.textContent = labelFor(value);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "移除";
+    remove.addEventListener("click", () => removeValue(value));
+    row.append(label, remove);
+    container.append(row);
   }
+}
+
+function renderRuleLists(): void {
+  renderRuleList(neverSiteList, neverTranslateSites, "暂无网址", (value) => value, (value) => {
+    neverTranslateSites = neverTranslateSites.filter((item) => item !== value);
+    void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(() => { renderRuleLists(); showSaved(); });
+  });
+  renderRuleList(alwaysSiteList, alwaysTranslateSites, "暂无网址", (value) => value, (value) => {
+    alwaysTranslateSites = alwaysTranslateSites.filter((item) => item !== value);
+    void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(() => { renderRuleLists(); showSaved(); });
+  });
+  renderRuleList(neverLanguageList, neverTranslateLanguages, "暂无语言", languageLabel, (value) => {
+    neverTranslateLanguages = neverTranslateLanguages.filter((item) => item !== value);
+    void saveLanguageRules(neverTranslateLanguages, alwaysTranslateLanguages).then(() => { renderRuleLists(); showSaved(); });
+  });
+  renderRuleList(alwaysLanguageList, alwaysTranslateLanguages, "暂无语言", languageLabel, (value) => {
+    alwaysTranslateLanguages = alwaysTranslateLanguages.filter((item) => item !== value);
+    void saveLanguageRules(neverTranslateLanguages, alwaysTranslateLanguages).then(() => { renderRuleLists(); showSaved(); });
+  });
 }
 
 function packRouteLabel(pack: PackInfo): string {
@@ -137,10 +191,38 @@ function packRouteLabel(pack: PackInfo): string {
   return `${pack.label} → English`;
 }
 
+function renderPackPicker(): void {
+  if (!packSelect || !downloadPackButton) return;
+  downloadPackButton.textContent = "下载";
+  const available = packs.filter((pack) => !pack.installed && !pack.partial);
+  packSelect.replaceChildren();
+  for (const pack of available) {
+    const option = document.createElement("option");
+    option.value = pack.language;
+    option.textContent = `${pack.label} · ${formatBytes(pack.totalBytes)}`;
+    packSelect.append(option);
+  }
+  if (available.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "所有可用语言包均已下载";
+    packSelect.append(option);
+  }
+  downloadPackButton.disabled = available.length === 0;
+}
+
 function renderPacks(): void {
   if (!packList) return;
   packList.replaceChildren();
-  for (const pack of packs) {
+  const installedPacks = packs.filter((pack) => pack.installed || pack.partial);
+  if (installedPacks.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "暂无已下载语言包";
+    packList.append(empty);
+    return;
+  }
+  for (const pack of installedPacks) {
     const row = document.createElement("div"); row.className = "pack-item";
     const copy = document.createElement("div"); copy.className = "pack-copy";
     const title = document.createElement("strong"); title.textContent = pack.label;
@@ -185,6 +267,7 @@ async function changePack(pack: PackInfo, button: HTMLButtonElement): Promise<vo
     if (!response?.ok || !response.pack) throw new Error(response?.error ?? "语言包操作失败");
     packs = packs.map((item) => item.language === pack.language ? response.pack! : item);
     renderPacks();
+    renderPackPicker();
     showSaved(deleting ? `已删除 ${pack.label}` : `已下载 ${pack.label}`);
   } catch (error) {
     button.disabled = false;
@@ -235,25 +318,100 @@ async function initialize(): Promise<void> {
   if (!response?.ok || !response.catalog) throw new Error(response?.error ?? "无法读取语言目录");
   const catalog = response.catalog;
   applyCatalog(catalog);
-  fillSelect(sourceSelect, catalog.sourceLanguages);
   fillSelect(targetSelect, catalog.targetLanguages);
   setChecked(settings.displayMode);
   if (autoToggle) autoToggle.checked = settings.autoTranslateEnabled;
-  if (sourceSelect) sourceSelect.value = catalog.sourceLanguages.some((item) => item.code === settings.autoSourceLanguage) ? settings.autoSourceLanguage : "en";
-  if (targetSelect) targetSelect.value = catalog.targetLanguages.some((item) => item.code === settings.targetLanguage) ? settings.targetLanguage : "en";
+  if (targetSelect) targetSelect.value = catalog.targetLanguages.some((item) => item.code === settings.targetLanguage)
+    ? settings.targetLanguage
+    : "en";
   if (updatePolicy) updatePolicy.value = settings.modelUpdatePolicy;
   if (imageToggle) imageToggle.checked = settings.imageTranslationEnabled;
-  excludedSites = [...settings.excludedSites];
-  renderExceptions();
+  neverTranslateSites = [...settings.neverTranslateSites];
+  alwaysTranslateSites = [...settings.alwaysTranslateSites];
+  neverTranslateLanguages = [...settings.neverTranslateLanguages];
+  alwaysTranslateLanguages = [...settings.alwaysTranslateLanguages];
+  renderRuleLists();
+  selectSettingsPage(location.hash.slice(1) || "translation");
   await refreshImageOcrStatus();
 }
 
-for (const radio of radios) {
-  radio.addEventListener("change", () => { if (radio.checked) void saveDisplayMode(radio.value as DisplayMode).then(() => showSaved()); });
+function selectSettingsPage(pageId: string): void {
+  const next = pages.some((page) => page.id === pageId) ? pageId : "translation";
+  for (const page of pages) page.classList.toggle("active", page.id === next);
+  for (const item of navItems) item.classList.toggle("active", item.dataset.settingsPage === next);
 }
+
+function addSiteRule(kind: "never" | "always"): void {
+  const input = kind === "never" ? neverSiteInput : alwaysSiteInput;
+  if (!input) return;
+  const site = normalizeSitePattern(input.value);
+  if (!site) {
+    showSaved("网址格式不正确");
+    input.focus();
+    return;
+  }
+  if (kind === "never") {
+    neverTranslateSites = Array.from(new Set([...neverTranslateSites, site])).sort();
+    alwaysTranslateSites = alwaysTranslateSites.filter((item) => item !== site);
+  } else {
+    alwaysTranslateSites = Array.from(new Set([...alwaysTranslateSites, site])).sort();
+    neverTranslateSites = neverTranslateSites.filter((item) => item !== site);
+  }
+  input.value = "";
+  void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(() => {
+    renderRuleLists();
+    showSaved();
+  });
+}
+
+function addLanguageRule(kind: "never" | "always"): void {
+  const select = kind === "never" ? neverLanguageSelect : alwaysLanguageSelect;
+  const language = select?.value;
+  if (!language) return;
+  if (kind === "never") {
+    neverTranslateLanguages = Array.from(new Set([...neverTranslateLanguages, language])).sort();
+    alwaysTranslateLanguages = alwaysTranslateLanguages.filter((item) => item !== language);
+  } else {
+    alwaysTranslateLanguages = Array.from(new Set([...alwaysTranslateLanguages, language])).sort();
+    neverTranslateLanguages = neverTranslateLanguages.filter((item) => item !== language);
+  }
+  void saveLanguageRules(neverTranslateLanguages, alwaysTranslateLanguages).then(() => {
+    renderRuleLists();
+    showSaved();
+  });
+}
+
+for (const radio of radios) {
+  radio.addEventListener("change", () => {
+    if (radio.checked) void saveDisplayMode(radio.value as DisplayMode).then(() => showSaved());
+  });
+}
+
+for (const item of navItems) {
+  item.addEventListener("click", () => selectSettingsPage(item.dataset.settingsPage ?? "translation"));
+}
+window.addEventListener("hashchange", () => selectSettingsPage(location.hash.slice(1) || "translation"));
+
 autoToggle?.addEventListener("change", () => void saveAutoTranslateEnabled(autoToggle.checked).then(() => showSaved()));
+targetSelect?.addEventListener("change", () => void saveTargetLanguage(targetSelect.value).then(() => showSaved()));
 imageToggle?.addEventListener("change", () => {
   void saveImageTranslationEnabled(imageToggle.checked).then(() => showSaved(imageToggle.checked ? "图片翻译已开启" : "图片翻译已关闭"));
+});
+
+neverSiteAdd?.addEventListener("click", () => addSiteRule("never"));
+alwaysSiteAdd?.addEventListener("click", () => addSiteRule("always"));
+neverSiteInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") { event.preventDefault(); addSiteRule("never"); }
+});
+alwaysSiteInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") { event.preventDefault(); addSiteRule("always"); }
+});
+neverLanguageAdd?.addEventListener("click", () => addLanguageRule("never"));
+alwaysLanguageAdd?.addEventListener("click", () => addLanguageRule("always"));
+
+downloadPackButton?.addEventListener("click", () => {
+  const pack = packs.find((item) => item.language === packSelect?.value);
+  if (pack) void changePack(pack, downloadPackButton);
 });
 
 deleteOcrModels?.addEventListener("click", () => {
@@ -280,11 +438,12 @@ checkUpdates?.addEventListener("click", () => {
   void (async () => {
     checkUpdates.disabled = true;
     checkUpdates.textContent = "检查中…";
-    showSaved("正在检查 Mozilla 模型更新…", 60_000);
+    showSaved("正在检查 Firefox 模型更新…", 60_000);
     try {
       const response = await sendRuntimeMessage<{ ok?: boolean; catalog?: Catalog; error?: string }>({ type: "check-model-updates" });
       if (!response?.ok || !response.catalog) throw new Error(response?.error ?? "检查更新失败");
       applyCatalog(response.catalog);
+      renderRuleLists();
       showSaved(response.catalog.updateCount > 0 ? `发现 ${response.catalog.updateCount} 个模型方向有更新` : "所有已安装模型均为最新");
     } catch (error) {
       showSaved(error instanceof Error ? error.message : String(error), 5000);
@@ -295,22 +454,5 @@ checkUpdates?.addEventListener("click", () => {
   })();
 });
 
-function saveRule(): void {
-  if (!sourceSelect || !targetSelect) return;
-  void saveLanguageRule(sourceSelect.value, targetSelect.value).then(() => showSaved());
-}
-sourceSelect?.addEventListener("change", saveRule);
-targetSelect?.addEventListener("change", saveRule);
-
-function addException(): void {
-  if (!exceptionInput) return;
-  const site = normalizeSitePattern(exceptionInput.value);
-  if (!site) { showSaved("网址格式不正确"); exceptionInput.focus(); return; }
-  if (!excludedSites.includes(site)) excludedSites.push(site);
-  excludedSites.sort(); exceptionInput.value = "";
-  void saveExcludedSites(excludedSites).then(() => { renderExceptions(); showSaved("已添加例外网站"); });
-}
-exceptionAdd?.addEventListener("click", addException);
-exceptionInput?.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); addException(); } });
-
 void initialize().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));
+void initializeTranslationEngines().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));

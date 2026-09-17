@@ -1,6 +1,7 @@
 import { DEFAULT_OCR_PROFILE, ocrProfileTotalBytes, type OcrModelAsset, type OcrProfile } from "./ocr-models";
 
 const OCR_CACHE = "pagelingo-image-ocr-v1";
+const OCR_DOWNLOAD_TIMEOUT_MS = 60_000;
 
 export interface ImageOcrStatus {
   installed: boolean;
@@ -46,16 +47,35 @@ async function cachedAsset(asset: OcrModelAsset): Promise<ArrayBuffer | null> {
   }
 }
 
-async function downloadAsset(asset: OcrModelAsset): Promise<ArrayBuffer> {
+async function downloadAsset(asset: OcrModelAsset, progress?: (status: string) => void): Promise<ArrayBuffer> {
   const cached = await cachedAsset(asset);
-  if (cached) return cached;
-  const response = await fetch(asset.url, { cache: "no-store", credentials: "omit" });
-  if (!response.ok) throw new Error(`${asset.label} 下载失败：HTTP ${response.status}`);
-  const buffer = await response.arrayBuffer();
-  await validateAsset(asset, buffer);
-  const cache = await caches.open(OCR_CACHE);
-  await cache.put(cacheKey(asset), new Response(buffer.slice(0), { headers: { "content-type": "application/octet-stream" } }));
-  return buffer;
+  if (cached) {
+    progress?.(`${asset.label} · 已缓存`);
+    return cached;
+  }
+
+  progress?.(`正在下载 ${asset.label}…`);
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), OCR_DOWNLOAD_TIMEOUT_MS);
+  try {
+    const response = await fetch(asset.url, {
+      cache: "no-store",
+      credentials: "omit",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`${asset.label} 下载失败：HTTP ${response.status}`);
+    const buffer = await response.arrayBuffer();
+    progress?.(`正在校验 ${asset.label}…`);
+    await validateAsset(asset, buffer);
+    const cache = await caches.open(OCR_CACHE);
+    await cache.put(cacheKey(asset), new Response(buffer.slice(0), { headers: { "content-type": "application/octet-stream" } }));
+    return buffer;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`${asset.label} 下载超时，请检查网络后重试`);
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
 }
 
 async function hasCachedAsset(asset: OcrModelAsset): Promise<boolean> {
@@ -73,12 +93,15 @@ export async function getImageOcrStatus(profile: OcrProfile = DEFAULT_OCR_PROFIL
   };
 }
 
-export async function getImageOcrBundle(profile: OcrProfile = DEFAULT_OCR_PROFILE): Promise<ImageOcrBundle> {
-  const [detectionModel, recognitionModel, dictionaryBuffer] = await Promise.all([
-    downloadAsset(profile.detection),
-    downloadAsset(profile.recognition),
-    downloadAsset(profile.dictionary),
-  ]);
+export async function getImageOcrBundle(
+  profile: OcrProfile = DEFAULT_OCR_PROFILE,
+  progress?: (status: string) => void,
+): Promise<ImageOcrBundle> {
+  progress?.("正在检查 OCR 模型缓存…");
+  const detectionModel = await downloadAsset(profile.detection, progress);
+  const recognitionModel = await downloadAsset(profile.recognition, progress);
+  const dictionaryBuffer = await downloadAsset(profile.dictionary, progress);
+  progress?.("OCR 模型已准备完成");
   return {
     profile,
     detectionModel,

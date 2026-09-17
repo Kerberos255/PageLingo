@@ -62,6 +62,14 @@ describe("PageTranslator DOM preservation", () => {
     expect(provider.requests[0]?.html).toContain("__FLT_OPAQUE_0__");
   });
 
+  it("marks generated translations with the actual target language", async () => {
+    document.body.innerHTML = `<p>Hello world.</p>`;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { targetLanguage: "es" });
+    await translator.translateAll();
+
+    expect(document.querySelector<HTMLElement>(".flt-translation")?.lang).toBe("es");
+  });
+
   it("removes only generated translation nodes on restore", async () => {
     document.body.innerHTML = `<section><p id="p">Hello <em>world</em>.</p></section>`;
     const before = document.querySelector("section")!.innerHTML;

@@ -12,6 +12,7 @@ export interface LinkSnapshot {
   target: string | null;
   rel: string | null;
   title: string | null;
+  className: string;
   sourceElement: HTMLAnchorElement;
 }
 
@@ -40,6 +41,7 @@ function snapshotLink(element: HTMLAnchorElement): LinkSnapshot {
     target: element.getAttribute("target"),
     rel: element.getAttribute("rel"),
     title: element.getAttribute("title"),
+    className: element.className,
     sourceElement: element,
   };
 }

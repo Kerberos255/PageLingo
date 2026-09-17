@@ -10,6 +10,16 @@ import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+# Keep Firefox/Selenium temporary profiles and cache on the project drive.
+ROOT = Path(__file__).resolve().parents[1]
+E2E_TMP = (ROOT / "artifacts" / "tmp").resolve()
+E2E_SELENIUM_CACHE = (ROOT / "artifacts" / "selenium-cache").resolve()
+E2E_TMP.mkdir(parents=True, exist_ok=True)
+E2E_SELENIUM_CACHE.mkdir(parents=True, exist_ok=True)
+for _name in ("TEMP", "TMP", "TMPDIR"):
+    os.environ[_name] = str(E2E_TMP)
+os.environ["SE_CACHE_PATH"] = str(E2E_SELENIUM_CACHE)
+
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -213,8 +223,20 @@ def main() -> None:
         assert len(initial_catalog.get("sourceLanguages") or []) > 20, initial_catalog
         assert len(initial_catalog.get("targetLanguages") or []) > 20, initial_catalog
         assert len(initial_catalog.get("packs") or []) > 20, initial_catalog
+        nav_labels = driver.execute_script(
+            "return Array.from(document.querySelectorAll('[data-settings-page]')).map(el => el.textContent.trim());"
+        )
+        assert nav_labels == ["网页翻译", "图片翻译", "语言包", "翻译引擎"], nav_labels
+        active_pages = driver.execute_script(
+            "return Array.from(document.querySelectorAll('.settings-page.active')).map(el => el.id);"
+        )
+        assert active_pages == ["translation"], active_pages
+        driver.execute_script("document.querySelector('[data-settings-page=\"languages\"]').click();")
         WebDriverWait(driver, 30).until(
-            lambda d: d.execute_script("return document.querySelectorAll('#language-pack-list .pack-item').length") > 20
+            lambda d: d.execute_script("return document.querySelector('.settings-page.active')?.id") == "languages"
+        )
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script("return document.querySelectorAll('#language-pack-select option').length") > 20
         )
         print(
             "Language catalog:",
@@ -225,6 +247,7 @@ def main() -> None:
             len(initial_catalog.get("packs") or []),
             "language packs",
         )
+        driver.execute_script("document.querySelector('[data-settings-page=\"translation\"]').click();")
         # Keep the baseline E2E deterministic even though first install now chooses
         # the browser's preferred target language.
         driver.execute_async_script(
@@ -232,9 +255,11 @@ def main() -> None:
             const done = arguments[0];
             browser.storage.local.set({
               targetLanguage: 'zh-Hans',
-              autoSourceLanguage: 'en',
               autoTranslateEnabled: false,
-              excludedSites: [],
+              neverTranslateSites: [],
+              alwaysTranslateSites: [],
+              neverTranslateLanguages: [],
+              alwaysTranslateLanguages: [],
             }).then(() => done(true));
             """
         )
@@ -266,6 +291,7 @@ def main() -> None:
               sourceHref: link.href,
               sourceSentinel: link.__pageLingoSentinel,
               translatedHref: translatedLink?.href || null,
+              translatedClass: translatedLink?.className || null,
               translatedStrong: document.querySelector('#rich + .flt-translation strong')?.textContent || null,
               generatedCount: document.querySelectorAll('.flt-translation').length,
             };
@@ -274,6 +300,7 @@ def main() -> None:
         assert source_state["sourceHref"] == original_href, source_state
         assert source_state["sourceSentinel"] == 42, source_state
         assert source_state["translatedHref"] == original_href, source_state
+        assert "docs-link" in (source_state["translatedClass"] or ""), source_state
         assert source_state["translatedStrong"], source_state
         assert source_state["generatedCount"] >= 2, source_state
 
@@ -368,9 +395,11 @@ def main() -> None:
             const done = arguments[0];
             browser.storage.local.set({
               autoTranslateEnabled: true,
-              autoSourceLanguage: 'en',
               targetLanguage: 'zh-Hans',
-              excludedSites: [],
+              neverTranslateSites: [],
+              alwaysTranslateSites: [],
+              neverTranslateLanguages: [],
+              alwaysTranslateLanguages: [],
             }).then(() => done(true));
             """
         )
@@ -387,7 +416,7 @@ def main() -> None:
         driver.execute_async_script(
             """
             const done = arguments[0];
-            browser.storage.local.set({ excludedSites: ['127.0.0.1'] }).then(() => done(true));
+            browser.storage.local.set({ neverTranslateSites: ['127.0.0.1'] }).then(() => done(true));
             """
         )
         driver.switch_to.window(target_handle)
@@ -399,6 +428,34 @@ def main() -> None:
         excluded_count = driver.execute_script("return document.querySelectorAll('.flt-translation').length")
         assert excluded_count == 0, f"Excluded site was auto-translated: {excluded_count}"
         print("Exception rule prevented automatic translation")
+
+        # An always-translate site may trigger the page, but it must not bypass
+        # paragraph-level never-translate language rules.
+        driver.switch_to.window(extension_handle)
+        driver.execute_async_script(
+            """
+            const done = arguments[0];
+            browser.storage.local.set({
+              autoTranslateEnabled: false,
+              neverTranslateSites: [],
+              alwaysTranslateSites: ['127.0.0.1'],
+              neverTranslateLanguages: ['fr'],
+              alwaysTranslateLanguages: [],
+            }).then(() => done(true));
+            """
+        )
+        driver.switch_to.window(target_handle)
+        driver.get(target_url)
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        wait_for_cjk_translation(driver, "#rich + .flt-translation")
+        time.sleep(1)
+        french_translation = driver.execute_script(
+            "return document.querySelector('#french-segment + .flt-translation')?.textContent || '';"
+        )
+        assert french_translation == "", f"Never-language segment was translated: {french_translation}"
+        print("Always-site trigger preserved paragraph-level never-language rule")
 
         # Real multi-language model coverage: direct English -> Spanish, then
         # Spanish -> Simplified Chinese through the local English pivot.

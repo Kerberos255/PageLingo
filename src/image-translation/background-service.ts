@@ -36,6 +36,7 @@ interface PendingOcr {
   resolve: (regions: OcrRegion[]) => void;
   reject: (error: Error) => void;
   progress: (status: string) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
 }
 
 class ImageOcrWorkerClient {
@@ -56,6 +57,7 @@ class ImageOcrWorkerClient {
         return;
       }
       this.pending.delete(message.id);
+      globalThis.clearTimeout(pending.timeoutId);
       if (message.type === "error") {
         this.initializedProfileId = "";
         pending.reject(new Error(message.error));
@@ -65,7 +67,10 @@ class ImageOcrWorkerClient {
     });
     worker.addEventListener("error", (event) => {
       const error = new Error(event.message || "OCR Worker failed");
-      for (const pending of this.pending.values()) pending.reject(error);
+      for (const pending of this.pending.values()) {
+        globalThis.clearTimeout(pending.timeoutId);
+        pending.reject(error);
+      }
       this.pending.clear();
       this.initializedProfileId = "";
       this.worker?.terminate();
@@ -86,7 +91,16 @@ class ImageOcrWorkerClient {
     const id = this.nextId++;
     const initialize = this.initializedProfileId !== bundle.profile.id;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, progress });
+      const timeoutId = globalThis.setTimeout(() => {
+        const pending = this.pending.get(id);
+        if (!pending) return;
+        this.pending.delete(id);
+        this.initializedProfileId = "";
+        pending.reject(new Error("OCR 处理超时，请重新尝试"));
+        this.worker?.terminate();
+        this.worker = null;
+      }, 120_000);
+      this.pending.set(id, { resolve, reject, progress, timeoutId });
       const message = {
         type: "recognize",
         id,
@@ -172,8 +186,9 @@ export async function handleImageRuntimeMessage(
       return { ok: false, error: "无效的图片像素数据" };
     }
     try {
-      await sendProgress(sender, "正在准备 OCR 模型…");
-      const bundle = await getImageOcrBundle();
+      const bundle = await getImageOcrBundle(undefined, (status) => {
+        void sendProgress(sender, status);
+      });
       await sendProgress(sender, "OCR 模型就绪 · 正在识别图片…");
       const regions = await ocrWorker.recognize(width, height, message.pixels, bundle, (status) => {
         void sendProgress(sender, status);

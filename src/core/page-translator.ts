@@ -9,6 +9,7 @@ export interface PageTranslatorOptions {
   targetLanguage?: string;
   concurrency?: number;
   displayMode?: DisplayMode;
+  shouldTranslateRoot?: (root: HTMLElement) => boolean | Promise<boolean>;
 }
 
 interface RecordEntry {
@@ -22,6 +23,7 @@ export class PageTranslator {
   readonly #sourceLanguage: string;
   readonly #targetLanguage: string;
   readonly #concurrency: number;
+  readonly #shouldTranslateRoot: ((root: HTMLElement) => boolean | Promise<boolean>) | null;
   #displayMode: DisplayMode;
   readonly #records = new Map<HTMLElement, RecordEntry>();
   readonly #pending = new Set<HTMLElement>();
@@ -34,6 +36,7 @@ export class PageTranslator {
     this.#sourceLanguage = options.sourceLanguage ?? "en";
     this.#targetLanguage = options.targetLanguage ?? "zh";
     this.#concurrency = Math.max(1, options.concurrency ?? 4);
+    this.#shouldTranslateRoot = options.shouldTranslateRoot ?? null;
     this.#displayMode = options.displayMode ?? "bilingual";
   }
 
@@ -64,6 +67,15 @@ export class PageTranslator {
 
   async translateRoot(root: HTMLElement): Promise<void> {
     if (!root.isConnected || isGeneratedNode(root)) return;
+    if (this.#shouldTranslateRoot && !await this.#shouldTranslateRoot(root)) {
+      const previous = this.#records.get(root);
+      if (previous) {
+        this.#clearDisplayMode(root);
+        previous.translationNode.remove();
+        this.#records.delete(root);
+      }
+      return;
+    }
 
     const segment = serializeRichSegment(root);
     if (!segment.html.trim()) return;
@@ -90,7 +102,7 @@ export class PageTranslator {
       segment.links,
       segment.opaque,
     );
-    const translationNode = mountTranslation(root, fragment);
+    const translationNode = mountTranslation(root, fragment, this.#targetLanguage);
     this.#records.set(root, { translationNode, fingerprint: segment.fingerprint });
     this.#applyDisplayMode(root, translationNode);
   }

@@ -1,9 +1,10 @@
 import {
-  isSiteExcluded,
+  isSiteListed,
   languageLabel,
   loadSettings,
+  saveAutoTranslateEnabled,
   saveDisplayMode,
-  saveExcludedSites,
+  saveSiteRules,
   saveTargetLanguage,
   type DisplayMode,
 } from "./shared/settings";
@@ -20,7 +21,10 @@ const siteAuto = document.querySelector<HTMLInputElement>("#site-auto");
 const siteAutoHint = document.querySelector<HTMLElement>("#site-auto-hint");
 const modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-display-mode]"));
 let currentHostname = "";
-let excludedSites: string[] = [];
+let neverTranslateSites: string[] = [];
+let alwaysTranslateSites: string[] = [];
+let neverTranslateLanguages: string[] = [];
+let alwaysTranslateLanguages: string[] = [];
 let globalAutoEnabled = false;
 let detectedCode: string | null = null;
 
@@ -83,9 +87,11 @@ async function refreshLanguage(): Promise<void> {
     } else if (statusEl && statusEl.textContent?.startsWith("暂不支持")) {
       statusEl.textContent = "就绪";
     }
+    refreshSiteAuto();
   } catch {
     detectedCode = null;
     if (detectedEl) detectedEl.textContent = "暂时无法检测当前页面";
+    refreshSiteAuto();
   }
 }
 
@@ -107,9 +113,13 @@ async function send(type: "translate-page" | "restore-page"): Promise<void> {
 
 function refreshSiteAuto(): void {
   if (!siteAuto || !siteAutoHint) return;
-  siteAuto.disabled = !globalAutoEnabled || !currentHostname;
-  siteAuto.checked = globalAutoEnabled && currentHostname !== "" && !isSiteExcluded(currentHostname, excludedSites);
-  siteAutoHint.textContent = globalAutoEnabled ? "此网站" : "请先在设置中开启自动翻译";
+  siteAuto.disabled = !currentHostname;
+  const neverSite = currentHostname !== "" && isSiteListed(currentHostname, neverTranslateSites);
+  const alwaysSite = currentHostname !== "" && isSiteListed(currentHostname, alwaysTranslateSites);
+  const neverLanguage = Boolean(detectedCode && neverTranslateLanguages.includes(detectedCode));
+  const alwaysLanguage = Boolean(detectedCode && alwaysTranslateLanguages.includes(detectedCode));
+  siteAuto.checked = Boolean(currentHostname) && !neverSite && (alwaysSite || alwaysLanguage || (globalAutoEnabled && !neverLanguage));
+  siteAutoHint.textContent = "此网站";
 }
 
 translate?.addEventListener("click", () => void send("translate-page"));
@@ -128,12 +138,21 @@ for (const button of modeButtons) {
 }
 
 siteAuto?.addEventListener("change", () => {
-  if (!currentHostname || !globalAutoEnabled) return;
+  if (!currentHostname) return;
   const normalized = currentHostname.replace(/^www\./, "").toLowerCase();
-  excludedSites = siteAuto.checked
-    ? excludedSites.filter((site) => site !== normalized)
-    : Array.from(new Set([...excludedSites, normalized])).sort();
-  void saveExcludedSites(excludedSites).then(refreshSiteAuto);
+  if (siteAuto.checked) {
+    globalAutoEnabled = true;
+    neverTranslateSites = neverTranslateSites.filter((site) => site !== normalized);
+    alwaysTranslateSites = Array.from(new Set([...alwaysTranslateSites, normalized])).sort();
+    void Promise.all([
+      saveAutoTranslateEnabled(true),
+      saveSiteRules(neverTranslateSites, alwaysTranslateSites),
+    ]).then(refreshSiteAuto);
+  } else {
+    alwaysTranslateSites = alwaysTranslateSites.filter((site) => site !== normalized);
+    neverTranslateSites = Array.from(new Set([...neverTranslateSites, normalized])).sort();
+    void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(refreshSiteAuto);
+  }
 });
 
 void (async () => {
@@ -149,7 +168,10 @@ void (async () => {
 
   setMode(stored.displayMode);
   globalAutoEnabled = stored.autoTranslateEnabled;
-  excludedSites = [...stored.excludedSites];
+  neverTranslateSites = [...stored.neverTranslateSites];
+  alwaysTranslateSites = [...stored.alwaysTranslateSites];
+  neverTranslateLanguages = [...stored.neverTranslateLanguages];
+  alwaysTranslateLanguages = [...stored.alwaysTranslateLanguages];
   try {
     const tab = await activeTab();
     if (tab.url) currentHostname = new URL(tab.url).hostname;

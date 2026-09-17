@@ -2,7 +2,7 @@ import { PageTranslator } from "./core/page-translator";
 import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import {
-  isSiteExcluded,
+  isSiteListed,
   languageLabel,
   loadSettings,
   normalizeDetectedLanguage,
@@ -103,7 +103,34 @@ async function canTranslate(sourceLanguage: string, targetLanguage: string): Pro
   return response?.ok === true && response.supported === true;
 }
 
-async function translatePage(sourceLanguage: ManualSourceLanguage, targetLanguage: string): Promise<number> {
+async function translationRouteReady(sourceLanguage: string, targetLanguage: string): Promise<boolean> {
+  const response = await sendRuntimeMessage<{ ok?: boolean; ready?: boolean }>({
+    type: "is-translation-ready",
+    sourceLanguage,
+    targetLanguage,
+  });
+  return response?.ok === true && response.ready === true;
+}
+
+async function detectRootLanguage(root: HTMLElement): Promise<string | null> {
+  const declared = normalizeDetectedLanguage(root.lang || root.closest<HTMLElement>("[lang]")?.lang);
+  if (declared) return declared;
+  const sample = (root.innerText || root.textContent || "").replace(/\s+/g, " ").trim().slice(0, 1200);
+  if (sample.length < 24) return null;
+  try {
+    const result = await browser.i18n.detectLanguage(sample);
+    const top = result.languages?.[0];
+    if (!top || (top.percentage ?? 0) < 55) return null;
+    return normalizeDetectedLanguage(top.language);
+  } catch {
+    return null;
+  }
+}
+
+async function translatePage(
+  sourceLanguage: ManualSourceLanguage,
+  targetLanguage: string,
+): Promise<number> {
   const settings = await loadSettings();
   const resolvedSource = await resolveSourceLanguage(sourceLanguage);
   const normalizedTarget = normalizeDetectedLanguage(targetLanguage) ?? targetLanguage;
@@ -114,11 +141,20 @@ async function translatePage(sourceLanguage: ManualSourceLanguage, targetLanguag
 
   ensureStyle();
   translator?.restore();
+  const shouldTranslateRoot = settings.neverTranslateLanguages.length === 0
+    ? undefined
+    : async (root: HTMLElement): Promise<boolean> => {
+        const rootLanguage = await detectRootLanguage(root);
+        if (!rootLanguage) return true;
+        if (rootLanguage === normalizedTarget) return false;
+        return !settings.neverTranslateLanguages.includes(rootLanguage);
+      };
   translator = new PageTranslator(document, new RuntimeMessageProvider(), {
     sourceLanguage: resolvedSource,
     targetLanguage: normalizedTarget,
     concurrency: 4,
     displayMode: settings.displayMode,
+    ...(shouldTranslateRoot ? { shouldTranslateRoot } : {}),
   });
   const count = await translator.translateAll();
   translator.observe();
@@ -380,11 +416,23 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 async function maybeAutoTranslate(): Promise<void> {
   if (window.top !== window) return;
   const settings = await loadSettings();
-  if (!settings.autoTranslateEnabled || isSiteExcluded(location.hostname, settings.excludedSites)) return;
+  if (isSiteListed(location.hostname, settings.neverTranslateSites)) return;
+
   const info = await detectPageLanguage();
-  if (info.effectiveLanguage !== settings.autoSourceLanguage || info.effectiveLanguage === settings.targetLanguage) return;
+  const sourceLanguage = info.effectiveLanguage;
+  const targetLanguage = normalizeDetectedLanguage(settings.targetLanguage) ?? settings.targetLanguage;
+  if (!sourceLanguage || sourceLanguage === targetLanguage) return;
+
+  const alwaysSite = isSiteListed(location.hostname, settings.alwaysTranslateSites);
+  if (!alwaysSite && settings.neverTranslateLanguages.includes(sourceLanguage)) return;
+  const explicitAlways = alwaysSite || settings.alwaysTranslateLanguages.includes(sourceLanguage);
+  if (!explicitAlways) {
+    if (!settings.autoTranslateEnabled) return;
+    if (!await translationRouteReady(sourceLanguage, targetLanguage)) return;
+  }
+
   try {
-    await translatePage(settings.autoSourceLanguage, settings.targetLanguage);
+    await translatePage(sourceLanguage, targetLanguage);
   } catch (error) {
     console.warn("[PageLingo] Automatic translation failed", error);
   }

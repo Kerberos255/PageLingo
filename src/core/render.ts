@@ -36,6 +36,7 @@ function restoreLinks(container: HTMLElement, links: LinkSnapshot[]): void {
     setOrRemove(anchor, "target", source.target);
     setOrRemove(anchor, "rel", source.rel);
     setOrRemove(anchor, "title", source.title);
+    setOrRemove(anchor, "class", source.className || null);
     anchor.addEventListener("click", (event) => {
       if (
         event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey ||
@@ -79,11 +80,12 @@ export function createSafeTranslatedFragment(
 export function mountTranslation(
   root: HTMLElement,
   fragment: DocumentFragment,
+  targetLanguage: string,
 ): HTMLElement {
   const node = root.ownerDocument.createElement("span");
   node.className = "flt-translation";
   node.dataset.fltGenerated = "translation";
-  node.lang = "zh-CN";
+  node.lang = targetLanguage;
   node.append(fragment);
 
   if (["LI", "TD", "TH"].includes(root.tagName)) {

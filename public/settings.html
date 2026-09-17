@@ -11,36 +11,67 @@
       <aside class="sidebar">
         <div class="brand"><div class="brand-mark">P</div><div><strong>PageLingo</strong><span>本地沉浸式翻译</span></div></div>
         <nav aria-label="设置导航">
-          <a class="nav-item active" href="#translation">网页翻译</a>
-          <a class="nav-item" href="#languages">语言包</a>
-          <a class="nav-item" href="#image-translation">图片翻译</a>
-          <a class="nav-item" href="#display">显示方式</a>
-          <a class="nav-item" href="#engine">翻译引擎</a>
+          <a class="nav-item active" data-settings-page="translation" href="#translation">网页翻译</a>
+          <a class="nav-item" data-settings-page="image-translation" href="#image-translation">图片翻译</a>
+          <a class="nav-item" data-settings-page="languages" href="#languages">语言包</a>
+          <a class="nav-item" data-settings-page="engine" href="#engine">翻译引擎</a>
         </nav>
-        <div class="local-badge">语言检测、OCR 与翻译均在本地完成 · 不上传网页内容</div>
+        <div class="local-badge">Firefox 本地引擎可完全离线运行 · 外部引擎仅在选用后发送待翻译文本</div>
       </aside>
 
       <main class="content">
-        <header class="page-header"><div><p class="eyebrow">PAGELINGO</p><h1>设置</h1><p>配置自动翻译、目标语言、离线语言包、图片翻译和译文显示方式。</p></div></header>
+        <header class="page-header"><div><p class="eyebrow">PAGELINGO</p><h1>设置</h1><p>配置网页翻译、图片翻译、离线语言包和翻译引擎。</p></div></header>
 
-        <section id="translation" class="section">
-          <div class="section-heading"><h2>网页翻译</h2><p>自动识别当前网页语言，并按你的规则翻译。</p></div>
+        <section id="translation" class="section settings-page active">
+          <div class="section-heading"><h2>网页翻译</h2></div>
           <div class="setting-card stack-card">
-            <label class="setting-row"><span><strong>自动翻译</strong><small>打开后，检测到指定语言的网页会自动翻译。</small></span><span class="switch"><input id="auto-translate-enabled" type="checkbox" /><i></i></span></label>
-            <div class="rule-row">
-              <span class="rule-label">检测到</span><select id="auto-source-language"></select><span class="rule-arrow">→</span><span class="rule-label">自动翻译为</span><select id="target-language"></select>
-            </div>
-            <div class="hint">首次安装会读取 Firefox 的界面/首选语言作为默认目标语言，并只预下载一套常用目标模型。其他模型按需下载。</div>
+            <label class="setting-row"><span><strong>自动翻译</strong><small>开启后自动识别网页语言并翻译为目标语言。</small></span><span class="switch"><input id="auto-translate-enabled" type="checkbox" /><i></i></span></label>
+            <div class="target-row"><span class="rule-label">自动翻译为</span><select id="target-language"></select></div>
           </div>
-          <div class="setting-card exception-card">
-            <div class="setting-copy"><div><strong>例外网站</strong><span>这些网站不会自动翻译，仍可从工具栏手动翻译。</span></div></div>
-            <div class="exception-add"><input id="exception-site" type="text" inputmode="url" placeholder="例如：github.com" /><button id="exception-add" type="button">添加</button></div>
-            <div id="exception-list" class="exception-list"></div>
+
+          <div class="setting-card rule-card">
+            <div class="setting-copy"><div><strong>不自动翻译的网址</strong><span>当网站为下列域名时，将不会自动进行翻译。此规则优先于语言设置。</span></div></div>
+            <div class="exception-add"><input id="never-site-input" type="text" inputmode="url" placeholder="例如：github.com" /><button id="never-site-add" type="button">添加</button></div>
+            <div id="never-site-list" class="exception-list"></div>
+          </div>
+
+          <div class="setting-card rule-card">
+            <div class="setting-copy"><div><strong>总是翻译的网址</strong><span>当网站为下列域名时，会自动翻译为目标语言。</span></div></div>
+            <div class="exception-add"><input id="always-site-input" type="text" inputmode="url" placeholder="例如：docs.example.com" /><button id="always-site-add" type="button">添加</button></div>
+            <div id="always-site-list" class="exception-list"></div>
+          </div>
+
+          <div class="setting-card rule-card">
+            <div class="setting-copy"><div><strong>永不翻译的语言</strong><span>当页面中某一段落的语言为下列语言时，将跳过翻译。</span></div></div>
+            <div class="exception-add"><select id="never-language-select"></select><button id="never-language-add" type="button">添加</button></div>
+            <div id="never-language-list" class="exception-list"></div>
+          </div>
+
+          <div class="setting-card rule-card">
+            <div class="setting-copy"><div><strong>总是翻译的语言</strong><span>当页面语言为下列语言时，会自动翻译为目标语言。注意：如果“不自动翻译的网址”与此设置冲突，将优先按网址规则执行。</span></div></div>
+            <div class="exception-add"><select id="always-language-select"></select><button id="always-language-add" type="button">添加</button></div>
+            <div id="always-language-list" class="exception-list"></div>
+          </div>
+
+          <div class="setting-card">
+            <div class="setting-copy"><div><strong>显示模式</strong><span>“仅译文”只隐藏原文的视觉呈现，原始 DOM、链接与事件仍保留。</span></div></div>
+            <fieldset class="segmented" aria-label="翻译显示模式">
+              <label><input type="radio" name="display-mode" value="translation" /><span><b>仅译文</b><small>只显示译文</small></span></label>
+              <label><input type="radio" name="display-mode" value="bilingual" /><span><b>双语对照</b><small>原文 + 译文</small></span></label>
+            </fieldset>
           </div>
         </section>
 
-        <section id="languages" class="section">
-          <div class="section-heading"><h2>离线语言包</h2><p>提前下载常用语言后，离线也能立即翻译。未下载的模型在首次使用时仍会自动获取。</p></div>
+        <section id="languages" class="section settings-page">
+          <div class="section-heading"><h2>离线语言包</h2><p>下载常用语言包，离线也能立即翻译。</p></div>
+          <div class="setting-card">
+            <div class="setting-copy"><div><strong>Firefox 翻译语言包</strong><span>选择需要的语言，下载后会出现在“已下载语言包”中。</span></div></div>
+            <div class="pack-download-row"><select id="language-pack-select" aria-label="选择语言包"></select><button id="download-language-pack" type="button">下载</button></div>
+          </div>
+          <div class="setting-card">
+            <div class="setting-copy"><div><strong>已下载语言包</strong><span>“↔”表示两个方向都可用；单箭头表示当前只有一个方向。</span></div></div>
+            <div id="language-pack-list" class="pack-list"><div class="empty-state">正在读取语言包…</div></div>
+          </div>
           <div class="setting-card stack-card">
             <div class="setting-row">
               <span><strong>模型更新</strong><small>只更新模型数据；PageLingo 代码与 Bergamot WASM 仍随扩展版本更新。</small></span>
@@ -54,45 +85,46 @@
               <button id="check-model-updates" type="button">检查更新</button>
               <span id="model-update-status">尚未检查更新</span>
             </div>
-            <div class="hint">自动更新会先完整下载新模型并校验大小与 SHA-256，成功后再切换；失败时继续使用旧模型。</div>
-          </div>
-          <div class="setting-card">
-            <div class="setting-copy"><div><strong>Mozilla Firefox 稳定模型</strong><span>“↔”表示两个方向都可用；单箭头表示 Firefox 当前只发布了一个稳定方向。</span></div></div>
-            <div id="language-pack-list" class="pack-list"><div class="empty-state">正在读取语言包…</div></div>
           </div>
         </section>
 
-        <section id="image-translation" class="section">
-          <div class="section-heading"><h2>图片翻译</h2><p>右键网页中的图片，在本机识别文字并复用 PageLingo 当前翻译模型。</p></div>
+        <section id="image-translation" class="section settings-page">
+          <div class="section-heading"><h2>图片翻译</h2><p>右键网页中的图片，选择“翻译图片”即可进行翻译</p></div>
           <div class="setting-card stack-card">
             <label class="setting-row"><span><strong>启用图片翻译</strong><small>默认关闭。开启后图片右键菜单会出现“PageLingo · 翻译图片”。</small></span><span class="switch"><input id="image-translation-enabled" type="checkbox" /><i></i></span></label>
             <div class="ocr-status-row">
               <div><span class="meta-label">文字识别</span><strong>PP-OCRv5 Mobile · WASM Worker</strong><small id="image-ocr-status">正在读取 OCR 状态…</small></div>
               <button id="delete-image-ocr-models" type="button" disabled>删除 OCR 模型</button>
             </div>
-            <div class="hint">OCR 模型在首次使用时单独下载并校验 SHA-256；识别结果仍交给现有本地 Bergamot 翻译。当前默认模型支持简中、繁中、英语和日语。后续高级设置会允许自定义 OCR 模型。</div>
+            <div class="hint">当前默认模型支持简中、繁中、英语和日语</div>
           </div>
         </section>
 
-        <section id="display" class="section">
-          <div class="section-heading"><h2>翻译显示</h2><p>选择页面翻译完成后的呈现方式。</p></div>
+        <section id="engine" class="section settings-page">
+          <div class="section-heading"><h2>翻译引擎</h2><p>默认使用 Firefox 本地模型；也可以添加翻译 API、LLM 或自建服务。</p></div>
+          <div class="setting-card stack-card">
+            <div class="setting-row"><span><strong>当前翻译引擎</strong><small>外部引擎会把需要翻译的文本发送给对应服务商。</small></span><select id="active-engine-select"></select></div>
+            <div class="hint">Firefox 本地引擎不需要 API Key，也不会上传网页文本。外部服务的免费额度、限速和数据策略以服务商当前规则为准。</div>
+          </div>
           <div class="setting-card">
-            <div class="setting-copy"><div><strong>显示模式</strong><span>“仅译文”只隐藏原文的视觉呈现，原始 DOM、链接与事件仍保留。</span></div></div>
-            <fieldset class="segmented" aria-label="翻译显示模式">
-              <label><input type="radio" name="display-mode" value="translation" /><span><b>仅译文</b><small>只显示译文</small></span></label>
-              <label><input type="radio" name="display-mode" value="bilingual" /><span><b>双语对照</b><small>原文 + 译文</small></span></label>
-            </fieldset>
+            <div class="setting-copy"><div><strong>已添加引擎</strong><span>API Key 仅保存在 Firefox 的 <code>browser.storage.local</code>，不会写入项目文件或日志。</span></div></div>
+            <div id="translation-engine-list" class="engine-list"></div>
           </div>
-        </section>
-
-        <section id="engine" class="section">
-          <div class="section-heading"><h2>翻译引擎</h2><p>语言识别、OCR 和翻译均在 Firefox 内本地执行。</p></div>
-          <div class="setting-card info-grid">
-            <div><span class="meta-label">语言检测</span><strong>Firefox i18n / CLD</strong></div>
-            <div><span class="meta-label">翻译引擎</span><strong>Bergamot WASM</strong></div>
-            <div><span class="meta-label">图片 OCR</span><strong>PP-OCRv5 Mobile + ONNX Runtime WASM</strong></div>
-            <div><span class="meta-label">模型来源</span><strong>Mozilla / PaddlePaddle</strong></div>
-            <div><span class="meta-label">非英语互译</span><strong>本地 English Pivot</strong></div>
+          <div class="setting-card engine-form-card">
+            <div class="setting-copy"><div><strong>添加翻译引擎</strong><span>选择预设后可继续修改地址、模型和提示词。自定义 REST 只支持声明式 JSON 模板，不执行脚本。</span></div></div>
+            <div class="engine-form-grid">
+              <label><span>类型</span><select id="engine-type"><option value="microsoft">Microsoft Translator</option><option value="google">Google Cloud Translation</option><option value="gemini">Gemini API</option><option value="openrouter">OpenRouter</option><option value="openai-compatible">OpenAI Compatible</option><option value="libretranslate">LibreTranslate</option><option value="custom-rest">自定义 REST</option></select></label>
+              <label><span>名称</span><input id="engine-name" type="text" /></label>
+              <label class="engine-wide"><span>Base URL / Endpoint</span><input id="engine-base-url" type="text" spellcheck="false" /></label>
+              <label><span>API Key</span><input id="engine-api-key" type="password" autocomplete="off" /></label>
+              <label data-engine-field="model"><span>模型</span><input id="engine-model" type="text" spellcheck="false" /></label>
+              <label data-engine-field="region"><span>Azure Region（可选）</span><input id="engine-region" type="text" spellcheck="false" /></label>
+              <label class="engine-wide" data-engine-field="prompt"><span>LLM 提示词（可选）</span><textarea id="engine-prompt" rows="4" placeholder="留空使用 PageLingo 的 HTML 安全翻译提示词"></textarea></label>
+              <label class="engine-wide" data-engine-field="custom"><span>请求头 JSON</span><textarea id="engine-headers-json" rows="3" spellcheck="false" placeholder='{"Authorization":"Bearer {{apiKey}}"}'></textarea></label>
+              <label class="engine-wide" data-engine-field="custom"><span>请求体 JSON 模板</span><textarea id="engine-body-json" rows="5" spellcheck="false" placeholder='{"text":"{{html}}","source":"{{source}}","target":"{{target}}"}'></textarea></label>
+              <label class="engine-wide" data-engine-field="custom"><span>响应路径</span><input id="engine-response-path" type="text" spellcheck="false" placeholder="data.translatedText" /></label>
+            </div>
+            <div class="engine-form-actions"><button id="test-translation-engine" type="button">测试连接</button><button id="add-translation-engine" type="button" class="primary">添加引擎</button></div>
           </div>
         </section>
         <div id="save-status" class="save-toast" role="status">设置会自动保存并立即生效</div>
