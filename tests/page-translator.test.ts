@@ -187,7 +187,7 @@ describe("PageTranslator display modes", () => {
     const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
     await translator.translateAll();
 
-    expect(item.classList.contains("flt-source-content-hidden")).toBe(true);
+    expect(item.classList.contains("flt-source-list-hidden")).toBe(true);
     expect(item.querySelector(":scope > .flt-translation")).not.toBeNull();
 
     translator.restore();
