@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from selenium import webdriver
@@ -14,6 +16,27 @@ from selenium.webdriver.support.ui import WebDriverWait
 TARGET_URL = "https://github.com/Kerberos255/chatgpt-codex-tools-mcp"
 ARTIFACTS = Path("artifacts")
 ARTIFACTS.mkdir(exist_ok=True)
+
+
+class TranslationHandler(BaseHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        body = json.loads(self.rfile.read(length) or b"{}")
+        payload = json.dumps({"translated": body.get("html", "")}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+
+def start_translation_server() -> tuple[ThreadingHTTPServer, str]:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TranslationHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}/translate"
 
 
 def extension_uuid(driver: webdriver.Firefox, addon_id: str) -> str:
@@ -69,6 +92,8 @@ def main() -> None:
     if not xpi.is_file():
         raise SystemExit(f"XPI not found: {xpi}")
 
+    translation_server, translation_url = start_translation_server()
+
     options = Options()
     options.add_argument("-headless")
     firefox_binary = os.environ.get("FIREFOX_BINARY")
@@ -104,7 +129,8 @@ def main() -> None:
         )
         driver.execute_async_script(
             """
-            const done = arguments[0];
+            const baseUrl = arguments[0];
+            const done = arguments[arguments.length - 1];
             browser.storage.local.set({
               displayMode: 'translation',
               targetLanguage: 'zh-Hans',
@@ -112,10 +138,26 @@ def main() -> None:
               neverTranslateSites: [],
               alwaysTranslateSites: [],
               neverTranslateLanguages: [],
-              alwaysTranslateLanguages: []
+              alwaysTranslateLanguages: [],
+              activeTranslationEngineId: 'e2e-rest',
+              translationEngines: [{
+                id: 'e2e-rest',
+                name: 'E2E Echo REST',
+                type: 'custom-rest',
+                enabled: true,
+                baseUrl,
+                apiKey: '',
+                model: '',
+                region: '',
+                prompt: '',
+                headersJson: '{}',
+                bodyJson: '{"html":"{{html}}"}',
+                responsePath: 'translated'
+              }]
             }).then(() => done({ok:true}))
               .catch((error) => done({ok:false,error:String(error)}));
-            """
+            """,
+            translation_url,
         )
 
         result = driver.execute_async_script(
@@ -190,6 +232,8 @@ def main() -> None:
         driver.switch_to.window(extension_handle)
     finally:
         driver.quit()
+        translation_server.shutdown()
+        translation_server.server_close()
 
 
 if __name__ == "__main__":
