@@ -3,7 +3,7 @@ import { PageTranslator } from "./core/page-translator";
 import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, normalizeDisplayMode } from "./shared/settings";
-import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml } from "./core/rich-segment";
+import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint } from "./core/rich-segment";
 import { freezeNavigationLayout, restoreNavigationLayout } from "./core/navigation-layout";
 var translator = null;
 var imageOverlays = new Map();
