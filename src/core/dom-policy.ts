@@ -48,6 +48,49 @@ export function isGeneratedNode(node) {
 export function isTranslationRootElement(element) {
   return ROOT_TAGS.has(element.tagName);
 }
+function safeDecodePathSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+function isProtectedGitHubIdentifierText(node) {
+  const doc = node.ownerDocument;
+  const view = doc.defaultView;
+  const parent = node.parentElement;
+  if (!view || !parent || view.location.hostname.toLowerCase() !== "github.com") return false;
+  const text = node.data.trim();
+  if (!text) return false;
+  const anchor = parent.closest("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement)) return false;
+  let target;
+  try {
+    target = new URL(anchor.href, view.location.href);
+  } catch {
+    return false;
+  }
+  if (target.hostname.toLowerCase() !== "github.com") return false;
+  const targetParts = target.pathname.split("/").filter(Boolean).map(safeDecodePathSegment);
+  const currentParts = view.location.pathname.split("/").filter(Boolean).map(safeDecodePathSegment);
+  if (
+    targetParts.length === 1 &&
+    text === targetParts[0] &&
+    (anchor.getAttribute("data-hovercard-type") === "user" || currentParts[0] === targetParts[0])
+  ) {
+    return true;
+  }
+  if (
+    currentParts.length >= 2 &&
+    targetParts.length === 2 &&
+    targetParts[0] === currentParts[0] &&
+    targetParts[1] === currentParts[1] &&
+    text === currentParts[1]
+  ) {
+    return true;
+  }
+  return false;
+}
 function isScreenReaderOnlyStyle(style) {
   const px = (value) => {
     const parsed = Number.parseFloat(value);
@@ -81,7 +124,7 @@ function isEffectivelyHidden(element) {
   return false;
 }
 export function isEligibleTextNode(node) {
-  if (!node.data.trim()) return false;
+  if (!node.data.trim() || isProtectedGitHubIdentifierText(node)) return false;
   const parent = node.parentElement;
   if (!parent || parent.closest(SKIP_SELECTOR) || isEffectivelyHidden(parent)) return false;
   return /[\p{L}\p{N}]/u.test(node.data);
@@ -174,7 +217,7 @@ function wrapDirectAnchorTextNodes(scope) {
       for (const child of Array.from(container.childNodes)) {
         if (child.nodeType !== Node.TEXT_NODE) continue;
         const text = child.textContent ?? "";
-        if (!text.trim() || !/[\p{L}\p{N}]/u.test(text)) continue;
+        if (!text.trim() || !/[\p{L}\p{N}]/u.test(text) || isProtectedGitHubIdentifierText(child)) continue;
         const wrapper = doc.createElement("span");
         wrapper.dataset.fltSourceTextWrapper = "true";
         child.replaceWith(wrapper);
