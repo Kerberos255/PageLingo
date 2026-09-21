@@ -5,7 +5,7 @@ export type ManualSourceLanguage = "auto" | string;
 export interface GlossaryEntry { source:string; target:string; mode:"protect"|"replace" }
 export interface GlossaryCollection { id:string; name:string; enabled:boolean; entries:GlossaryEntry[] }
 export interface PageLingoSettings { displayMode:DisplayMode; autoTranslateEnabled:boolean; targetLanguage:string; neverTranslateSites:string[]; alwaysTranslateSites:string[]; neverTranslateLanguages:string[]; alwaysTranslateLanguages:string[]; modelUpdatePolicy:ModelUpdatePolicy; imageTranslationEnabled:boolean; terminologyText:string; builtinGlossaryEnabled:boolean; glossaryCollections:GlossaryCollection[] }
-export var DEFAULT_SETTINGS = {
+export var DEFAULT_SETTINGS: PageLingoSettings = {
     displayMode: "translation",
     autoTranslateEnabled: false,
     targetLanguage: "zh-Hans",
@@ -35,13 +35,13 @@ export function languageLabel(code) {
         return code;
     }
 }
-export function normalizeDisplayMode(value) {
+export function normalizeDisplayMode(value): DisplayMode {
     return value === "bilingual" ? "bilingual" : "translation";
 }
-export function normalizeModelUpdatePolicy(value) {
+export function normalizeModelUpdatePolicy(value): ModelUpdatePolicy {
     return value === "notify" || value === "manual" ? value : "auto";
 }
-export function normalizeDetectedLanguage(value) {
+export function normalizeDetectedLanguage(value): string | null {
     if (typeof value !== "string")
         return null;
     const raw = value.trim();
@@ -58,13 +58,13 @@ export function normalizeDetectedLanguage(value) {
         return "he";
     return lower.split("-")[0] || null;
 }
-export function normalizeSourceLanguage(value) {
+export function normalizeSourceLanguage(value): string {
     return normalizeDetectedLanguage(value) ?? "en";
 }
-export function normalizeTargetLanguage(value) {
+export function normalizeTargetLanguage(value): string {
     return normalizeDetectedLanguage(value) ?? "zh-Hans";
 }
-export function normalizeSitePattern(value) {
+export function normalizeSitePattern(value): string | null {
     const trimmed = value.trim().toLowerCase();
     if (!trimmed)
         return null;
@@ -79,7 +79,7 @@ export function normalizeSitePattern(value) {
         return null;
     }
 }
-export function normalizeExcludedSites(value) {
+export function normalizeExcludedSites(value): string[] {
     if (!Array.isArray(value))
         return [];
     const normalized = value
@@ -88,7 +88,7 @@ export function normalizeExcludedSites(value) {
         .filter((item) => Boolean(item));
     return Array.from(new Set(normalized)).sort();
 }
-export function normalizeLanguageList(value) {
+export function normalizeLanguageList(value): string[] {
     if (!Array.isArray(value))
         return [];
     const normalized = value
@@ -102,7 +102,7 @@ function createGlossaryId() {
     } catch {}
     return `glossary-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
-export function normalizeGlossaryEntry(value) {
+export function normalizeGlossaryEntry(value): GlossaryEntry | null {
     if (!value || typeof value !== "object") return null;
     const source = typeof value.source === "string" ? value.source.trim() : "";
     if (!source) return null;
@@ -111,7 +111,7 @@ export function normalizeGlossaryEntry(value) {
     if (mode === "replace" && !target) return null;
     return { source, target, mode };
 }
-export function parseGlossaryEditorText(text) {
+export function parseGlossaryEditorText(text): GlossaryEntry[] {
     const entries = [];
     for (const rawLine of String(text || "").split(/\r?\n/)) {
         const line = rawLine.trim();
@@ -131,7 +131,7 @@ export function parseGlossaryEditorText(text) {
 function parseLegacyGlossaryText(text) {
     return parseGlossaryEditorText(String(text || "").split(/\r?\n/).filter((line) => /(?:=>|=|\t)/.test(line)).join("\n"));
 }
-export function normalizeGlossaryCollections(value, legacyText = "") {
+export function normalizeGlossaryCollections(value, legacyText = ""): GlossaryCollection[] {
     const source = Array.isArray(value) ? value : [];
     const normalized = [];
     for (const item of source) {
@@ -154,7 +154,7 @@ export function isSiteListed(hostname, sites) {
     const host = hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
     return sites.some((site) => host === site || host.endsWith(`.${site}`));
 }
-export async function loadSettings() {
+export async function loadSettings(): Promise<PageLingoSettings> {
     const stored = await browser.storage.local.get();
     const legacyExcludedSites = normalizeExcludedSites(stored.excludedSites);
     const glossaryCollections = normalizeGlossaryCollections(stored.glossaryCollections, stored.terminologyText);
