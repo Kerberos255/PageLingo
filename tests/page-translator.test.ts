@@ -112,6 +112,31 @@ describe("PageTranslator DOM preservation", () => {
     expect(provider.requests[0]?.html).toContain("Translate me.");
   });
 
+  it("does not translate screen-reader-only headings hidden by clipping", async () => {
+    document.head.innerHTML = `<style>
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+    </style>`;
+    document.body.innerHTML = `<h2 class="sr-only">Latest commit</h2><p>Visible repository description.</p>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider, { displayMode: "translation" });
+    await translator.translateAll();
+
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]?.html).toContain("Visible repository description.");
+    expect(provider.requests[0]?.html).not.toContain("Latest commit");
+    expect(document.querySelector("h2.sr-only")?.nextElementSibling?.classList.contains("flt-translation")).not.toBe(true);
+  });
+
   it("restores links by translated label even when translation reorders link positions", async () => {
     document.body.innerHTML = `<p>Built by the <a href="https://openclaw.org">OpenClaw Foundation</a>. See the <a href="/gateway/telemetry">version check</a>.</p>`;
     class ReorderingProvider implements TranslationProvider {
