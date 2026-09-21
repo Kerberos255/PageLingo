@@ -87,6 +87,7 @@ export class PageTranslator {
     #flushQueued = false;
     #disposed = false;
     #sourceLinkStyleSnapshots = new Map();
+    #sourceHadClassAttribute = new WeakMap();
     constructor(doc, provider, options = {}) {
         this.#doc = doc;
         this.#provider = provider;
@@ -306,6 +307,9 @@ export class PageTranslator {
         }
     }
     #applyDisplayMode(root, translationNode) {
+        if (!this.#sourceHadClassAttribute.has(root)) {
+            this.#sourceHadClassAttribute.set(root, root.hasAttribute("class"));
+        }
         this.#clearDisplayMode(root);
         if (this.#displayMode !== "translation")
             return;
@@ -342,6 +346,9 @@ export class PageTranslator {
     }
     #clearDisplayMode(root) {
         root.classList.remove("flt-source-hidden", "flt-source-content-hidden", "flt-source-list-hidden");
+        if (this.#sourceHadClassAttribute.get(root) === false && root.classList.length === 0) {
+            root.removeAttribute("class");
+        }
         if (root.tagName === "LI") unwrapListDirectText(root);
         if (root.tagName !== "A") {
             root.style.removeProperty("--pagelingo-source-font-size");
