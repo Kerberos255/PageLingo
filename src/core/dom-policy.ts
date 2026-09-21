@@ -1,98 +1,154 @@
-const ROOT_TAGS = new Set([
-  "P", "LI", "BLOCKQUOTE", "FIGCAPTION", "TD", "TH", "DT", "DD",
-  "H1", "H2", "H3", "H4", "H5", "H6", "SUMMARY",
+// @ts-nocheck
+var ROOT_TAGS = /* @__PURE__ */ new Set([
+  "P",
+  "LI",
+  "BLOCKQUOTE",
+  "FIGCAPTION",
+  "TD",
+  "TH",
+  "DT",
+  "DD",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "SUMMARY"
 ]);
-
-const SKIP_SELECTOR = [
-  "script", "style", "noscript", "template",
-  "textarea", "input", "select", "option", "button",
-  "pre", "code", "kbd", "samp", "var",
-  "svg", "math", "canvas", "video", "audio",
+var SKIP_SELECTOR = [
+  "script",
+  "style",
+  "noscript",
+  "template",
+  "textarea",
+  "input",
+  "select",
+  "option",
+  "button",
+  "pre",
+  "code",
+  "kbd",
+  "samp",
+  "var",
+  "svg",
+  "math",
+  "canvas",
+  "video",
+  "audio",
   "[contenteditable]:not([contenteditable='false'])",
   "[data-flt-generated]",
-  "[hidden]", "[aria-hidden='true']",
+  "[hidden]",
+  "[aria-hidden='true']"
 ].join(",");
-
-const FALLBACK_STRUCTURAL_SELECTOR = [
-  "a", "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "section",
-  "article", "header", "footer", "nav", "aside", "figure", "svg", "img", "picture", "video", "canvas",
-  "button", "input", "select", "textarea", "iframe",
-].join(",");
-
-export function isGeneratedNode(node: Node): boolean {
-  const element = node.nodeType === Node.ELEMENT_NODE
-    ? (node as Element)
-    : node.parentElement;
+export function isGeneratedNode(node) {
+  const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   return Boolean(element?.closest("[data-flt-generated]"));
 }
-
-export function isTranslationRootElement(element: Element): boolean {
+export function isTranslationRootElement(element) {
   return ROOT_TAGS.has(element.tagName);
 }
-
-function isEffectivelyHidden(element: Element): boolean {
+function isEffectivelyHidden(element) {
   const view = element.ownerDocument.defaultView;
   if (!view) return false;
-  let current: Element | null = element;
+  let current = element;
   while (current) {
     const style = view.getComputedStyle(current);
-    if (
-      style.display === "none" ||
-      style.visibility === "hidden" ||
-      style.visibility === "collapse" ||
-      style.contentVisibility === "hidden"
-    ) return true;
+    if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || style.contentVisibility === "hidden") return true;
     if (current === current.ownerDocument.documentElement) break;
     current = current.parentElement;
   }
   return false;
 }
-
-export function isEligibleTextNode(node: Text): boolean {
+export function isEligibleTextNode(node) {
   if (!node.data.trim()) return false;
   const parent = node.parentElement;
   if (!parent || parent.closest(SKIP_SELECTOR) || isEffectivelyHidden(parent)) return false;
   return /[\p{L}\p{N}]/u.test(node.data);
 }
-
-function isFallbackLeafContainer(element: Element): boolean {
+var FALLBACK_STRUCTURAL_SELECTOR = [
+  "a", "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "section",
+  "article", "header", "footer", "nav", "aside", "figure", "svg", "img", "picture", "video", "canvas",
+  "button", "input", "select", "textarea", "iframe"
+].join(",");
+function isFallbackLeafContainer(element) {
   if (!["DIV", "SPAN", "LABEL"].includes(element.tagName)) return false;
   if (element.closest(SKIP_SELECTOR)) return false;
   if (element.tagName === "DIV" && element.children.length > 0) return false;
   if (element.querySelector(FALLBACK_STRUCTURAL_SELECTOR)) return false;
   return Boolean((element.textContent ?? "").trim());
 }
-
-export function findTranslationRoot(node: Text): HTMLElement | null {
+var STRUCTURAL_LINK_SELECTOR = [
+  "svg", "img", "picture", "video", "canvas", "iframe", "button", "input", "select", "textarea",
+  "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "section",
+  "article", "header", "footer", "nav", "aside", "figure"
+].join(",");
+function isSimpleInlineContainer(element) {
+  if (element.tagName !== "A" && element.tagName !== "LABEL") return false;
+  if (!isFallbackLeafContainer(element)) return false;
+  if (element.querySelector(STRUCTURAL_LINK_SELECTOR)) return false;
+  const descendants = Array.from(element.querySelectorAll("*"));
+  if (descendants.length > 8) return false;
+  if (!(element.textContent ?? "").trim()) return false;
+  const view = element.ownerDocument.defaultView;
+  if (!view || isEffectivelyHidden(element)) return false;
+  const style = view.getComputedStyle(element);
+  const structuralDisplays = new Set(["flex", "inline-flex", "grid", "inline-grid", "table", "inline-table", "list-item", "flow-root"]);
+  if (structuralDisplays.has(style.display)) return false;
+  for (const child of descendants) {
+    const childDisplay = view.getComputedStyle(child).display;
+    if (["block", "flex", "inline-flex", "grid", "inline-grid", "table", "list-item", "flow-root"].includes(childDisplay)) return false;
+  }
+  if (style.display === "block") {
+    const px = (value) => Number.parseFloat(value) || 0;
+    const borderWidth = px(style.borderTopWidth) + px(style.borderRightWidth) + px(style.borderBottomWidth) + px(style.borderLeftWidth);
+    const padding = px(style.paddingTop) + px(style.paddingRight) + px(style.paddingBottom) + px(style.paddingLeft);
+    const background = style.backgroundColor;
+    const hasBackground = Boolean(background && background !== "transparent" && background !== "rgba(0, 0, 0, 0)");
+    const hasBoxDecoration = borderWidth > 0 || padding > 6 || hasBackground || (style.boxShadow && style.boxShadow !== "none");
+    if (hasBoxDecoration || descendants.length > 2) return false;
+  }
+  return true;
+}
+function isInsideCodeWidgetFallback(element) {
+    let current = element.parentElement;
+    for (let depth = 0; current && current !== current.ownerDocument.body && depth < 4; depth += 1) {
+        if (current.matches("pre,code,kbd,samp,var")) return true;
+        // Only treat a compact wrapper with its own direct <pre> as a code widget.
+        // The old descendant search (:scope > div > pre / div > div > pre) made an
+        // entire article look like a code widget whenever any sibling code block existed.
+        const directPre = current.querySelector(":scope > pre");
+        if (directPre && current.children.length <= 8) return true;
+        if (isTranslationRootElement(current)) return false;
+        current = current.parentElement;
+    }
+    return false;
+}
+export function findTranslationRoot(node) {
   let current = node.parentElement;
-  let fallback: HTMLElement | null = null;
-
+  let fallback = null;
   while (current && current !== current.ownerDocument.body) {
     if (current.matches(SKIP_SELECTOR)) return null;
-    if (isTranslationRootElement(current)) return current as HTMLElement;
-    if (!fallback && isFallbackLeafContainer(current)) fallback = current as HTMLElement;
+    if (isTranslationRootElement(current)) {
+      if (isInsideCodeWidgetFallback(current)) return null;
+      return current;
+    }
+    if (!fallback && isFallbackLeafContainer(current)) fallback = current;
     current = current.parentElement;
   }
-
+  if (fallback && isInsideCodeWidgetFallback(fallback)) return null;
   return fallback;
 }
-
-function wrapDirectAnchorTextNodes(scope: ParentNode): void {
+function wrapDirectAnchorTextNodes(scope) {
   const doc = scope instanceof Document ? scope : scope.ownerDocument;
   if (!doc) return;
-
-  const anchors: HTMLAnchorElement[] = [];
-  if (scope instanceof Element && scope.tagName === "A") anchors.push(scope as HTMLAnchorElement);
-  if ("querySelectorAll" in scope) anchors.push(...Array.from(scope.querySelectorAll<HTMLAnchorElement>("a")));
-
-  const skipTags = new Set([
-    "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT", "OPTION", "BUTTON",
-    "PRE", "CODE", "KBD", "SAMP", "VAR", "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO",
-  ]);
-
+  const anchors = [];
+  if (scope instanceof Element && scope.tagName === "A") anchors.push(scope);
+  if ("querySelectorAll" in scope) anchors.push(...Array.from(scope.querySelectorAll("a")));
+  const skipTags = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT", "OPTION", "BUTTON", "PRE", "CODE", "KBD", "SAMP", "VAR", "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO"]);
   for (const anchor of anchors) {
     if (anchor.closest("[data-flt-generated]")) continue;
-    const containers = [anchor, ...Array.from(anchor.querySelectorAll<HTMLElement>("*"))];
+    const containers = [anchor, ...Array.from(anchor.querySelectorAll("*"))];
     for (const container of containers) {
       if (skipTags.has(container.tagName) || container.hasAttribute("data-flt-source-text-wrapper")) continue;
       for (const child of Array.from(container.childNodes)) {
@@ -107,24 +163,20 @@ function wrapDirectAnchorTextNodes(scope: ParentNode): void {
     }
   }
 }
-
-export function collectTranslationRoots(scope: ParentNode): HTMLElement[] {
+export function collectTranslationRoots(scope) {
   const doc = scope instanceof Document ? scope : scope.ownerDocument;
   if (!doc) return [];
-
   wrapDirectAnchorTextNodes(scope);
-  const roots = new Set<HTMLElement>();
+  const roots = /* @__PURE__ */ new Set();
   const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
   let current = walker.nextNode();
-
   while (current) {
-    const text = current as Text;
+    const text = current;
     if (isEligibleTextNode(text)) {
       const root = findTranslationRoot(text);
       if (root) roots.add(root);
     }
     current = walker.nextNode();
   }
-
   return Array.from(roots);
 }

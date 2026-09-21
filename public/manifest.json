@@ -1,15 +1,26 @@
 {
   "manifest_version": 3,
   "name": "PageLingo",
-  "version": "0.1.0",
+  "version": "0.1.30",
   "description": "Fast local immersive translation with layout-preserving bilingual rendering.",
-  "permissions": ["storage", "activeTab", "alarms", "contextMenus"],
-  "host_permissions": ["http://*/*", "https://*/*"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "alarms",
+    "contextMenus",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "options_ui": {
     "page": "settings.html",
@@ -29,8 +40,14 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "builtin-glossary.js",
+        "content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     }
@@ -40,7 +57,9 @@
       "id": "pagelingo@kerberos255",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   }
