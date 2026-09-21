@@ -48,13 +48,33 @@ export function isGeneratedNode(node) {
 export function isTranslationRootElement(element) {
   return ROOT_TAGS.has(element.tagName);
 }
+function isScreenReaderOnlyStyle(style) {
+  const px = (value) => {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+  };
+  const tinyBox = px(style.width) <= 2 && px(style.height) <= 2;
+  const positioned = style.position === "absolute" || style.position === "fixed";
+  const overflowHidden = [style.overflow, style.overflowX, style.overflowY].some((value) => value === "hidden" || value === "clip");
+  const clipped = Boolean(
+    (style.clip && style.clip !== "auto" && style.clip !== "rect(auto, auto, auto, auto)") ||
+    (style.clipPath && style.clipPath !== "none")
+  );
+  return positioned && tinyBox && overflowHidden && clipped;
+}
 function isEffectivelyHidden(element) {
   const view = element.ownerDocument.defaultView;
   if (!view) return false;
   let current = element;
   while (current) {
     const style = view.getComputedStyle(current);
-    if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || style.contentVisibility === "hidden") return true;
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      style.visibility === "collapse" ||
+      style.contentVisibility === "hidden" ||
+      isScreenReaderOnlyStyle(style)
+    ) return true;
     if (current === current.ownerDocument.documentElement) break;
     current = current.parentElement;
   }
