@@ -25,7 +25,10 @@ class TranslationHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length) or b"{}")
-        payload = json.dumps({"translated": body.get("html", "")}).encode("utf-8")
+        translated = body.get("html", "")
+        translated = translated.replace("Kerberos255", "克尔贝罗斯255")
+        translated = translated.replace("chatgpt-codex-tools-mcp", "已翻译仓库名")
+        payload = json.dumps({"translated": translated}).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
@@ -80,6 +83,32 @@ def hidden_heading_snapshot(driver: webdriver.Firefox) -> list[dict]:
             className: el.className,
             translatedSibling: el.nextElementSibling?.classList.contains('flt-translation') === true,
           }));
+        """
+    )
+
+
+def repository_identity_snapshot(driver: webdriver.Firefox) -> dict:
+    return driver.execute_script(
+        """
+        const pickVisible = (selector) => Array.from(document.querySelectorAll(selector))
+          .filter((el) => {
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && r.top >= 0 && r.top < 240;
+          })
+          .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0] || null;
+        const owner = pickVisible('a[href="/Kerberos255"]');
+        const repo = pickVisible('a[href="/Kerberos255/chatgpt-codex-tools-mcp"]');
+        const snap = (el) => {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return {
+            text: (el.textContent || '').replace(/\s+/g, ' ').trim(),
+            rect: {x:r.x,y:r.y,width:r.width,height:r.height},
+            generated: el.querySelectorAll('[data-flt-generated="translation"]').length,
+            wrappers: el.querySelectorAll('[data-flt-source-text-wrapper]').length,
+          };
+        };
+        return { owner: snap(owner), repo: snap(repo) };
         """
     )
 
@@ -165,6 +194,7 @@ def main() -> None:
         WebDriverWait(driver, 30).until(
             lambda d: "chatgpt-codex-tools-mcp" in d.title.lower()
         )
+        identity_before = repository_identity_snapshot(driver)
         chrome_before = repository_chrome_snapshot(driver)
         before = hidden_heading_snapshot(driver)
         if not before:
@@ -272,7 +302,18 @@ def main() -> None:
         )
         if not probe_state.get("sourceHidden") or not probe_state.get("translated"):
             raise AssertionError(f"Visible probe was not translated normally: {probe_state}")
+        identity_after = repository_identity_snapshot(driver)
         chrome_after = repository_chrome_snapshot(driver)
+        if not identity_before.get("owner") or not identity_before.get("repo"):
+            raise AssertionError(f"GitHub repository identity was not found: {identity_before}")
+        if identity_after.get("owner", {}).get("text") != identity_before["owner"]["text"]:
+            raise AssertionError(f"GitHub owner identifier changed during translation: {identity_before} -> {identity_after}")
+        if identity_after.get("repo", {}).get("text") != identity_before["repo"]["text"]:
+            raise AssertionError(f"GitHub repository identifier changed during translation: {identity_before} -> {identity_after}")
+        if identity_after["owner"]["generated"] or identity_after["repo"]["generated"]:
+            raise AssertionError(f"GitHub repository identifiers received generated translation nodes: {identity_after}")
+        if abs(identity_after["repo"]["rect"]["x"] - identity_before["repo"]["rect"]["x"]) > 1:
+            raise AssertionError(f"GitHub repository title shifted horizontally: {identity_before} -> {identity_after}")
         after = hidden_heading_snapshot(driver)
         leaked = [item for item in after if item["translatedSibling"]]
         if leaked:
@@ -309,6 +350,8 @@ def main() -> None:
         driver.save_screenshot(str(ARTIFACTS / "github-after.png"))
         print(json.dumps({
             "translated_roots": value.get("count"),
+            "repository_identity_before": identity_before,
+            "repository_identity_after": identity_after,
             "repository_chrome_before": chrome_before,
             "repository_chrome_after": chrome_after,
             "visible_probe": probe_state,
