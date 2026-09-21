@@ -1,0 +1,65 @@
+name: PageLingo GitHub font regression
+
+on:
+  push:
+    branches:
+      - fix/github-font-size
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck, unit tests, build
+        run: npm run verify
+
+      - name: Package XPI
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          npx web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest
+          PACKAGE="$(find artifacts -maxdepth 1 -type f -name '*.zip' | head -n 1)"
+          test -n "$PACKAGE"
+          cp "$PACKAGE" artifacts/pagelingo-v0.1.30-github-font-fix.xpi
+
+      - name: Setup Firefox
+        uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+
+      - name: Setup geckodriver
+        uses: browser-actions/setup-geckodriver@latest
+
+      - name: Install Selenium
+        run: python -m pip install --disable-pip-version-check selenium==4.35.0
+
+      - name: Live GitHub Firefox regression
+        run: python tests/github_font_e2e.py artifacts/pagelingo-v0.1.30-github-font-fix.xpi
+
+      - name: Upload XPI and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pagelingo-github-font-fix
+          path: |
+            artifacts/pagelingo-v0.1.30-github-font-fix.xpi
+            artifacts/github-before.png
+            artifacts/github-after.png
+          if-no-files-found: warn
+          retention-days: 7
