@@ -430,24 +430,6 @@ function restoreLinks(container, links, translatedLinkTexts = [], translatedGapT
         resolvedByIndex.set(linkIndex, restored);
     }
 
-    // If the engine stripped transport attributes but preserved the same number of <a>
-    // elements, the whole-sentence anchors are authoritative. Rebind them in source order
-    // instead of translating link labels a second time. This avoids semantic/quote conflicts.
-    const unresolvedBeforeFallback = links.map((_, i) => i).filter((i) => !resolvedLinks.has(i));
-    const anonymousBeforeFallback = Array.from(container.querySelectorAll("a")).filter((a) => !resolvedAnchors.has(a));
-    if (unresolvedBeforeFallback.length > 0 && unresolvedBeforeFallback.length === anonymousBeforeFallback.length) {
-        unresolvedBeforeFallback.forEach((linkIndex, position) => {
-            const anchor = anonymousBeforeFallback[position];
-            const source = links[linkIndex];
-            if (!anchor || !source) return;
-            configureRestoredLink(anchor, source);
-            removeAdjacentAddedLinkQuotes(anchor, source);
-            resolvedLinks.add(linkIndex);
-            resolvedAnchors.add(anchor);
-            resolvedByIndex.set(linkIndex, anchor);
-        });
-    }
-
     // If an engine stripped the <a> wrapper but preserved the opaque code token, the
     // token itself is still a perfect identity anchor. Rebuild the link directly around
     // it before attempting any fuzzy text matching.
@@ -514,20 +496,22 @@ function restoreLinks(container, links, translatedLinkTexts = [], translatedGapT
         }
     }
 
-    // Last-resort one-to-one mapping if an engine kept an anchor but stripped the ID and
-    // translated its label differently from the standalone label request.
+    // Last resort: after marker and translated-label matching have had a chance to
+    // preserve link identity, bind any remaining anonymous anchors in source order.
+    // Delaying this fallback is important because translation engines may reorder links.
     const unresolvedIndexes = links.map((_, i) => i).filter((i) => !resolvedLinks.has(i));
     const anonymousAnchors = Array.from(container.querySelectorAll("a")).filter((a) => !resolvedAnchors.has(a));
-    if (unresolvedIndexes.length === 1 && anonymousAnchors.length === 1) {
-        const i = unresolvedIndexes[0];
-        const source = links[i];
-        const label = translatedLinkTexts[i]?.trim() || "";
-        if (source) {
-            const restored = trimIdentifiedAnchor(anonymousAnchors[0], label, source);
-            resolvedLinks.add(i);
+    if (unresolvedIndexes.length > 0 && unresolvedIndexes.length === anonymousAnchors.length) {
+        unresolvedIndexes.forEach((linkIndex, position) => {
+            const anchor = anonymousAnchors[position];
+            const source = links[linkIndex];
+            if (!anchor || !source) return;
+            const label = translatedLinkTexts[linkIndex]?.trim() || "";
+            const restored = trimIdentifiedAnchor(anchor, label, source);
+            resolvedLinks.add(linkIndex);
             resolvedAnchors.add(restored);
-            resolvedByIndex.set(i, restored);
-        }
+            resolvedByIndex.set(linkIndex, restored);
+        });
     }
 
     restoreMissingLinkGaps(container, translatedGapTexts, resolvedByIndex);
