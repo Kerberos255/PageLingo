@@ -41,8 +41,8 @@ interface PendingOcr {
 }
 
 interface ContextMenuFrameInfo {
-  frameId?: number;
-  srcUrl?: string;
+  frameId?: number | undefined;
+  srcUrl?: string | undefined;
 }
 
 class ImageOcrWorkerClient {
