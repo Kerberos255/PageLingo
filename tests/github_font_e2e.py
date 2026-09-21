@@ -84,6 +84,59 @@ def hidden_heading_snapshot(driver: webdriver.Firefox) -> list[dict]:
     )
 
 
+def repository_chrome_snapshot(driver: webdriver.Firefox) -> dict:
+    return driver.execute_script(
+        """
+        const exactTextElements = (value) => Array.from(document.querySelectorAll('body *'))
+          .filter((el) => el.children.length === 0 && (el.textContent || '').trim() === value)
+          .slice(0, 8)
+          .map((el) => {
+            const s = getComputedStyle(el);
+            const r = el.getBoundingClientRect();
+            return {
+              tag: el.tagName,
+              className: String(el.className || ''),
+              text: (el.textContent || '').trim(),
+              display: s.display,
+              rect: {x:r.x,y:r.y,width:r.width,height:r.height},
+              parent: el.parentElement ? {
+                tag: el.parentElement.tagName,
+                className: String(el.parentElement.className || ''),
+                text: (el.parentElement.textContent || '').trim().slice(0, 180),
+                display: getComputedStyle(el.parentElement).display
+              } : null,
+              html: el.outerHTML.slice(0, 1000)
+            };
+          });
+        const shortcutNodes = Array.from(document.querySelectorAll('[aria-label],[title],[data-hotkey]'))
+          .filter((el) => {
+            const value = [
+              el.getAttribute('aria-label') || '',
+              el.getAttribute('title') || '',
+              el.getAttribute('data-hotkey') || '',
+              el.textContent || ''
+            ].join(' ');
+            return /switch repository|alt\+?shift\+?r/i.test(value);
+          })
+          .slice(0, 12)
+          .map((el) => ({
+            tag: el.tagName,
+            className: String(el.className || ''),
+            ariaLabel: el.getAttribute('aria-label'),
+            title: el.getAttribute('title'),
+            hotkey: el.getAttribute('data-hotkey'),
+            text: (el.textContent || '').trim().slice(0, 220),
+            html: el.outerHTML.slice(0, 1400)
+          }));
+        return {
+          owner: exactTextElements('Kerberos255'),
+          repo: exactTextElements('chatgpt-codex-tools-mcp'),
+          shortcutNodes,
+        };
+        """
+    )
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("Usage: github_font_e2e.py <xpi>")
@@ -112,6 +165,7 @@ def main() -> None:
         WebDriverWait(driver, 30).until(
             lambda d: "chatgpt-codex-tools-mcp" in d.title.lower()
         )
+        chrome_before = repository_chrome_snapshot(driver)
         before = hidden_heading_snapshot(driver)
         if not before:
             raise AssertionError("GitHub page exposed no screen-reader-only headings; fixture changed")
@@ -218,6 +272,7 @@ def main() -> None:
         )
         if not probe_state.get("sourceHidden") or not probe_state.get("translated"):
             raise AssertionError(f"Visible probe was not translated normally: {probe_state}")
+        chrome_after = repository_chrome_snapshot(driver)
         after = hidden_heading_snapshot(driver)
         leaked = [item for item in after if item["translatedSibling"]]
         if leaked:
@@ -254,6 +309,8 @@ def main() -> None:
         driver.save_screenshot(str(ARTIFACTS / "github-after.png"))
         print(json.dumps({
             "translated_roots": value.get("count"),
+            "repository_chrome_before": chrome_before,
+            "repository_chrome_after": chrome_after,
             "visible_probe": probe_state,
             "hidden_headings_before": before,
             "hidden_headings_after": after,
