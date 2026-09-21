@@ -117,6 +117,15 @@ def main() -> None:
             raise AssertionError("GitHub page exposed no screen-reader-only headings; fixture changed")
         if not any(item["text"] in {"Latest commit", "Folders and files", "History"} for item in before):
             raise AssertionError(f"Expected GitHub hidden headings not found: {before[:12]}")
+        driver.execute_script(
+            """
+            const probe = document.createElement('p');
+            probe.id = 'pagelingo-e2e-visible';
+            probe.textContent = 'Visible repository translation test.';
+            probe.style.cssText = 'display:block;position:relative;margin:8px;font-size:16px;line-height:20px';
+            document.body.append(probe);
+            """
+        )
         driver.save_screenshot(str(ARTIFACTS / "github-before.png"))
         target_handle = driver.current_window_handle
 
@@ -186,9 +195,29 @@ def main() -> None:
         driver.switch_to.window(target_handle)
         WebDriverWait(driver, 60).until(
             lambda d: d.execute_script(
-                "return document.querySelectorAll('.flt-translation').length > 0"
+                """
+                const probe = document.getElementById('pagelingo-e2e-visible');
+                return Boolean(
+                  probe &&
+                  probe.nextElementSibling?.classList.contains('flt-translation')
+                );
+                """
             )
         )
+        probe_state = driver.execute_script(
+            """
+            const probe = document.getElementById('pagelingo-e2e-visible');
+            const translation = probe?.nextElementSibling;
+            return {
+              sourceHidden: probe?.classList.contains('flt-source-hidden') === true,
+              translated: translation?.classList.contains('flt-translation') === true,
+              translationDisplay: translation ? getComputedStyle(translation).display : null,
+              translationFontSize: translation ? getComputedStyle(translation).fontSize : null
+            };
+            """
+        )
+        if not probe_state.get("sourceHidden") or not probe_state.get("translated"):
+            raise AssertionError(f"Visible probe was not translated normally: {probe_state}")
         after = hidden_heading_snapshot(driver)
         leaked = [item for item in after if item["translatedSibling"]]
         if leaked:
@@ -225,6 +254,7 @@ def main() -> None:
         driver.save_screenshot(str(ARTIFACTS / "github-after.png"))
         print(json.dumps({
             "translated_roots": value.get("count"),
+            "visible_probe": probe_state,
             "hidden_headings_before": before,
             "hidden_headings_after": after,
             "visible_leaks": visible_leaks,
