@@ -1,4 +1,5 @@
 import { sendRuntimeMessage } from "./shared/runtime-message";
+import { requestExternalTranslationConsent } from "./shared/data-consent";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
   type ExternalTranslationEngineType,
@@ -223,6 +224,15 @@ async function requestState(message: Record<string, unknown>): Promise<void> {
 
 async function setActive(id: string): Promise<void> {
   try {
+    if (id !== LOCAL_TRANSLATION_ENGINE_ID) {
+      const engine = engineState.engines.find((item) => item.id === id);
+      if (!engine) throw new Error("找不到翻译引擎");
+      const granted = await requestExternalTranslationConsent(engine.hasApiKey);
+      if (!granted) {
+        renderActiveSelect();
+        throw new Error("未授权向外部翻译服务发送网页内容");
+      }
+    }
     await requestState({ type: "set-active-translation-engine", id });
     notify(id === LOCAL_TRANSLATION_ENGINE_ID ? "已切换到 Firefox 本地翻译" : "翻译引擎已切换");
   } catch (error) {
@@ -254,6 +264,8 @@ async function testConfig(): Promise<void> {
   testButton.textContent = "测试中…";
   try {
     const config = collectConfig();
+    const granted = await requestExternalTranslationConsent(Boolean(config.apiKey));
+    if (!granted) throw new Error("未授权向外部翻译服务发送测试内容");
     const response = await sendRuntimeMessage<EngineResponse>({ type: "test-translation-engine", config });
     if (!response?.ok) throw new Error(response?.error ?? "连接测试失败");
     notify(`测试成功 · ${response.preview ?? "翻译服务可用"}`, 5000);
