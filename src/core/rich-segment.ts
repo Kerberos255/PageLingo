@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { isTranslationRootElement } from "./dom-policy";
+import { isElementEffectivelyHidden, isTranslationRootElement } from "./dom-policy";
 import { normalizeGlossaryEntry } from "../shared/settings";
 
 export interface LinkStyleSnapshot { color:string; textDecorationLine:string; textDecorationStyle:string; textDecorationColor:string; textDecorationThickness:string; textUnderlineOffset:string }
@@ -53,6 +53,8 @@ function serializeChildren(parent, root, links, opaque) {
         const element = node;
         if (element.hasAttribute("data-flt-generated"))
             continue;
+        if (element !== root && isElementEffectivelyHidden(element))
+            continue;
         if (element !== root && isTranslationRootElement(element))
             continue;
         const tag = element.tagName;
@@ -91,7 +93,7 @@ export function sourceFingerprint(root) {
     let current = walker.nextNode();
     while (current) {
         const node = current;
-        if (!node.parentElement?.closest("[data-flt-generated]")) text += node.data;
+        if (!node.parentElement?.closest("[data-flt-generated]") && !node.parentElement?.closest("[hidden],[aria-hidden='true'],tool-tip,[role='tooltip'],[inert]") && !isElementEffectivelyHidden(node.parentElement)) text += node.data;
         current = walker.nextNode();
     }
     return text;
@@ -108,6 +110,7 @@ function snapshotLinkGaps(root) {
             if (node.nodeType !== Node.ELEMENT_NODE) continue;
             const element = node;
             if (element.hasAttribute("data-flt-generated")) continue;
+            if (element !== root && isElementEffectivelyHidden(element)) continue;
             if (element !== root && isTranslationRootElement(element)) continue;
             if (element.tagName === "A") {
                 linkIndex += 1;
