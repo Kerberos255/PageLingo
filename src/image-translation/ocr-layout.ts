@@ -1,4 +1,3 @@
-// @ts-nocheck
 export interface OcrBox { x:number; y:number; width:number; height:number }
 export interface OcrRegion { text:string; confidence:number; box:OcrBox }
 function boxArea(box) {
