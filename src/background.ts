@@ -112,11 +112,6 @@ async function activeExternalEngine() {
   return state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
 }
 
-async function externalEngineReady(): Promise<boolean> {
-  const engine = await activeExternalEngine();
-  return Boolean(engine && await hasExternalTranslationConsent(Boolean(engine.apiKey)));
-}
-
 async function translationEngineStateForUi() {
   const state = await currentTranslationEngineState();
   return {
@@ -423,21 +418,37 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "can-translate") {
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
-      const externalReady = await externalEngineReady();
-      const overrides = externalReady ? null : await currentOverrides();
+      const external = await activeExternalEngine();
+      const externalReady = external
+        ? await hasExternalTranslationConsent(Boolean(external.apiKey))
+        : false;
+      const overrides = external ? null : await currentOverrides();
       return {
         ok: true,
-        supported: Boolean(sourceLanguage && targetLanguage && sourceLanguage !== targetLanguage && (externalReady || (overrides && routeFor(sourceLanguage, targetLanguage, overrides)))),
+        supported: Boolean(
+          sourceLanguage &&
+          targetLanguage &&
+          sourceLanguage !== targetLanguage &&
+          (external ? externalReady : (overrides && routeFor(sourceLanguage, targetLanguage, overrides)))
+        ),
       };
     }
 
     if (message.type === "is-translation-ready") {
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
-      const externalReady = await externalEngineReady();
+      const external = await activeExternalEngine();
+      const externalReady = external
+        ? await hasExternalTranslationConsent(Boolean(external.apiKey))
+        : false;
       return {
         ok: true,
-        ready: Boolean(sourceLanguage && targetLanguage && sourceLanguage !== targetLanguage && (externalReady || await isTranslationRouteCached(sourceLanguage, targetLanguage))),
+        ready: Boolean(
+          sourceLanguage &&
+          targetLanguage &&
+          sourceLanguage !== targetLanguage &&
+          (external ? externalReady : await isTranslationRouteCached(sourceLanguage, targetLanguage))
+        ),
       };
     }
 
