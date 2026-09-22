@@ -103,6 +103,65 @@ def hidden_heading_snapshot(driver: webdriver.Firefox) -> list[dict]:
     )
 
 
+def readme_divider_state(driver: webdriver.Firefox) -> dict | None:
+    return driver.execute_script(
+        """
+        const candidates = Array.from(document.querySelectorAll('article.markdown-body h2, .markdown-body h2'));
+        const heading = candidates.find((el) => {
+          const s = getComputedStyle(el);
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && Number.parseFloat(s.borderBottomWidth || '0') > 0;
+        }) || null;
+        if (!heading) return null;
+        const s = getComputedStyle(heading);
+        const r = heading.getBoundingClientRect();
+        return {
+          text: (heading.innerText || heading.textContent || '').replace(/\s+/g, ' ').trim(),
+          display: s.display,
+          visibility: s.visibility,
+          width: r.width,
+          height: r.height,
+          borderBottomWidth: s.borderBottomWidth,
+          borderBottomStyle: s.borderBottomStyle,
+          borderBottomColor: s.borderBottomColor,
+          generated: heading.querySelectorAll('[data-flt-generated="translation"]').length,
+          wrappers: heading.querySelectorAll('[data-flt-source-text-wrapper]').length,
+        };
+        """
+    )
+
+
+def relative_time_state(driver: webdriver.Firefox, datetime_value: str | None = None) -> dict | None:
+    return driver.execute_script(
+        """
+        const wanted = arguments[0];
+        const visible = (el) => {
+          const s = getComputedStyle(el);
+          const r = el.getBoundingClientRect();
+          return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+        };
+        const elements = Array.from(document.querySelectorAll('relative-time')).filter(visible);
+        let el = wanted ? elements.find((item) => item.getAttribute('datetime') === wanted) : null;
+        if (!el) {
+          el = elements.find((item) => /ago|minute|hour|day|week|yesterday|last/i.test(item.shadowRoot?.textContent || '')) || elements[0] || null;
+        }
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          datetime: el.getAttribute('datetime'),
+          lang: el.getAttribute('lang'),
+          fallbackText: (el.textContent || '').replace(/\s+/g, ' ').trim(),
+          renderedText: (el.shadowRoot?.textContent || '').replace(/\s+/g, ' ').trim(),
+          width: r.width,
+          height: r.height,
+          generated: el.querySelectorAll('[data-flt-generated="translation"]').length,
+          wrappers: el.querySelectorAll('[data-flt-source-text-wrapper]').length,
+        };
+        """,
+        datetime_value,
+    )
+
+
 def repository_layout_state(driver: webdriver.Firefox) -> dict:
     return driver.execute_script(
         """
@@ -321,6 +380,8 @@ def main() -> None:
         WebDriverWait(driver, 30).until(
             lambda d: "chatgpt-codex-tools-mcp" in d.title.lower()
         )
+        divider_before = readme_divider_state(driver)
+        relative_time_before = relative_time_state(driver)
         repo_layout_before = repository_layout_state(driver)
         layout_before = layout_risk_snapshot(driver)
         identity_before = repository_identity_snapshot(driver)
@@ -431,6 +492,33 @@ def main() -> None:
         )
         if not probe_state.get("sourceHidden") or not probe_state.get("translated"):
             raise AssertionError(f"Visible probe was not translated normally: {probe_state}")
+        if not divider_before:
+            raise AssertionError("No visible README h2 divider found on GitHub fixture")
+        divider_after = readme_divider_state(driver)
+        if not divider_after:
+            raise AssertionError("README h2 divider disappeared after translation")
+        if divider_after["borderBottomWidth"] != divider_before["borderBottomWidth"]:
+            raise AssertionError(f"README divider width changed: {divider_before} -> {divider_after}")
+        if divider_after["visibility"] == "hidden" or divider_after["display"] == "none":
+            raise AssertionError(f"README divider heading became hidden: {divider_after}")
+        if divider_after["generated"] <= 0:
+            raise AssertionError(f"README heading was not translated in-place: {divider_after}")
+
+        if not relative_time_before or not relative_time_before.get("datetime"):
+            raise AssertionError("No visible GitHub relative-time element found")
+        WebDriverWait(driver, 20).until(
+            lambda d: (
+                (state := relative_time_state(d, relative_time_before["datetime"])) is not None
+                and state.get("lang") in {"zh-CN", "zh-Hans"}
+                and bool(__import__("re").search(r"[\u3400-\u9fff]", state.get("renderedText", "")))
+            )
+        )
+        relative_time_after = relative_time_state(driver, relative_time_before["datetime"])
+        if relative_time_after["generated"] or relative_time_after["wrappers"]:
+            raise AssertionError(f"relative-time fallback was translated as normal DOM text: {relative_time_after}")
+        if relative_time_after["fallbackText"] != relative_time_before["fallbackText"]:
+            raise AssertionError(f"relative-time fallback DOM was mutated: {relative_time_before} -> {relative_time_after}")
+
         repo_layout_after = repository_layout_state(driver)
         layout_after = layout_risk_snapshot(driver)
         identity_after = repository_identity_snapshot(driver)
@@ -613,6 +701,10 @@ def main() -> None:
 
         print(json.dumps({
             "translated_roots": value.get("count"),
+            "divider_before": divider_before,
+            "divider_after": divider_after,
+            "relative_time_before": relative_time_before,
+            "relative_time_after": relative_time_after,
             "repository_layout_before": repo_layout_before,
             "repository_layout_after": repo_layout_after,
             "layout_before": layout_before,
