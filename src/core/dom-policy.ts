@@ -283,8 +283,20 @@ function wrapDecoratedStructuralTextNodes(scope) {
   roots.push(...Array.from(scope.querySelectorAll(selector)));
   for (const root of roots) {
     if (root.closest("[data-flt-generated]") || isElementEffectivelyHidden(root)) continue;
+    const structuralChild = Array.from(root.children).some((child) => {
+      if (child.matches("svg,img,picture,canvas,[role='img'],input,select,textarea,button,[aria-hidden='true'],[hidden]")) {
+        return true;
+      }
+      const childText = (child.textContent ?? "").trim();
+      if (childText && !/\p{L}/u.test(childText)) return true;
+      if (!childText && (child.hasAttribute("class") || child.hasAttribute("aria-label") || child.hasAttribute("role"))) {
+        return true;
+      }
+      return false;
+    });
     const mustPreserveStructure =
       root.tagName === "SUMMARY" ||
+      structuralChild ||
       Boolean(root.querySelector("svg,img,picture,canvas,[role='img'],input,select,textarea,button"));
     if (!mustPreserveStructure) continue;
     wrapTextNodesInside(root, doc);
