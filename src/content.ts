@@ -151,6 +151,7 @@ async function detectRootLanguage(root) {
 let autoTranslateGeneration = 0;
 let autoTranslateInFlightGeneration = -1;
 let autoTranslateInFlightPromise = null;
+let activeTranslationIsAutomatic = false;
 async function translatePage(sourceLanguage, targetLanguage, expectedAutoGeneration = null, manualOverride = false) {
     const stale = () => expectedAutoGeneration !== null && expectedAutoGeneration !== autoTranslateGeneration;
     const settings = await loadSettings();
@@ -192,6 +193,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         shouldTranslateRoot,
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
     });
+    activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
     const count = await translator.translateAll();
     translator.observe();
     return count;
@@ -628,6 +630,7 @@ async function togglePageTranslation() {
     if (translator) {
         translator.restore();
         translator = null;
+        activeTranslationIsAutomatic = false;
         restoreNavigationLayout();
         document.getElementById("flt-style")?.remove();
         return { translated: false, count: 0 };
@@ -710,6 +713,7 @@ browser.runtime.onMessage.addListener(async (message) => {
     if (message.type === "restore-page") {
         translator?.restore();
         translator = null;
+        activeTranslationIsAutomatic = false;
         restoreNavigationLayout();
         document.getElementById("flt-style")?.remove();
         return { ok: true };
@@ -817,8 +821,16 @@ function clearRouteRescanTimers() {
 function softResetForRoute() {
     translator?.restore();
     translator = null;
+    activeTranslationIsAutomatic = false;
     restoreNavigationLayout();
     document.getElementById("flt-style")?.remove();
+}
+function preserveAutomaticTranslationAcrossRoute() {
+    return Boolean(
+        translator &&
+        activeTranslationIsAutomatic &&
+        location.hostname.toLowerCase() === "github.com"
+    );
 }
 async function rescanAfterRouteChange(generation) {
     if (generation !== routeRescanGeneration || window.top !== window) return;
@@ -844,7 +856,15 @@ function scheduleRouteResetAndRescan() {
     autoTranslateGeneration += 1;
     const generation = routeRescanGeneration;
     clearRouteRescanTimers();
-    softResetForRoute();
+    // GitHub is a Turbo/SPA app whose persistent repository navigation is frequently
+    // re-rendered after the first automatic translation pass. Restoring the whole page
+    // here creates a visible English flash and can leave the persistent navigation in
+    // English if the later automatic pass is skipped. Keep the active automatic
+    // translator alive on GitHub and let its MutationObserver + settlement rescans
+    // translate only the route content that actually changed.
+    if (!preserveAutomaticTranslationAcrossRoute()) {
+        softResetForRoute();
+    }
     // One early rebuild plus later settlement passes. The translator observer remains active
     // between passes, so async route content is handled both reactively and deterministically.
     routeRescanTimers = [100, 360, 900, 1800, 3200].map((delay) => setTimeout(() => {
