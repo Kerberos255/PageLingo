@@ -52,6 +52,7 @@ interface RuntimeMessage {
     html?: unknown;
     sourceLanguage?: unknown;
     targetLanguage?: unknown;
+    terminology?: unknown;
   };
   sourceLanguage?: unknown;
   targetLanguage?: unknown;
@@ -389,9 +390,22 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const sourceLanguage = asLanguage(request.sourceLanguage);
       const targetLanguage = asLanguage(request.targetLanguage);
       if (!sourceLanguage || !targetLanguage) throw new Error("Invalid translation languages");
+      const terminology = Array.isArray(request.terminology)
+        ? request.terminology
+            .filter((entry): entry is { source: string; target: string; mode: "protect" | "replace" } =>
+              Boolean(
+                entry &&
+                typeof entry === "object" &&
+                typeof (entry as { source?: unknown }).source === "string" &&
+                typeof (entry as { target?: unknown }).target === "string" &&
+                ((entry as { mode?: unknown }).mode === "protect" || (entry as { mode?: unknown }).mode === "replace")
+              )
+            )
+            .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }))
+        : [];
       const external = await activeExternalEngine();
       if (external) {
-        const html = await translateWithExternalEngine(external, { html: request.html, sourceLanguage, targetLanguage });
+        const html = await translateWithExternalEngine(external, { html: request.html, sourceLanguage, targetLanguage, terminology });
         return { ok: true, html };
       }
       const overrides = await currentOverrides();
