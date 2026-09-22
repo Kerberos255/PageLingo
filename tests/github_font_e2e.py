@@ -113,6 +113,55 @@ def repository_identity_snapshot(driver: webdriver.Firefox) -> dict:
     )
 
 
+def layout_risk_snapshot(driver: webdriver.Firefox) -> dict:
+    return driver.execute_script(
+        """
+        const rect = (el) => {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          const s = getComputedStyle(el);
+          return {
+            tag: el.tagName,
+            text: (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 260),
+            className: String(el.className || ''),
+            display: s.display,
+            visibility: s.visibility,
+            opacity: s.opacity,
+            position: s.position,
+            width: r.width,
+            height: r.height,
+            x: r.x,
+            y: r.y,
+            generated: el.querySelectorAll?.('[data-flt-generated="translation"]').length || 0,
+            wrappers: el.querySelectorAll?.('[data-flt-source-text-wrapper]').length || 0,
+            html: el.outerHTML?.slice(0, 1800) || ''
+          };
+        };
+        const byText = (value) => Array.from(document.querySelectorAll('a,button,span,div,li,td,th'))
+          .filter((el) => (el.textContent || '').replace(/\\s+/g, ' ').trim() === value)
+          .slice(0, 6)
+          .map((el) => rect(el));
+        const nav = Array.from(document.querySelectorAll('nav a, [role="navigation"] a'))
+          .filter((el) => /^(Code|Issues|Pull requests|Actions|Projects|Security|Insights|代码|问题|拉取请求|行动|项目|安全)/i.test((el.textContent || '').replace(/\\s+/g,' ').trim()))
+          .slice(0, 12)
+          .map((el) => rect(el));
+        const firstFileRow = Array.from(document.querySelectorAll('tr, li'))
+          .find((el) => {
+            const t=(el.textContent||'').replace(/\\s+/g,' ').trim();
+            return /README|CHANGELOG|package\.json|src|tests/i.test(t) && el.querySelector('svg,img');
+          });
+        const notification = Array.from(document.querySelectorAll('button,a,span,div'))
+          .find((el) => /Notifications|You must be signed in to change notification settings/i.test((el.textContent || '').replace(/\\s+/g,' ').trim()));
+        return {
+          nav,
+          zero: byText('0'),
+          notification: rect(notification),
+          firstFileRow: rect(firstFileRow)
+        };
+        """
+    )
+
+
 def repository_chrome_snapshot(driver: webdriver.Firefox) -> dict:
     return driver.execute_script(
         """
@@ -194,6 +243,7 @@ def main() -> None:
         WebDriverWait(driver, 30).until(
             lambda d: "chatgpt-codex-tools-mcp" in d.title.lower()
         )
+        layout_before = layout_risk_snapshot(driver)
         identity_before = repository_identity_snapshot(driver)
         chrome_before = repository_chrome_snapshot(driver)
         before = hidden_heading_snapshot(driver)
@@ -302,6 +352,7 @@ def main() -> None:
         )
         if not probe_state.get("sourceHidden") or not probe_state.get("translated"):
             raise AssertionError(f"Visible probe was not translated normally: {probe_state}")
+        layout_after = layout_risk_snapshot(driver)
         identity_after = repository_identity_snapshot(driver)
         chrome_after = repository_chrome_snapshot(driver)
         if not identity_before.get("owner") or not identity_before.get("repo"):
@@ -350,6 +401,8 @@ def main() -> None:
         driver.save_screenshot(str(ARTIFACTS / "github-after.png"))
         print(json.dumps({
             "translated_roots": value.get("count"),
+            "layout_before": layout_before,
+            "layout_after": layout_after,
             "repository_identity_before": identity_before,
             "repository_identity_after": identity_after,
             "repository_chrome_before": chrome_before,
