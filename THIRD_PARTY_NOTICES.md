@@ -24,16 +24,17 @@ Translation model payloads are not redistributed in this repository or extension
 PageLingo bundles the ONNX Runtime Web WASM runtime used by the optional image OCR worker.
 
 - Project: Microsoft ONNX Runtime
-- Package: `onnxruntime-web`
+- Package: `onnxruntime-web` 1.30.0
 - License: MIT
 - Runtime code and WASM are bundled with the extension; no executable code is loaded remotely.
+- The package's license file is copied into `vendor/onnxruntime/LICENSE` in the built extension.
 
 ## paddleocr.js
 
 PageLingo uses the `paddleocr` browser/runtime library to run the PP-OCR detection and recognition pipeline over ONNX Runtime.
 
 - Project: paddleocr.js by X3ZvaWQ
-- Package: `paddleocr`
+- Package: `paddleocr` 1.2.0
 - License: MIT
 
 ## PP-OCRv5 model data
@@ -47,6 +48,7 @@ PP-OCRv5 model assets are released by PaddlePaddle under the terms published wit
 PageLingo bundles `fzstd` to decompress Mozilla's Zstandard-compressed Firefox translation model attachments locally in the extension.
 
 - Project: fzstd
+- Package: `fzstd` 0.1.1
 - Copyright: Copyright (c) 2020 Arjun Barrett
 - License: MIT
 
@@ -55,3 +57,8 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+## Dependency versions
+
+The exact npm dependency graph used for release builds is pinned by `package-lock.json`. Build-time tools are not shipped as executable extension dependencies unless their output is explicitly copied or bundled by `tools/build.mjs`.
