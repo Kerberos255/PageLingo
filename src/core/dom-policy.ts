@@ -231,34 +231,52 @@ export function findTranslationRoot(node) {
   if (fallback && isInsideCodeWidgetFallback(fallback)) return null;
   return fallback;
 }
+function wrapTextNodesInside(container, doc) {
+  const skipTags = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT", "OPTION", "BUTTON", "PRE", "CODE", "KBD", "SAMP", "VAR", "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO"]);
+  const containers = [container, ...Array.from(container.querySelectorAll("*"))];
+  for (const current of containers) {
+    if (skipTags.has(current.tagName) || current.hasAttribute("data-flt-source-text-wrapper") || current.closest("[data-flt-generated]")) continue;
+    for (const child of Array.from(current.childNodes)) {
+      if (child.nodeType !== Node.TEXT_NODE) continue;
+      const text = child.textContent ?? "";
+      if (!text.trim() || !/\p{L}/u.test(text) || isProtectedGitHubIdentifierText(child)) continue;
+      const wrapper = doc.createElement("span");
+      wrapper.dataset.fltSourceTextWrapper = "true";
+      child.replaceWith(wrapper);
+      wrapper.append(child);
+    }
+  }
+}
+function wrapDecoratedStructuralTextNodes(scope) {
+  const doc = scope instanceof Document ? scope : scope.ownerDocument;
+  if (!doc || !("querySelectorAll" in scope)) return;
+  const selector = "li,td,th,summary,h1,h2,h3,h4,h5,h6";
+  const roots = [];
+  if (scope instanceof Element && scope.matches(selector)) roots.push(scope);
+  roots.push(...Array.from(scope.querySelectorAll(selector)));
+  for (const root of roots) {
+    if (root.closest("[data-flt-generated]")) continue;
+    const hasVisualDecoration = Boolean(root.querySelector("svg,img,picture,canvas,[role='img']"));
+    if (!hasVisualDecoration) continue;
+    wrapTextNodesInside(root, doc);
+  }
+}
 function wrapDirectAnchorTextNodes(scope) {
   const doc = scope instanceof Document ? scope : scope.ownerDocument;
   if (!doc) return;
   const anchors = [];
   if (scope instanceof Element && scope.tagName === "A") anchors.push(scope);
   if ("querySelectorAll" in scope) anchors.push(...Array.from(scope.querySelectorAll("a")));
-  const skipTags = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT", "OPTION", "BUTTON", "PRE", "CODE", "KBD", "SAMP", "VAR", "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO"]);
   for (const anchor of anchors) {
     if (anchor.closest("[data-flt-generated]")) continue;
-    const containers = [anchor, ...Array.from(anchor.querySelectorAll("*"))];
-    for (const container of containers) {
-      if (skipTags.has(container.tagName) || container.hasAttribute("data-flt-source-text-wrapper")) continue;
-      for (const child of Array.from(container.childNodes)) {
-        if (child.nodeType !== Node.TEXT_NODE) continue;
-        const text = child.textContent ?? "";
-        if (!text.trim() || !/\p{L}/u.test(text) || isProtectedGitHubIdentifierText(child)) continue;
-        const wrapper = doc.createElement("span");
-        wrapper.dataset.fltSourceTextWrapper = "true";
-        child.replaceWith(wrapper);
-        wrapper.append(child);
-      }
-    }
+    wrapTextNodesInside(anchor, doc);
   }
 }
 export function collectTranslationRoots(scope) {
   const doc = scope instanceof Document ? scope : scope.ownerDocument;
   if (!doc) return [];
   wrapDirectAnchorTextNodes(scope);
+  wrapDecoratedStructuralTextNodes(scope);
   const roots = /* @__PURE__ */ new Set();
   const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
   let current = walker.nextNode();
