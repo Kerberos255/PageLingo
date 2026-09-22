@@ -79,7 +79,10 @@ function isProtectedGitHubIdentifierText(node) {
   if (
     targetParts.length === 1 &&
     text === targetParts[0] &&
-    (anchor.getAttribute("data-hovercard-type") === "user" || currentParts[0] === targetParts[0])
+    (
+      ["user", "organization"].includes(anchor.getAttribute("data-hovercard-type") ?? "") ||
+      currentParts[0] === targetParts[0]
+    )
   ) {
     return true;
   }
@@ -91,6 +94,17 @@ function isProtectedGitHubIdentifierText(node) {
     text === currentParts[1]
   ) {
     return true;
+  }
+  if (
+    targetParts.length === 2 &&
+    anchor.getAttribute("data-hovercard-type") === "repository"
+  ) {
+    const anchorText = (anchor.textContent ?? "").replace(/\s+/g, " ").trim();
+    if (
+      text === targetParts[1] ||
+      anchorText === targetParts[1] ||
+      anchorText === `${targetParts[0]}/${targetParts[1]}`
+    ) return true;
   }
   // Repository paths, branch names and file/directory names are identifiers rather
   // than prose. Translating them changes widths and can also make the visible label
@@ -126,7 +140,7 @@ function isScreenReaderOnlyStyle(style) {
     (style.clip && style.clip !== "auto" && style.clip !== "rect(auto, auto, auto, auto)") ||
     (style.clipPath && style.clipPath !== "none")
   );
-  return positioned && tinyBox && overflowHidden && clipped;
+  return positioned && tinyBox && (overflowHidden || clipped);
 }
 export function isElementEffectivelyHidden(element) {
   const view = element.ownerDocument.defaultView;
