@@ -5,7 +5,7 @@ import { normalizeGlossaryEntry } from "../shared/settings";
 export interface LinkStyleSnapshot { color:string; textDecorationLine:string; textDecorationStyle:string; textDecorationColor:string; textDecorationThickness:string; textUnderlineOffset:string }
 export interface LinkSnapshot { href:string|null; target:string|null; rel:string|null; title:string|null; className:string; sourceElement:HTMLAnchorElement; sourceText:string; linkStyle:LinkStyleSnapshot|null }
 export interface OpaqueSnapshot { tagName:string; text:string }
-export interface TerminologyEntry { source:string; target:string; mode:"protect"|"replace"; origin?:"builtin"|"user"; aliases?:string[] }
+export interface TerminologyEntry { source:string; target:string; mode:"protect"|"replace"; caseSensitive?:boolean; origin?:"builtin"|"user"; aliases?:string[] }
 export interface RichSegment { html:string; links:LinkSnapshot[]; opaque:OpaqueSnapshot[]; linkGaps:string[]; fingerprint:string }
 
 const LINK_TRANSPORT_PREFIX = "https://pagelingo.invalid/__link/";
@@ -154,15 +154,15 @@ function builtInTerminology(sourceLanguage, targetLanguage) {
         ...(Array.isArray(catalog.hardProtect) ? catalog.hardProtect : (Array.isArray(catalog.protect) ? catalog.protect : [])),
     ];
     for (const source of hardProtect) {
-        if (typeof source === "string" && source.trim()) entries.push({ source, target: source, mode: "protect", origin: "builtin", aliases: [] });
+        if (typeof source === "string" && source.trim()) entries.push({ source, target: source, mode: "protect", caseSensitive: true, origin: "builtin", aliases: [] });
     }
     for (const source of Array.isArray(catalog.preserve) ? catalog.preserve : []) {
-        if (typeof source === "string" && source.trim()) entries.push({ source, target: source, mode: "replace", origin: "builtin", aliases: [] });
+        if (typeof source === "string" && source.trim()) entries.push({ source, target: source, mode: "replace", caseSensitive: false, origin: "builtin", aliases: [] });
     }
     const pairKey = `${sourceLanguage}->${targetLanguage}`;
     for (const pair of Array.isArray(catalog.pairs?.[pairKey]) ? catalog.pairs[pairKey] : []) {
         if (!Array.isArray(pair) || typeof pair[0] !== "string" || typeof pair[1] !== "string") continue;
-        entries.push({ source: pair[0], target: pair[1], mode: "replace", origin: "builtin", aliases: [pair[1]] });
+        entries.push({ source: pair[0], target: pair[1], mode: "replace", caseSensitive: false, origin: "builtin", aliases: [pair[1]] });
     }
     return entries;
 }
@@ -193,13 +193,13 @@ function termBoundaryOkay(text, start, end, source) {
     const after = end < text.length ? text[end] : "";
     return !/[A-Za-z0-9_]/.test(before) && !/[A-Za-z0-9_]/.test(after);
 }
-export function termOccurrenceCount(text, source) {
+export function termOccurrenceCount(text, source, caseSensitive = false) {
     const raw = String(text || "");
-    const lower = raw.toLocaleLowerCase();
-    const needle = source.toLocaleLowerCase();
+    const haystack = caseSensitive ? raw : raw.toLocaleLowerCase();
+    const needle = caseSensitive ? source : source.toLocaleLowerCase();
     let count = 0, cursor = 0;
     while (cursor <= raw.length - needle.length) {
-        const at = lower.indexOf(needle, cursor);
+        const at = haystack.indexOf(needle, cursor);
         if (at < 0) break;
         if (termBoundaryOkay(raw, at, at + needle.length, source)) count += 1;
         cursor = at + Math.max(needle.length, 1);
@@ -208,7 +208,7 @@ export function termOccurrenceCount(text, source) {
 }
 export function terminologyForText(entries, text) {
     return (entries ?? [])
-        .filter((entry) => termOccurrenceCount(text, entry.source) > 0)
+        .filter((entry) => termOccurrenceCount(text, entry.source, entry.caseSensitive === true) > 0)
         .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }));
 }
 export function protectTerminologyHtml(doc, html, entries) {
@@ -229,14 +229,14 @@ export function protectTerminologyHtml(doc, html, entries) {
     }
     for (const textNode of nodes) {
         const raw = textNode.data;
-        const lower = raw.toLocaleLowerCase();
         const hits = [];
         let cursor = 0;
         while (cursor < raw.length) {
             let found = null;
             for (const entry of protectedEntries) {
-                const needle = entry.source.toLocaleLowerCase();
-                const at = lower.indexOf(needle, cursor);
+                const haystack = entry.caseSensitive === true ? raw : raw.toLocaleLowerCase();
+                const needle = entry.caseSensitive === true ? entry.source : entry.source.toLocaleLowerCase();
+                const at = haystack.indexOf(needle, cursor);
                 if (at < 0 || !termBoundaryOkay(raw, at, at + needle.length, entry.source)) continue;
                 if (!found || at < found.at || (at === found.at && needle.length > found.length)) found = { at, length: needle.length, entry };
             }
@@ -299,12 +299,12 @@ function replaceTextAlias(value, alias, target, limit) {
     return { value: output + value.slice(cursor), count: used };
 }
 export function applyTerminologyCorrectionsHtml(doc, html, sourceText, entries, dynamicAliases = new Map()) {
-    const active = (entries ?? []).filter((entry) => entry.mode === "replace" && termOccurrenceCount(sourceText, entry.source) > 0);
+    const active = (entries ?? []).filter((entry) => entry.mode === "replace" && termOccurrenceCount(sourceText, entry.source, entry.caseSensitive === true) > 0);
     if (!active.length) return html;
     const template = doc.createElement("template");
     template.innerHTML = html;
     for (const entry of active) {
-        let remaining = termOccurrenceCount(sourceText, entry.source);
+        let remaining = termOccurrenceCount(sourceText, entry.source, entry.caseSensitive === true);
         if (!remaining) continue;
         const aliases = new Set([entry.source, ...(entry.aliases ?? [])]);
         const dynamic = dynamicAliases.get(entry.source.toLocaleLowerCase());
