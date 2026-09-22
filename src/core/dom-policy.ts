@@ -223,6 +223,13 @@ export function findTranslationRoot(node) {
     if (current.hasAttribute("data-flt-source-text-wrapper")) return current;
     if (isTranslationRootElement(current)) {
       if (isInsideCodeWidgetFallback(current)) return null;
+      if (
+        fallback &&
+        (
+          current.querySelector("[data-flt-source-text-wrapper]") ||
+          current.querySelector("svg,img,picture,canvas,[role='img']")
+        )
+      ) return fallback;
       return current;
     }
     if (!fallback && isFallbackLeafContainer(current)) fallback = current;
