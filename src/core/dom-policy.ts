@@ -104,6 +104,12 @@ function isProtectedGitHubIdentifierText(node) {
     (targetParts[2] === "tree" || targetParts[2] === "blob")
   ) {
     const decodedPath = target.pathname.split("/").map(safeDecodePathSegment).join("/");
+    const anchorText = (anchor.textContent ?? "").replace(/\\s+/g, " ").trim();
+    // GitHub may render one path label as several text nodes/spans (for example
+    // ".github" + "/workflows"). Protect the whole visible path if the anchor's
+    // complete label matches a suffix of its tree/blob URL, then every child text
+    // node inherits that protection.
+    if (anchorText && decodedPath.endsWith(`/${anchorText}`)) return true;
     if (decodedPath.endsWith(`/${text}`)) return true;
   }
   return false;
