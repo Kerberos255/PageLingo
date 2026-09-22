@@ -92,6 +92,20 @@ function isProtectedGitHubIdentifierText(node) {
   ) {
     return true;
   }
+  // Repository paths, branch names and file/directory names are identifiers rather
+  // than prose. Translating them changes widths and can also make the visible label
+  // disagree with the href. Protect labels that are a decoded suffix of a tree/blob
+  // URL within the current repository.
+  if (
+    currentParts.length >= 2 &&
+    targetParts.length >= 4 &&
+    targetParts[0] === currentParts[0] &&
+    targetParts[1] === currentParts[1] &&
+    (targetParts[2] === "tree" || targetParts[2] === "blob")
+  ) {
+    const decodedPath = target.pathname.split("/").map(safeDecodePathSegment).join("/");
+    if (decodedPath.endsWith(`/${text}`)) return true;
+  }
   return false;
 }
 function isScreenReaderOnlyStyle(style) {
