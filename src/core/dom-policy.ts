@@ -39,7 +39,10 @@ var SKIP_SELECTOR = [
   "[contenteditable]:not([contenteditable='false'])",
   "[data-flt-generated]",
   "[hidden]",
-  "[aria-hidden='true']"
+  "[aria-hidden='true']",
+  "tool-tip",
+  "[role='tooltip']",
+  "[inert]"
 ].join(",");
 export function isGeneratedNode(node) {
   const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
@@ -105,7 +108,7 @@ function isScreenReaderOnlyStyle(style) {
   );
   return positioned && tinyBox && overflowHidden && clipped;
 }
-function isEffectivelyHidden(element) {
+export function isElementEffectivelyHidden(element) {
   const view = element.ownerDocument.defaultView;
   if (!view) return false;
   let current = element;
@@ -116,6 +119,7 @@ function isEffectivelyHidden(element) {
       style.visibility === "hidden" ||
       style.visibility === "collapse" ||
       style.contentVisibility === "hidden" ||
+      Number.parseFloat(style.opacity || "1") === 0 ||
       isScreenReaderOnlyStyle(style)
     ) return true;
     if (current === current.ownerDocument.documentElement) break;
@@ -126,8 +130,10 @@ function isEffectivelyHidden(element) {
 export function isEligibleTextNode(node) {
   if (!node.data.trim() || isProtectedGitHubIdentifierText(node)) return false;
   const parent = node.parentElement;
-  if (!parent || parent.closest(SKIP_SELECTOR) || isEffectivelyHidden(parent)) return false;
-  return /[\p{L}\p{N}]/u.test(node.data);
+  if (!parent || parent.closest(SKIP_SELECTOR) || isElementEffectivelyHidden(parent)) return false;
+  // Pure counters/dates/numeric badges do not need translation and duplicating them can
+  // surface otherwise hidden UI state (for example GitHub's hidden "0" tab counters).
+  return /\p{L}/u.test(node.data);
 }
 var FALLBACK_STRUCTURAL_SELECTOR = [
   "a", "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "section",
@@ -154,7 +160,7 @@ function isSimpleInlineContainer(element) {
   if (descendants.length > 8) return false;
   if (!(element.textContent ?? "").trim()) return false;
   const view = element.ownerDocument.defaultView;
-  if (!view || isEffectivelyHidden(element)) return false;
+  if (!view || isElementEffectivelyHidden(element)) return false;
   const style = view.getComputedStyle(element);
   const structuralDisplays = new Set(["flex", "inline-flex", "grid", "inline-grid", "table", "inline-table", "list-item", "flow-root"]);
   if (structuralDisplays.has(style.display)) return false;
@@ -192,6 +198,10 @@ export function findTranslationRoot(node) {
   let fallback = null;
   while (current && current !== current.ownerDocument.body) {
     if (current.matches(SKIP_SELECTOR)) return null;
+    // Text wrappers are deliberately inserted inside structural UI (links, tabs, file
+    // rows) so translating a short label never replaces the surrounding icon/badge/flex
+    // container. Once we reach one, it is the authoritative translation root.
+    if (current.hasAttribute("data-flt-source-text-wrapper")) return current;
     if (isTranslationRootElement(current)) {
       if (isInsideCodeWidgetFallback(current)) return null;
       return current;
@@ -217,7 +227,7 @@ function wrapDirectAnchorTextNodes(scope) {
       for (const child of Array.from(container.childNodes)) {
         if (child.nodeType !== Node.TEXT_NODE) continue;
         const text = child.textContent ?? "";
-        if (!text.trim() || !/[\p{L}\p{N}]/u.test(text) || isProtectedGitHubIdentifierText(child)) continue;
+        if (!text.trim() || !/\p{L}/u.test(text) || isProtectedGitHubIdentifierText(child)) continue;
         const wrapper = doc.createElement("span");
         wrapper.dataset.fltSourceTextWrapper = "true";
         child.replaceWith(wrapper);
