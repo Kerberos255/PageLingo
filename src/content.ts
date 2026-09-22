@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { PageTranslator } from "./core/page-translator";
 import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { sendRuntimeMessage } from "./shared/runtime-message";
