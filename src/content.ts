@@ -152,6 +152,55 @@ let autoTranslateGeneration = 0;
 let autoTranslateInFlightGeneration = -1;
 let autoTranslateInFlightPromise = null;
 let activeTranslationIsAutomatic = false;
+let activeTranslationTargetLanguage = null;
+var relativeTimeLangSnapshots = new Map();
+var relativeTimeObserver = null;
+function relativeTimeLocale(targetLanguage) {
+    const normalized = normalizeDetectedLanguage(targetLanguage) ?? targetLanguage;
+    if (normalized === "zh-Hans") return "zh-CN";
+    if (normalized === "zh-Hant") return "zh-TW";
+    return normalized;
+}
+function relativeTimeElements(scope = document) {
+    const elements = [];
+    if (scope instanceof Element && scope.matches("relative-time")) elements.push(scope);
+    if ("querySelectorAll" in scope) elements.push(...Array.from(scope.querySelectorAll("relative-time")));
+    return elements;
+}
+function localizeRelativeTimeElements(targetLanguage, scope = document) {
+    const locale = relativeTimeLocale(targetLanguage);
+    if (!locale) return;
+    for (const element of relativeTimeElements(scope)) {
+        if (!relativeTimeLangSnapshots.has(element)) {
+            relativeTimeLangSnapshots.set(element, element.getAttribute("lang"));
+        }
+        if (element.getAttribute("lang") !== locale) element.setAttribute("lang", locale);
+    }
+}
+function startRelativeTimeLocalization(targetLanguage) {
+    relativeTimeObserver?.disconnect();
+    relativeTimeObserver = null;
+    localizeRelativeTimeElements(targetLanguage, document);
+    if (!document.body) return;
+    relativeTimeObserver = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const added of Array.from(mutation.addedNodes)) {
+                if (added.nodeType !== Node.ELEMENT_NODE) continue;
+                localizeRelativeTimeElements(targetLanguage, added);
+            }
+        }
+    });
+    relativeTimeObserver.observe(document.body, { childList: true, subtree: true });
+}
+function stopRelativeTimeLocalization() {
+    relativeTimeObserver?.disconnect();
+    relativeTimeObserver = null;
+    for (const [element, lang] of relativeTimeLangSnapshots) {
+        if (lang === null) element.removeAttribute("lang");
+        else element.setAttribute("lang", lang);
+    }
+    relativeTimeLangSnapshots.clear();
+}
 async function translatePage(sourceLanguage, targetLanguage, expectedAutoGeneration = null, manualOverride = false) {
     const stale = () => expectedAutoGeneration !== null && expectedAutoGeneration !== autoTranslateGeneration;
     const settings = await loadSettings();
@@ -166,9 +215,13 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     }
     if (stale()) return 0;
     ensureStyle();
+    stopRelativeTimeLocalization();
     translator?.restore();
     restoreNavigationLayout();
-    if (settings.displayMode === "translation") freezeNavigationLayout();
+    if (settings.displayMode === "translation") {
+        freezeNavigationLayout();
+        startRelativeTimeLocalization(normalizedTarget);
+    }
     const shouldTranslateRoot = async (root) => {
         // Inspect only source text. LI/TD/TH keep the generated translation inside the root;
         // using innerText here would mistake our own Chinese output for source-language content
@@ -194,6 +247,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
     });
     activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
+    activeTranslationTargetLanguage = normalizedTarget;
     const count = await translator.translateAll();
     translator.observe();
     return count;
@@ -631,6 +685,8 @@ async function togglePageTranslation() {
         translator.restore();
         translator = null;
         activeTranslationIsAutomatic = false;
+        activeTranslationTargetLanguage = null;
+        stopRelativeTimeLocalization();
         restoreNavigationLayout();
         document.getElementById("flt-style")?.remove();
         return { translated: false, count: 0 };
@@ -714,6 +770,8 @@ browser.runtime.onMessage.addListener(async (message) => {
         translator?.restore();
         translator = null;
         activeTranslationIsAutomatic = false;
+        activeTranslationTargetLanguage = null;
+        stopRelativeTimeLocalization();
         restoreNavigationLayout();
         document.getElementById("flt-style")?.remove();
         return { ok: true };
@@ -724,7 +782,13 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local" || !changes.displayMode || !translator)
         return;
     const mode = normalizeDisplayMode(changes.displayMode.newValue);
-    if (mode === "translation") freezeNavigationLayout(); else restoreNavigationLayout();
+    if (mode === "translation") {
+        freezeNavigationLayout();
+        if (activeTranslationTargetLanguage) startRelativeTimeLocalization(activeTranslationTargetLanguage);
+    } else {
+        restoreNavigationLayout();
+        stopRelativeTimeLocalization();
+    }
     translator.setDisplayMode(mode);
 });
 async function runAutoTranslate(generation) {
@@ -822,6 +886,8 @@ function softResetForRoute() {
     translator?.restore();
     translator = null;
     activeTranslationIsAutomatic = false;
+    activeTranslationTargetLanguage = null;
+    stopRelativeTimeLocalization();
     restoreNavigationLayout();
     document.getElementById("flt-style")?.remove();
 }
@@ -845,7 +911,10 @@ async function rescanAfterRouteChange(generation) {
         }
         // New navigation nodes can arrive after the first route render. Preserve their original
         // source-language box widths before translating any newly discovered roots.
-        if (settings.displayMode === "translation") freezeNavigationLayout(false);
+        if (settings.displayMode === "translation") {
+            freezeNavigationLayout(false);
+            if (activeTranslationTargetLanguage) localizeRelativeTimeElements(activeTranslationTargetLanguage, document);
+        }
         await translator.translateAll(document.body);
     } catch (error) {
         console.warn("[PageLingo] SPA translation rescan failed", error);
