@@ -5,10 +5,9 @@ import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminology
 import { freezeNavigationLayout } from "./navigation-layout";
 
 export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[] }
-function translatedPlainText(doc, html) {
-    const template = doc.createElement("template");
-    template.innerHTML = html;
-    return (template.content.textContent ?? "").replace(/\s+/g, " ").trim();
+function translatedPlainText(_doc, html) {
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    return (parsed.body.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 function exactTerminologyTarget(value, entries) {
     const raw = String(value || "").trim();
@@ -200,9 +199,8 @@ export class PageTranslator {
         // Whole-sentence translation is authoritative. Standard href transport survives more
         // engines than data-* attributes; matching anchor count is also enough to avoid a
         // second link-label translation.
-        const translatedProbe = this.#doc.createElement("template");
-        translatedProbe.innerHTML = translatedHtml;
-        const probeAnchors = Array.from(translatedProbe.content.querySelectorAll("a"));
+        const translatedProbe = new DOMParser().parseFromString(translatedHtml, "text/html");
+        const probeAnchors = Array.from(translatedProbe.body.querySelectorAll("a"));
         const translatedLinkTexts = await Promise.all(segment.links.map(async (link) => {
             if (!link.sourceText.trim()) return "";
             const exactTerm = exactTerminologyTarget(link.sourceText, this.#terminology);
