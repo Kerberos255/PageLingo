@@ -17,7 +17,7 @@
           <a class="nav-item" data-settings-page="languages" href="#languages">语言包</a>
           <a class="nav-item" data-settings-page="engine" href="#engine">翻译引擎</a>
         </nav>
-        <div class="local-badge">Firefox 本地引擎可完全离线运行 · 外部引擎仅在选用后发送待翻译文本</div>
+        <div class="local-badge">Firefox 本地引擎可完全离线运行 · 外部引擎需授权后才会发送待翻译内容</div>
       </aside>
       <main class="content">
         <header class="page-header"><div><p class="eyebrow">PAGELINGO</p><h1>设置</h1><p>配置网页翻译、图片翻译、术语库、离线语言包和翻译引擎。</p></div></header>
@@ -57,11 +57,11 @@
         </section>
         <section id="glossary" class="section settings-page">
           <div class="section-heading glossary-heading"><div><h2>术语库</h2><p>管理品牌、技术词和项目专属术语。多个术语库可以同时启用。</p></div><button id="create-glossary" type="button" class="primary-inline">新建术语库</button></div>
-          <div class="glossary-note"><strong>本地机器翻译提示</strong><span>“保留原文”适合品牌和技术标识；“指定译法”属于严格术语，可能牺牲一点自然度。外部 LLM 引擎通常更适合大量指定译法。</span></div>
+          <div class="glossary-note"><strong>术语规则</strong><span>“保留原文”按大小写精确匹配，适合品牌和专有名词；“指定译法”用于你明确要求的固定译法。外部 LLM 引擎会同时收到当前句子命中的术语规则。</span></div>
           <div class="glossary-grid">
             <article class="glossary-card builtin">
               <div class="glossary-card-top"><div><strong>PageLingo 默认术语库</strong><span class="glossary-handle">@pagelingo</span></div><label class="switch"><input id="builtin-glossary-enabled" type="checkbox" checked /><i></i></label></div>
-              <p>随 PageLingo 维护的通用术语库，主要保护品牌、技术标识和少量稳定译法。默认开启。</p>
+              <p>随 PageLingo 维护的专有名词库，保护常见品牌、机构、产品、平台和项目名称。默认开启。</p>
               <div class="glossary-tags"><span>内置</span><span>自动更新</span></div>
             </article>
             <div id="glossary-collection-list" class="glossary-collection-list"></div>
@@ -101,7 +101,7 @@
           <div class="section-heading"><h2>翻译引擎</h2><p>默认使用 Firefox 本地模型；也可以添加翻译 API、LLM 或自建服务。</p></div>
           <div class="setting-card stack-card">
             <div class="setting-row"><span><strong>当前翻译引擎</strong><small>外部引擎会把需要翻译的文本发送给对应服务商。</small></span><select id="active-engine-select"></select></div>
-            <div class="hint">Firefox 本地引擎不需要 API Key，也不会上传网页文本。外部服务的免费额度、限速和数据策略以服务商当前规则为准。</div>
+            <div class="hint">Firefox 本地引擎不需要 API Key，也不会上传网页文本。首次使用外部引擎时 Firefox 会请求数据传输权限；公网 Endpoint 必须使用 HTTPS，本机 localhost 可使用 HTTP。服务商的数据策略以其当前规则为准。</div>
           </div>
           <div class="setting-card">
             <div class="setting-copy"><div><strong>已添加引擎</strong><span>API Key 仅保存在 Firefox 的 <code>browser.storage.local</code>，不会写入项目文件或日志。</span></div></div>
@@ -112,7 +112,7 @@
             <div class="engine-form-grid">
               <label><span>类型</span><select id="engine-type"><option value="microsoft">Microsoft Translator</option><option value="google">Google Cloud Translation</option><option value="gemini">Gemini API</option><option value="openrouter">OpenRouter</option><option value="openai-compatible">OpenAI Compatible</option><option value="libretranslate">LibreTranslate</option><option value="custom-rest">自定义 REST</option></select></label>
               <label><span>名称</span><input id="engine-name" type="text" /></label>
-              <label class="engine-wide"><span>Base URL / Endpoint</span><input id="engine-base-url" type="text" spellcheck="false" /></label>
+              <label class="engine-wide"><span>Base URL / Endpoint（公网必须 HTTPS）</span><input id="engine-base-url" type="text" spellcheck="false" /></label>
               <label><span>API Key</span><input id="engine-api-key" type="password" autocomplete="off" /></label>
               <label data-engine-field="model"><span>模型</span><input id="engine-model" type="text" spellcheck="false" /></label>
               <label data-engine-field="region"><span>Azure Region（可选）</span><input id="engine-region" type="text" spellcheck="false" /></label>
