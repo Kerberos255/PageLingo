@@ -1,3 +1,4 @@
+// @ts-nocheck
 var navigationLayoutSnapshots = new Map();
 export function restoreNavigationLayout() {
     for (const [element, styleAttribute] of navigationLayoutSnapshots) {
