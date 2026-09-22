@@ -130,30 +130,34 @@ def repository_layout_state(driver: webdriver.Firefox) -> dict:
           };
         }
         const repoPathPrefix = '/Kerberos255/chatgpt-codex-tools-mcp/';
-        const fileLink = Array.from(document.querySelectorAll('a[href*="/tree/"],a[href*="/blob/"]'))
-          .find((el) => {
+        const pathIdentifiers = Array.from(document.querySelectorAll('a[href*="/tree/"],a[href*="/blob/"]'))
+          .filter((el) => {
             const href = el.getAttribute('href') || '';
-            const text = (el.textContent || '').trim();
-            return visible(el) && href.startsWith(repoPathPrefix) && /(?:src|tests|README\.md|CHANGELOG\.md|package\.json|\.github)/i.test(text);
-          }) || null;
-        const fileRow = fileLink?.closest('tr,[role="row"],li,div[role="row"]') || fileLink?.parentElement || null;
-        const fr = fileLink?.getBoundingClientRect();
-        const file = fileLink ? {
-          text: (fileLink.textContent || '').replace(/\\s+/g,' ').trim(),
-          href: fileLink.getAttribute('href'),
-          visible: visible(fileLink),
-          x: fr?.x ?? 0,
-          width: fr?.width ?? 0,
-          generated: fileLink.querySelectorAll('[data-flt-generated="translation"]').length,
-          wrappers: fileLink.querySelectorAll('[data-flt-source-text-wrapper]').length,
-          visibleIconsInRow: fileRow ? Array.from(fileRow.querySelectorAll('svg,img')).filter(visible).length : 0,
-        } : null;
+            const text = (el.textContent || '').replace(/\\s+/g,' ').trim();
+            return visible(el) && href.startsWith(repoPathPrefix) && text.length > 0;
+          })
+          .slice(0, 40)
+          .map((el) => {
+            const row = el.closest('tr,[role="row"],li,div[role="row"]') || el.parentElement;
+            const r = el.getBoundingClientRect();
+            return {
+              text: (el.textContent || '').replace(/\\s+/g,' ').trim(),
+              href: el.getAttribute('href'),
+              visible: visible(el),
+              x: r.x,
+              width: r.width,
+              generated: el.querySelectorAll('[data-flt-generated="translation"]').length,
+              wrappers: el.querySelectorAll('[data-flt-source-text-wrapper]').length,
+              visibleIconsInRow: row ? Array.from(row.querySelectorAll('svg,img')).filter(visible).length : 0,
+            };
+          });
+        const file = pathIdentifiers.find((item) => /(?:src|tests|README\.md|CHANGELOG\.md|package\.json|\.github)/i.test(item.text)) || pathIdentifiers[0] || null;
         const visibleGeneratedZeros = Array.from(document.querySelectorAll('.flt-translation'))
           .filter((el) => visible(el) && (el.textContent || '').trim() === '0').length;
         const hiddenStateLeaks = Array.from(document.querySelectorAll('.flt-translation'))
           .filter((el) => visible(el) && /You must be signed in to change notification settings/i.test(el.textContent || ''))
           .map((el) => (el.textContent || '').trim());
-        return {tabs, file, visibleGeneratedZeros, hiddenStateLeaks};
+        return {tabs, file, pathIdentifiers, visibleGeneratedZeros, hiddenStateLeaks};
         """
     )
 
@@ -452,13 +456,20 @@ def main() -> None:
             raise AssertionError(f"Hidden numeric counters leaked into translations: {repo_layout_after}")
         if repo_layout_after["hiddenStateLeaks"]:
             raise AssertionError(f"Hidden notification state leaked into translations: {repo_layout_after}")
-        if repo_layout_before.get("file") and repo_layout_after.get("file"):
-            if repo_layout_after["file"]["text"] != repo_layout_before["file"]["text"]:
-                raise AssertionError(f"GitHub file/path identifier changed: {repo_layout_before['file']} -> {repo_layout_after['file']}")
-            if repo_layout_after["file"]["generated"] or repo_layout_after["file"]["wrappers"]:
-                raise AssertionError(f"GitHub file/path identifier was translated: {repo_layout_after['file']}")
-            if repo_layout_before["file"]["visibleIconsInRow"] > 0 and repo_layout_after["file"]["visibleIconsInRow"] < repo_layout_before["file"]["visibleIconsInRow"]:
-                raise AssertionError(f"GitHub file row icon disappeared: {repo_layout_before['file']} -> {repo_layout_after['file']}")
+        before_paths = {item["href"]: item for item in repo_layout_before.get("pathIdentifiers", [])}
+        after_paths = {item["href"]: item for item in repo_layout_after.get("pathIdentifiers", [])}
+        if not before_paths:
+            raise AssertionError("No visible GitHub tree/blob path identifiers were found")
+        for href, before_path in before_paths.items():
+            after_path = after_paths.get(href)
+            if not after_path:
+                raise AssertionError(f"GitHub path identifier disappeared: {before_path}")
+            if after_path["text"] != before_path["text"]:
+                raise AssertionError(f"GitHub file/path identifier changed: {before_path} -> {after_path}")
+            if after_path["generated"] or after_path["wrappers"]:
+                raise AssertionError(f"GitHub file/path identifier was translated: {after_path}")
+            if before_path["visibleIconsInRow"] > 0 and after_path["visibleIconsInRow"] < before_path["visibleIconsInRow"]:
+                raise AssertionError(f"GitHub file row icon disappeared: {before_path} -> {after_path}")
         after = hidden_heading_snapshot(driver)
         leaked = [item for item in after if item["translatedSibling"]]
         if leaked:
