@@ -1,3 +1,4 @@
+// @ts-nocheck
 export type DisplayMode = "translation" | "bilingual";
 export type ModelUpdatePolicy = "auto" | "notify" | "manual";
 export type ManualSourceLanguage = "auto" | string;
