@@ -2,12 +2,12 @@
 // Maintained with the extension source; not exposed in the settings UI.
 // User custom terminology always overrides entries here.
 globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ = Object.freeze({
-  // Hard-preserve terms are protected before translation while the surrounding sentence
-  // is still translated as one HTML segment. Use this for brands, product names, protocols,
-  // code/tool identifiers, and user-visible tokens that must never be rewritten.
+  // Proper names are protected before translation while the surrounding sentence
+  // is still translated as one HTML segment. Matching is case-sensitive by design so
+  // names such as Signal, Matrix, Render, and Windows do not freeze ordinary lowercase words.
   hardPreserve: Object.freeze([
     // AI, developer platforms, and developer tools.
-    "OpenClaw", "OpenCode", "Tailscale", "OAuth", "OpenAI", "Anthropic",
+    "OpenClaw", "OpenCode", "Tailscale", "OpenAI", "Anthropic",
     "ChatGPT", "GPT", "Claude", "Gemini", "DeepSeek", "Codex", "Grok",
     "Llama", "Qwen", "Mistral", "Hugging Face", "Midjourney", "Stability AI",
     "GitHub", "GitHub Actions", "GitHub Copilot", "GitLab", "Bitbucket", "Git",
@@ -19,7 +19,7 @@ globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ = Object.freeze({
     // Messaging, collaboration, and social communication products.
     "Slack", "Discord", "Telegram", "WhatsApp", "Signal", "Matrix",
     "Feishu", "DingTalk", "WeChat", "Google Chat", "Microsoft Teams",
-    "iMessage", "Mattermost", "Nextcloud Talk", "IRC", "LINE", "Nostr",
+    "iMessage", "Mattermost", "Nextcloud Talk", "LINE",
     "QQ bot", "ClickClack", "Buzz",
 
     // Cloud, enterprise software, data platforms, and observability.
@@ -94,29 +94,13 @@ globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ = Object.freeze({
     "Springer Nature", "Reuters", "Associated Press", "Financial Times",
     "The New York Times", "BBC", "CNN",
 
-    // Standards, formats, protocols, and identifiers that should stay literal.
-    "API", "SDK", "CLI", "UI", "GUI", "WASM", "WebAssembly",
-    "HTTP", "HTTPS", "WebSocket", "JSON", "YAML", "TOML", "localhost"
   ]),
 
   // Legacy post-correction preserve list. Keep the field for compatibility with older
   // catalog shapes, but new immutable names should normally live in hardPreserve.
   preserve: Object.freeze([]),
 
-  pairs: Object.freeze({
-    "en->zh-Hans": Object.freeze([
-      ["Gateway", "网关"],
-      ["Control UI", "控制界面"],
-      ["Dashboard", "仪表板"],
-      ["webhook", "webhook"],
-      ["runtime", "运行时"]
-    ]),
-    "en->zh-Hant": Object.freeze([
-      ["Gateway", "閘道"],
-      ["Control UI", "控制介面"],
-      ["Dashboard", "儀表板"],
-      ["webhook", "webhook"],
-      ["runtime", "執行階段"]
-    ])
-  })
+  // Default rules intentionally contain proper names only. Ordinary technical vocabulary
+  // is left to the translation engine or user-created terminology collections.
+  pairs: Object.freeze({})
 });
