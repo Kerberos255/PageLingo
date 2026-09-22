@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -36,6 +37,7 @@ class TranslationHandler(BaseHTTPRequestHandler):
             "Actions": "操作",
             "Projects": "项目",
             "Security": "安全",
+            "Security and quality": "安全与质量",
             "Insights": "洞察",
             "src": "源代码",
             "tests": "测试目录",
@@ -505,6 +507,110 @@ def main() -> None:
             raise AssertionError(f"Visible translation nodes escaped hidden GitHub roots: {visible_leaks}")
 
         driver.save_screenshot(str(ARTIFACTS / "github-after.png"))
+
+        # Automatic-translation regression: GitHub's Turbo/SPA lifecycle must not
+        # restore the persistent repository navigation back to English after it was
+        # translated. Configure the site for automatic translation, reload from a
+        # clean document, then exercise both our route detector and a real GitHub tab
+        # navigation.
+        driver.switch_to.window(extension_handle)
+        driver.execute_async_script(
+            """
+            const done = arguments[0];
+            browser.storage.local.set({
+              autoTranslateEnabled: true,
+              alwaysTranslateSites: ['github.com'],
+              neverTranslateSites: [],
+              neverTranslateLanguages: [],
+              alwaysTranslateLanguages: []
+            }).then(() => done({ok:true}))
+              .catch((error) => done({ok:false,error:String(error)}));
+            """
+        )
+        driver.switch_to.window(target_handle)
+        driver.get(TARGET_URL)
+        WebDriverWait(driver, 60).until(
+            lambda d: d.execute_script(
+                """
+                const tab = document.getElementById('code-tab');
+                const translated = tab?.querySelector('[data-flt-generated="translation"]');
+                return Boolean(translated && /代码/.test(tab.innerText || tab.textContent || ''));
+                """
+            )
+        )
+        time.sleep(1.0)
+        auto_initial = repository_layout_state(driver)
+        for tab_id in ("code-tab", "issues-tab", "pull-requests-tab", "actions-tab", "projects-tab"):
+            tab = auto_initial["tabs"].get(tab_id)
+            if tab and tab["visible"] and tab["generated"] <= 0:
+                raise AssertionError(f"Automatic translation did not translate GitHub navigation: {tab_id}: {tab}")
+
+        driver.execute_script(
+            """
+            window.__pagelingoContinuitySamples = [];
+            if (window.__pagelingoContinuityTimer) clearInterval(window.__pagelingoContinuityTimer);
+            const sample = () => {
+              const tab = document.getElementById('code-tab');
+              const generated = tab?.querySelectorAll('[data-flt-generated="translation"]').length ?? -1;
+              const wrapper = tab?.querySelector('[data-flt-source-text-wrapper]');
+              window.__pagelingoContinuitySamples.push({
+                generated,
+                text: (tab?.innerText || tab?.textContent || '').replace(/\s+/g, ' ').trim(),
+                sourceDisplay: wrapper ? getComputedStyle(wrapper).display : null
+              });
+            };
+            sample();
+            window.__pagelingoContinuityTimer = setInterval(sample, 10);
+            const url = new URL(location.href);
+            url.searchParams.set('pagelingo-spa-e2e', String(Date.now()));
+            history.pushState({}, '', url);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+            setTimeout(() => {
+              clearInterval(window.__pagelingoContinuityTimer);
+              window.__pagelingoContinuityTimer = null;
+            }, 1800);
+            """
+        )
+        time.sleep(2.2)
+        continuity_samples = driver.execute_script("return window.__pagelingoContinuitySamples || []")
+        lost_translation = [
+            item for item in continuity_samples
+            if item.get("generated", -1) <= 0 or "代码" not in item.get("text", "")
+        ]
+        if lost_translation:
+            raise AssertionError(
+                f"GitHub automatic navigation flashed/restored to English during SPA route handling: "
+                f"{lost_translation[:12]}"
+            )
+
+        driver.execute_script(
+            """
+            const issues = document.getElementById('issues-tab');
+            if (!issues) throw new Error('issues-tab not found');
+            issues.click();
+            """
+        )
+        WebDriverWait(driver, 60).until(lambda d: "/issues" in d.current_url)
+        WebDriverWait(driver, 60).until(
+            lambda d: d.execute_script(
+                """
+                const code = document.getElementById('code-tab');
+                const issues = document.getElementById('issues-tab');
+                return Boolean(
+                  code?.querySelector('[data-flt-generated="translation"]') &&
+                  issues?.querySelector('[data-flt-generated="translation"]')
+                );
+                """
+            )
+        )
+        time.sleep(4.0)
+        auto_after_route = repository_layout_state(driver)
+        for tab_id in ("code-tab", "issues-tab", "pull-requests-tab", "actions-tab", "projects-tab"):
+            tab = auto_after_route["tabs"].get(tab_id)
+            if tab and tab["visible"] and tab["generated"] <= 0:
+                raise AssertionError(f"GitHub navigation reverted after automatic SPA navigation: {tab_id}: {tab}")
+        driver.save_screenshot(str(ARTIFACTS / "github-auto-after-route.png"))
+
         print(json.dumps({
             "translated_roots": value.get("count"),
             "repository_layout_before": repo_layout_before,
@@ -519,6 +625,9 @@ def main() -> None:
             "hidden_headings_before": before,
             "hidden_headings_after": after,
             "visible_leaks": visible_leaks,
+            "auto_initial": auto_initial,
+            "auto_continuity_sample_count": len(continuity_samples),
+            "auto_after_route": auto_after_route,
         }, ensure_ascii=False, indent=2))
         driver.switch_to.window(extension_handle)
     finally:
