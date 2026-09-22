@@ -269,6 +269,65 @@ describe("PageTranslator display modes", () => {
     expect(item.querySelector(":scope > [data-flt-source-text-wrapper] + .flt-translation")?.textContent).toContain("译:Folder label");
   });
 
+  it("keeps a summary disclosure container intact", async () => {
+    document.body.innerHTML = `<details open><summary id="summary">More details</summary><p>Body text.</p></details>`;
+    const summary = document.querySelector<HTMLElement>("#summary")!;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    expect(summary.classList.contains("flt-source-hidden")).toBe(false);
+    expect(summary.querySelector("[data-flt-source-text-wrapper] + .flt-translation")?.textContent).toContain("译:More details");
+    expect(summary.isConnected).toBe(true);
+  });
+
+  it("keeps paragraph icons and form controls when translating nearby text", async () => {
+    document.body.innerHTML = `
+      <p id="status"><svg id="status-icon" aria-hidden="true"></svg>Status ready</p>
+      <label id="choice"><input id="check" type="checkbox">Enable feature</label>`;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    const status = document.querySelector<HTMLElement>("#status")!;
+    const label = document.querySelector<HTMLElement>("#choice")!;
+    expect(status.classList.contains("flt-source-hidden")).toBe(false);
+    expect(document.querySelector("#status-icon")?.isConnected).toBe(true);
+    expect(label.classList.contains("flt-source-hidden")).toBe(false);
+    expect(document.querySelector("#check")?.isConnected).toBe(true);
+    expect(status.querySelector(".flt-translation")?.textContent).toContain("译:Status ready");
+    expect(label.querySelector(".flt-translation")?.textContent).toContain("译:Enable feature");
+  });
+
+  it("wraps dynamically inserted direct navigation text before translating it", async () => {
+    document.body.innerHTML = `
+      <nav><ul><li id="item"><a id="tab" href="/repo" style="display:flex">
+        <svg id="icon" aria-hidden="true"></svg>
+      </a></li></ul></nav>`;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+    translator.observe();
+
+    const tab = document.querySelector<HTMLAnchorElement>("#tab")!;
+    tab.append(document.createTextNode("Actions"));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const item = document.querySelector<HTMLElement>("#item")!;
+    expect(item.classList.contains("flt-source-list-hidden")).toBe(false);
+    expect(document.querySelector("#icon")?.isConnected).toBe(true);
+    expect(tab.querySelector("[data-flt-source-text-wrapper] + .flt-translation")?.textContent).toContain("译:Actions");
+    translator.restore();
+  });
+
+  it("preserves explicit inline-flex display on translated fallback roots", async () => {
+    document.body.innerHTML = `<div><span id="chip" style="display:inline-flex;white-space:nowrap">Compact label</span></div>`;
+    const chip = document.querySelector<HTMLElement>("#chip")!;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    const translated = chip.nextElementSibling as HTMLElement | null;
+    expect(translated?.style.getPropertyValue("display")).toBe("inline-flex");
+    expect(translated?.style.getPropertyValue("white-space")).toBe("nowrap");
+  });
+
   it("does not serialize hidden descendant state into a visible translation", async () => {
     document.body.innerHTML = `<p id="p">Visible text <span hidden>Secret state</span></p>`;
     const provider = new FakeHtmlProvider();
