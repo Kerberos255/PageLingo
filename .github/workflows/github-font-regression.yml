@@ -1,6 +1,11 @@
 name: PageLingo GitHub font regression
 
 on:
+  push:
+    branches:
+      - fix/github-font-size
+    paths-ignore:
+      - .github/workflows/github-font-regression.yml
   workflow_dispatch:
 
 permissions:
@@ -58,6 +63,7 @@ jobs:
             artifacts/pagelingo-v0.1.30-github-font-fix.xpi
             artifacts/github-before.png
             artifacts/github-after.png
+            artifacts/github-terminology.png
             artifacts/github-auto-after-route.png
           if-no-files-found: warn
           retention-days: 7
