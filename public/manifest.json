@@ -2,10 +2,9 @@
   "manifest_version": 3,
   "name": "PageLingo",
   "version": "0.1.30",
-  "description": "Fast local immersive translation with layout-preserving bilingual rendering.",
+  "description": "Local-first, layout-preserving webpage translation for Firefox.",
   "permissions": [
     "storage",
-    "activeTab",
     "alarms",
     "contextMenus",
     "unlimitedStorage"
@@ -59,8 +58,13 @@
       "data_collection_permissions": {
         "required": [
           "none"
+        ],
+        "optional": [
+          "websiteContent",
+          "authenticationInfo"
         ]
       }
     }
-  }
+  },
+  "homepage_url": "https://github.com/Kerberos255/PageLingo"
 }
