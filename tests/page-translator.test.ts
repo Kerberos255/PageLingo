@@ -204,6 +204,30 @@ describe("PageTranslator terminology safety", () => {
     expect(provider.requests[0]?.html).toContain("Configure ");
   });
 
+  it("matches protected proper names by exact case", async () => {
+    document.body.innerHTML = `<p id="p">Signal carries a signal.</p>`;
+    class CaseProvider implements TranslationProvider {
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        return request.html
+          .replaceAll("Signal", "错误品牌译名")
+          .replaceAll("signal", "信号")
+          .replaceAll("carries a", "传递一个");
+      }
+    }
+    const translator = new PageTranslator(document, new CaseProvider(), {
+      displayMode: "translation",
+      terminology: [
+        { source: "Signal", target: "Signal", mode: "protect", caseSensitive: true, origin: "builtin", aliases: [] },
+      ],
+    });
+    await translator.translateAll();
+
+    const translated = document.querySelector<HTMLElement>("#p + .flt-translation")!;
+    expect(translated.textContent).toContain("Signal");
+    expect(translated.textContent).toContain("信号");
+    expect(translated.textContent).not.toContain("错误品牌译名");
+  });
+
   it("hard-preserves brands inside standalone link labels", async () => {
     document.body.innerHTML = `<p>Open <a id="link" href="/slack">Slack settings</a>.</p>`;
     class LinkCorruptingProvider implements TranslationProvider {
