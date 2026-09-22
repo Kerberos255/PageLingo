@@ -454,6 +454,13 @@ def main() -> None:
               alwaysTranslateSites: [],
               neverTranslateLanguages: [],
               alwaysTranslateLanguages: [],
+              builtinGlossaryEnabled: true,
+              glossaryCollections: [{
+                id: 'e2e-terms',
+                name: 'E2E Terms',
+                enabled: true,
+                entries: [{ source: 'Gateway', target: '网关', mode: 'replace', caseSensitive: false }]
+              }],
               activeTranslationEngineId: 'e2e-rest',
               translationEngines: [{
                 id: 'e2e-rest',
