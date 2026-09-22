@@ -1,9 +1,6 @@
 name: PageLingo GitHub font regression
 
 on:
-  push:
-    branches:
-      - fix/github-font-size
   workflow_dispatch:
 
 permissions:
