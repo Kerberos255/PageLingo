@@ -27,7 +27,6 @@ PageLingo bundles the ONNX Runtime Web WASM runtime used by the optional image O
 - Package: `onnxruntime-web` 1.30.0
 - License: MIT
 - Runtime code and WASM are bundled with the extension; no executable code is loaded remotely.
-- The package's license file is copied into `vendor/onnxruntime/LICENSE` in the built extension.
 
 ## paddleocr.js
 
