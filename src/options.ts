@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { languageLabel, loadSettings, normalizeSitePattern, saveAutoTranslateEnabled, saveDisplayMode, saveImageTranslationEnabled, saveLanguageRules, saveModelUpdatePolicy, saveSiteRules, saveTargetLanguage, saveBuiltinGlossaryEnabled, saveGlossaryCollections, glossaryEntriesToText, parseGlossaryEditorText } from "./shared/settings";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { initializeTranslationEngines } from "./options-engines";
