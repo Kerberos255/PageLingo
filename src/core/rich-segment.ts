@@ -15,6 +15,7 @@ var INLINE_TAGS = new Set([
     "CODE", "KBD", "SAMP", "VAR", "BR", "WBR",
 ]);
 var OPAQUE_TAGS = new Set(["CODE", "KBD", "SAMP", "VAR"]);
+var DYNAMIC_TIME_TAGS = new Set(["RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME"]);
 export function escapeHtml(value) {
     return value
         .replaceAll("&", "&amp;")
@@ -52,6 +53,8 @@ function serializeChildren(parent, root, links, opaque) {
             continue;
         const element = node;
         if (element.hasAttribute("data-flt-generated"))
+            continue;
+        if (element !== root && DYNAMIC_TIME_TAGS.has(element.tagName))
             continue;
         if (element !== root && isElementEffectivelyHidden(element))
             continue;
@@ -110,6 +113,7 @@ function snapshotLinkGaps(root) {
             if (node.nodeType !== Node.ELEMENT_NODE) continue;
             const element = node;
             if (element.hasAttribute("data-flt-generated")) continue;
+            if (element !== root && DYNAMIC_TIME_TAGS.has(element.tagName)) continue;
             if (element !== root && isElementEffectivelyHidden(element)) continue;
             if (element !== root && isTranslationRootElement(element)) continue;
             if (element.tagName === "A") {
