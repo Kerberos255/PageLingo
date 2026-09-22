@@ -1,10 +1,17 @@
 import { languageLabel } from "../shared/settings";
 import type { TranslationEngineConfig } from "../shared/translation-engine-settings";
 
+export interface ExternalTranslationTerminologyEntry {
+  source: string;
+  target: string;
+  mode: "protect" | "replace";
+}
+
 export interface ExternalTranslationRequest {
   html: string;
   sourceLanguage: string;
   targetLanguage: string;
+  terminology?: ExternalTranslationTerminologyEntry[];
 }
 
 const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. Output only the translated HTML. Do not use Markdown or add explanations.";
@@ -57,11 +64,26 @@ function stripCodeFence(value: string): string {
   return match?.[1]?.trim() ?? trimmed;
 }
 
+function terminologyPrompt(entries: ExternalTranslationTerminologyEntry[] | undefined): string {
+  if (!entries?.length) return "";
+  const hard = entries.filter((entry) => entry.mode === "protect");
+  const preferred = entries.filter((entry) => entry.mode === "replace");
+  const lines = [
+    "",
+    "Terminology rules for this segment:",
+    ...hard.map((entry) => `- KEEP EXACTLY, character-for-character: ${entry.source}`),
+    ...preferred.map((entry) => `- PREFERRED TRANSLATION: ${entry.source} => ${entry.target}`),
+    "Apply these rules while translating the complete sentence; do not omit surrounding context.",
+  ];
+  return lines.join("\n");
+}
+
 function renderPrompt(config: TranslationEngineConfig, request: ExternalTranslationRequest): string {
   const template = config.prompt || DEFAULT_LLM_PROMPT;
   return template
     .replaceAll("{{source}}", languageLabel(request.sourceLanguage))
-    .replaceAll("{{target}}", languageLabel(request.targetLanguage));
+    .replaceAll("{{target}}", languageLabel(request.targetLanguage))
+    + terminologyPrompt(request.terminology);
 }
 
 async function jsonRequest(url: string, init: RequestInit): Promise<unknown> {
@@ -247,6 +269,9 @@ async function translateCustomRest(config: TranslationEngineConfig, request: Ext
     target: request.targetLanguage,
     sourceLabel: languageLabel(request.sourceLanguage),
     targetLabel: languageLabel(request.targetLanguage),
+    terminology: (request.terminology ?? [])
+      .map((entry) => entry.mode === "protect" ? `${entry.source} = ${entry.source}` : `${entry.source} = ${entry.target}`)
+      .join("\n"),
     apiKey: config.apiKey,
     model: config.model,
   };
