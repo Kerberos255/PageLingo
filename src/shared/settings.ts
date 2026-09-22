@@ -2,7 +2,7 @@
 export type DisplayMode = "translation" | "bilingual";
 export type ModelUpdatePolicy = "auto" | "notify" | "manual";
 export type ManualSourceLanguage = "auto" | string;
-export interface GlossaryEntry { source:string; target:string; mode:"protect"|"replace" }
+export interface GlossaryEntry { source:string; target:string; mode:"protect"|"replace"; caseSensitive?:boolean }
 export interface GlossaryCollection { id:string; name:string; enabled:boolean; entries:GlossaryEntry[] }
 export interface PageLingoSettings { displayMode:DisplayMode; autoTranslateEnabled:boolean; targetLanguage:string; neverTranslateSites:string[]; alwaysTranslateSites:string[]; neverTranslateLanguages:string[]; alwaysTranslateLanguages:string[]; modelUpdatePolicy:ModelUpdatePolicy; imageTranslationEnabled:boolean; terminologyText:string; builtinGlossaryEnabled:boolean; glossaryCollections:GlossaryCollection[] }
 export var DEFAULT_SETTINGS: PageLingoSettings = {
@@ -112,8 +112,9 @@ export function normalizeGlossaryEntry(value): GlossaryEntry | null {
     // to protect mode so the term is shielded before translation instead of repaired after.
     const mode = requestedMode === "protect" || (requestedTarget && requestedTarget === source) ? "protect" : "replace";
     const target = mode === "protect" ? source : requestedTarget;
+    const caseSensitive = typeof value.caseSensitive === "boolean" ? value.caseSensitive : mode === "protect";
     if (mode === "replace" && !target) return null;
-    return { source, target, mode };
+    return { source, target, mode, caseSensitive };
 }
 export function parseGlossaryEditorText(text): GlossaryEntry[] {
     const entries = [];
@@ -123,9 +124,9 @@ export function parseGlossaryEditorText(text): GlossaryEntry[] {
         const match = line.match(/^(.+?)\s*(?:=>|=|\t)\s*(.+)$/);
         if (match) {
             const source = match[1].trim(), target = match[2].trim();
-            if (source && target) entries.push({ source, target, mode: "replace" });
+            if (source && target) entries.push({ source, target, mode: "replace", caseSensitive: false });
         } else {
-            entries.push({ source: line, target: line, mode: "protect" });
+            entries.push({ source: line, target: line, mode: "protect", caseSensitive: true });
         }
     }
     const map = new Map();
