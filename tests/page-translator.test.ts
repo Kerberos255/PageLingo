@@ -268,6 +268,26 @@ describe("PageTranslator display modes", () => {
     expect(translated && getComputedStyle(translated).whiteSpace).toBe("nowrap");
   });
 
+  it("retranslates an existing hidden source root from restored DOM", async () => {
+    document.body.innerHTML = `<p id="p">Hello <strong id="strong">world</strong>.</p>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider, { displayMode: "translation" });
+    await translator.translateAll();
+    translator.observe();
+
+    const strong = document.querySelector<HTMLElement>("#strong")!;
+    strong.firstChild!.textContent = "updated";
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const paragraph = document.querySelector<HTMLElement>("#p")!;
+    const translated = paragraph.nextElementSibling as HTMLElement | null;
+    expect(paragraph.classList.contains("flt-source-hidden")).toBe(true);
+    expect(translated?.classList.contains("flt-translation")).toBe(true);
+    expect(translated?.textContent).toContain("updated");
+    expect(translated?.querySelector("strong")?.textContent).toContain("updated");
+    translator.restore();
+  });
+
   it("does not mount late translations after restore", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
