@@ -106,8 +106,12 @@ export function normalizeGlossaryEntry(value): GlossaryEntry | null {
     if (!value || typeof value !== "object") return null;
     const source = typeof value.source === "string" ? value.source.trim() : "";
     if (!source) return null;
-    const mode = value.mode === "protect" ? "protect" : "replace";
-    const target = mode === "protect" ? source : (typeof value.target === "string" ? value.target.trim() : "");
+    const requestedMode = value.mode === "protect" ? "protect" : "replace";
+    const requestedTarget = typeof value.target === "string" ? value.target.trim() : "";
+    // "Slack = Slack" is semantically a hard-preserve rule. Normalize source==target
+    // to protect mode so the term is shielded before translation instead of repaired after.
+    const mode = requestedMode === "protect" || (requestedTarget && requestedTarget === source) ? "protect" : "replace";
+    const target = mode === "protect" ? source : requestedTarget;
     if (mode === "replace" && !target) return null;
     return { source, target, mode };
 }
