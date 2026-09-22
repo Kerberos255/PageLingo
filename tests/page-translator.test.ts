@@ -347,6 +347,33 @@ describe("PageTranslator display modes", () => {
     expect(provider.requests.some((request) => request.html.trim() === "5")).toBe(false);
   });
 
+  it("preserves a decorated heading container so its divider remains visible", async () => {
+    document.body.innerHTML = `<h2 id="heading" style="border-bottom:1px solid rgb(48,54,61);padding-bottom:8px">Governance</h2>`;
+    const heading = document.querySelector<HTMLElement>("#heading")!;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    expect(heading.classList.contains("flt-source-hidden")).toBe(false);
+    expect(heading.style.borderBottomWidth).toBe("1px");
+    expect(heading.querySelector("[data-flt-source-text-wrapper] + .flt-translation")?.textContent).toContain("译:Governance");
+  });
+
+  it("leaves dynamic relative-time fallback text out of translation", async () => {
+    document.body.innerHTML = `
+      <p id="updated">Updated <relative-time id="time" datetime="2026-09-22T10:00:00Z">Sep 22, 2026</relative-time></p>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider, { displayMode: "translation" });
+    await translator.translateAll();
+
+    const paragraph = document.querySelector<HTMLElement>("#updated")!;
+    const time = document.querySelector<HTMLElement>("#time")!;
+    expect(paragraph.classList.contains("flt-source-hidden")).toBe(false);
+    expect(time.textContent).toBe("Sep 22, 2026");
+    expect(time.querySelector("[data-flt-source-text-wrapper],.flt-translation")).toBeNull();
+    expect(provider.requests.some((request) => request.html.includes("Sep 22, 2026"))).toBe(false);
+    expect(paragraph.querySelector(".flt-translation")?.textContent).toContain("译:Updated");
+  });
+
   it("does not serialize hidden descendant state into a visible translation", async () => {
     document.body.innerHTML = `<p id="p">Visible text <span hidden>Secret state</span></p>`;
     const provider = new FakeHtmlProvider();
