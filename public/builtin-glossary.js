@@ -2,15 +2,11 @@
 // Maintained with the extension source; not exposed in the settings UI.
 // User custom terminology always overrides entries here.
 globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ = Object.freeze({
-  // Only terms known to be unstable in the local model are segmented before translation.
-  // Keep this list intentionally tiny: every extra inline boundary can hurt sentence quality.
-  hardProtect: Object.freeze([
-    "auth"
-  ]),
-
-  // Preferred tokens/brands. These are corrected after whole-sentence translation instead of
-  // being injected as inline spans into the source sentence.
-  preserve: Object.freeze([
+  // Hard-preserve terms are protected before translation while the surrounding sentence
+  // is still translated as one HTML segment. Use this for brands, product names, protocols,
+  // code/tool identifiers, and user-visible tokens that must never be rewritten.
+  hardPreserve: Object.freeze([
+    "auth",
     "OpenClaw", "Tailscale", "OAuth", "OpenAI", "GitHub", "Git",
     "Slack", "Discord", "Telegram", "WhatsApp", "Signal", "Matrix",
     "Feishu", "Google Chat", "Microsoft Teams", "iMessage", "Mattermost",
@@ -21,6 +17,10 @@ globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ = Object.freeze({
     "macOS", "Linux", "Windows", "PowerShell", "WSL", "WSL2",
     "localhost"
   ]),
+
+  // Legacy post-correction preserve list. Keep the field for compatibility with older
+  // catalog shapes, but new immutable names should normally live in hardPreserve.
+  preserve: Object.freeze([]),
 
   pairs: Object.freeze({
     "en->zh-Hans": Object.freeze([
