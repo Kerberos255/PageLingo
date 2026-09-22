@@ -22,6 +22,12 @@ export function escapeHtml(value) {
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;");
 }
+function parseHtmlFragment(doc, html) {
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const fragment = doc.createDocumentFragment();
+    for (const child of Array.from(parsed.body.childNodes)) fragment.append(doc.importNode(child, true));
+    return fragment;
+}
 function snapshotLink(element) {
     const computed = element.ownerDocument.defaultView?.getComputedStyle(element);
     return {
@@ -214,10 +220,9 @@ export function terminologyForText(entries, text) {
 export function protectTerminologyHtml(doc, html, entries) {
     const protectedEntries = (entries ?? []).filter((entry) => entry.mode === "protect");
     if (!protectedEntries.length) return { html, replacements: [] };
-    const template = doc.createElement("template");
-    template.innerHTML = html;
+    const content = parseHtmlFragment(doc, html);
     const replacements = [];
-    const walker = doc.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+    const walker = doc.createTreeWalker(content, NodeFilter.SHOW_TEXT);
     const nodes = [];
     let current = walker.nextNode();
     while (current) {
@@ -262,7 +267,7 @@ export function protectTerminologyHtml(doc, html, entries) {
         textNode.replaceWith(fragment);
     }
     const holder = doc.createElement("div");
-    holder.append(template.content.cloneNode(true));
+    holder.append(content.cloneNode(true));
     return { html: holder.innerHTML, replacements };
 }
 export function restoreTerminology(container, replacements) {
@@ -275,10 +280,9 @@ export function restoreTerminology(container, replacements) {
     }
 }
 export function restoreTerminologyHtml(doc, html, replacements) {
-    const template = doc.createElement("template");
-    template.innerHTML = html;
+    const content = parseHtmlFragment(doc, html);
     const holder = doc.createElement("div");
-    holder.append(template.content.cloneNode(true));
+    holder.append(content);
     restoreTerminology(holder, replacements);
     return holder.innerHTML;
 }
@@ -301,8 +305,7 @@ function replaceTextAlias(value, alias, target, limit) {
 export function applyTerminologyCorrectionsHtml(doc, html, sourceText, entries, dynamicAliases = new Map()) {
     const active = (entries ?? []).filter((entry) => entry.mode === "replace" && termOccurrenceCount(sourceText, entry.source, entry.caseSensitive === true) > 0);
     if (!active.length) return html;
-    const template = doc.createElement("template");
-    template.innerHTML = html;
+    const content = parseHtmlFragment(doc, html);
     for (const entry of active) {
         let remaining = termOccurrenceCount(sourceText, entry.source, entry.caseSensitive === true);
         if (!remaining) continue;
@@ -310,7 +313,7 @@ export function applyTerminologyCorrectionsHtml(doc, html, sourceText, entries, 
         const dynamic = dynamicAliases.get(entry.source.toLocaleLowerCase());
         if (dynamic) aliases.add(dynamic);
         const orderedAliases = Array.from(aliases).filter(Boolean).sort((a, b) => b.length - a.length);
-        const walker = doc.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+        const walker = doc.createTreeWalker(content, NodeFilter.SHOW_TEXT);
         let current = walker.nextNode();
         while (current && remaining > 0) {
             const text = current;
@@ -328,6 +331,6 @@ export function applyTerminologyCorrectionsHtml(doc, html, sourceText, entries, 
         }
     }
     const holder = doc.createElement("div");
-    holder.append(template.content.cloneNode(true));
+    holder.append(content);
     return holder.innerHTML;
 }
