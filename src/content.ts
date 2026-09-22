@@ -946,18 +946,20 @@ function noticePossibleRouteChange() {
     lastObservedUrl = currentUrl;
     scheduleRouteResetAndRescan();
 }
-window.addEventListener("popstate", () => { setTimeout(noticePossibleRouteChange, 0); }, { passive: true });
-window.addEventListener("hashchange", () => { setTimeout(noticePossibleRouteChange, 0); }, { passive: true });
-document.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
-    if (!(target instanceof HTMLAnchorElement)) return;
-    try {
-        const next = new URL(target.href, location.href);
-        if (next.origin === location.origin && next.href !== location.href) {
-            setTimeout(noticePossibleRouteChange, 0);
-            setTimeout(noticePossibleRouteChange, 120);
-        }
-    } catch {}
-}, true);
-setInterval(noticePossibleRouteChange, 400);
+if (window.top === window) {
+    window.addEventListener("popstate", () => { setTimeout(noticePossibleRouteChange, 0); }, { passive: true });
+    window.addEventListener("hashchange", () => { setTimeout(noticePossibleRouteChange, 0); }, { passive: true });
+    document.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
+        if (!(target instanceof HTMLAnchorElement)) return;
+        try {
+            const next = new URL(target.href, location.href);
+            if (next.origin === location.origin && next.href !== location.href) {
+                setTimeout(noticePossibleRouteChange, 0);
+                setTimeout(noticePossibleRouteChange, 120);
+            }
+        } catch {}
+    }, true);
+    setInterval(noticePossibleRouteChange, 400);
+}
 void maybeAutoTranslate(autoTranslateGeneration);
