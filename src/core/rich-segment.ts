@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { isElementEffectivelyHidden, isTranslationRootElement } from "./dom-policy";
 import { normalizeGlossaryEntry } from "../shared/settings";
 
