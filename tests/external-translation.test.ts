@@ -66,8 +66,10 @@ describe("external translation HTML safety", () => {
       const headers = init?.headers as Record<string, string>;
       expect(headers["X-OpenRouter-Title"]).toBe("PageLingo");
       expect(headers["X-Title"]).toBeUndefined();
-      const body = JSON.parse(String(init?.body)) as { model: string };
+      const body = JSON.parse(String(init?.body)) as { model: string; messages: Array<{ role: string; content: string }> };
       expect(body.model).toBe("openrouter/free");
+      expect(body.messages[0]?.content).toContain("KEEP EXACTLY, character-for-character: Slack");
+      expect(body.messages[0]?.content).toContain("PREFERRED TRANSLATION: Gateway => 网关");
       return new Response(JSON.stringify({ choices: [{ message: { content: "```html\n你好 <strong>世界</strong>\n```" } }] }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -86,6 +88,10 @@ describe("external translation HTML safety", () => {
       html: "Hello <strong>world</strong>",
       sourceLanguage: "en",
       targetLanguage: "zh-Hans",
+      terminology: [
+        { source: "Slack", target: "Slack", mode: "protect" },
+        { source: "Gateway", target: "网关", mode: "replace" },
+      ],
     });
     expect(html).toBe("你好 <strong>世界</strong>");
   });
@@ -114,6 +120,32 @@ describe("external translation HTML safety", () => {
       targetLanguage: "zh-Hans",
     });
     expect(html).toBe("你好 <strong>世界</strong>");
+  });
+
+  it("exposes terminology to custom REST templates without forcing an API shape", async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { glossary: string; q: string };
+      expect(body.glossary).toContain("Slack = Slack");
+      expect(body.glossary).toContain("Gateway = 网关");
+      return new Response(JSON.stringify({ data: { translatedText: "Slack 使用网关" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await translateWithExternalEngine(config({
+      bodyJson: '{"q":"{{html}}","glossary":"{{terminology}}"}',
+    }), {
+      html: "Slack uses Gateway",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+      terminology: [
+        { source: "Slack", target: "Slack", mode: "protect" },
+        { source: "Gateway", target: "网关", mode: "replace" },
+      ],
+    });
+    expect(html).toBe("Slack 使用网关");
   });
 
   it("maps Traditional Chinese to LibreTranslate's zt language code", async () => {
