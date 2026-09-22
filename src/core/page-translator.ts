@@ -150,17 +150,21 @@ export class PageTranslator {
             }
             return;
         }
-        const segment = serializeRichSegment(root);
-        if (!segment.html.trim())
-            return;
+        const currentFingerprint = sourceFingerprint(root);
         const previous = this.#records.get(root);
-        if (previous?.fingerprint === segment.fingerprint)
+        if (previous?.fingerprint === currentFingerprint)
             return;
         if (previous) {
+            // Restore the source before re-serializing. Translation-only mode may hide
+            // structural descendants with CSS; serializing while those rules are active
+            // can mistake PageLingo's own hiding for source-page visibility.
             this.#clearDisplayMode(root);
             previous.translationNode.remove();
             this.#records.delete(root);
         }
+        const segment = serializeRichSegment(root);
+        if (!segment.html.trim())
+            return;
         const protectedSegment = protectTerminologyHtml(this.#doc, segment.html, this.#terminology);
         let translatedHtml = await this.#provider.translateHtml({
             html: protectedSegment.html,
