@@ -38,23 +38,13 @@ function stableLinkLabel(sourceText, translatedText, targetLanguage = "") {
     const questionWord = /^(why|what|how|where|when|who)\b/i;
     const sourceWord = source.match(questionWord)?.[1]?.toLocaleLowerCase();
     const translatedWord = translated.match(questionWord)?.[1]?.toLocaleLowerCase();
-    if (sourceWord && translatedWord && sourceWord !== translatedWord) {
-        if (sourceWord === "why" && /^zh(?:-|$)/i.test(targetLanguage)) {
-            const subject = source.replace(/^why\s+/i, "").trim();
-            return targetLanguage.toLowerCase().includes("hant") ? `為什麼選擇${subject}` : `为什么选择${subject}`;
-        }
-        return source;
-    }
-    // Bergamot can translate an English Why-title into a Chinese When-title. When the
-    // source semantic is unambiguous, prefer a deterministic title rather than silently
-    // changing the question being asked.
+    if (sourceWord && translatedWord && sourceWord !== translatedWord) return source;
+
+    // Guard only against the known semantic inversion (Why -> When). Do not manufacture
+    // a preferred Chinese title: natural wording belongs to the translation engine.
     if (/^why\s+/i.test(source) && /^zh(?:-|$)/i.test(targetLanguage)) {
-        const looksLikeWhy = /^(?:为什么|为何|為什麼|為何)/u.test(translated);
         const looksLikeWhen = /^(?:何时|何時|什么时候|什麼時候|幾時)/u.test(translated);
-        if (!looksLikeWhy || looksLikeWhen) {
-            const subject = source.replace(/^why\s+/i, "").trim();
-            return targetLanguage.toLowerCase().includes("hant") ? `為什麼選擇${subject}` : `为什么选择${subject}`;
-        }
+        if (looksLikeWhen) return source;
     }
     return translated;
 }
