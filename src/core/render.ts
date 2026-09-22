@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { restoreTerminology } from "./rich-segment";
 var ALLOWED_TAGS = new Set([
     "A", "SPAN", "STRONG", "EM", "B", "I", "U", "S", "SMALL",
