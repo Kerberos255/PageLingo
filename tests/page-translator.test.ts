@@ -158,6 +158,90 @@ describe("PageTranslator DOM preservation", () => {
   });
 });
 
+describe("PageTranslator terminology safety", () => {
+  const terminology = [
+    { source: "Slack", target: "Slack", mode: "protect", origin: "builtin", aliases: [] },
+    { source: "OpenAI", target: "OpenAI", mode: "protect", origin: "builtin", aliases: [] },
+    { source: "Gateway", target: "网关", mode: "replace", origin: "builtin", aliases: ["网关"] },
+  ];
+
+  it("hard-preserves brand names before translation while keeping the sentence together", async () => {
+    document.body.innerHTML = `<p id="p">Configure Slack notifications for OpenAI with Gateway settings.</p>`;
+    class CorruptingProvider implements TranslationProvider {
+      requests: TranslationRequest[] = [];
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.requests.push(request);
+        return request.html
+          .replace("Configure ", "配置")
+          .replace(" notifications for ", " 通知，供 ")
+          .replace(" with ", "，使用 ")
+          .replace(" settings.", " 设置。")
+          .replaceAll("Slack", "松��")
+          .replaceAll("OpenAI", "开放人工智能")
+          .replaceAll("Gateway", "Gateway");
+      }
+    }
+    const provider = new CorruptingProvider();
+    const translator = new PageTranslator(document, provider, {
+      displayMode: "translation",
+      terminology,
+    });
+    await translator.translateAll();
+
+    const translated = document.querySelector<HTMLElement>("#p + .flt-translation")!;
+    expect(translated.textContent).toContain("Slack");
+    expect(translated.textContent).toContain("OpenAI");
+    expect(translated.textContent).toContain("网关");
+    expect(translated.textContent).not.toContain("松��");
+    expect(translated.textContent).not.toContain("开放人工智能");
+    expect(provider.requests[0]?.terminology).toEqual([
+      { source: "OpenAI", target: "OpenAI", mode: "protect" },
+      { source: "Gateway", target: "网关", mode: "replace" },
+      { source: "Slack", target: "Slack", mode: "protect" },
+    ].sort((a, b) => a.source.localeCompare(b.source)));
+    expect(provider.requests[0]?.html).toContain("data-flt-term-id");
+    expect(provider.requests[0]?.html).toContain("Configure ");
+  });
+
+  it("hard-preserves brands inside standalone link labels", async () => {
+    document.body.innerHTML = `<p>Open <a id="link" href="/slack">Slack settings</a>.</p>`;
+    class LinkCorruptingProvider implements TranslationProvider {
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        return request.html
+          .replaceAll("Slack", "松��")
+          .replaceAll("settings", "设置")
+          .replaceAll("Open", "打开");
+      }
+    }
+    const translator = new PageTranslator(document, new LinkCorruptingProvider(), {
+      displayMode: "translation",
+      terminology,
+    });
+    await translator.translateAll();
+
+    const translatedLink = document.querySelector<HTMLAnchorElement>(".flt-translation a");
+    expect(translatedLink?.textContent).toContain("Slack");
+    expect(translatedLink?.textContent).toContain("设置");
+    expect(translatedLink?.textContent).not.toContain("松��");
+  });
+
+  it("rejects replacement-character corruption instead of showing broken output", async () => {
+    document.body.innerHTML = `<p id="p">A normal sentence.</p>`;
+    class BrokenProvider implements TranslationProvider {
+      async translateHtml(): Promise<string> {
+        return "损坏的译文��";
+      }
+    }
+    const paragraph = document.querySelector<HTMLElement>("#p")!;
+    const translator = new PageTranslator(document, new BrokenProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    expect(document.querySelector(".flt-translation")).toBeNull();
+    expect(paragraph.classList.contains("flt-source-hidden")).toBe(false);
+    expect(paragraph.textContent).toBe("A normal sentence.");
+  });
+});
+
 describe("PageTranslator display modes", () => {
   it("supports translation-only mode without replacing the original DOM", async () => {
     document.body.innerHTML = `<p id="p">Read the <a id="link" href="/docs">documentation</a>.</p>`;
