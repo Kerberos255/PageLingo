@@ -44,6 +44,15 @@ class TranslationHandler(BaseHTTPRequestHandler):
             "README.md": "说明文件",
         }
         translated = exact.get(translated.strip(), translated)
+        # Deliberately behave like an unstable MT model for immutable brands. The
+        # extension must recover these from hard-preserve markers before display.
+        translated = translated.replace("Configure ", "配置 ")
+        translated = translated.replace(" notifications for ", " 通知，供 ")
+        translated = translated.replace(" with ", "，使用 ")
+        translated = translated.replace(" settings.", " 设置。")
+        translated = translated.replace("settings", "设置")
+        translated = translated.replace("Slack", "松��")
+        translated = translated.replace("OpenAI", "开放人工智能")
         payload = json.dumps({"translated": translated}).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -398,6 +407,22 @@ def main() -> None:
             probe.textContent = 'Visible repository translation test.';
             probe.style.cssText = 'display:block;position:relative;margin:8px;font-size:16px;line-height:20px';
             document.body.append(probe);
+
+            const card = document.createElement('section');
+            card.id = 'pagelingo-e2e-terminology-card';
+            card.style.cssText = [
+              'position:fixed','right:18px','top:210px','z-index:2147483640',
+              'width:440px','padding:14px 16px','border:1px solid #6e7681',
+              'border-radius:8px','background:#0d1117','color:#f0f6fc',
+              'font:14px/1.45 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
+              'box-shadow:0 8px 24px rgba(0,0,0,.35)'
+            ].join(';');
+            card.innerHTML = [
+              '<h3 style="margin:0 0 8px;font-size:16px">Terminology safety</h3>',
+              '<p id="pagelingo-e2e-term-sentence" style="margin:0 0 8px">Configure Slack notifications for OpenAI with Gateway settings.</p>',
+              '<p style="margin:0"><a id="pagelingo-e2e-term-link" href="#term">Slack settings</a></p>'
+            ].join('');
+            document.body.append(card);
             """
         )
         driver.save_screenshot(str(ARTIFACTS / "github-before.png"))
@@ -492,6 +517,47 @@ def main() -> None:
         )
         if not probe_state.get("sourceHidden") or not probe_state.get("translated"):
             raise AssertionError(f"Visible probe was not translated normally: {probe_state}")
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script(
+                """
+                const sentence = document.getElementById('pagelingo-e2e-term-sentence');
+                const link = document.getElementById('pagelingo-e2e-term-link');
+                const sentenceTranslation = sentence?.nextElementSibling;
+                const linkTranslation = link?.querySelector('.flt-translation') || link?.nextElementSibling;
+                const text = [
+                  sentenceTranslation?.textContent || '',
+                  linkTranslation?.textContent || ''
+                ].join(' ');
+                return /Slack/.test(text) && /OpenAI/.test(text) && /网关/.test(text);
+                """
+            )
+        )
+        terminology_state = driver.execute_script(
+            """
+            const card = document.getElementById('pagelingo-e2e-terminology-card');
+            const sentence = document.getElementById('pagelingo-e2e-term-sentence');
+            const link = document.getElementById('pagelingo-e2e-term-link');
+            const sentenceTranslation = sentence?.nextElementSibling;
+            const linkTranslation = link?.querySelector('.flt-translation') || link?.nextElementSibling;
+            const visibleText = (card?.innerText || card?.textContent || '').replace(/\s+/g, ' ').trim();
+            return {
+              visibleText,
+              sentenceTranslation: (sentenceTranslation?.textContent || '').trim(),
+              linkTranslation: (linkTranslation?.textContent || '').trim(),
+              containsSlack: /Slack/.test(visibleText),
+              containsOpenAI: /OpenAI/.test(visibleText),
+              containsGateway: /网关/.test(visibleText),
+              containsCorruptSlack: /松��/.test(visibleText),
+              containsCorruptOpenAI: /开放人工智能/.test(visibleText),
+              containsReplacement: /�/.test(visibleText)
+            };
+            """
+        )
+        if not terminology_state["containsSlack"] or not terminology_state["containsOpenAI"] or not terminology_state["containsGateway"]:
+            raise AssertionError(f"Hard/preferred terminology was not preserved: {terminology_state}")
+        if terminology_state["containsCorruptSlack"] or terminology_state["containsCorruptOpenAI"] or terminology_state["containsReplacement"]:
+            raise AssertionError(f"Corrupt terminology leaked into visible output: {terminology_state}")
+        driver.save_screenshot(str(ARTIFACTS / "github-terminology.png"))
         if not divider_before:
             raise AssertionError("No visible README h2 divider found on GitHub fixture")
         divider_after = readme_divider_state(driver)
@@ -714,6 +780,7 @@ def main() -> None:
             "repository_chrome_before": chrome_before,
             "repository_chrome_after": chrome_after,
             "visible_probe": probe_state,
+            "terminology_state": terminology_state,
             "hidden_headings_before": before,
             "hidden_headings_after": after,
             "visible_leaks": visible_leaks,
