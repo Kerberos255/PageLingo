@@ -26,8 +26,21 @@ class TranslationHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         body = json.loads(self.rfile.read(length) or b"{}")
         translated = body.get("html", "")
-        translated = translated.replace("Kerberos255", "克尔贝罗斯255")
-        translated = translated.replace("chatgpt-codex-tools-mcp", "已翻译仓库名")
+        exact = {
+            "Kerberos255": "克尔贝罗斯255",
+            "chatgpt-codex-tools-mcp": "已翻译仓库名",
+            "Code": "代码",
+            "Issues": "问题",
+            "Pull requests": "拉取请求",
+            "Actions": "操作",
+            "Projects": "项目",
+            "Security": "安全",
+            "Insights": "洞察",
+            "src": "源代码",
+            "tests": "测试目录",
+            "README.md": "说明文件",
+        }
+        translated = exact.get(translated.strip(), translated)
         payload = json.dumps({"translated": translated}).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -83,6 +96,64 @@ def hidden_heading_snapshot(driver: webdriver.Firefox) -> list[dict]:
             className: el.className,
             translatedSibling: el.nextElementSibling?.classList.contains('flt-translation') === true,
           }));
+        """
+    )
+
+
+def repository_layout_state(driver: webdriver.Firefox) -> dict:
+    return driver.execute_script(
+        """
+        const visible = (el) => {
+          if (!el) return false;
+          const s = getComputedStyle(el);
+          const r = el.getBoundingClientRect();
+          return s.display !== 'none' && s.visibility !== 'hidden' && Number.parseFloat(s.opacity || '1') > 0 && r.width > 0 && r.height > 0;
+        };
+        const tabIds = ['code-tab','issues-tab','pull-requests-tab','actions-tab','projects-tab','security-and-quality-tab','insights-tab'];
+        const tabs = {};
+        for (const id of tabIds) {
+          const el = document.getElementById(id);
+          if (!el) continue;
+          const r = el.getBoundingClientRect();
+          tabs[id] = {
+            visible: visible(el),
+            display: getComputedStyle(el).display,
+            x: r.x,
+            y: r.y,
+            width: r.width,
+            height: r.height,
+            visibleIcons: Array.from(el.querySelectorAll('svg,img')).filter(visible).length,
+            generated: el.querySelectorAll('[data-flt-generated="translation"]').length,
+            wrappers: el.querySelectorAll('[data-flt-source-text-wrapper]').length,
+            text: (el.innerText || el.textContent || '').replace(/\\s+/g,' ').trim(),
+            href: el.getAttribute('href'),
+          };
+        }
+        const repoPathPrefix = '/Kerberos255/chatgpt-codex-tools-mcp/';
+        const fileLink = Array.from(document.querySelectorAll('a[href*="/tree/"],a[href*="/blob/"]'))
+          .find((el) => {
+            const href = el.getAttribute('href') || '';
+            const text = (el.textContent || '').trim();
+            return visible(el) && href.startsWith(repoPathPrefix) && /(?:src|tests|README\.md|CHANGELOG\.md|package\.json|\.github)/i.test(text);
+          }) || null;
+        const fileRow = fileLink?.closest('tr,[role="row"],li,div[role="row"]') || fileLink?.parentElement || null;
+        const fr = fileLink?.getBoundingClientRect();
+        const file = fileLink ? {
+          text: (fileLink.textContent || '').replace(/\\s+/g,' ').trim(),
+          href: fileLink.getAttribute('href'),
+          visible: visible(fileLink),
+          x: fr?.x ?? 0,
+          width: fr?.width ?? 0,
+          generated: fileLink.querySelectorAll('[data-flt-generated="translation"]').length,
+          wrappers: fileLink.querySelectorAll('[data-flt-source-text-wrapper]').length,
+          visibleIconsInRow: fileRow ? Array.from(fileRow.querySelectorAll('svg,img')).filter(visible).length : 0,
+        } : null;
+        const visibleGeneratedZeros = Array.from(document.querySelectorAll('.flt-translation'))
+          .filter((el) => visible(el) && (el.textContent || '').trim() === '0').length;
+        const hiddenStateLeaks = Array.from(document.querySelectorAll('.flt-translation'))
+          .filter((el) => visible(el) && /You must be signed in to change notification settings/i.test(el.textContent || ''))
+          .map((el) => (el.textContent || '').trim());
+        return {tabs, file, visibleGeneratedZeros, hiddenStateLeaks};
         """
     )
 
@@ -243,6 +314,7 @@ def main() -> None:
         WebDriverWait(driver, 30).until(
             lambda d: "chatgpt-codex-tools-mcp" in d.title.lower()
         )
+        repo_layout_before = repository_layout_state(driver)
         layout_before = layout_risk_snapshot(driver)
         identity_before = repository_identity_snapshot(driver)
         chrome_before = repository_chrome_snapshot(driver)
@@ -352,6 +424,7 @@ def main() -> None:
         )
         if not probe_state.get("sourceHidden") or not probe_state.get("translated"):
             raise AssertionError(f"Visible probe was not translated normally: {probe_state}")
+        repo_layout_after = repository_layout_state(driver)
         layout_after = layout_risk_snapshot(driver)
         identity_after = repository_identity_snapshot(driver)
         chrome_after = repository_chrome_snapshot(driver)
@@ -365,6 +438,27 @@ def main() -> None:
             raise AssertionError(f"GitHub repository identifiers received generated translation nodes: {identity_after}")
         if abs(identity_after["repo"]["rect"]["x"] - identity_before["repo"]["rect"]["x"]) > 1:
             raise AssertionError(f"GitHub repository title shifted horizontally: {identity_before} -> {identity_after}")
+        for tab_id, before_tab in repo_layout_before["tabs"].items():
+            after_tab = repo_layout_after["tabs"].get(tab_id)
+            if not after_tab:
+                raise AssertionError(f"GitHub repository tab disappeared: {tab_id}")
+            if before_tab["visible"] and not after_tab["visible"]:
+                raise AssertionError(f"GitHub repository tab became hidden: {tab_id}: {before_tab} -> {after_tab}")
+            if before_tab["visibleIcons"] > 0 and after_tab["visibleIcons"] < before_tab["visibleIcons"]:
+                raise AssertionError(f"GitHub repository tab icon disappeared: {tab_id}: {before_tab} -> {after_tab}")
+            if before_tab["visible"] and abs(after_tab["x"] - before_tab["x"]) > 1:
+                raise AssertionError(f"GitHub repository tab shifted horizontally: {tab_id}: {before_tab} -> {after_tab}")
+        if repo_layout_after["visibleGeneratedZeros"] != 0:
+            raise AssertionError(f"Hidden numeric counters leaked into translations: {repo_layout_after}")
+        if repo_layout_after["hiddenStateLeaks"]:
+            raise AssertionError(f"Hidden notification state leaked into translations: {repo_layout_after}")
+        if repo_layout_before.get("file") and repo_layout_after.get("file"):
+            if repo_layout_after["file"]["text"] != repo_layout_before["file"]["text"]:
+                raise AssertionError(f"GitHub file/path identifier changed: {repo_layout_before['file']} -> {repo_layout_after['file']}")
+            if repo_layout_after["file"]["generated"] or repo_layout_after["file"]["wrappers"]:
+                raise AssertionError(f"GitHub file/path identifier was translated: {repo_layout_after['file']}")
+            if repo_layout_before["file"]["visibleIconsInRow"] > 0 and repo_layout_after["file"]["visibleIconsInRow"] < repo_layout_before["file"]["visibleIconsInRow"]:
+                raise AssertionError(f"GitHub file row icon disappeared: {repo_layout_before['file']} -> {repo_layout_after['file']}")
         after = hidden_heading_snapshot(driver)
         leaked = [item for item in after if item["translatedSibling"]]
         if leaked:
@@ -401,6 +495,8 @@ def main() -> None:
         driver.save_screenshot(str(ARTIFACTS / "github-after.png"))
         print(json.dumps({
             "translated_roots": value.get("count"),
+            "repository_layout_before": repo_layout_before,
+            "repository_layout_after": repo_layout_after,
             "layout_before": layout_before,
             "layout_after": layout_after,
             "repository_identity_before": identity_before,
