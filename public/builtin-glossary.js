@@ -7,13 +7,21 @@ globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ = Object.freeze({
   // code/tool identifiers, and user-visible tokens that must never be rewritten.
   hardPreserve: Object.freeze([
     "auth",
-    "OpenClaw", "Tailscale", "OAuth", "OpenAI", "GitHub", "Git",
+    "OpenClaw", "OpenCode", "Tailscale", "OAuth", "OpenAI", "Anthropic",
+    "ChatGPT", "GPT", "Claude", "Gemini", "DeepSeek", "Codex", "Grok",
+    "Llama", "Qwen", "Mistral", "GitHub", "GitHub Actions", "GitHub Copilot",
+    "GitLab", "Bitbucket", "Git",
     "Slack", "Discord", "Telegram", "WhatsApp", "Signal", "Matrix",
     "Feishu", "Google Chat", "Microsoft Teams", "iMessage", "Mattermost",
     "Nextcloud Talk", "IRC", "LINE", "Nostr", "QQ bot", "ClickClack", "Buzz",
     "API", "SDK", "CLI", "UI", "GUI", "WASM", "WebAssembly",
     "HTTP", "HTTPS", "WebSocket", "JSON", "YAML", "TOML",
     "Docker", "Kubernetes", "npm", "pnpm", "bun", "Nix",
+    "Node.js", "TypeScript", "JavaScript", "Python", "React", "Vue", "Svelte",
+    "Next.js", "Vite", "Playwright", "Selenium", "Bergamot", "Marian",
+    "Firefox", "Chrome", "Chromium", "Safari", "Microsoft Edge",
+    "Visual Studio Code", "VS Code",
+    "AWS", "Azure", "Google Cloud", "GCP", "Cloudflare", "Vercel", "Render",
     "macOS", "Linux", "Windows", "PowerShell", "WSL", "WSL2",
     "localhost"
   ]),
