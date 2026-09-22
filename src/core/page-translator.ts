@@ -258,18 +258,22 @@ export class PageTranslator {
                 if (isGeneratedNode(mutation.target))
                     continue;
                 if (mutation.type === "characterData" && mutation.target.nodeType === Node.TEXT_NODE) {
-                    const root = findTranslationRoot(mutation.target);
-                    if (root)
-                        this.#queue(root);
+                    const parent = mutation.target.parentElement;
+                    if (parent) {
+                        for (const root of collectTranslationRoots(parent))
+                            this.#queue(root);
+                    }
                     continue;
                 }
                 for (const added of Array.from(mutation.addedNodes)) {
                     if (isGeneratedNode(added))
                         continue;
                     if (added.nodeType === Node.TEXT_NODE) {
-                        const root = findTranslationRoot(added);
-                        if (root)
-                            this.#queue(root);
+                        const parent = added.parentElement;
+                        if (parent) {
+                            for (const root of collectTranslationRoots(parent))
+                                this.#queue(root);
+                        }
                     }
                     else if (added.nodeType === Node.ELEMENT_NODE) {
                         if (added.matches?.("[data-flt-source-text-wrapper]"))
