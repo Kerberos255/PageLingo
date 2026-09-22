@@ -149,7 +149,10 @@ export function serializeRichSegment(root) {
 function builtInTerminology(sourceLanguage, targetLanguage) {
     const catalog = globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ ?? {};
     const entries = [];
-    const hardProtect = Array.isArray(catalog.hardProtect) ? catalog.hardProtect : (Array.isArray(catalog.protect) ? catalog.protect : []);
+    const hardProtect = [
+        ...(Array.isArray(catalog.hardPreserve) ? catalog.hardPreserve : []),
+        ...(Array.isArray(catalog.hardProtect) ? catalog.hardProtect : (Array.isArray(catalog.protect) ? catalog.protect : [])),
+    ];
     for (const source of hardProtect) {
         if (typeof source === "string" && source.trim()) entries.push({ source, target: source, mode: "protect", origin: "builtin", aliases: [] });
     }
@@ -202,6 +205,11 @@ export function termOccurrenceCount(text, source) {
         cursor = at + Math.max(needle.length, 1);
     }
     return count;
+}
+export function terminologyForText(entries, text) {
+    return (entries ?? [])
+        .filter((entry) => termOccurrenceCount(text, entry.source) > 0)
+        .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }));
 }
 export function protectTerminologyHtml(doc, html, entries) {
     const protectedEntries = (entries ?? []).filter((entry) => entry.mode === "protect");
