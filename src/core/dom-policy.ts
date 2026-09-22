@@ -74,6 +74,13 @@ function isProtectedGitHubIdentifierText(node) {
     return false;
   }
   if (target.hostname.toLowerCase() !== "github.com") return false;
+  const hovercardType = anchor.getAttribute("data-hovercard-type") ?? "";
+  const hovercardUrl = anchor.getAttribute("data-hovercard-url") ?? "";
+  if (hovercardType === "user" || hovercardType === "organization") {
+    const match = hovercardUrl.match(/^\/(?:users|orgs)\/([^/]+)\/hovercard(?:\?|$)/i);
+    const hovercardName = match?.[1] ? safeDecodePathSegment(match[1]) : "";
+    if (hovercardName && text === hovercardName) return true;
+  }
   const targetParts = target.pathname.split("/").filter(Boolean).map(safeDecodePathSegment);
   const currentParts = view.location.pathname.split("/").filter(Boolean).map(safeDecodePathSegment);
   if (
@@ -110,6 +117,16 @@ function isProtectedGitHubIdentifierText(node) {
   // than prose. Translating them changes widths and can also make the visible label
   // disagree with the href. Protect labels that are a decoded suffix of a tree/blob
   // URL within the current repository.
+  if (
+    currentParts.length >= 2 &&
+    targetParts.length >= 4 &&
+    targetParts[0] === currentParts[0] &&
+    targetParts[1] === currentParts[1] &&
+    targetParts[2] === "commit"
+  ) {
+    const commitId = targetParts[3] ?? "";
+    if (commitId && (commitId.startsWith(text) || text.startsWith(commitId))) return true;
+  }
   if (
     currentParts.length >= 2 &&
     targetParts.length >= 4 &&
