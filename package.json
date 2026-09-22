@@ -7,9 +7,10 @@
     "build": "node tools/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm test && npm run build && npm run lint:addon",
+    "verify": "npm run typecheck && npm test && npm run audit:prod && npm run build && npm run lint:addon",
     "lint:addon": "web-ext lint --source-dir dist",
-    "package": "npm run build && web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest"
+    "package": "npm run build && web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest",
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
     "onnxruntime-web": "1.30.0",
