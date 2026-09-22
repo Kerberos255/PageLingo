@@ -560,6 +560,7 @@ function copySourceLayout(root, node) {
     const properties = [
         "color", "font-family", "font-size", "font-weight", "font-style", "font-variant",
         "line-height", "letter-spacing", "word-spacing", "text-transform",
+        "white-space", "vertical-align",
         "text-align", "text-align-last", "text-indent", "direction", "writing-mode",
         "text-decoration-line", "text-decoration-style", "text-decoration-color", "text-decoration-thickness",
         "text-underline-offset",
@@ -578,9 +579,15 @@ export function mountTranslation(root, fragment, targetLanguage) {
     node.lang = targetLanguage;
     node.append(fragment);
     copySourceLayout(root, node);
-    if (root.tagName === "SPAN" && root.closest("a")) {
+    const sourceDisplay = root.ownerDocument.defaultView?.getComputedStyle(root).display ?? "";
+    const inlineSource = ["inline", "inline-block", "inline-flex", "inline-grid"].includes(sourceDisplay);
+    if (inlineSource || (root.tagName === "SPAN" && root.closest("a"))) {
+        // A generated translation span must remain in the same inline formatting
+        // context as a short UI label. The global block default is correct for
+        // paragraphs/headings, but would split tabs, badges and breadcrumb rows.
         node.style.setProperty("display", "inline", "important");
         node.style.setProperty("margin-block-start", "0", "important");
+        node.style.setProperty("margin-block-end", "0", "important");
         node.style.removeProperty("margin-inline-start");
         node.style.removeProperty("margin-inline-end");
         node.style.removeProperty("padding-inline-start");
