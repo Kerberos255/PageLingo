@@ -31,14 +31,35 @@ jobs:
       - name: Verify
         run: npm run verify
 
-      - name: Package XPI
+      - name: Package production XPI and E2E consent fixture
         shell: bash
         run: |
           mkdir -p artifacts
           npx web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest
           PACKAGE="$(find artifacts -maxdepth 1 -type f -name '*.zip' | head -n 1)"
           test -n "$PACKAGE"
-          cp "$PACKAGE" artifacts/pagelingo-v0.1.30-github-font-fix.xpi
+          cp "$PACKAGE" artifacts/pagelingo-v0.1.30-rc.xpi
+
+          # The production manifest keeps website-content transmission optional.
+          # The deterministic browser fixture uses a localhost translation server;
+          # grant that data category in a separate test-only package so Selenium does
+          # not have to automate Firefox's native permission doorhanger.
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = Path("dist/manifest.json")
+          data = json.loads(manifest.read_text(encoding="utf-8"))
+          perms = data["browser_specific_settings"]["gecko"]["data_collection_permissions"]
+          perms["required"] = ["websiteContent"]
+          perms["optional"] = ["authenticationInfo"]
+          manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+          rm -rf artifacts/e2e-build
+          mkdir -p artifacts/e2e-build
+          npx web-ext build --source-dir dist --artifacts-dir artifacts/e2e-build --overwrite-dest
+          E2E_PACKAGE="$(find artifacts/e2e-build -maxdepth 1 -type f -name '*.zip' | head -n 1)"
+          test -n "$E2E_PACKAGE"
+          cp "$E2E_PACKAGE" artifacts/pagelingo-v0.1.30-e2e.xpi
 
       - name: Setup Firefox
         uses: browser-actions/setup-firefox@v1
@@ -52,15 +73,15 @@ jobs:
         run: python -m pip install --disable-pip-version-check selenium==4.35.0
 
       - name: Live GitHub Firefox regression
-        run: python tests/github_font_e2e.py artifacts/pagelingo-v0.1.30-github-font-fix.xpi
+        run: python tests/github_font_e2e.py artifacts/pagelingo-v0.1.30-e2e.xpi
 
       - name: Upload XPI and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pagelingo-github-font-fix
+          name: pagelingo-release-hardening
           path: |
-            artifacts/pagelingo-v0.1.30-github-font-fix.xpi
+            artifacts/pagelingo-v0.1.30-rc.xpi
             artifacts/github-before.png
             artifacts/github-after.png
             artifacts/github-terminology.png
