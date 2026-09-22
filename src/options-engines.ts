@@ -194,6 +194,15 @@ function renderEngineList(): void {
       use.textContent = "使用";
       use.addEventListener("click", () => void setActive(engine.id));
       actions.append(use);
+    } else if (engine.enabled && engineState.activeEngineId === engine.id) {
+      const consent = document.createElement("button");
+      consent.type = "button";
+      consent.textContent = "数据权限";
+      consent.title = "查看或重新请求此外部引擎所需的数据传输权限";
+      consent.addEventListener("click", () => void requestExternalTranslationConsent(engine.hasApiKey)
+        .then((granted) => notify(granted ? "外部翻译数据权限已授权" : "未授予外部翻译数据权限", 5000))
+        .catch((error) => notify(error instanceof Error ? error.message : String(error), 5000)));
+      actions.append(consent);
     }
     const toggle = document.createElement("button");
     toggle.type = "button";
