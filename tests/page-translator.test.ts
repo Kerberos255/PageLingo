@@ -211,6 +211,63 @@ describe("PageTranslator display modes", () => {
     expect(card.style.display).toBe("block");
   });
 
+  it("keeps icons and hidden counters intact when translating a navigation label", async () => {
+    document.body.innerHTML = `
+      <nav>
+        <ul>
+          <li id="tab-item">
+            <a id="tab" href="/repo" style="display:flex;gap:8px;white-space:nowrap">
+              <svg id="icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M1 1h14v14H1z"/></svg>
+              <span data-content="Code">Code</span>
+              <span id="counter" hidden>0</span>
+            </a>
+          </li>
+        </ul>
+      </nav>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider, { displayMode: "translation" });
+    await translator.translateAll();
+
+    const item = document.querySelector<HTMLElement>("#tab-item")!;
+    const tab = document.querySelector<HTMLAnchorElement>("#tab")!;
+    const icon = document.querySelector<SVGElement>("#icon")!;
+    const counter = document.querySelector<HTMLElement>("#counter")!;
+    const translated = tab.querySelector<HTMLElement>(".flt-translation");
+
+    expect(item.classList.contains("flt-source-list-hidden")).toBe(false);
+    expect(tab.style.display).toBe("flex");
+    expect(icon.isConnected).toBe(true);
+    expect(counter.hidden).toBe(true);
+    expect(counter.textContent).toBe("0");
+    expect(translated?.textContent).toContain("译:Code");
+    expect(getComputedStyle(translated!).display).toBe("inline");
+    expect(provider.requests.some((request) => request.html.includes(">0<") || request.html.trim() === "0")).toBe(false);
+  });
+
+  it("does not serialize hidden descendant state into a visible translation", async () => {
+    document.body.innerHTML = `<p id="p">Visible text <span hidden>Secret state</span></p>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider, { displayMode: "translation" });
+    await translator.translateAll();
+
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]?.html).toContain("Visible text");
+    expect(provider.requests[0]?.html).not.toContain("Secret state");
+    expect(document.querySelector<HTMLElement>("#p + .flt-translation")?.textContent).not.toContain("Secret state");
+  });
+
+  it("preserves inline and nowrap layout for fallback text roots", async () => {
+    document.body.innerHTML = `<div><span id="chip" style="white-space:nowrap">Short label</span><em> tail</em></div>`;
+    const chip = document.querySelector<HTMLElement>("#chip")!;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    const translated = chip.nextElementSibling as HTMLElement | null;
+    expect(translated?.classList.contains("flt-translation")).toBe(true);
+    expect(translated && getComputedStyle(translated).display).toBe("inline");
+    expect(translated && getComputedStyle(translated).whiteSpace).toBe("nowrap");
+  });
+
   it("does not mount late translations after restore", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
