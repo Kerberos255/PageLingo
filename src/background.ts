@@ -27,6 +27,7 @@ import {
 } from "./providers/bergamot/model-updates";
 import { handleImageRuntimeMessage, initializeImageTranslation } from "./image-translation/background-service";
 import { languageLabel, loadSettings, normalizeDetectedLanguage } from "./shared/settings";
+import { hasExternalTranslationConsent } from "./shared/data-consent";
 import { translateWithExternalEngine } from "./providers/external-translation";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
@@ -112,7 +113,8 @@ async function activeExternalEngine() {
 }
 
 async function externalEngineReady(): Promise<boolean> {
-  return Boolean(await activeExternalEngine());
+  const engine = await activeExternalEngine();
+  return Boolean(engine && await hasExternalTranslationConsent(Boolean(engine.apiKey)));
 }
 
 async function translationEngineStateForUi() {
@@ -405,6 +407,9 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         : [];
       const external = await activeExternalEngine();
       if (external) {
+        if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
+          throw new Error("外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权");
+        }
         const html = await translateWithExternalEngine(external, { html: request.html, sourceLanguage, targetLanguage, terminology });
         return { ok: true, html };
       }
@@ -470,6 +475,9 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "test-translation-engine") {
       const config = normalizeTranslationEngineConfig(message.config);
       if (!config) throw new Error("翻译引擎配置无效");
+      if (!await hasExternalTranslationConsent(Boolean(config.apiKey))) {
+        throw new Error("未授权向外部翻译服务发送数据");
+      }
       const html = await translateWithExternalEngine(config, {
         html: "<strong>Hello</strong> world",
         sourceLanguage: "en",
