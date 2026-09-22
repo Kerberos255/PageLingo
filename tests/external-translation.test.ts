@@ -148,6 +148,32 @@ describe("external translation HTML safety", () => {
     expect(html).toBe("Slack 使用网关");
   });
 
+  it("rejects plaintext remote endpoints but allows loopback HTTP", async () => {
+    await expect(translateWithExternalEngine(config({
+      type: "libretranslate",
+      baseUrl: "http://example.com",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    })).rejects.toThrow(/HTTPS/);
+
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ translatedText: "你好" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const html = await translateWithExternalEngine(config({
+      type: "libretranslate",
+      baseUrl: "http://127.0.0.1:5000",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(html).toBe("你好");
+  });
+
   it("maps Traditional Chinese to LibreTranslate's zt language code", async () => {
     const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as { source: string; target: string };
