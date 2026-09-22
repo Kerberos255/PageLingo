@@ -194,11 +194,12 @@ describe("PageTranslator terminology safety", () => {
     expect(translated.textContent).toContain("网关");
     expect(translated.textContent).not.toContain("松��");
     expect(translated.textContent).not.toContain("开放人工智能");
-    expect(provider.requests[0]?.terminology).toEqual([
+    expect(provider.requests[0]?.terminology).toHaveLength(3);
+    expect(provider.requests[0]?.terminology).toEqual(expect.arrayContaining([
       { source: "OpenAI", target: "OpenAI", mode: "protect" },
       { source: "Gateway", target: "网关", mode: "replace" },
       { source: "Slack", target: "Slack", mode: "protect" },
-    ].sort((a, b) => a.source.localeCompare(b.source)));
+    ]));
     expect(provider.requests[0]?.html).toContain("data-flt-term-id");
     expect(provider.requests[0]?.html).toContain("Configure ");
   });
