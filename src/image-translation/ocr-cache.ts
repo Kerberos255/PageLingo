@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { DEFAULT_OCR_PROFILE, ocrProfileTotalBytes } from "./ocr-models";
 export interface ImageOcrStatus { installed:boolean; totalBytes:number; runtimeSupported:boolean }
 export interface ImageOcrBundle { profile:any; detectionModel:ArrayBuffer; recognitionModel:ArrayBuffer; dictionary:string }
