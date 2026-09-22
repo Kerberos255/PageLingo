@@ -105,13 +105,20 @@ async function jsonRequest(url: string, init: RequestInit): Promise<unknown> {
   }
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1";
+}
+
 function requireBaseUrl(config: TranslationEngineConfig, fallback: string): string {
   const value = config.baseUrl || fallback;
   try {
     const url = new URL(value);
-    if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error();
+    if (url.username || url.password) throw new Error();
+    const allowed = url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHostname(url.hostname));
+    if (!allowed) throw new Error();
   } catch {
-    throw new Error("翻译引擎 Base URL 无效");
+    throw new Error("翻译引擎地址必须使用 HTTPS；仅 localhost/127.0.0.1/[::1] 可使用 HTTP");
   }
   return trimSlash(value);
 }
