@@ -264,8 +264,8 @@ describe("PageTranslator display modes", () => {
 
     const translated = chip.nextElementSibling as HTMLElement | null;
     expect(translated?.classList.contains("flt-translation")).toBe(true);
-    expect(translated && getComputedStyle(translated).display).toBe("inline");
-    expect(translated && getComputedStyle(translated).whiteSpace).toBe("nowrap");
+    expect(translated?.style.getPropertyValue("display")).toBe("inline");
+    expect(translated?.style.getPropertyValue("white-space")).toBe("nowrap");
   });
 
   it("retranslates an existing hidden source root from restored DOM", async () => {
