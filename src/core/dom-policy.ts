@@ -42,7 +42,10 @@ var SKIP_SELECTOR = [
   "[aria-hidden='true']",
   "tool-tip",
   "[role='tooltip']",
-  "[inert]"
+  "[inert]",
+  "relative-time",
+  "time-ago",
+  "local-time"
 ].join(",");
 export function isGeneratedNode(node) {
   const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
@@ -279,7 +282,12 @@ function wrapTextNodesInside(container, doc) {
   const skipTags = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT", "OPTION", "BUTTON", "PRE", "CODE", "KBD", "SAMP", "VAR", "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO"]);
   const containers = [container, ...Array.from(container.querySelectorAll("*"))];
   for (const current of containers) {
-    if (skipTags.has(current.tagName) || current.hasAttribute("data-flt-source-text-wrapper") || current.closest("[data-flt-generated]")) continue;
+    if (
+      skipTags.has(current.tagName) ||
+      current.matches?.(SKIP_SELECTOR) ||
+      current.hasAttribute("data-flt-source-text-wrapper") ||
+      current.closest("[data-flt-generated]")
+    ) continue;
     for (const child of Array.from(current.childNodes)) {
       if (child.nodeType !== Node.TEXT_NODE) continue;
       const text = child.textContent ?? "";
@@ -301,7 +309,7 @@ function wrapDecoratedStructuralTextNodes(scope) {
   for (const root of roots) {
     if (root.closest("[data-flt-generated]") || isElementEffectivelyHidden(root)) continue;
     const structuralChild = Array.from(root.children).some((child) => {
-      if (child.matches("svg,img,picture,canvas,[role='img'],input,select,textarea,button,[aria-hidden='true'],[hidden]")) {
+      if (child.matches("svg,img,picture,canvas,[role='img'],input,select,textarea,button,[aria-hidden='true'],[hidden],relative-time,time-ago,local-time")) {
         return true;
       }
       const childText = (child.textContent ?? "").trim();
@@ -311,10 +319,23 @@ function wrapDecoratedStructuralTextNodes(scope) {
       }
       return false;
     });
+    const style = doc.defaultView?.getComputedStyle(root);
+    const borderWidth = style
+      ? ["borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth"]
+          .reduce((sum, key) => sum + (Number.parseFloat(style[key]) || 0), 0)
+      : 0;
+    const hasBoxDecoration = Boolean(
+      style && (
+        borderWidth > 0 ||
+        (style.boxShadow && style.boxShadow !== "none") ||
+        (style.backgroundColor && style.backgroundColor !== "transparent" && style.backgroundColor !== "rgba(0, 0, 0, 0)")
+      )
+    );
     const mustPreserveStructure =
       root.tagName === "SUMMARY" ||
       structuralChild ||
-      Boolean(root.querySelector("svg,img,picture,canvas,[role='img'],input,select,textarea,button"));
+      hasBoxDecoration ||
+      Boolean(root.querySelector("svg,img,picture,canvas,[role='img'],input,select,textarea,button,relative-time,time-ago,local-time"));
     if (!mustPreserveStructure) continue;
     wrapTextNodesInside(root, doc);
   }
