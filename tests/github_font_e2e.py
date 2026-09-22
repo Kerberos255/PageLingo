@@ -15,7 +15,7 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 
 TARGET_URL = "https://github.com/Kerberos255/chatgpt-codex-tools-mcp"
-# Controlled CI trigger: validates the current layout-fix branch end to end.
+# Controlled CI trigger: validates layout plus automatic GitHub SPA continuity end to end.
 ARTIFACTS = Path("artifacts")
 ARTIFACTS.mkdir(exist_ok=True)
 
