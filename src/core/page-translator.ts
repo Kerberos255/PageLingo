@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { collectTranslationRoots, findTranslationRoot, isGeneratedNode } from "./dom-policy";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
-import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, restoreTerminologyHtml } from "./rich-segment";
+import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
 import { freezeNavigationLayout } from "./navigation-layout";
 
 export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[] }
@@ -166,13 +166,22 @@ export class PageTranslator {
         if (!segment.html.trim())
             return;
         const protectedSegment = protectTerminologyHtml(this.#doc, segment.html, this.#terminology);
+        const requestTerminology = terminologyForText(this.#terminology, segment.fingerprint);
         let translatedHtml = await this.#provider.translateHtml({
             html: protectedSegment.html,
             sourceLanguage: this.#sourceLanguage,
             targetLanguage: this.#targetLanguage,
+            terminology: requestTerminology,
         });
         if (this.#disposed)
             return;
+        // Hard-preserve terms are restored immediately, before QA and preferred-term
+        // post-correction. This lets the engine translate the whole sentence while making
+        // immutable brands/identifiers impossible to corrupt in the visible output.
+        translatedHtml = restoreTerminologyHtml(this.#doc, translatedHtml, protectedSegment.replacements);
+        if (hasBrokenTranslationText(translatedPlainText(this.#doc, translatedHtml))) {
+            throw new Error("译文包含损坏字符，已保留原文");
+        }
 
         // Preferred translations are post-corrections. For a user-only term we learn the
         // engine's standalone default as an alias, but never inject the preferred target into
@@ -191,6 +200,9 @@ export class PageTranslator {
             } catch {}
         }));
         translatedHtml = applyTerminologyCorrectionsHtml(this.#doc, translatedHtml, segment.fingerprint, this.#terminology, dynamicAliases);
+        if (hasBrokenTranslationText(translatedPlainText(this.#doc, translatedHtml))) {
+            throw new Error("译文包含损坏字符，已保留原文");
+        }
 
         // Whole-sentence translation is authoritative. Standard href transport survives more
         // engines than data-* attributes; matching anchor count is also enough to avoid a
@@ -203,11 +215,15 @@ export class PageTranslator {
             const exactTerm = exactTerminologyTarget(link.sourceText, this.#terminology);
             if (exactTerm) return exactTerm;
             try {
-                const linkHtml = await this.#provider.translateHtml({
-                    html: escapeHtml(link.sourceText),
+                const protectedLink = protectTerminologyHtml(this.#doc, escapeHtml(link.sourceText), this.#terminology);
+                let linkHtml = await this.#provider.translateHtml({
+                    html: protectedLink.html,
                     sourceLanguage: this.#sourceLanguage,
                     targetLanguage: this.#targetLanguage,
+                    terminology: terminologyForText(this.#terminology, link.sourceText),
                 });
+                linkHtml = restoreTerminologyHtml(this.#doc, linkHtml, protectedLink.replacements);
+                linkHtml = applyTerminologyCorrectionsHtml(this.#doc, linkHtml, link.sourceText, this.#terminology);
                 const translated = translatedPlainText(this.#doc, linkHtml);
                 if (hasBrokenTranslationText(translated)) {
                     console.warn("[PageLingo] Link label translation contained replacement characters; preserving source", link.sourceText);
@@ -224,12 +240,16 @@ export class PageTranslator {
             if (!gap.trim()) return "";
             try {
                 const protectedGap = protectTerminologyHtml(this.#doc, escapeHtml(gap.trim()), this.#terminology);
-                const gapHtml = await this.#provider.translateHtml({
+                let gapHtml = await this.#provider.translateHtml({
                     html: protectedGap.html,
                     sourceLanguage: this.#sourceLanguage,
                     targetLanguage: this.#targetLanguage,
+                    terminology: terminologyForText(this.#terminology, gap.trim()),
                 });
-                return translatedPlainText(this.#doc, restoreTerminologyHtml(this.#doc, gapHtml, protectedGap.replacements));
+                gapHtml = restoreTerminologyHtml(this.#doc, gapHtml, protectedGap.replacements);
+                gapHtml = applyTerminologyCorrectionsHtml(this.#doc, gapHtml, gap.trim(), this.#terminology);
+                const translated = translatedPlainText(this.#doc, gapHtml);
+                return hasBrokenTranslationText(translated) ? gap.trim() : translated;
             }
             catch {
                 return "";
@@ -237,7 +257,7 @@ export class PageTranslator {
         })) : [];
         if (this.#disposed || !root.isConnected || sourceFingerprint(root) !== segment.fingerprint)
             return;
-        const fragment = createSafeTranslatedFragment(this.#doc, translatedHtml, segment.links, segment.opaque, translatedLinkTexts, translatedGapTexts, protectedSegment.replacements);
+        const fragment = createSafeTranslatedFragment(this.#doc, translatedHtml, segment.links, segment.opaque, translatedLinkTexts, translatedGapTexts, []);
         const translationNode = mountTranslation(root, fragment, this.#targetLanguage);
         this.#records.set(root, { translationNode, fingerprint: segment.fingerprint });
         this.#applyDisplayMode(root, translationNode);
