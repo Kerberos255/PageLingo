@@ -11,9 +11,12 @@ function translatedPlainText(doc, html) {
     return (template.content.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 function exactTerminologyTarget(value, entries) {
-    const key = String(value || "").trim().toLocaleLowerCase();
-    if (!key) return null;
-    const entry = (entries ?? []).find((item) => item.source.toLocaleLowerCase() === key);
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const lower = raw.toLocaleLowerCase();
+    const entry = (entries ?? []).find((item) =>
+        item.caseSensitive === true ? item.source === raw : item.source.toLocaleLowerCase() === lower
+    );
     return entry?.target ?? null;
 }
 function hasBrokenTranslationText(value) {
@@ -187,7 +190,7 @@ export class PageTranslator {
         // engine's standalone default as an alias, but never inject the preferred target into
         // the source sentence before translation.
         const dynamicAliases = new Map();
-        const userTerms = this.#terminology.filter((entry) => entry.mode === "replace" && entry.origin === "user" && termOccurrenceCount(segment.fingerprint, entry.source) > 0);
+        const userTerms = this.#terminology.filter((entry) => entry.mode === "replace" && entry.origin === "user" && termOccurrenceCount(segment.fingerprint, entry.source, entry.caseSensitive === true) > 0);
         await Promise.all(userTerms.map(async (entry) => {
             try {
                 const aliasHtml = await this.#provider.translateHtml({
