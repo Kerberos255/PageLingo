@@ -356,7 +356,9 @@ describe("PageTranslator display modes", () => {
     expect(provider.requests).toHaveLength(1);
     expect(provider.requests[0]?.html).toContain("Visible text");
     expect(provider.requests[0]?.html).not.toContain("Secret state");
-    expect(document.querySelector<HTMLElement>("#p + .flt-translation")?.textContent).not.toContain("Secret state");
+    const translated = document.querySelector<HTMLElement>("#p .flt-translation, #p + .flt-translation");
+    expect(translated).not.toBeNull();
+    expect(translated?.textContent ?? "").not.toContain("Secret state");
   });
 
   it("preserves inline and nowrap layout for fallback text roots", async () => {
