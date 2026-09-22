@@ -53,7 +53,11 @@ function cleanUrl(value: unknown): string {
   if (!raw) return "";
   try {
     const url = new URL(raw);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.href.replace(/\/+$/, "") : "";
+    const host = url.hostname.toLowerCase();
+    const loopback = host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1";
+    if (url.username || url.password) return "";
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) return "";
+    return url.href.replace(/\/+$/, "");
   } catch {
     return "";
   }
