@@ -328,6 +328,25 @@ describe("PageTranslator display modes", () => {
     expect(translated?.style.getPropertyValue("white-space")).toBe("nowrap");
   });
 
+  it("keeps badges and CSS-only decorations while translating a heading label", async () => {
+    document.body.innerHTML = `
+      <h2 id="heading">
+        <span id="css-icon" class="octicon-placeholder" aria-hidden="true"></span>
+        Issues
+        <span id="count" class="Counter">5</span>
+      </h2>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider, { displayMode: "translation" });
+    await translator.translateAll();
+
+    const heading = document.querySelector<HTMLElement>("#heading")!;
+    expect(heading.classList.contains("flt-source-hidden")).toBe(false);
+    expect(document.querySelector("#css-icon")?.isConnected).toBe(true);
+    expect(document.querySelector("#count")?.textContent).toBe("5");
+    expect(heading.querySelector(".flt-translation")?.textContent).toContain("译:Issues");
+    expect(provider.requests.some((request) => request.html.trim() === "5")).toBe(false);
+  });
+
   it("does not serialize hidden descendant state into a visible translation", async () => {
     document.body.innerHTML = `<p id="p">Visible text <span hidden>Secret state</span></p>`;
     const provider = new FakeHtmlProvider();
