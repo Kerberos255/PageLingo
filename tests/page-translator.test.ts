@@ -244,6 +244,19 @@ describe("PageTranslator display modes", () => {
     expect(provider.requests.some((request) => request.html.includes(">0<") || request.html.trim() === "0")).toBe(false);
   });
 
+  it("keeps a structured list container when link text and a badge translate separately", async () => {
+    document.body.innerHTML = `<ul><li id="item"><a id="link" href="/issues"><span>Issues</span></a><span id="badge">New</span></li></ul>`;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    const item = document.querySelector<HTMLElement>("#item")!;
+    const link = document.querySelector<HTMLAnchorElement>("#link")!;
+    expect(item.classList.contains("flt-source-list-hidden")).toBe(false);
+    expect(link.isConnected).toBe(true);
+    expect(link.querySelector(".flt-translation")?.textContent).toContain("译:Issues");
+    expect(document.querySelector<HTMLElement>("#badge")?.nextElementSibling?.classList.contains("flt-translation")).toBe(true);
+  });
+
   it("keeps a decorated list item's icon when its direct label is translated", async () => {
     document.body.innerHTML = `<ul><li id="item"><svg id="icon" aria-hidden="true" viewBox="0 0 16 16"></svg>Folder label</li></ul>`;
     const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
