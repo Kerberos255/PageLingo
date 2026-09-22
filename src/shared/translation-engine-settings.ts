@@ -70,12 +70,15 @@ export function normalizeTranslationEngineConfig(value: unknown): TranslationEng
   const type = raw.type as ExternalTranslationEngineType;
   const name = cleanString(raw.name, 120);
   if (!name) return null;
+  const rawBaseUrl = cleanString(raw.baseUrl, 2048);
+  const baseUrl = cleanUrl(rawBaseUrl);
+  if (rawBaseUrl && !baseUrl) return null;
   return {
     id: cleanId(raw.id),
     name,
     type,
     enabled: raw.enabled !== false,
-    baseUrl: cleanUrl(raw.baseUrl),
+    baseUrl,
     apiKey: cleanString(raw.apiKey, 8192),
     model: cleanString(raw.model, 240),
     region: cleanString(raw.region, 160),
