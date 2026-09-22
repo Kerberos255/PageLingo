@@ -1,4 +1,3 @@
-// @ts-nocheck
 var ROOT_TAGS = /* @__PURE__ */ new Set([
   "P",
   "LI",
