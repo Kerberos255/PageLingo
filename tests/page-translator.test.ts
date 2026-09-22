@@ -244,6 +244,18 @@ describe("PageTranslator display modes", () => {
     expect(provider.requests.some((request) => request.html.includes(">0<") || request.html.trim() === "0")).toBe(false);
   });
 
+  it("keeps a decorated list item's icon when its direct label is translated", async () => {
+    document.body.innerHTML = `<ul><li id="item"><svg id="icon" aria-hidden="true" viewBox="0 0 16 16"></svg>Folder label</li></ul>`;
+    const translator = new PageTranslator(document, new FakeHtmlProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    const item = document.querySelector<HTMLElement>("#item")!;
+    const icon = document.querySelector<SVGElement>("#icon")!;
+    expect(item.classList.contains("flt-source-list-hidden")).toBe(false);
+    expect(icon.isConnected).toBe(true);
+    expect(item.querySelector(":scope > [data-flt-source-text-wrapper] + .flt-translation")?.textContent).toContain("译:Folder label");
+  });
+
   it("does not serialize hidden descendant state into a visible translation", async () => {
     document.body.innerHTML = `<p id="p">Visible text <span hidden>Secret state</span></p>`;
     const provider = new FakeHtmlProvider();
