@@ -580,7 +580,8 @@ export function mountTranslation(root, fragment, targetLanguage) {
     node.append(fragment);
     copySourceLayout(root, node);
     const sourceDisplay = root.ownerDocument.defaultView?.getComputedStyle(root).display ?? "";
-    const inlineSource = ["inline", "inline-block", "inline-flex", "inline-grid"].includes(sourceDisplay);
+    const inlineTag = ["SPAN", "LABEL", "STRONG", "EM", "B", "I", "U", "S", "SMALL", "SUB", "SUP", "MARK", "ABBR", "CITE", "Q", "DEL", "INS"].includes(root.tagName);
+    const inlineSource = inlineTag || ["inline", "inline-block", "inline-flex", "inline-grid"].includes(sourceDisplay);
     if (inlineSource || (root.tagName === "SPAN" && root.closest("a"))) {
         // A generated translation span must remain in the same inline formatting
         // context as a short UI label. The global block default is correct for
