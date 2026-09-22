@@ -263,14 +263,16 @@ function wrapTextNodesInside(container, doc) {
 function wrapDecoratedStructuralTextNodes(scope) {
   const doc = scope instanceof Document ? scope : scope.ownerDocument;
   if (!doc || !("querySelectorAll" in scope)) return;
-  const selector = "li,td,th,summary,h1,h2,h3,h4,h5,h6";
+  const selector = "p,li,blockquote,figcaption,td,th,dt,dd,h1,h2,h3,h4,h5,h6,summary,label";
   const roots = [];
   if (scope instanceof Element && scope.matches(selector)) roots.push(scope);
   roots.push(...Array.from(scope.querySelectorAll(selector)));
   for (const root of roots) {
-    if (root.closest("[data-flt-generated]")) continue;
-    const hasVisualDecoration = Boolean(root.querySelector("svg,img,picture,canvas,[role='img']"));
-    if (!hasVisualDecoration) continue;
+    if (root.closest("[data-flt-generated]") || isElementEffectivelyHidden(root)) continue;
+    const mustPreserveStructure =
+      root.tagName === "SUMMARY" ||
+      Boolean(root.querySelector("svg,img,picture,canvas,[role='img'],input,select,textarea,button"));
+    if (!mustPreserveStructure) continue;
     wrapTextNodesInside(root, doc);
   }
 }
