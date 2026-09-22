@@ -127,6 +127,11 @@ export function isElementEffectivelyHidden(element) {
   if (!view) return false;
   let current = element;
   while (current) {
+    if (
+      current.hasAttribute("hidden") ||
+      current.getAttribute("aria-hidden") === "true" ||
+      current.matches("tool-tip,[role='tooltip'],[inert]")
+    ) return true;
     const style = view.getComputedStyle(current);
     if (
       style.display === "none" ||
