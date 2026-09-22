@@ -53,6 +53,12 @@ class TranslationHandler(BaseHTTPRequestHandler):
         translated = translated.replace("settings", "设置")
         translated = translated.replace("Slack", "松��")
         translated = translated.replace("OpenAI", "开放人工智能")
+        translated = translated.replace("NVIDIA", "英伟达")
+        translated = translated.replace("PayPal", "贝宝")
+        translated = translated.replace("Toyota", "丰田")
+        translated = translated.replace("Spotify", "声田")
+        translated = translated.replace("Airbnb", "爱彼迎")
+        translated = translated.replace("Pfizer", "辉瑞")
         payload = json.dumps({"translated": translated}).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -420,6 +426,7 @@ def main() -> None:
             card.innerHTML = [
               '<h3 style="margin:0 0 8px;font-size:16px">Terminology safety</h3>',
               '<p id="pagelingo-e2e-term-sentence" style="margin:0 0 8px">Configure Slack notifications for OpenAI with Gateway settings.</p>',
+              '<p id="pagelingo-e2e-cross-industry" style="margin:0 0 8px">NVIDIA works with PayPal, Toyota, Spotify, Airbnb, and Pfizer.</p>',
               '<p style="margin:0"><a id="pagelingo-e2e-term-link" href="#term">Slack settings</a></p>'
             ].join('');
             document.body.append(card);
@@ -521,14 +528,19 @@ def main() -> None:
             lambda d: d.execute_script(
                 """
                 const sentence = document.getElementById('pagelingo-e2e-term-sentence');
+                const crossIndustry = document.getElementById('pagelingo-e2e-cross-industry');
                 const link = document.getElementById('pagelingo-e2e-term-link');
                 const sentenceTranslation = sentence?.nextElementSibling;
+                const crossIndustryTranslation = crossIndustry?.nextElementSibling;
                 const linkTranslation = link?.querySelector('.flt-translation') || link?.nextElementSibling;
                 const text = [
                   sentenceTranslation?.textContent || '',
+                  crossIndustryTranslation?.textContent || '',
                   linkTranslation?.textContent || ''
                 ].join(' ');
-                return /Slack/.test(text) && /OpenAI/.test(text) && /网关/.test(text);
+                return /Slack/.test(text) && /OpenAI/.test(text) && /网关/.test(text)
+                  && /NVIDIA/.test(text) && /PayPal/.test(text) && /Toyota/.test(text)
+                  && /Spotify/.test(text) && /Airbnb/.test(text) && /Pfizer/.test(text);
                 """
             )
         )
@@ -536,26 +548,41 @@ def main() -> None:
             """
             const card = document.getElementById('pagelingo-e2e-terminology-card');
             const sentence = document.getElementById('pagelingo-e2e-term-sentence');
+            const crossIndustry = document.getElementById('pagelingo-e2e-cross-industry');
             const link = document.getElementById('pagelingo-e2e-term-link');
             const sentenceTranslation = sentence?.nextElementSibling;
+            const crossIndustryTranslation = crossIndustry?.nextElementSibling;
             const linkTranslation = link?.querySelector('.flt-translation') || link?.nextElementSibling;
             const visibleText = (card?.innerText || card?.textContent || '').replace(/\s+/g, ' ').trim();
             return {
               visibleText,
               sentenceTranslation: (sentenceTranslation?.textContent || '').trim(),
+              crossIndustryTranslation: (crossIndustryTranslation?.textContent || '').trim(),
               linkTranslation: (linkTranslation?.textContent || '').trim(),
               containsSlack: /Slack/.test(visibleText),
               containsOpenAI: /OpenAI/.test(visibleText),
               containsGateway: /网关/.test(visibleText),
+              containsCrossIndustry: ["NVIDIA","PayPal","Toyota","Spotify","Airbnb","Pfizer"].every((name) => visibleText.includes(name)),
               containsCorruptSlack: /松��/.test(visibleText),
               containsCorruptOpenAI: /开放人工智能/.test(visibleText),
+              containsCorruptCrossIndustry: /英伟达|贝宝|丰田|声田|爱彼迎|辉瑞/.test(visibleText),
               containsReplacement: /�/.test(visibleText)
             };
             """
         )
-        if not terminology_state["containsSlack"] or not terminology_state["containsOpenAI"] or not terminology_state["containsGateway"]:
+        if (
+            not terminology_state["containsSlack"]
+            or not terminology_state["containsOpenAI"]
+            or not terminology_state["containsGateway"]
+            or not terminology_state["containsCrossIndustry"]
+        ):
             raise AssertionError(f"Hard/preferred terminology was not preserved: {terminology_state}")
-        if terminology_state["containsCorruptSlack"] or terminology_state["containsCorruptOpenAI"] or terminology_state["containsReplacement"]:
+        if (
+            terminology_state["containsCorruptSlack"]
+            or terminology_state["containsCorruptOpenAI"]
+            or terminology_state["containsCorruptCrossIndustry"]
+            or terminology_state["containsReplacement"]
+        ):
             raise AssertionError(f"Corrupt terminology leaked into visible output: {terminology_state}")
         driver.save_screenshot(str(ARTIFACTS / "github-terminology.png"))
         if not divider_before:
