@@ -12,6 +12,15 @@ export function freezeNavigationLayout(resetExisting = true) {
     const candidates = Array.from(document.querySelectorAll("nav a, [role='navigation'] a"));
     for (const anchor of candidates) {
         if (!(anchor instanceof HTMLElement) || !anchor.isConnected) continue;
+        const anchorStyle = getComputedStyle(anchor);
+        const anchorRect = anchor.getBoundingClientRect();
+        if (
+            anchorStyle.display === "none" ||
+            anchorStyle.visibility === "hidden" ||
+            Number.parseFloat(anchorStyle.opacity || "1") === 0 ||
+            anchorRect.width <= 1 ||
+            anchorRect.height <= 1
+        ) continue;
         let item = anchor;
         for (let depth = 0; item.parentElement && depth < 4; depth += 1) {
             const parentStyle = getComputedStyle(item.parentElement);
@@ -22,6 +31,15 @@ export function freezeNavigationLayout(resetExisting = true) {
         }
         const parent = item.parentElement;
         if (!parent) continue;
+        const itemStyle = getComputedStyle(item);
+        const itemRect = item.getBoundingClientRect();
+        if (
+            itemStyle.display === "none" ||
+            itemStyle.visibility === "hidden" ||
+            Number.parseFloat(itemStyle.opacity || "1") === 0 ||
+            itemRect.width <= 1 ||
+            itemRect.height <= 1
+        ) continue;
         const parentStyle = getComputedStyle(parent);
         const horizontalLayout = ((parentStyle.display === "flex" || parentStyle.display === "inline-flex") && parentStyle.flexDirection.startsWith("row")) || parentStyle.display === "grid" || parentStyle.display === "inline-grid";
         if (!horizontalLayout) continue;
