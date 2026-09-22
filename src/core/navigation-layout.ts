@@ -49,9 +49,12 @@ export function freezeNavigationLayout(resetExisting = true) {
         navigationLayoutSnapshots.set(item, item.getAttribute("style"));
         const frozenWidth = `${Math.ceil(width * 100) / 100}px`;
         item.style.setProperty("box-sizing", "border-box", "important");
-        item.style.setProperty("inline-size", frozenWidth, "important");
+        // Preserve the original slot as a minimum so shorter translations do not
+        // collapse navigation spacing, but allow longer translations to grow instead
+        // of overlapping neighboring items.
         item.style.setProperty("min-inline-size", frozenWidth, "important");
-        item.style.setProperty("max-inline-size", frozenWidth, "important");
-        if (parentStyle.display === "flex" || parentStyle.display === "inline-flex") item.style.setProperty("flex", `0 0 ${frozenWidth}`, "important");
+        if (parentStyle.display === "flex" || parentStyle.display === "inline-flex") {
+            item.style.setProperty("flex-shrink", "0", "important");
+        }
     }
 }
