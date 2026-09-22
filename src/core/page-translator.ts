@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { collectTranslationRoots, findTranslationRoot, isGeneratedNode } from "./dom-policy";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
