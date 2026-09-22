@@ -93,7 +93,7 @@ export function sourceFingerprint(root) {
     let current = walker.nextNode();
     while (current) {
         const node = current;
-        if (!node.parentElement?.closest("[data-flt-generated]") && !node.parentElement?.closest("[hidden],[aria-hidden='true'],tool-tip,[role='tooltip'],[inert]") && !isElementEffectivelyHidden(node.parentElement)) text += node.data;
+        if (!node.parentElement?.closest("[data-flt-generated]") && !node.parentElement?.closest("[hidden],[aria-hidden='true'],tool-tip,[role='tooltip'],[inert]")) text += node.data;
         current = walker.nextNode();
     }
     return text;
