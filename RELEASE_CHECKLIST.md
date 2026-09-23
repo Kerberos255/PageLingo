@@ -41,6 +41,7 @@ The patch scan is a release-safety check, not a mathematical guarantee that arbi
 
 ## Final validation
 
+- Controlled release verification marker: 2026-09-23.
 - [ ] Run `npm ci && npm run verify` from the exact final release commit.
 - [ ] Run the manually controlled live Firefox regression from the exact final release commit.
 - [ ] Inspect the production XPI contents and manifest.
