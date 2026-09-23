@@ -89,6 +89,10 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 
-PageLingo source is available under the **PolyForm Noncommercial License 1.0.0**. Noncommercial use, modification, and redistribution are permitted under its terms; commercial use requires separate permission from the licensor.
+PageLingo-authored source code is available under the **PolyForm Noncommercial License 1.0.0** (`PolyForm-Noncommercial-1.0.0`). Noncommercial use, modification, and redistribution are permitted under its terms; commercial use requires separate permission from the licensor.
+
+Third-party code, runtimes, and model/data assets remain under their own licenses. In particular, the bundled Mozilla/Bergamot runtime and Mozilla Firefox translation models are subject to **MPL-2.0**. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+No trademark license is granted for the **PageLingo** name, logo, or other project branding. Forks and redistributed builds must not imply that they are official PageLingo releases or are endorsed by the PageLingo project.
 
 See [LICENSE.md](LICENSE.md).
