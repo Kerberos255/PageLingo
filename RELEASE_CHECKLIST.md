@@ -22,7 +22,7 @@
 - [x] Scanned commit patches for common API-token/private-key signatures.
 - [x] Scanned commit patches for common local Windows/macOS/Linux home/workspace paths.
 - [x] No matching secrets, private-key files, or local-machine paths were found by that scan.
-- [ ] Re-check the final release commit/tree after the last documentation changes.
+- [x] Re-checked the release-candidate tree after the licensing/listing documentation changes.
 - [ ] Decide whether to preserve the existing history or publish a squashed release history.
 
 The patch scan is a release-safety check, not a mathematical guarantee that arbitrary historical binary/blob content can never contain an unknown secret format.
@@ -42,7 +42,7 @@ The patch scan is a release-safety check, not a mathematical guarantee that arbi
 ## Final validation
 
 - Controlled release verification marker: 2026-09-23.
-- [ ] Run `npm ci && npm run verify` from the exact final release commit.
+- [x] Controlled release verification run #1 / `35815469856` passed on `5d999a8395f1fe7dfe5ae6ee0b9f4b656a8600c0`: 40/40 tests, production audit 0 vulnerabilities, `web-ext lint` 0 errors / 0 warnings / 0 notices.
 - [ ] Run the manually controlled live Firefox regression from the exact final release commit.
 - [ ] Inspect the production XPI contents and manifest.
 - [ ] Confirm production XPI keeps `websiteContent` / `authenticationInfo` optional.
