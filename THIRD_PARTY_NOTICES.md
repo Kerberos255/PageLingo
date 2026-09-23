@@ -102,6 +102,9 @@ The detection and recognition model repositories used by PageLingo are published
 
 The OCR dictionary is downloaded from RapidOCR's published PP-OCRv5 data path on ModelScope and is pinned by PageLingo by byte size and SHA-256.
 
+- RapidOCR source: https://github.com/RapidAI/RapidOCR
+- RapidOCR's current model licensing documentation states that its hosted/converted PaddleOCR model assets are distributed under Apache-2.0 and retain the upstream PaddleOCR attribution.
+
 ## fzstd
 
 PageLingo bundles `fzstd` to decompress Mozilla's Zstandard-compressed Firefox translation model attachments locally in the extension.
