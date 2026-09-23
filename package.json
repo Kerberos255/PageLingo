@@ -26,9 +26,10 @@
     "web-ext": "^10.6.0"
   },
   "description": "Local-first Firefox translation with layout-preserving webpage translation, terminology protection, optional OCR, and optional external engines.",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/Kerberos255/PageLingo.git"
-  }
+  },
+  "homepage": "https://github.com/Kerberos255/PageLingo"
 }
