@@ -55,9 +55,18 @@ Translated HTML is structure-checked and is then parsed through PageLingo's allo
 
 ## Third-party code and data
 
-Exact dependency versions are pinned in `package-lock.json`. Bundled/runtime third-party notices are in `THIRD_PARTY_NOTICES.md`.
+Exact dependency versions are pinned in `package-lock.json`. Bundled/runtime third-party notices and source links are in `THIRD_PARTY_NOTICES.md`.
 
-The repository contains the Bergamot runtime license under `vendor/bergamot/LICENSE`.
+Key review references:
+
+- Mozilla/Bergamot generated runtime: embedded version `v0.6.0+eea6e5a8`, generated from Mozilla Translations source commit `eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d`; MPL-2.0. The full MPL-2.0 text is bundled at `vendor/bergamot/LICENSE`.
+- Mozilla Firefox translation models: downloaded as data at runtime; Mozilla's translations repository states that the model files are MPL-2.0.
+- `onnxruntime-web` 1.30.0: MIT, pinned by `package-lock.json`.
+- `paddleocr` 1.2.0: MIT, pinned by `package-lock.json`.
+- PP-OCRv5 ONNX model data: official PaddlePaddle model repositories publish the model assets as Apache-2.0; model payloads are downloaded as data and integrity-pinned.
+- `fzstd` 0.1.1: MIT.
+
+PageLingo does not relicense third-party code or model assets under its PolyForm license.
 
 ## Testing
 
