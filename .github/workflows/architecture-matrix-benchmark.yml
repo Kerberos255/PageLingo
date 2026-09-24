@@ -1,0 +1,399 @@
+name: Architecture matrix benchmark
+
+on:
+  push:
+    branches:
+      - fix/github-font-size
+
+permissions:
+  contents: read
+
+jobs:
+  architecture-matrix:
+    if: "${{ github.event.head_commit.message == 'test: architecture matrix benchmark' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install and verify
+        run: |
+          npm ci
+          npm run verify
+
+      - uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+
+      - uses: browser-actions/setup-geckodriver@latest
+
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install selenium requests beautifulsoup4
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+          fc-cache -f
+
+      - name: Prepare Bergamot runtime and model
+        shell: bash
+        run: |
+          mkdir -p arch-bench/bench-assets
+          curl -fsSL 'https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models-v2/321191b6-2c42-4bca-84ec-b7b074b67bd6.zst' -o /tmp/model.zst
+          curl -fsSL 'https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models-v2/900beaed-2dba-4a88-ad7c-852ec9e73f6a.zst' -o /tmp/lex.zst
+          curl -fsSL 'https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models-v2/83278466-fec4-4944-a99d-c2372fa9de88.zst' -o /tmp/srcvocab.zst
+          curl -fsSL 'https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models-v2/84236654-1b66-42fc-9ba2-74c37f27e5eb.zst' -o /tmp/trgvocab.zst
+
+          cat > decompress-arch.mjs <<'EOF'
+          import { readFile, writeFile } from "node:fs/promises";
+          import { decompress } from "fzstd";
+          const assets=[["model",43849787],["lex",6506248],["srcvocab",806952],["trgvocab",772004]];
+          for(const [name,size] of assets){
+            const compressed=new Uint8Array(await readFile(`/tmp/${name}.zst`));
+            const out=decompress(compressed,new Uint8Array(size));
+            if(out.byteLength!==size) throw new Error(`${name}: ${out.byteLength} != ${size}`);
+            await writeFile(`arch-bench/bench-assets/${name}.bin`,out);
+          }
+          EOF
+          node decompress-arch.mjs
+
+          cat > arch-bench/bergamot-arch-worker.js <<'EOF'
+          importScripts("/vendor/bergamot/bergamot-translator.js");
+          let engine=null;
+          function textConfig(entries){const indent="            ";let r="\n";for(const [k,v] of Object.entries(entries))r+=`${indent}${k}: ${v}\n`;return r+indent;}
+          async function runtime(){
+            const wasmBinary=await (await fetch("/vendor/bergamot/bergamot-translator-v4.wasm")).arrayBuffer();
+            return new Promise((resolve,reject)=>{
+              let module;
+              module=loadBergamot({INITIAL_MEMORY:41943040,wasmBinary,print:()=>{},printErr:()=>{},onAbort:r=>reject(new Error(String(r))),onRuntimeInitialized:()=>resolve(module)});
+            });
+          }
+          async function raw(name){return await (await fetch(`/bench-assets/${name}.bin`)).arrayBuffer();}
+          function alloc(b,buffer,alignment){const m=new b.AlignedMemory(buffer.byteLength,alignment);m.getByteArrayView().set(new Uint8Array(buffer));return m;}
+          async function init(){
+            const b=await runtime(),model=await raw("model"),lex=await raw("lex"),src=await raw("srcvocab"),trg=await raw("trgvocab");
+            const vocabs=new b.AlignedMemoryList();vocabs.push_back(alloc(b,src,64));vocabs.push_back(alloc(b,trg,64));
+            const config=textConfig({"beam-size":"1","normalize":"1.0","word-penalty":"0","max-length-break":"128","mini-batch-words":"1024","workspace":"128","max-length-factor":"2.0","skip-cost":"true","cpu-threads":"0","quiet":"true","quiet-translation":"true","gemm-precision":"int8shiftAlphaAll","alignment":"soft"});
+            const tm=new b.TranslationModel("en","zh-Hans",config,alloc(b,model,256),alloc(b,lex,64),vocabs,null);
+            engine={b,tm,service:new b.BlockingService({cacheSize:0})};
+          }
+          function translateMany(texts,html){
+            const {b,tm,service}=engine,msgs=new b.VectorString(),opts=new b.VectorResponseOptions();let responses=null;
+            try{
+              for(const t of texts){msgs.push_back(t);opts.push_back({qualityScores:false,alignment:true,html:!!html});}
+              const t0=performance.now();responses=service.translate(tm,msgs,opts);const ms=performance.now()-t0;
+              const outputs=[];for(let i=0;i<texts.length;i++)outputs.push(responses.get(i).getTranslatedText());
+              return {outputs,ms};
+            }finally{responses?.delete?.();msgs.delete();opts.delete();}
+          }
+          onmessage=async e=>{try{if(!engine)await init();postMessage({id:e.data.id,ok:true,...translateMany(e.data.texts,e.data.html)});}catch(err){postMessage({id:e.data.id,ok:false,error:String(err?.stack||err)});}};
+          EOF
+          cat > arch-bench/bergamot-arch.html <<'EOF'
+          <!doctype html><meta charset="utf-8"><title>Bergamot architecture matrix</title>
+          EOF
+
+      - name: Install and start LM Studio
+        shell: bash
+        run: |
+          curl -fsSL https://lmstudio.ai/install.sh | bash
+          echo "$HOME/.lmstudio/bin" >> "$GITHUB_PATH"
+          LMS="$HOME/.lmstudio/bin/lms"
+          "$LMS" daemon up
+          sleep 5
+          for i in $(seq 1 10); do "$LMS" server start --port 1234 && break; sleep 2; done
+          for i in $(seq 1 45); do curl -fsS http://127.0.0.1:1234/api/v1/models >/dev/null && exit 0; sleep 2; done
+          exit 1
+
+      - name: Run 2x2 real-site benchmark
+        shell: bash
+        run: |
+          python -m http.server 8765 --bind 127.0.0.1 --directory arch-bench >/tmp/arch-http.log 2>&1 &
+          echo $! >/tmp/arch-http.pid
+
+          cat > /tmp/architecture_matrix.py <<'PY'
+          import copy, json, re, time
+          from pathlib import Path
+          import requests
+          from bs4 import BeautifulSoup, NavigableString, Tag
+          from selenium import webdriver
+          from selenium.webdriver.firefox.options import Options
+          from selenium.webdriver.support.ui import WebDriverWait
+
+          BASE="http://127.0.0.1:1234"
+          OUT=Path("arch-bench")
+          SITES=[("openclaw","https://docs.openclaw.ai/quickstart"),("github","https://github.com/openclaw/openclaw")]
+          MODEL_REPO="https://huggingface.co/lmstudio-community/Qwen3.5-2B-GGUF"
+
+          PROTECTED_TAGS={"code","kbd","samp","pre","svg","button","script","style","noscript","img","picture","video","audio","canvas"}
+          PROTECT_RE=re.compile(
+              r"https?://[^\s<]+|"
+              r"\b(?:OpenClaw|GitHub|Node[.]js|PowerShell|WebChat|WSL2|CLI|API|HTTP|HTTPS|JSON|YAML|npm|npx|Codex|Claude|DeepWiki|Docker|Nix|macOS|iOS|Android|Windows|Linux|Discord|iMessage|Slack|Teams|Telegram|WhatsApp)\b|"
+              r"\b[A-Za-z][A-Za-z0-9_.]*-[A-Za-z0-9_.-]+\b"
+          )
+          TOKEN_RE=re.compile(r"__PL_[EMP][0-9]{4}__")
+          counter=[0]
+
+          WHOLE_SYSTEM="""You are a deterministic web-page translation engine.
+          Translate the human-readable English text to natural Simplified Chinese.
+          Immutable tokens such as __PL_M0001__ and __PL_P0001__ represent HTML structure or protected terms.
+          Copy every immutable token exactly once, character-for-character, and keep all tokens in exactly the same order.
+          Do not invent facts or add explanations. Return only the translated token text."""
+
+          ATOMIC_SYSTEM="""You are a deterministic web-page translator.
+          Translate only TEXT from English into natural Simplified Chinese. Use CONTEXT only to understand meaning; never output or summarize CONTEXT.
+          Tokens such as __PL_E0001__ and __PL_P0001__ are immutable placeholders. Copy every token exactly once, character-for-character, and keep all tokens in exactly the same order.
+          Translate everything else faithfully and naturally. Do not add, omit, infer, or repeat information. Output only the translated TEXT."""
+
+          FRAGMENT_SYSTEM="""Translate only FRAGMENT from English into natural Simplified Chinese.
+          The FRAGMENT may be only part of a sentence because an inline HTML element was removed from that position.
+          Translate exactly the words present in FRAGMENT and nothing else. Do not add explanations or wrappers.
+          Output only the translated fragment."""
+
+          def api(path,method="GET",payload=None,timeout=240):
+              r=requests.request(method,BASE+path,json=payload,timeout=timeout)
+              if not r.ok: raise RuntimeError(f"{method} {path}: {r.status_code} {r.text[:1000]}")
+              return r.json()
+
+          def unload():
+              try:
+                  for m in api("/api/v1/models").get("models",[]):
+                      for inst in m.get("loaded_instances",[]) or []:
+                          iid=inst.get("id") or inst.get("instance_id")
+                          if iid: requests.post(BASE+"/api/v1/models/unload",json={"instance_id":iid},timeout=30)
+              except Exception as e: print("UNLOAD_WARN",repr(e),flush=True)
+
+          def download_qwen():
+              last=None
+              for attempt in range(1,5):
+                  try:
+                      start=api("/api/v1/models/download","POST",{"model":MODEL_REPO,"quantization":"Q4_K_M"})
+                      if start.get("status") not in ("completed","already_downloaded"):
+                          job=start.get("job_id")
+                          if not job: raise RuntimeError("missing download job")
+                          for _ in range(480):
+                              s=api("/api/v1/models/download/status/"+job)
+                              if s.get("status")=="completed": break
+                              if s.get("status")=="failed": raise RuntimeError(json.dumps(s))
+                              time.sleep(1)
+                          else: raise RuntimeError("download timeout")
+                      for _ in range(120):
+                          for m in api("/api/v1/models").get("models",[]):
+                              desc=f"{m.get('key','')} {m.get('display_name','')}"
+                              if m.get("type")=="llm" and "qwen3.5" in desc.lower() and re.search(r"(^|[^0-9])2b",desc,re.I): return m
+                          time.sleep(1)
+                      raise RuntimeError("model not indexed")
+                  except Exception as e:
+                      last=e; print("DOWNLOAD_RETRY",attempt,repr(e),flush=True); time.sleep(min(5*attempt,15))
+              raise RuntimeError(f"download failed: {last}")
+
+          def load_qwen(m):
+              x=api("/api/v1/models/load","POST",{"model":m["key"],"context_length":8192,"flash_attention":False,"offload_kv_cache_to_gpu":False,"echo_load_config":True})
+              if x.get("status")!="loaded": raise RuntimeError(json.dumps(x))
+              return m["key"]
+
+          def browser():
+              opts=Options();opts.add_argument("-headless")
+              opts.set_preference("font.name.sans-serif.zh-CN","Noto Sans CJK SC")
+              d=webdriver.Firefox(options=opts);d.set_window_size(1440,1200);return d
+
+          COLLECT=r"""
+          const sels=["main h1","main h2","main h3","main p","main li","article h1","article h2","article h3","article p","article li",".markdown-body h1",".markdown-body h2",".markdown-body h3",".markdown-body p",".markdown-body li"];
+          const out=[],seen=new Set();
+          function fp(root){const rows=[];const walk=e=>{if(e.nodeType!==1)return;const attrs=[...e.attributes].filter(a=>a.name!=="data-arch-bench").map(a=>[a.name,a.value]).sort((a,b)=>a[0].localeCompare(b[0]));rows.push([e.tagName,attrs]);for(const c of e.children)walk(c);};walk(root);return JSON.stringify(rows);}
+          function nodes(root){const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const a=[];let n;while(n=w.nextNode()){const p=n.parentElement;if(!p||p.closest("script,style,noscript,svg,button,[aria-hidden=true],code,pre,kbd,samp"))continue;const raw=n.nodeValue||"",trim=raw.trim();if(!trim||!/[A-Za-z]{2}/.test(trim))continue;const lead=raw.slice(0,raw.indexOf(trim)),trail=raw.slice(raw.indexOf(trim)+trim.length);a.push({text:trim,lead,trail});}return a;}
+          for(const sel of sels)for(const el of document.querySelectorAll(sel)){
+            if(seen.has(el)||el.closest("nav,footer,aside,[role=navigation]"))continue;
+            const r=el.getBoundingClientRect(),t=(el.innerText||"").trim().replace(/\s+/g," ");
+            if(r.width<10||r.height<8||t.length<25||t.length>650||!/[A-Za-z]{3}/.test(t))continue;
+            const id="arch-"+out.length;el.dataset.archBench=id;seen.add(el);
+            out.push({id,text:t,html:el.innerHTML,fingerprint:fp(el),nodes:nodes(el)});
+            if(out.length>=12)return out;
+          }return out;
+          """
+          APPLY_HTML=r"""
+          const el=document.querySelector('[data-arch-bench="'+arguments[0]+'"]');if(!el)return {found:false};el.innerHTML=arguments[1];
+          const fp=root=>{const rows=[];const walk=e=>{if(e.nodeType!==1)return;const attrs=[...e.attributes].filter(a=>a.name!=="data-arch-bench").map(a=>[a.name,a.value]).sort((a,b)=>a[0].localeCompare(b[0]));rows.push([e.tagName,attrs]);for(const c of e.children)walk(c);};walk(root);return JSON.stringify(rows);};
+          return {found:true,fingerprint:fp(el),text:(el.innerText||"").trim().replace(/\s+/g," ")};
+          """
+          APPLY_NODES=r"""
+          const el=document.querySelector('[data-arch-bench="'+arguments[0]+'"]');if(!el)return {found:false};
+          const translations=arguments[1];const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);const a=[];let n;
+          while(n=w.nextNode()){const p=n.parentElement;if(!p||p.closest("script,style,noscript,svg,button,[aria-hidden=true],code,pre,kbd,samp"))continue;const raw=n.nodeValue||"",trim=raw.trim();if(!trim||!/[A-Za-z]{2}/.test(trim))continue;const lead=raw.slice(0,raw.indexOf(trim)),trail=raw.slice(raw.indexOf(trim)+trim.length);a.push({node:n,lead,trail});}
+          if(a.length!==translations.length)return {found:true,count_ok:false};
+          a.forEach((x,i)=>x.node.nodeValue=x.lead+translations[i]+x.trail);
+          const fp=root=>{const rows=[];const walk=e=>{if(e.nodeType!==1)return;const attrs=[...e.attributes].filter(a=>a.name!=="data-arch-bench").map(a=>[a.name,a.value]).sort((a,b)=>a[0].localeCompare(b[0]));rows.push([e.tagName,attrs]);for(const c of e.children)walk(c);};walk(root);return JSON.stringify(rows);};
+          return {found:true,count_ok:true,fingerprint:fp(el),text:(el.innerText||"").trim().replace(/\s+/g," ")};
+          """
+
+          class Bergamot:
+              def __init__(self):
+                  self.d=browser();self.d.get("http://127.0.0.1:8765/bergamot-arch.html");self.seq=0
+              def translate(self,texts,html):
+                  self.seq+=1
+                  script="""
+                  const done=arguments[arguments.length-1],texts=arguments[0],html=arguments[1],id=arguments[2];
+                  if(!window._bw){
+                    window._bw=new Worker('/bergamot-arch-worker.js');window._pending={};
+                    window._bw.onmessage=e=>{const cb=window._pending[e.data.id];if(cb){delete window._pending[e.data.id];cb(e.data);}};
+                  }
+                  window._pending[id]=done;window._bw.postMessage({id,texts,html});
+                  """
+                  self.d.set_script_timeout(180)
+                  r=self.d.execute_async_script(script,texts,html,self.seq)
+                  if not r.get("ok"): raise RuntimeError(r)
+                  return r["outputs"],r["ms"]
+              def close(self): self.d.quit()
+
+          def qchat(model,system,text,max_tokens=1536):
+              t0=time.perf_counter()
+              r=api("/api/v1/chat","POST",{"model":model,"input":text,"system_prompt":system,"temperature":0,"max_output_tokens":max_tokens,"reasoning":"off","context_length":8192,"store":False},timeout=180)
+              ms=(time.perf_counter()-t0)*1000
+              out="\n".join(x.get("content","") for x in r.get("output",[]) if x.get("type")=="message").strip()
+              return out,ms
+
+          def marker_whole(html):
+              mapping={}; n=[0]
+              def tok(kind,value):
+                  n[0]+=1;t=f"__PL_{kind}{n[0]:04d}__";mapping[t]=value;return t
+              s=re.sub(r"<(code|kbd|samp|pre)\b[^>]*>.*?</\1\s*>",lambda m:tok("P",m.group(0)),html,flags=re.I|re.S)
+              parts=re.split(r"(<[^>]+>)",s);out=[]
+              for p in parts:
+                  if not p:continue
+                  if p.startswith("<") and p.endswith(">"):out.append(tok("M",p))
+                  else:out.append(PROTECT_RE.sub(lambda m:tok("P",m.group(0)),p))
+              return "".join(out),mapping
+
+          def qwen_whole(html,model):
+              marked,mapping=marker_whole(html);expected=TOKEN_RE.findall(marked)
+              out,ms=qchat(model,WHOLE_SYSTEM,marked)
+              if TOKEN_RE.findall(out)!=expected:
+                  out2,ms2=qchat(model,WHOLE_SYSTEM+"\nCRITICAL: preserve every immutable token exactly once and in order.",marked);ms+=ms2;out=out2
+              ok=TOKEN_RE.findall(out)==expected
+              if not ok:return html,ms,False
+              for k,v in mapping.items():out=out.replace(k,v)
+              return out,ms,True
+
+          def attrs_open(tag):
+              attrs=[]
+              for k,v in tag.attrs.items():
+                  if isinstance(v,list):v=" ".join(str(x) for x in v)
+                  if v is None:attrs.append(k)
+                  else:attrs.append(f'{k}="{str(v).replace("&","&amp;").replace(chr(34),"&quot;")}"')
+              return "<"+tag.name+((" "+" ".join(attrs)) if attrs else "")+">"
+
+          def protect_terms(text,mapping):
+              def repl(m):
+                  counter[0]+=1;t=f"__PL_P{counter[0]:04d}__";mapping[t]=m.group(0);return t
+              return PROTECT_RE.sub(repl,text)
+
+          def build_atomic(inner_html,context):
+              soup=BeautifulSoup("<plroot>"+inner_html+"</plroot>","html.parser");root=soup.find("plroot")
+              mapping={};children=[];parts=[]
+              for child in list(root.contents):
+                  if isinstance(child,NavigableString):parts.append(protect_terms(str(child),mapping));continue
+                  if not isinstance(child,Tag):parts.append(str(child));continue
+                  counter[0]+=1;tok=f"__PL_E{counter[0]:04d}__"
+                  if child.name.lower() in PROTECTED_TAGS or not re.search(r"[A-Za-z]{2}",child.get_text(" ",strip=True)):
+                      children.append({"token":tok,"protected":True,"raw":str(child)})
+                  else:
+                      local=child.get_text(" ",strip=True) or context
+                      children.append({"token":tok,"protected":False,"open":attrs_open(child),"close":f"</{child.name}>","unit":build_atomic(child.decode_contents(),local)})
+                  parts.append(tok)
+              return {"template":"".join(parts),"mapping":mapping,"children":children,"context":context}
+
+          atomic_stats={"calls":0,"retry":0,"fallback":0,"failed":0}
+          def qwen_fragment(text,model):
+              if not re.search(r"[A-Za-z]{2}",text):return text,0
+              out,ms=qchat(model,FRAGMENT_SYSTEM,"FRAGMENT:\n"+text,768);return (out or text),ms
+
+          def qwen_atomic(unit,model):
+              text=unit["template"];expected=TOKEN_RE.findall(text);ms=0
+              if text.strip() and re.search(r"[A-Za-z]{2}",re.sub(TOKEN_RE,"",text)):
+                  atomic_stats["calls"]+=1;out,m=qchat(model,ATOMIC_SYSTEM,f"CONTEXT:\n{unit['context']}\n\nTEXT:\n{text}");ms+=m
+                  if TOKEN_RE.findall(out)!=expected:
+                      atomic_stats["retry"]+=1;atomic_stats["calls"]+=1
+                      out2,m2=qchat(model,ATOMIC_SYSTEM+"\nCRITICAL FORMAT RULE: Preserve every placeholder exactly once and in the same order.",f"CONTEXT:\n{unit['context']}\n\nTEXT:\n{text}");ms+=m2;out=out2
+                  if TOKEN_RE.findall(out)!=expected:
+                      atomic_stats["fallback"]+=1
+                      chunks=re.split(f"({TOKEN_RE.pattern})",text);rebuilt=[]
+                      for chunk in chunks:
+                          if not chunk:continue
+                          if TOKEN_RE.fullmatch(chunk):rebuilt.append(chunk)
+                          else:
+                              tr,m3=qwen_fragment(chunk,model);ms+=m3;rebuilt.append(tr)
+                      out="".join(rebuilt)
+                  if TOKEN_RE.findall(out)!=expected:
+                      atomic_stats["failed"]+=1;out=text
+              else:out=text
+              for k,v in unit["mapping"].items():out=out.replace(k,v)
+              for child in unit["children"]:
+                  rendered=child["raw"] if child["protected"] else child["open"]+qwen_atomic(child["unit"],model)[0]+child["close"]
+                  out=out.replace(child["token"],rendered)
+              return out,ms
+
+          def english_ratio(text):
+              words=re.findall(r"\b[A-Za-z]{3,}\b",text)
+              protected={"openclaw","github","node","npm","npx","api","cli","http","https","json","yaml","docker","nix","windows","linux","android","discord","slack","teams","telegram","whatsapp","deepwiki","webchat","codex","claude","powershell"}
+              residue=[w for w in words if w.lower() not in protected]
+              return len(residue)
+
+          berg=Bergamot();unload();qm=download_qwen();qkey=load_qwen(qm)
+          results=[]
+          variants=["bergamot_whole","bergamot_atomic","qwen_whole","qwen_atomic"]
+          try:
+              for site,url in SITES:
+                  for variant in variants:
+                      d=browser()
+                      try:
+                          d.get(url);WebDriverWait(d,40).until(lambda x:x.execute_script("return document.readyState")=="complete");time.sleep(5)
+                          items=d.execute_script(COLLECT)
+                          if len(items)<6:raise RuntimeError(f"too few blocks {site} {variant}: {len(items)}")
+                          rows=[];total_ms=0
+                          for item in items:
+                              if variant=="bergamot_whole":
+                                  outs,ms=berg.translate([item["html"]],True);output=outs[0];ap=d.execute_script(APPLY_HTML,item["id"],output);arch_ok=ap.get("fingerprint")==item["fingerprint"]
+                              elif variant=="bergamot_atomic":
+                                  texts=[x["text"] for x in item["nodes"]];outs,ms=berg.translate(texts,False) if texts else ([],0);ap=d.execute_script(APPLY_NODES,item["id"],outs);arch_ok=bool(ap.get("count_ok")) and ap.get("fingerprint")==item["fingerprint"]
+                              elif variant=="qwen_whole":
+                                  output,ms,tok_ok=qwen_whole(item["html"],qkey);ap=d.execute_script(APPLY_HTML,item["id"],output);arch_ok=tok_ok and ap.get("fingerprint")==item["fingerprint"]
+                              else:
+                                  unit=build_atomic(item["html"],item["text"]);output,ms=qwen_atomic(unit,qkey);ap=d.execute_script(APPLY_HTML,item["id"],output);arch_ok=ap.get("fingerprint")==item["fingerprint"]
+                              total_ms+=ms
+                              rows.append({"source":item["text"],"translated":ap.get("text"),"structure_ok":bool(arch_ok),"ms":round(ms,1),"english_residue":english_ratio(ap.get("text") or "")})
+                          d.save_screenshot(str(OUT/f"{site}-{variant}.png"))
+                          try:d.get_full_page_screenshot_as_file(str(OUT/f"full-{site}-{variant}.png"))
+                          except Exception as e:print("FULL_SCREENSHOT_WARN",variant,repr(e),flush=True)
+                          summary={"site":site,"variant":variant,"blocks":len(rows),"structure_pass":sum(x["structure_ok"] for x in rows),"avg_ms":round(total_ms/len(rows),1),"english_residue":sum(x["english_residue"] for x in rows),"rows":rows}
+                          results.append(summary);print("ARCH_RESULT="+json.dumps(summary,ensure_ascii=False,separators=(",",":")),flush=True)
+                      finally:d.quit()
+          finally:
+              berg.close();unload()
+
+          compact=[{k:x[k] for k in ("site","variant","blocks","structure_pass","avg_ms","english_residue")} for x in results]
+          print("ARCH_SUMMARY="+json.dumps(compact,ensure_ascii=False),flush=True)
+          print("ATOMIC_STATS="+json.dumps(atomic_stats,ensure_ascii=False),flush=True)
+          (OUT/"architecture-results.json").write_text(json.dumps({"summary":compact,"results":results,"atomic_stats":atomic_stats},ensure_ascii=False,indent=2),encoding="utf-8")
+          PY
+
+          python /tmp/architecture_matrix.py
+          kill "$(cat /tmp/arch-http.pid)" || true
+
+      - name: Upload architecture matrix results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-matrix-benchmark
+          path: arch-bench/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          lms server stop || true
+          lms unload --all || true
+          lms daemon down || true
