@@ -204,11 +204,12 @@ jobs:
                   "model": model_key,
                   "messages": [
                       {"role": "system", "content": SYSTEM},
-                      {"role": "user", "content": text},
+                      {"role": "user", "content": "/no_think\n" + text},
                   ],
                   "temperature": 0,
-                  "max_tokens": 4096,
-              }, timeout=240)
+                  "max_tokens": 2048,
+                  "chat_template_kwargs": {"enable_thinking": False},
+              }, timeout=180)
               ms = (time.perf_counter() - t0) * 1000
               output = (result.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
               got = MARKER_RE.findall(output)
