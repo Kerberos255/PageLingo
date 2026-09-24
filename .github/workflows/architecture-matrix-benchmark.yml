@@ -72,7 +72,7 @@ jobs:
               module=loadBergamot({INITIAL_MEMORY:41943040,wasmBinary,print:()=>{},printErr:()=>{},onAbort:r=>reject(new Error(String(r))),onRuntimeInitialized:()=>resolve(module)});
             });
           }
-          async function raw(name){return await (await fetch(`/bench-assets/${name}.bin`)).arrayBuffer();}
+          async function raw(name){return await (await fetch(`/arch-bench/bench-assets/${name}.bin`)).arrayBuffer();}
           function alloc(b,buffer,alignment){const m=new b.AlignedMemory(buffer.byteLength,alignment);m.getByteArrayView().set(new Uint8Array(buffer));return m;}
           async function init(){
             const b=await runtime(),model=await raw("model"),lex=await raw("lex"),src=await raw("srcvocab"),trg=await raw("trgvocab");
@@ -111,7 +111,7 @@ jobs:
       - name: Run 2x2 real-site benchmark
         shell: bash
         run: |
-          python -m http.server 8765 --bind 127.0.0.1 --directory arch-bench >/tmp/arch-http.log 2>&1 &
+          python -m http.server 8765 --bind 127.0.0.1 >/tmp/arch-http.log 2>&1 &
           echo $! >/tmp/arch-http.pid
 
           cat > /tmp/architecture_matrix.py <<'PY'
@@ -231,13 +231,13 @@ jobs:
 
           class Bergamot:
               def __init__(self):
-                  self.d=browser();self.d.get("http://127.0.0.1:8765/bergamot-arch.html");self.seq=0
+                  self.d=browser();self.d.get("http://127.0.0.1:8765/arch-bench/bergamot-arch.html");self.seq=0
               def translate(self,texts,html):
                   self.seq+=1
                   script="""
                   const done=arguments[arguments.length-1],texts=arguments[0],html=arguments[1],id=arguments[2];
                   if(!window._bw){
-                    window._bw=new Worker('/bergamot-arch-worker.js');window._pending={};
+                    window._bw=new Worker('/arch-bench/bergamot-arch-worker.js');window._pending={};
                     window._bw.onmessage=e=>{const cb=window._pending[e.data.id];if(cb){delete window._pending[e.data.id];cb(e.data);}};
                   }
                   window._pending[id]=done;window._bw.postMessage({id,texts,html});
@@ -341,7 +341,7 @@ jobs:
               residue=[w for w in words if w.lower() not in protected]
               return len(residue)
 
-          berg=Bergamot();unload();qm=download_qwen();qkey=load_qwen(qm)
+          unload();qm=download_qwen();qkey=load_qwen(qm);berg=Bergamot()
           results=[]
           variants=["bergamot_whole","bergamot_atomic","qwen_whole","qwen_atomic"]
           try:
