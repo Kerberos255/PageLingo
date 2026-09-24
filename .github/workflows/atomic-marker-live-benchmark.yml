@@ -1,0 +1,296 @@
+name: Atomic marker live benchmark
+
+on:
+  push:
+    branches:
+      - fix/github-font-size
+
+permissions:
+  contents: read
+
+jobs:
+  atomic-marker:
+    if: "${{ github.event.head_commit.message == 'test: atomic marker live benchmark' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Verify PageLingo
+        run: |
+          npm ci
+          npm run verify
+
+      - uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+
+      - uses: browser-actions/setup-geckodriver@latest
+
+      - name: Install browser and CJK dependencies
+        shell: bash
+        run: |
+          python -m pip install selenium requests beautifulsoup4
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+          fc-cache -f
+
+      - name: Install and start LM Studio
+        shell: bash
+        run: |
+          curl -fsSL https://lmstudio.ai/install.sh | bash
+          echo "$HOME/.lmstudio/bin" >> "$GITHUB_PATH"
+          LMS="$HOME/.lmstudio/bin/lms"
+          "$LMS" daemon up
+          sleep 5
+          for i in $(seq 1 10); do
+            "$LMS" server start --port 1234 && break
+            sleep 2
+          done
+          for i in $(seq 1 45); do
+            curl -fsS http://127.0.0.1:1234/api/v1/models >/dev/null && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Run atomic marker live benchmark
+        shell: bash
+        run: |
+          mkdir -p atomic-marker-bench
+          cat > /tmp/atomic_marker.py <<'PY'
+          import copy, json, re, time
+          from pathlib import Path
+          import requests
+          from bs4 import BeautifulSoup, NavigableString, Tag
+          from selenium import webdriver
+          from selenium.webdriver.firefox.options import Options
+          from selenium.webdriver.support.ui import WebDriverWait
+
+          BASE="http://127.0.0.1:1234"
+          OUT=Path("atomic-marker-bench")
+          SITES=[
+            ("openclaw","https://docs.openclaw.ai/quickstart"),
+            ("github","https://github.com/openclaw/openclaw"),
+          ]
+          MODELS=[
+            ("qwen35-08b","https://huggingface.co/lmstudio-community/Qwen3.5-0.8B-GGUF",re.compile(r"0[.]8b",re.I)),
+            ("qwen35-2b","https://huggingface.co/lmstudio-community/Qwen3.5-2B-GGUF",re.compile(r"(^|[^0-9])2b",re.I)),
+          ]
+          PROTECTED_TAGS={"code","kbd","samp","pre","svg","button","script","style","noscript","img","picture","video","audio","canvas"}
+          PROTECT_RE=re.compile(
+            r"https?://[^\s<]+|"
+            r"\b(?:OpenClaw|GitHub|Node[.]js|PowerShell|WebChat|WSL2|CLI|API|HTTP|HTTPS|JSON|YAML|npm|npx|Codex|Claude)\b|"
+            r"\b[A-Za-z][A-Za-z0-9_.]*-[A-Za-z0-9_.-]+\b"
+          )
+          TOKEN_RE=re.compile(r"__PL_[EP][0-9]{4}__")
+          counter=[0]
+
+          SYSTEM="""You are a deterministic web-page translator.
+          Translate only TEXT from English into natural Simplified Chinese. Use CONTEXT only to understand meaning; never output or summarize CONTEXT.
+          Tokens such as __PL_E0001__ and __PL_P0001__ are immutable placeholders. Copy every token exactly once, character-for-character, and keep all tokens in exactly the same order.
+          Translate everything else faithfully and naturally. Do not add or omit information. Do not output Markdown, explanations, notes, or wrappers.
+          Output only the translated TEXT."""
+
+          def next_token(kind):
+            counter[0]+=1
+            return f"__PL_{kind}{counter[0]:04d}__"
+
+          def api(path,method="GET",payload=None,timeout=180):
+            r=requests.request(method,BASE+path,json=payload,timeout=timeout)
+            if not r.ok: raise RuntimeError(f"{method} {path}: {r.status_code} {r.text[:800]}")
+            return r.json()
+
+          def unload():
+            try:
+              for m in api("/api/v1/models").get("models",[]):
+                for inst in m.get("loaded_instances",[]) or []:
+                  iid=inst.get("id") or inst.get("instance_id")
+                  if iid: requests.post(BASE+"/api/v1/models/unload",json={"instance_id":iid},timeout=30)
+            except Exception as e: print("UNLOAD_WARN",repr(e),flush=True)
+
+          def download(repo,size_re):
+            last=None
+            for attempt in range(1,5):
+              try:
+                start=api("/api/v1/models/download","POST",{"model":repo,"quantization":"Q4_K_M"})
+                if start.get("status") not in ("completed","already_downloaded"):
+                  job=start.get("job_id")
+                  if not job: raise RuntimeError("missing job id")
+                  for _ in range(480):
+                    s=api("/api/v1/models/download/status/"+job)
+                    if s.get("status")=="completed": break
+                    if s.get("status")=="failed": raise RuntimeError(json.dumps(s))
+                    time.sleep(1)
+                  else: raise RuntimeError("download timeout")
+                for _ in range(120):
+                  for m in api("/api/v1/models").get("models",[]):
+                    desc=f"{m.get('key','')} {m.get('display_name','')}"
+                    if m.get("type")=="llm" and "qwen3.5" in desc.lower() and size_re.search(desc): return m
+                  time.sleep(1)
+                raise RuntimeError("not indexed")
+              except Exception as e:
+                last=e; print("DOWNLOAD_RETRY",repo,attempt,repr(e),flush=True); time.sleep(min(5*attempt,15))
+            raise RuntimeError(f"download failed: {last}")
+
+          def load(m):
+            x=api("/api/v1/models/load","POST",{
+              "model":m["key"],"context_length":8192,"flash_attention":False,
+              "offload_kv_cache_to_gpu":False,"echo_load_config":True
+            })
+            if x.get("status")!="loaded": raise RuntimeError(json.dumps(x))
+            return m["key"]
+
+          def browser():
+            opts=Options(); opts.add_argument("-headless")
+            opts.set_preference("font.name.sans-serif.zh-CN","Noto Sans CJK SC")
+            d=webdriver.Firefox(options=opts); d.set_window_size(1440,1200); return d
+
+          COLLECT=r"""
+          const sels=["main h1","main h2","main h3","main p","main li","article h1","article h2","article h3","article p","article li",".markdown-body h1",".markdown-body h2",".markdown-body h3",".markdown-body p",".markdown-body li"];
+          const out=[],seen=new Set();
+          for(const sel of sels) for(const el of document.querySelectorAll(sel)){
+            if(seen.has(el)||el.closest("nav,footer,aside,[role=navigation]"))continue;
+            const r=el.getBoundingClientRect(),t=(el.innerText||"").trim().replace(/\s+/g," ");
+            if(r.width<10||r.height<8||t.length<18||t.length>650||!/[A-Za-z]{3}/.test(t))continue;
+            seen.add(el); const id="pla-"+out.length; el.dataset.atomicBench=id;
+            const tags=[...el.querySelectorAll("*")].map(x=>({tag:x.tagName,href:x.getAttribute("href"),src:x.getAttribute("src"),cls:x.getAttribute("class")}));
+            out.push({id,text:t,html:el.innerHTML,tags}); if(out.length>=10)return out;
+          } return out;
+          """
+          APPLY=r"""
+          const id=arguments[0],html=arguments[1];
+          const el=document.querySelector('[data-atomic-bench="'+id+'"]');
+          if(!el)return {found:false};
+          el.innerHTML=html;
+          const tags=[...el.querySelectorAll("*")].map(x=>({tag:x.tagName,href:x.getAttribute("href"),src:x.getAttribute("src"),cls:x.getAttribute("class")}));
+          return {found:true,tags,text:(el.innerText||"").trim().replace(/\s+/g," ")};
+          """
+
+          def attrs_open(tag):
+            attrs=[]
+            for k,v in tag.attrs.items():
+              if isinstance(v,list): v=" ".join(str(x) for x in v)
+              if v is None: attrs.append(k)
+              else:
+                esc=str(v).replace("&","&amp;").replace('"',"&quot;")
+                attrs.append(f'{k}="{esc}"')
+            return "<"+tag.name+((" "+" ".join(attrs)) if attrs else "")+">"
+
+          def protect_terms(text, mapping):
+            def repl(m):
+              tok=next_token("P"); mapping[tok]=m.group(0); return tok
+            return PROTECT_RE.sub(repl,text)
+
+          def build_unit(inner_html, context):
+            soup=BeautifulSoup("<plroot>"+inner_html+"</plroot>","html.parser")
+            root=soup.find("plroot")
+            children=[]
+            mapping={}
+            template_parts=[]
+            for child in list(root.contents):
+              if isinstance(child,NavigableString):
+                template_parts.append(protect_terms(str(child),mapping))
+                continue
+              if not isinstance(child,Tag):
+                template_parts.append(str(child)); continue
+              tok=next_token("E")
+              if child.name.lower() in PROTECTED_TAGS or not re.search(r"[A-Za-z]{2}",child.get_text(" ",strip=True)):
+                children.append({"token":tok,"protected":True,"raw":str(child)})
+              else:
+                sub=build_unit(child.decode_contents(),context)
+                children.append({"token":tok,"protected":False,"open":attrs_open(child),"close":f"</{child.name}>","unit":sub})
+              template_parts.append(tok)
+            return {"template":"".join(template_parts),"mapping":mapping,"children":children,"context":context}
+
+          stats={"calls":0,"first_pass":0,"retry_pass":0,"failed_units":0}
+          def translate_unit(unit,key):
+            expected=TOKEN_RE.findall(unit["template"])
+            text=unit["template"]
+            if text.strip() and re.search(r"[A-Za-z]{2}",re.sub(TOKEN_RE,"",text)):
+              payload=f"CONTEXT:\n{unit['context']}\n\nTEXT:\n{text}"
+              def call(extra=""):
+                stats["calls"]+=1; t0=time.perf_counter()
+                x=api("/api/v1/chat","POST",{
+                  "model":key,"input":payload+extra,"system_prompt":SYSTEM,"temperature":0,
+                  "max_output_tokens":1536,"reasoning":"off","context_length":8192,"store":False
+                },timeout=180)
+                ms=(time.perf_counter()-t0)*1000
+                out="\n".join(z.get("content","") for z in x.get("output",[]) if z.get("type")=="message").strip()
+                return out,ms
+              out,ms=call()
+              if TOKEN_RE.findall(out)==expected:
+                stats["first_pass"]+=1
+              else:
+                out2,ms2=call("\n\nIMPORTANT: Copy every placeholder token exactly; do not drop, rename, or alter any token.")
+                ms+=ms2
+                if TOKEN_RE.findall(out2)==expected:
+                  stats["retry_pass"]+=1; out=out2
+                else:
+                  stats["failed_units"]+=1; out=text
+              translated=out
+            else:
+              translated=text; ms=0
+            for tok,raw in unit["mapping"].items():
+              translated=translated.replace(tok,raw)
+            for child in unit["children"]:
+              if child["protected"]: rendered=child["raw"]
+              else: rendered=child["open"]+translate_unit(child["unit"],key)[0]+child["close"]
+              translated=translated.replace(child["token"],rendered)
+            return translated,ms
+
+          results=[]
+          for label,repo,size_re in MODELS:
+            unload(); model=download(repo,size_re); key=load(model)
+            d=browser()
+            try:
+              for site,url in SITES:
+                d.get(url); WebDriverWait(d,40).until(lambda x:x.execute_script("return document.readyState")=="complete"); time.sleep(5)
+                items=d.execute_script(COLLECT)
+                if label==MODELS[0][0]:
+                  d.save_screenshot(str(OUT/f"{site}-original.png"))
+                site_rows=[]
+                before_stats=copy.deepcopy(stats)
+                for item in items:
+                  unit=build_unit(item["html"],item["text"])
+                  html,_=translate_unit(unit,key)
+                  applied=d.execute_script(APPLY,item["id"],html)
+                  dom_ok=bool(applied.get("found")) and applied.get("tags")==item["tags"]
+                  row={"id":item["id"],"source":item["text"],"translated":applied.get("text"),"dom_ok":dom_ok,
+                       "html_before":item["html"],"html_after":html}
+                  site_rows.append(row)
+                d.save_screenshot(str(OUT/f"{site}-{label}.png"))
+                try:d.get_full_page_screenshot_as_file(str(OUT/f"full-{site}-{label}.png"))
+                except Exception as e:print("FULL_SCREENSHOT_WARN",repr(e),flush=True)
+                delta={k:stats[k]-before_stats[k] for k in stats}
+                summary={"site":site,"model":label,"model_size":model.get("size_bytes"),"blocks":len(site_rows),
+                         "dom_pass":sum(x["dom_ok"] for x in site_rows),"unit_stats":delta,"results":site_rows}
+                results.append(summary); print("ATOMIC_SITE_RESULT="+json.dumps(summary,ensure_ascii=False,separators=(",",":")),flush=True)
+            finally:d.quit()
+            unload()
+          compact=[{"site":x["site"],"model":x["model"],"model_size":x["model_size"],"blocks":x["blocks"],
+                    "dom_pass":x["dom_pass"],"unit_stats":x["unit_stats"]} for x in results]
+          print("ATOMIC_SUMMARY="+json.dumps(compact,ensure_ascii=False),flush=True)
+          (OUT/"results.json").write_text(json.dumps({"summary":compact,"results":results},ensure_ascii=False,indent=2),encoding="utf-8")
+          PY
+          python /tmp/atomic_marker.py
+
+      - name: Upload atomic marker benchmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atomic-marker-live-benchmark
+          path: atomic-marker-bench/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          lms server stop || true
+          lms unload --all || true
+          lms daemon down || true
