@@ -116,7 +116,7 @@ jobs:
                 apiKey: "",
                 model,
                 region: "",
-                prompt: "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. Output only the translated HTML. Do not use Markdown or add explanations.",
+                prompt: "Translate the user HTML from English to Simplified Chinese. Preserve every HTML tag exactly. Output only translated HTML.",
                 headersJson: "",
                 bodyJson: "",
                 responsePath: "",
