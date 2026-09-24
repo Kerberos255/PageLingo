@@ -78,7 +78,6 @@ jobs:
             ("github","https://github.com/openclaw/openclaw"),
           ]
           MODELS=[
-            ("qwen35-08b","https://huggingface.co/lmstudio-community/Qwen3.5-0.8B-GGUF",re.compile(r"0[.]8b",re.I)),
             ("qwen35-2b","https://huggingface.co/lmstudio-community/Qwen3.5-2B-GGUF",re.compile(r"(^|[^0-9])2b",re.I)),
           ]
           PROTECTED_TAGS={"code","kbd","samp","pre","svg","button","script","style","noscript","img","picture","video","audio","canvas"}
