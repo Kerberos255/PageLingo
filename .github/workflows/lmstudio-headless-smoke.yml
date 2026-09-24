@@ -33,21 +33,14 @@ jobs:
           echo "$HOME/.lmstudio/bin" >> "$GITHUB_PATH"
           "$HOME/.lmstudio/bin/lms" --help >/dev/null
 
-      - name: Start llmster and download tiny Qwen
+      - name: Start llmster and LM Studio server
         shell: bash
         run: |
           lms daemon up
-          yes | lms get qwen2.5-0.5b-instruct@q4_k_m --gguf
-          lms ls --llm --detailed
-
-      - name: Load model and start OpenAI-compatible server
-        shell: bash
-        run: |
-          lms load qwen2.5-0.5b-instruct --gpu off --context-length 2048 --identifier pagelingo-qwen --yes
           lms server start --port 1234
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:1234/v1/models >/tmp/lm-models.json; then
-              cat /tmp/lm-models.json
+            if curl -fsS http://127.0.0.1:1234/api/v1/models >/tmp/models-before.json; then
+              cat /tmp/models-before.json
               exit 0
             fi
             sleep 2
@@ -55,17 +48,50 @@ jobs:
           echo "LM Studio server did not become ready" >&2
           exit 1
 
+      - name: Download Qwen2.5 0.5B Q4_K_M via LM Studio REST
+        shell: bash
+        run: |
+          curl -fsS http://127.0.0.1:1234/api/v1/models/download             -H 'Content-Type: application/json'             -d '{
+              "model":"https://huggingface.co/lmstudio-community/Qwen2.5-0.5B-Instruct-GGUF",
+              "quantization":"Q4_K_M"
+            }' | tee /tmp/download.json
+          STATUS="$(node -e "const x=require('/tmp/download.json');process.stdout.write(x.status||'')")"
+          if [ "$STATUS" = "already_downloaded" ] || [ "$STATUS" = "completed" ]; then
+            exit 0
+          fi
+          JOB="$(node -e "const x=require('/tmp/download.json');if(!x.job_id)process.exit(2);process.stdout.write(x.job_id)")"
+          for i in $(seq 1 120); do
+            curl -fsS "http://127.0.0.1:1234/api/v1/models/download/status/$JOB" > /tmp/download-status.json
+            cat /tmp/download-status.json
+            STATUS="$(node -e "const x=require('/tmp/download-status.json');process.stdout.write(x.status||'')")"
+            if [ "$STATUS" = "completed" ]; then
+              exit 0
+            fi
+            if [ "$STATUS" = "failed" ]; then
+              echo "LM Studio model download failed" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "LM Studio model download timed out" >&2
+          exit 1
+
+      - name: Resolve and load model
+        shell: bash
+        run: |
+          curl -fsS http://127.0.0.1:1234/api/v1/models | tee /tmp/models.json
+          MODEL_KEY="$(node -e "const x=require('/tmp/models.json');const m=(x.models||[]).find(v=>v.type==='llm'&&/qwen2\.5.*0\.5b/i.test((v.key||'')+' '+(v.display_name||'')))||(x.models||[]).find(v=>v.type==='llm');if(!m)process.exit(2);process.stdout.write(m.key)")"
+          echo "LM_MODEL_KEY=$MODEL_KEY" >> "$GITHUB_ENV"
+          echo "Resolved model: $MODEL_KEY"
+          node -e "const fs=require('fs');fs.writeFileSync('/tmp/load.json',JSON.stringify({model:process.argv[1],context_length:2048,flash_attention:false,offload_kv_cache_to_gpu:false,echo_load_config:true}))" "$MODEL_KEY"
+          curl -fsS http://127.0.0.1:1234/api/v1/models/load             -H 'Content-Type: application/json'             --data-binary @/tmp/load.json | tee /tmp/load-response.json
+          node -e "const x=require('/tmp/load-response.json');if(x.status!=='loaded')process.exit(2)"
+
       - name: Direct OpenAI-compatible inference smoke
         shell: bash
         run: |
-          curl -fsS http://127.0.0.1:1234/v1/chat/completions             -H 'Content-Type: application/json'             -d '{
-              "model":"pagelingo-qwen",
-              "messages":[
-                {"role":"system","content":"Translate the user HTML from English to Simplified Chinese. Preserve every HTML tag exactly. Output only translated HTML."},
-                {"role":"user","content":"Hello <strong>world</strong>"}
-              ],
-              "temperature":0
-            }' | tee /tmp/lm-response.json
+          node -e "const fs=require('fs');fs.writeFileSync('/tmp/chat.json',JSON.stringify({model:process.env.LM_MODEL_KEY,messages:[{role:'system',content:'Translate the user HTML from English to Simplified Chinese. Preserve every HTML tag exactly. Output only translated HTML.'},{role:'user',content:'Hello <strong>world</strong>'}],temperature:0}))"
+          curl -fsS http://127.0.0.1:1234/v1/chat/completions             -H 'Content-Type: application/json'             --data-binary @/tmp/chat.json | tee /tmp/lm-response.json
           node -e "const x=require('/tmp/lm-response.json');const c=x.choices?.[0]?.message?.content;if(!c)process.exit(2);console.log('LM_STUDIO_DIRECT=',c)"
 
       - name: PageLingo live LM Studio integration
@@ -78,6 +104,8 @@ jobs:
 
           describe("LM Studio live OpenAI-compatible smoke", () => {
             it("translates HTML through a real headless LM Studio model", async () => {
+              const model = process.env.LM_MODEL_KEY;
+              if (!model) throw new Error("LM_MODEL_KEY missing");
               const config: TranslationEngineConfig = {
                 id: "lmstudio-live",
                 name: "LM Studio Qwen smoke",
@@ -85,7 +113,7 @@ jobs:
                 enabled: true,
                 baseUrl: "http://127.0.0.1:1234/v1",
                 apiKey: "",
-                model: "pagelingo-qwen",
+                model,
                 region: "",
                 prompt: "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. Output only the translated HTML. Do not use Markdown or add explanations.",
                 headersJson: "",
