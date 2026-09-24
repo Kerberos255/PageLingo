@@ -241,6 +241,7 @@ async function translateOpenAiCompatible(config: TranslationEngineConfig, reques
         { role: "system", content: renderPrompt(config, request) },
         { role: "user", content: request.html },
       ],
+      temperature: 0,
     }),
   }) as { choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> };
   const content = result.choices?.[0]?.message?.content;

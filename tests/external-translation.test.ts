@@ -66,8 +66,9 @@ describe("external translation HTML safety", () => {
       const headers = init?.headers as Record<string, string>;
       expect(headers["X-OpenRouter-Title"]).toBe("PageLingo");
       expect(headers["X-Title"]).toBeUndefined();
-      const body = JSON.parse(String(init?.body)) as { model: string; messages: Array<{ role: string; content: string }> };
+      const body = JSON.parse(String(init?.body)) as { model: string; messages: Array<{ role: string; content: string }>; temperature: number };
       expect(body.model).toBe("openrouter/free");
+      expect(body.temperature).toBe(0);
       expect(body.messages[0]?.content).toContain("KEEP EXACTLY, character-for-character: Slack");
       expect(body.messages[0]?.content).toContain("PREFERRED TRANSLATION: Gateway => 网关");
       return new Response(JSON.stringify({ choices: [{ message: { content: "```html\n你好 <strong>世界</strong>\n```" } }] }), {
