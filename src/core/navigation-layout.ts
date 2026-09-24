@@ -1,13 +1,14 @@
-// @ts-nocheck
-var navigationLayoutSnapshots = new Map();
-export function restoreNavigationLayout() {
+const navigationLayoutSnapshots = new Map<HTMLElement, string | null>();
+
+export function restoreNavigationLayout(): void {
     for (const [element, styleAttribute] of navigationLayoutSnapshots) {
         if (styleAttribute === null) element.removeAttribute("style");
         else element.setAttribute("style", styleAttribute);
     }
     navigationLayoutSnapshots.clear();
 }
-export function freezeNavigationLayout(resetExisting = true) {
+
+export function freezeNavigationLayout(resetExisting = true): void {
     if (resetExisting) restoreNavigationLayout();
     const candidates = Array.from(document.querySelectorAll("nav a, [role='navigation'] a"));
     for (const anchor of candidates) {
@@ -21,7 +22,7 @@ export function freezeNavigationLayout(resetExisting = true) {
             anchorRect.width <= 1 ||
             anchorRect.height <= 1
         ) continue;
-        let item = anchor;
+        let item: HTMLElement = anchor;
         for (let depth = 0; item.parentElement && depth < 4; depth += 1) {
             const parentStyle = getComputedStyle(item.parentElement);
             if ((parentStyle.display === "flex" || parentStyle.display === "inline-flex") && parentStyle.flexDirection.startsWith("row")) break;

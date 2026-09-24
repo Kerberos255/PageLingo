@@ -1,17 +1,22 @@
-// @ts-nocheck
-import { DEFAULT_OCR_PROFILE, ocrProfileTotalBytes } from "./ocr-models";
+import { DEFAULT_OCR_PROFILE, ocrProfileTotalBytes, type OcrModelAsset, type OcrProfile } from "./ocr-models";
+
 export interface ImageOcrStatus { installed:boolean; totalBytes:number; runtimeSupported:boolean }
-export interface ImageOcrBundle { profile:any; detectionModel:ArrayBuffer; recognitionModel:ArrayBuffer; dictionary:string }
-var OCR_CACHE = "pagelingo-image-ocr-v1";
-var OCR_DB_NAME = "pagelingo-image-ocr-models-v1";
-var OCR_DB_STORE = "assets";
-var OCR_DOWNLOAD_TIMEOUT_MS = 60_000;
-var ocrAssetMemoryCache = new Map();
-var ocrBundlePromise = null;
-function cacheKey(asset) {
+export interface ImageOcrBundle { profile:OcrProfile; detectionModel:ArrayBuffer; recognitionModel:ArrayBuffer; dictionary:string }
+
+type OcrProgress = (status: string) => void;
+
+const OCR_CACHE = "pagelingo-image-ocr-v1";
+const OCR_DB_NAME = "pagelingo-image-ocr-models-v1";
+const OCR_DB_STORE = "assets";
+const OCR_DOWNLOAD_TIMEOUT_MS = 60_000;
+const ocrAssetMemoryCache = new Map<string, ArrayBuffer>();
+let ocrBundlePromise: Promise<ImageOcrBundle> | null = null;
+
+function cacheKey(asset: OcrModelAsset): string {
     return `https://pagelingo.invalid/image-ocr/${encodeURIComponent(asset.id)}`;
 }
-function openOcrDb() {
+
+function openOcrDb(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(OCR_DB_NAME, 1);
         request.onupgradeneeded = () => {
@@ -22,10 +27,11 @@ function openOcrDb() {
         request.onerror = () => reject(request.error ?? new Error("OCR 模型数据库打开失败"));
     });
 }
-async function idbGetAsset(asset) {
+
+async function idbGetAsset(asset: OcrModelAsset): Promise<ArrayBuffer | null> {
     try {
         const db = await openOcrDb();
-        const value = await new Promise((resolve, reject) => {
+        const value = await new Promise<unknown>((resolve, reject) => {
             const tx = db.transaction(OCR_DB_STORE, "readonly");
             const request = tx.objectStore(OCR_DB_STORE).get(asset.id);
             request.onsuccess = () => resolve(request.result ?? null);
@@ -46,10 +52,11 @@ async function idbGetAsset(asset) {
         return null;
     }
 }
-async function idbPutAsset(asset, buffer) {
+
+async function idbPutAsset(asset: OcrModelAsset, buffer: ArrayBuffer): Promise<void> {
     const db = await openOcrDb();
     try {
-        await new Promise((resolve, reject) => {
+        await new Promise<void>((resolve, reject) => {
             const tx = db.transaction(OCR_DB_STORE, "readwrite");
             tx.objectStore(OCR_DB_STORE).put(buffer.slice(0), asset.id);
             tx.oncomplete = () => resolve();
@@ -61,10 +68,11 @@ async function idbPutAsset(asset, buffer) {
         db.close();
     }
 }
-async function idbDeleteAsset(asset) {
+
+async function idbDeleteAsset(asset: OcrModelAsset): Promise<void> {
     const db = await openOcrDb();
     try {
-        await new Promise((resolve, reject) => {
+        await new Promise<void>((resolve, reject) => {
             const tx = db.transaction(OCR_DB_STORE, "readwrite");
             tx.objectStore(OCR_DB_STORE).delete(asset.id);
             tx.oncomplete = () => resolve();
@@ -75,11 +83,13 @@ async function idbDeleteAsset(asset) {
         db.close();
     }
 }
-async function sha256Hex(buffer) {
+
+async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
     const digest = await crypto.subtle.digest("SHA-256", buffer);
     return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
 }
-async function validateAsset(asset, buffer) {
+
+async function validateAsset(asset: OcrModelAsset, buffer: ArrayBuffer): Promise<void> {
     if (buffer.byteLength !== asset.bytes) {
         throw new Error(`${asset.label} 大小校验失败：${buffer.byteLength} != ${asset.bytes}`);
     }
@@ -87,7 +97,8 @@ async function validateAsset(asset, buffer) {
     if (digest !== asset.sha256)
         throw new Error(`${asset.label} SHA-256 校验失败`);
 }
-async function cachedAsset(asset) {
+
+async function cachedAsset(asset: OcrModelAsset): Promise<ArrayBuffer | null> {
     const memory = ocrAssetMemoryCache.get(asset.id);
     if (memory instanceof ArrayBuffer && memory.byteLength === asset.bytes) return memory;
     const durable = await idbGetAsset(asset);
@@ -112,7 +123,8 @@ async function cachedAsset(asset) {
     }
     return null;
 }
-async function downloadAsset(asset, progress) {
+
+async function downloadAsset(asset: OcrModelAsset, progress?: OcrProgress): Promise<ArrayBuffer> {
     const cached = await cachedAsset(asset);
     if (cached) {
         progress?.(`${asset.label} · 已缓存`);
@@ -145,7 +157,8 @@ async function downloadAsset(asset, progress) {
         globalThis.clearTimeout(timeout);
     }
 }
-async function hasCachedAsset(asset) {
+
+async function hasCachedAsset(asset: OcrModelAsset): Promise<boolean> {
     if (ocrAssetMemoryCache.has(asset.id)) return true;
     const durable = await idbGetAsset(asset);
     if (durable) {
@@ -160,7 +173,8 @@ async function hasCachedAsset(asset) {
         return false;
     }
 }
-export async function getImageOcrStatus(profile = DEFAULT_OCR_PROFILE) {
+
+export async function getImageOcrStatus(profile: OcrProfile = DEFAULT_OCR_PROFILE): Promise<ImageOcrStatus> {
     const assets = [profile.detection, profile.recognition, profile.dictionary];
     const installed = (await Promise.all(assets.map(hasCachedAsset))).every(Boolean);
     return {
@@ -169,12 +183,13 @@ export async function getImageOcrStatus(profile = DEFAULT_OCR_PROFILE) {
         runtimeSupported: typeof WebAssembly === "object" && typeof Worker === "function",
     };
 }
-export async function getImageOcrBundle(profile = DEFAULT_OCR_PROFILE, progress) {
+
+export async function getImageOcrBundle(profile: OcrProfile = DEFAULT_OCR_PROFILE, progress?: OcrProgress): Promise<ImageOcrBundle> {
     if (ocrBundlePromise) {
         progress?.("OCR 模型已缓存 · 正在载入…");
         return ocrBundlePromise;
     }
-    ocrBundlePromise = (async () => {
+    ocrBundlePromise = (async (): Promise<ImageOcrBundle> => {
         progress?.("正在检查 OCR 模型缓存…");
         const detectionModel = await downloadAsset(profile.detection, progress);
         const recognitionModel = await downloadAsset(profile.recognition, progress);
@@ -195,7 +210,8 @@ export async function getImageOcrBundle(profile = DEFAULT_OCR_PROFILE, progress)
         throw error;
     }
 }
-export async function deleteImageOcrModels(profile = DEFAULT_OCR_PROFILE) {
+
+export async function deleteImageOcrModels(profile: OcrProfile = DEFAULT_OCR_PROFILE): Promise<void> {
     ocrBundlePromise = null;
     ocrAssetMemoryCache.clear();
     await Promise.all([profile.detection, profile.recognition, profile.dictionary].map(async (asset) => {
