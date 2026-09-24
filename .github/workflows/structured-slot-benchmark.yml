@@ -84,11 +84,13 @@ jobs:
           ]
 
           SYSTEM="""You are a deterministic website translation engine.
-          Translate each numbered English segment into fluent, concise Simplified Chinese.
-          Use CONTEXT only to understand meaning and terminology.
-          Preserve each segment's meaning and tone; do not add facts or omit information.
+          Translate each numbered SEGMENT into fluent, concise Simplified Chinese.
+          IMPORTANT: each SEGMENT may be only a fragment of a sentence because HTML elements split the sentence into separate text nodes.
+          Translate ONLY the words actually present in that SEGMENT. Never complete the sentence, never borrow words from neighboring segments, and never quote or translate CONTEXT.
+          CONTEXT is reference-only: use it solely to resolve meaning, pronouns, terminology, and grammar.
+          Preserve the fragment nature of a fragment. If a segment is only punctuation, a short connector, a label, or a product/command name, return only the corresponding translation or unchanged text.
           Tokens like __P0__ are protected text: copy them exactly and do not translate or alter them.
-          Translate all other human-readable prose naturally; do not leave an entire sentence untranslated merely because it contains technical terms.
+          Preserve meaning and tone; do not add facts, inferred wording, commands, or explanations that are absent from that SEGMENT.
           Output exactly one single-line result per input segment using the exact form S0=translation, S1=translation, and so on.
           Keep every S index exactly once and in the same order. Output no Markdown, bullets, explanations, or extra lines."""
 
@@ -361,6 +363,7 @@ jobs:
                           "segments_out":parsed,"schema_keys_ok":len(parsed)==len(item["nodes"]),
                           "retry_count":retries,"fallbacks":fallbacks,"protected_pass":protected_pass,
                           "stats":stats,"ms":round(ms,1),
+                          "segment_count":len(item["nodes"]),
                           "count_ok":applied.get("count_ok"),"structure_ok":applied.get("structure_ok"),
                           "translated":applied.get("text")
                       }
