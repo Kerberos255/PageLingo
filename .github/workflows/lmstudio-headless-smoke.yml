@@ -82,8 +82,21 @@ jobs:
       - name: Resolve and load model
         shell: bash
         run: |
-          curl -fsS http://127.0.0.1:1234/api/v1/models | tee /tmp/models.json
-          MODEL_KEY="$(node -e "const x=require('/tmp/models.json');const m=(x.models||[]).find(v=>v.type==='llm'&&/qwen2\.5.*0\.5b/i.test((v.key||'')+' '+(v.display_name||'')))||(x.models||[]).find(v=>v.type==='llm');if(!m)process.exit(2);process.stdout.write(m.key)")"
+          FOUND=0
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:1234/api/v1/models > /tmp/models.json
+            cat /tmp/models.json
+            if node -e "const x=require('/tmp/models.json');const m=(x.models||[]).find(v=>v.type==='llm'&&/qwen2\.5.*0\.5b/i.test((v.key||'')+' '+(v.display_name||'')));process.exit(m?0:1)"; then
+              FOUND=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$FOUND" != "1" ]; then
+            echo "Downloaded Qwen model did not appear in LM Studio model index" >&2
+            exit 1
+          fi
+          MODEL_KEY="$(node -e "const x=require('/tmp/models.json');const m=(x.models||[]).find(v=>v.type==='llm'&&/qwen2\.5.*0\.5b/i.test((v.key||'')+' '+(v.display_name||'')));if(!m)process.exit(2);process.stdout.write(m.key)")"
           echo "LM_MODEL_KEY=$MODEL_KEY" >> "$GITHUB_ENV"
           echo "Resolved model: $MODEL_KEY"
           node -e "const fs=require('fs');fs.writeFileSync('/tmp/load.json',JSON.stringify({model:process.argv[1],context_length:2048,flash_attention:false,offload_kv_cache_to_gpu:false,echo_load_config:true}))" "$MODEL_KEY"
