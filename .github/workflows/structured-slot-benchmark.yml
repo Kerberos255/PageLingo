@@ -1,0 +1,317 @@
+name: Structured slot translation benchmark
+
+on:
+  push:
+    branches:
+      - fix/github-font-size
+
+permissions:
+  contents: read
+
+jobs:
+  structured-slots:
+    if: "${{ github.event.head_commit.message == 'test: structured slot benchmark' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Verify PageLingo
+        run: |
+          npm ci
+          npm run verify
+
+      - uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+
+      - uses: browser-actions/setup-geckodriver@latest
+
+      - name: Install browser and CJK font dependencies
+        run: |
+          python -m pip install selenium requests
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+          fc-cache -f
+
+      - name: Install and start LM Studio
+        shell: bash
+        run: |
+          curl -fsSL https://lmstudio.ai/install.sh | bash
+          echo "$HOME/.lmstudio/bin" >> "$GITHUB_PATH"
+          LMS="$HOME/.lmstudio/bin/lms"
+          "$LMS" daemon up
+          sleep 5
+          STARTED=0
+          for i in $(seq 1 10); do
+            if "$LMS" server start --port 1234; then
+              STARTED=1
+              break
+            fi
+            sleep 2
+          done
+          test "$STARTED" = "1"
+          for i in $(seq 1 45); do
+            curl -fsS http://127.0.0.1:1234/api/v1/models >/dev/null && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Run structured slot benchmark
+        shell: bash
+        run: |
+          mkdir -p slot-bench
+          cat > /tmp/slot_bench.py <<'PY'
+          import json, re, time
+          from pathlib import Path
+
+          import requests
+          from selenium import webdriver
+          from selenium.webdriver.firefox.options import Options
+          from selenium.webdriver.support.ui import WebDriverWait
+
+          BASE="http://127.0.0.1:1234"
+          OUT=Path("slot-bench")
+          MODEL_REPO="https://huggingface.co/lmstudio-community/Qwen3.5-2B-GGUF"
+          SITES=[
+              ("openclaw","https://docs.openclaw.ai/quickstart"),
+              ("github","https://github.com/openclaw/openclaw"),
+          ]
+
+          SYSTEM="""You are a deterministic website translation engine.
+          Translate each value in the segments object from English to fluent, concise Simplified Chinese.
+          Use context only to understand meaning and terminology.
+          Preserve each segment's meaning and tone; do not add facts or omit information.
+          Do not translate product names, commands, URLs, version numbers, API names, CLI flags, or code identifiers.
+          Return only the required JSON object. Never merge, split, add, remove, or rename segment keys."""
+
+          def api(path,method="GET",payload=None,timeout=240):
+              r=requests.request(method,BASE+path,json=payload,timeout=timeout)
+              if not r.ok:
+                  raise RuntimeError(f"{method} {path}: {r.status_code} {r.text[:1200]}")
+              return r.json()
+
+          def unload():
+              try:
+                  for m in api("/api/v1/models").get("models",[]):
+                      for inst in m.get("loaded_instances",[]) or []:
+                          iid=inst.get("id") or inst.get("instance_id")
+                          if iid:
+                              requests.post(BASE+"/api/v1/models/unload",json={"instance_id":iid},timeout=30)
+              except Exception as e:
+                  print("UNLOAD_WARN",repr(e),flush=True)
+
+          def download():
+              last=None
+              for attempt in range(1,5):
+                  try:
+                      start=api("/api/v1/models/download","POST",{"model":MODEL_REPO,"quantization":"Q4_K_M"})
+                      if start.get("status") not in ("completed","already_downloaded"):
+                          job=start.get("job_id")
+                          if not job: raise RuntimeError("missing download job")
+                          for _ in range(480):
+                              s=api("/api/v1/models/download/status/"+job)
+                              if s.get("status")=="completed": break
+                              if s.get("status")=="failed": raise RuntimeError(json.dumps(s))
+                              time.sleep(1)
+                          else: raise RuntimeError("download timeout")
+                      for _ in range(120):
+                          for m in api("/api/v1/models").get("models",[]):
+                              desc=f"{m.get('key','')} {m.get('display_name','')}"
+                              if m.get("type")=="llm" and "qwen3.5" in desc.lower() and re.search(r"(^|[^0-9])2b",desc,re.I):
+                                  return m
+                          time.sleep(1)
+                      raise RuntimeError("model not indexed")
+                  except Exception as e:
+                      last=e
+                      print("DOWNLOAD_RETRY",attempt,repr(e),flush=True)
+                      time.sleep(min(5*attempt,15))
+              raise RuntimeError(f"download failed: {last}")
+
+          def load(m):
+              x=api("/api/v1/models/load","POST",{
+                  "model":m["key"],"context_length":8192,"flash_attention":False,
+                  "offload_kv_cache_to_gpu":False,"echo_load_config":True
+              })
+              if x.get("status")!="loaded":
+                  raise RuntimeError(json.dumps(x))
+              return m["key"]
+
+          def firefox():
+              opts=Options(); opts.add_argument("-headless")
+              opts.set_preference("intl.accept_languages","en-US,en")
+              d=webdriver.Firefox(options=opts)
+              d.set_window_size(1440,1200)
+              return d
+
+          COLLECT=r"""
+          const selectors=[
+            "main h1","main h2","main h3","main p","main li",
+            "article h1","article h2","article h3","article p","article li",
+            ".markdown-body h1",".markdown-body h2",".markdown-body h3",".markdown-body p",".markdown-body li"
+          ];
+          const out=[],seen=new Set();
+          function visible(el){const r=el.getBoundingClientRect(),s=getComputedStyle(el);return r.width>10&&r.height>8&&s.display!=="none"&&s.visibility!=="hidden";}
+          function fingerprint(root){
+            const rows=[];
+            const walk=el=>{
+              if(el.nodeType!==1)return;
+              const attrs=[...el.attributes].map(a=>[a.name,a.value]).sort((a,b)=>a[0].localeCompare(b[0]));
+              rows.push([el.tagName,attrs]);
+              for(const c of el.children)walk(c);
+            };
+            walk(root); return JSON.stringify(rows);
+          }
+          function textNodes(root){
+            const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+            const nodes=[]; let n;
+            while(n=w.nextNode()){
+              const p=n.parentElement;
+              if(!p)continue;
+              if(p.closest("script,style,noscript,svg,button,[aria-hidden=true]"))continue;
+              if(p.closest("code,pre,kbd,samp"))continue;
+              const raw=n.nodeValue||"",trim=raw.trim();
+              if(!trim||!/[A-Za-z]{2}/.test(trim))continue;
+              const lead=raw.slice(0,raw.indexOf(trim)),trail=raw.slice(raw.indexOf(trim)+trim.length);
+              nodes.push({text:trim,lead,trail});
+            }
+            return nodes;
+          }
+          for(const sel of selectors)for(const el of document.querySelectorAll(sel)){
+            if(seen.has(el)||!visible(el)||el.closest("nav,footer,aside,[role=navigation]"))continue;
+            const text=(el.innerText||"").trim().replace(/\s+/g," ");
+            if(text.length<25||text.length>650||!/[A-Za-z]{3}/.test(text))continue;
+            const nodes=textNodes(el);
+            if(!nodes.length||nodes.length>14)continue;
+            seen.add(el);
+            const id="slot-"+out.length;el.dataset.pagelingoSlotId=id;
+            out.push({id,context:text,nodes,fingerprint:fingerprint(el),html:el.innerHTML});
+            if(out.length>=12)return out;
+          }
+          return out;
+          """
+
+          APPLY=r"""
+          const id=arguments[0],translations=arguments[1],expectedFingerprint=arguments[2];
+          const el=document.querySelector('[data-pagelingo-slot-id="'+id+'"]');
+          if(!el)return {found:false};
+          function fingerprint(root){
+            const rows=[];const walk=e=>{if(e.nodeType!==1)return;const attrs=[...e.attributes].filter(a=>a.name!=="data-pagelingo-slot-id").map(a=>[a.name,a.value]).sort((a,b)=>a[0].localeCompare(b[0]));rows.push([e.tagName,attrs]);for(const c of e.children)walk(c);};walk(root);return JSON.stringify(rows);
+          }
+          const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);const nodes=[];let n;
+          while(n=w.nextNode()){
+            const p=n.parentElement;if(!p)continue;
+            if(p.closest("script,style,noscript,svg,button,[aria-hidden=true]"))continue;
+            if(p.closest("code,pre,kbd,samp"))continue;
+            const raw=n.nodeValue||"",trim=raw.trim();if(!trim||!/[A-Za-z]{2}/.test(trim))continue;
+            const lead=raw.slice(0,raw.indexOf(trim)),trail=raw.slice(raw.indexOf(trim)+trim.length);
+            nodes.push({node:n,lead,trail});
+          }
+          if(nodes.length!==Object.keys(translations).length)return {found:true,count_ok:false,count:nodes.length};
+          nodes.forEach((x,i)=>{x.node.nodeValue=x.lead+translations["s"+i]+x.trail;});
+          return {found:true,count_ok:true,structure_ok:fingerprint(el)===expectedFingerprint,text:(el.innerText||"").trim().replace(/\s+/g," ")};
+          """
+
+          def schema_for(n):
+              props={f"s{i}":{"type":"string"} for i in range(n)}
+              return {
+                  "type":"json_schema",
+                  "json_schema":{
+                      "name":"translated_segments",
+                      "strict":True,
+                      "schema":{
+                          "type":"object",
+                          "properties":props,
+                          "required":list(props.keys()),
+                          "additionalProperties":False
+                      }
+                  }
+              }
+
+          def translate(model,context,nodes):
+              segs={f"s{i}":x["text"] for i,x in enumerate(nodes)}
+              user=json.dumps({"context":context,"segments":segs},ensure_ascii=False)
+              t0=time.perf_counter()
+              r=api("/v1/chat/completions","POST",{
+                  "model":model,
+                  "messages":[{"role":"system","content":SYSTEM},{"role":"user","content":user}],
+                  "temperature":0,
+                  "max_tokens":1600,
+                  "stream":False,
+                  "chat_template_kwargs":{"enable_thinking":False},
+                  "response_format":schema_for(len(nodes))
+              })
+              ms=(time.perf_counter()-t0)*1000
+              content=r["choices"][0]["message"]["content"]
+              parsed=json.loads(content)
+              exact=list(parsed.keys())==list(segs.keys())
+              return parsed,exact,ms
+
+          unload();model=download();key=load(model)
+          print("MODEL",json.dumps({k:model.get(k) for k in ("key","display_name","size_bytes")}),flush=True)
+          all_results=[]
+          d=firefox()
+          try:
+              for site,url in SITES:
+                  d.get(url);WebDriverWait(d,40).until(lambda x:x.execute_script("return document.readyState")=="complete");time.sleep(5)
+                  items=d.execute_script(COLLECT)
+                  if len(items)<4: raise RuntimeError(f"too few blocks on {site}: {len(items)}")
+                  d.save_screenshot(str(OUT/f"{site}-original.png"))
+                  site_rows=[]
+                  for item in items:
+                      parsed,exact,ms=translate(key,item["context"],item["nodes"])
+                      applied=d.execute_script(APPLY,item["id"],parsed,item["fingerprint"])
+                      row={
+                          "site":site,"id":item["id"],"context":item["context"],
+                          "segments_in":{f"s{i}":x["text"] for i,x in enumerate(item["nodes"])},
+                          "segments_out":parsed,"schema_keys_ok":exact,"ms":round(ms,1),
+                          "count_ok":applied.get("count_ok"),"structure_ok":applied.get("structure_ok"),
+                          "translated":applied.get("text")
+                      }
+                      site_rows.append(row);all_results.append(row)
+                      print("SLOT_RESULT="+json.dumps(row,ensure_ascii=False,separators=(",",":")),flush=True)
+                  d.save_screenshot(str(OUT/f"{site}-qwen35-2b-slots.png"))
+                  try:d.get_full_page_screenshot_as_file(str(OUT/f"full-{site}-qwen35-2b-slots.png"))
+                  except Exception as e:print("FULL_SCREENSHOT_WARN",site,repr(e),flush=True)
+                  print("SITE_SLOT_SUMMARY="+json.dumps({
+                      "site":site,"blocks":len(site_rows),
+                      "schema_keys_pass":sum(bool(x["schema_keys_ok"]) for x in site_rows),
+                      "count_pass":sum(bool(x["count_ok"]) for x in site_rows),
+                      "structure_pass":sum(bool(x["structure_ok"]) for x in site_rows),
+                      "avg_ms":round(sum(x["ms"] for x in site_rows)/len(site_rows),1)
+                  },ensure_ascii=False),flush=True)
+          finally:
+              d.quit();unload()
+
+          summary={
+              "blocks":len(all_results),
+              "schema_keys_pass":sum(bool(x["schema_keys_ok"]) for x in all_results),
+              "count_pass":sum(bool(x["count_ok"]) for x in all_results),
+              "structure_pass":sum(bool(x["structure_ok"]) for x in all_results),
+              "avg_ms":round(sum(x["ms"] for x in all_results)/len(all_results),1)
+          }
+          print("FINAL_SLOT_SUMMARY="+json.dumps(summary,ensure_ascii=False),flush=True)
+          (OUT/"results.json").write_text(json.dumps({"summary":summary,"results":all_results},ensure_ascii=False,indent=2),encoding="utf-8")
+          PY
+          python /tmp/slot_bench.py
+
+      - name: Upload structured slot benchmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: structured-slot-benchmark
+          path: slot-bench/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          lms server stop || true
+          lms unload --all || true
+          lms daemon down || true
