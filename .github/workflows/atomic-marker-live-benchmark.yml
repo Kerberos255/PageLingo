@@ -216,8 +216,8 @@ jobs:
           def translate_fragment(fragment,context,key):
             if not fragment or not re.search(r"[A-Za-z]{2}",fragment):
               return fragment,0
-            leading=re.match(r"^\\s*",fragment).group(0)
-            trailing=re.search(r"\\s*$",fragment).group(0)
+            leading=re.match(r"^\s*",fragment).group(0)
+            trailing=re.search(r"\s*$",fragment).group(0)
             core=fragment[len(leading):len(fragment)-len(trailing) if trailing else None]
             if not core:
               return fragment,0
