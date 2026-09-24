@@ -218,39 +218,49 @@ jobs:
           """
 
           def schema_for(n):
-              props={f"s{i}":{"type":"string"} for i in range(n)}
               return {
                   "type":"json_schema",
                   "json_schema":{
                       "name":"translated_segments",
                       "strict":True,
                       "schema":{
-                          "type":"object",
-                          "properties":props,
-                          "required":list(props.keys()),
-                          "additionalProperties":False
+                          "type":"array",
+                          "items":{"type":"string"},
+                          "minItems":n,
+                          "maxItems":n
                       }
                   }
               }
 
-          def translate(model,context,nodes):
-              segs={f"s{i}":x["text"] for i,x in enumerate(nodes)}
-              user=json.dumps({"context":context,"segments":segs},ensure_ascii=False)
+          def translate_group(model,context,texts):
+              user=json.dumps({"context":context,"segments":texts},ensure_ascii=False)
               t0=time.perf_counter()
               r=api("/v1/chat/completions","POST",{
                   "model":model,
                   "messages":[{"role":"system","content":SYSTEM},{"role":"user","content":user}],
                   "temperature":0,
-                  "max_tokens":1600,
+                  "max_tokens":800,
                   "stream":False,
                   "chat_template_kwargs":{"enable_thinking":False},
-                  "response_format":schema_for(len(nodes))
-              })
+                  "response_format":schema_for(len(texts))
+              }, timeout=150)
               ms=(time.perf_counter()-t0)*1000
-              content=r["choices"][0]["message"]["content"]
+              content=r["choices"][0]["message"].get("content","")
+              finish=r["choices"][0].get("finish_reason")
+              if not content:
+                  raise RuntimeError(f"empty structured content; finish_reason={finish}; usage={r.get('usage')}")
               parsed=json.loads(content)
-              exact=list(parsed.keys())==list(segs.keys())
-              return parsed,exact,ms
+              if not isinstance(parsed,list) or len(parsed)!=len(texts):
+                  raise RuntimeError(f"bad structured array: expected {len(texts)}, got {parsed!r}")
+              return parsed,ms,finish
+
+          def translate(model,context,nodes):
+              all_out=[]; total_ms=0.0; finishes=[]
+              for start in range(0,len(nodes),6):
+                  group=nodes[start:start+6]
+                  parsed,ms,finish=translate_group(model,context,[x["text"] for x in group])
+                  all_out.extend(parsed); total_ms+=ms; finishes.append(finish)
+              return all_out,total_ms,finishes
 
           unload();model=download();key=load(model)
           print("MODEL",json.dumps({k:model.get(k) for k in ("key","display_name","size_bytes")}),flush=True)
@@ -264,12 +274,14 @@ jobs:
                   d.save_screenshot(str(OUT/f"{site}-original.png"))
                   site_rows=[]
                   for item in items:
-                      parsed,exact,ms=translate(key,item["context"],item["nodes"])
-                      applied=d.execute_script(APPLY,item["id"],parsed,item["fingerprint"])
+                      parsed,ms,finishes=translate(key,item["context"],item["nodes"])
+                      translated_map={f"s{i}":v for i,v in enumerate(parsed)}
+                      applied=d.execute_script(APPLY,item["id"],translated_map,item["fingerprint"])
                       row={
                           "site":site,"id":item["id"],"context":item["context"],
-                          "segments_in":{f"s{i}":x["text"] for i,x in enumerate(item["nodes"])},
-                          "segments_out":parsed,"schema_keys_ok":exact,"ms":round(ms,1),
+                          "segments_in":[x["text"] for x in item["nodes"]],
+                          "segments_out":parsed,"schema_keys_ok":len(parsed)==len(item["nodes"]),
+                          "finish_reasons":finishes,"ms":round(ms,1),
                           "count_ok":applied.get("count_ok"),"structure_ok":applied.get("structure_ok"),
                           "translated":applied.get("text")
                       }
