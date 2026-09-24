@@ -45,16 +45,29 @@ jobs:
         run: |
           curl -fsSL https://lmstudio.ai/install.sh | bash
           echo "$HOME/.lmstudio/bin" >> "$GITHUB_PATH"
-          "$HOME/.lmstudio/bin/lms" daemon up
+          LMS="$HOME/.lmstudio/bin/lms"
+          "$LMS" daemon up
           sleep 5
-          "$HOME/.lmstudio/bin/lms" server start --port 1234
+          STARTED=0
+          for i in $(seq 1 10); do
+            if "$LMS" server start --port 1234; then
+              STARTED=1
+              break
+            fi
+            echo "LM Studio server start retry $i" >&2
+            sleep 2
+          done
+          if [ "$STARTED" != "1" ]; then
+            echo "LM Studio server command failed" >&2
+            exit 1
+          fi
           for i in $(seq 1 45); do
             if curl -fsS http://127.0.0.1:1234/api/v1/models >/dev/null; then
               exit 0
             fi
             sleep 2
           done
-          echo "LM Studio server failed to start" >&2
+          echo "LM Studio server failed to become ready" >&2
           exit 1
 
       - name: Write marker benchmark
