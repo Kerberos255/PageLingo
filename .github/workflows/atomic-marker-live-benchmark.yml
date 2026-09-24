@@ -92,8 +92,14 @@ jobs:
           SYSTEM="""You are a deterministic web-page translator.
           Translate only TEXT from English into natural Simplified Chinese. Use CONTEXT only to understand meaning; never output or summarize CONTEXT.
           Tokens such as __PL_E0001__ and __PL_P0001__ are immutable placeholders. Copy every token exactly once, character-for-character, and keep all tokens in exactly the same order.
-          Translate everything else faithfully and naturally. Do not add or omit information. Do not output Markdown, explanations, notes, or wrappers.
+          Translate everything else faithfully and naturally. Do not add, omit, infer, or repeat information. Do not output Markdown, explanations, notes, or wrappers.
           Output only the translated TEXT."""
+
+          FRAGMENT_SYSTEM="""Translate only FRAGMENT from English into natural Simplified Chinese.
+          CONTEXT is reference-only and must never be copied, summarized, completed, or otherwise added to the answer.
+          The FRAGMENT may be only part of a sentence because an inline HTML element was removed from that position.
+          Translate exactly the words present in FRAGMENT and nothing else. Preserve leading/trailing punctuation meaning. Do not add explanations or wrappers.
+          Output only the translated fragment."""
 
           def next_token(kind):
             counter[0]+=1
@@ -158,7 +164,7 @@ jobs:
             if(r.width<10||r.height<8||t.length<18||t.length>650||!/[A-Za-z]{3}/.test(t))continue;
             seen.add(el); const id="pla-"+out.length; el.dataset.atomicBench=id;
             const tags=[...el.querySelectorAll("*")].map(x=>({tag:x.tagName,href:x.getAttribute("href"),src:x.getAttribute("src"),cls:x.getAttribute("class")}));
-            out.push({id,text:t,html:el.innerHTML,tags}); if(out.length>=10)return out;
+            out.push({id,text:t,html:el.innerHTML,tags}); if(out.length>=12)return out;
           } return out;
           """
           APPLY=r"""
@@ -206,31 +212,74 @@ jobs:
               template_parts.append(tok)
             return {"template":"".join(template_parts),"mapping":mapping,"children":children,"context":context}
 
-          stats={"calls":0,"first_pass":0,"retry_pass":0,"failed_units":0}
+          stats={"calls":0,"first_pass":0,"retry_pass":0,"fragment_fallback":0,"fragment_calls":0,"failed_units":0}
+          def translate_fragment(fragment,context,key):
+            if not fragment or not re.search(r"[A-Za-z]{2}",fragment):
+              return fragment,0
+            leading=re.match(r"^\\s*",fragment).group(0)
+            trailing=re.search(r"\\s*$",fragment).group(0)
+            core=fragment[len(leading):len(fragment)-len(trailing) if trailing else None]
+            if not core:
+              return fragment,0
+            payload=f"CONTEXT:\n{context}\n\nFRAGMENT:\n{core}"
+            stats["fragment_calls"]+=1
+            t0=time.perf_counter()
+            x=api("/api/v1/chat","POST",{
+              "model":key,"input":payload,"system_prompt":FRAGMENT_SYSTEM,"temperature":0,
+              "max_output_tokens":768,"reasoning":"off","context_length":8192,"store":False
+            },timeout=120)
+            ms=(time.perf_counter()-t0)*1000
+            out="\n".join(z.get("content","") for z in x.get("output",[]) if z.get("type")=="message").strip()
+            if not out:
+              return fragment,ms
+            return leading+out+trailing,ms
+
+          def fallback_preserving_tokens(text,context,key):
+            parts=re.split(f"({TOKEN_RE.pattern})",text)
+            out=[]; total_ms=0
+            for part in parts:
+              if not part:
+                continue
+              if TOKEN_RE.fullmatch(part):
+                out.append(part)
+              else:
+                translated,ms=translate_fragment(part,context,key)
+                out.append(translated); total_ms+=ms
+            return "".join(out),total_ms
+
           def translate_unit(unit,key):
             expected=TOKEN_RE.findall(unit["template"])
             text=unit["template"]
             if text.strip() and re.search(r"[A-Za-z]{2}",re.sub(TOKEN_RE,"",text)):
               payload=f"CONTEXT:\n{unit['context']}\n\nTEXT:\n{text}"
-              def call(extra=""):
+              def call(retry=False):
                 stats["calls"]+=1; t0=time.perf_counter()
+                system=SYSTEM
+                if retry:
+                  system += "\nCRITICAL FORMAT RULE: Preserve every placeholder token exactly once and in the same order. Never alter a placeholder."
                 x=api("/api/v1/chat","POST",{
-                  "model":key,"input":payload+extra,"system_prompt":SYSTEM,"temperature":0,
+                  "model":key,"input":payload,"system_prompt":system,"temperature":0,
                   "max_output_tokens":1536,"reasoning":"off","context_length":8192,"store":False
                 },timeout=180)
                 ms=(time.perf_counter()-t0)*1000
                 out="\n".join(z.get("content","") for z in x.get("output",[]) if z.get("type")=="message").strip()
                 return out,ms
-              out,ms=call()
+              out,ms=call(False)
               if TOKEN_RE.findall(out)==expected:
                 stats["first_pass"]+=1
               else:
-                out2,ms2=call("\n\nIMPORTANT: Copy every placeholder token exactly; do not drop, rename, or alter any token.")
+                out2,ms2=call(True)
                 ms+=ms2
                 if TOKEN_RE.findall(out2)==expected:
                   stats["retry_pass"]+=1; out=out2
                 else:
-                  stats["failed_units"]+=1; out=text
+                  stats["fragment_fallback"]+=1
+                  out3,ms3=fallback_preserving_tokens(text,unit["context"],key)
+                  ms+=ms3
+                  if TOKEN_RE.findall(out3)==expected:
+                    out=out3
+                  else:
+                    stats["failed_units"]+=1; out=text
               translated=out
             else:
               translated=text; ms=0
