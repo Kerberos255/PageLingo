@@ -83,7 +83,7 @@ jobs:
           PROTECTED_TAGS={"code","kbd","samp","pre","svg","button","script","style","noscript","img","picture","video","audio","canvas"}
           PROTECT_RE=re.compile(
             r"https?://[^\s<]+|"
-            r"\b(?:OpenClaw|GitHub|Node[.]js|PowerShell|WebChat|WSL2|CLI|API|HTTP|HTTPS|JSON|YAML|npm|npx|Codex|Claude)\b|"
+            r"\b(?:OpenClaw|GitHub|Node[.]js|PowerShell|WebChat|WSL2|CLI|API|HTTP|HTTPS|JSON|YAML|npm|npx|Codex|Claude|DeepWiki|Docker|Nix|macOS|iOS|Android|Windows|Linux|Discord|iMessage|Slack|Teams|Telegram|WhatsApp)\b|"
             r"\b[A-Za-z][A-Za-z0-9_.]*-[A-Za-z0-9_.-]+\b"
           )
           TOKEN_RE=re.compile(r"__PL_[EP][0-9]{4}__")
@@ -96,7 +96,6 @@ jobs:
           Output only the translated TEXT."""
 
           FRAGMENT_SYSTEM="""Translate only FRAGMENT from English into natural Simplified Chinese.
-          CONTEXT is reference-only and must never be copied, summarized, completed, or otherwise added to the answer.
           The FRAGMENT may be only part of a sentence because an inline HTML element was removed from that position.
           Translate exactly the words present in FRAGMENT and nothing else. Preserve leading/trailing punctuation meaning. Do not add explanations or wrappers.
           Output only the translated fragment."""
@@ -207,7 +206,8 @@ jobs:
               if child.name.lower() in PROTECTED_TAGS or not re.search(r"[A-Za-z]{2}",child.get_text(" ",strip=True)):
                 children.append({"token":tok,"protected":True,"raw":str(child)})
               else:
-                sub=build_unit(child.decode_contents(),context)
+                local_context=child.get_text(" ",strip=True) or context
+                sub=build_unit(child.decode_contents(),local_context)
                 children.append({"token":tok,"protected":False,"open":attrs_open(child),"close":f"</{child.name}>","unit":sub})
               template_parts.append(tok)
             return {"template":"".join(template_parts),"mapping":mapping,"children":children,"context":context}
@@ -221,7 +221,7 @@ jobs:
             core=fragment[len(leading):len(fragment)-len(trailing) if trailing else None]
             if not core:
               return fragment,0
-            payload=f"CONTEXT:\n{context}\n\nFRAGMENT:\n{core}"
+            payload=f"FRAGMENT:\n{core}"
             stats["fragment_calls"]+=1
             t0=time.perf_counter()
             x=api("/api/v1/chat","POST",{
