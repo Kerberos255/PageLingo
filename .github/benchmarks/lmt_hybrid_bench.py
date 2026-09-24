@@ -162,12 +162,11 @@ def load_model(model):
         raise RuntimeError(json.dumps(result))
     return model["key"]
 
-def chat(model, system, text, max_tokens=1536):
+def chat(model, text, max_tokens=1536):
     started = time.perf_counter()
     response = api("/api/v1/chat", "POST", {
         "model": model,
         "input": text,
-        "system_prompt": system,
         "temperature": 0,
         "max_output_tokens": max_tokens,
         "reasoning": "off",
@@ -235,22 +234,55 @@ def duplicate_suspect(values):
     normalized = [re.sub(r"\s+","",x) for x in values if len(re.sub(r"\s+","",x)) >= 12]
     return len(normalized) != len(set(normalized))
 
+def smoke_model(model):
+    samples = [
+        "Install the Gateway service.",
+        "This opens the Control UI in your browser. If it loads, everything is working.",
+        "The installer supports macOS, Linux, and Windows.",
+    ]
+    rows = []
+    for source in samples:
+        prompt = (
+            "Translate the following text from English into Chinese:\n"
+            "English: " + source + "\n"
+            "Chinese:"
+        )
+        translated, elapsed = chat(model, prompt, 512)
+        row = {
+            "source": source,
+            "translated": translated,
+            "cjk": bool(re.search(r"[\u3400-\u9fff]", translated)),
+            "ms": round(elapsed, 1),
+        }
+        rows.append(row)
+        print("LMT_SMOKE_RESULT=" + json.dumps(row, ensure_ascii=False, separators=(",",":")), flush=True)
+    return rows
+
 stats = {"calls":0,"retry":0,"format_fail":0}
 
 def translate_block(context, nodes, model):
     marked, mapping = make_stream(nodes)
     expected = TOKEN_RE.findall(marked)
     request = (
-        "Translate the following web text from English into Chinese.\n"
-        "READ-ONLY CONTEXT:\n" + context + "\n\n"
-        "MARKED_STREAM:\n" + marked
+        "Translate the following text from English into Chinese.\n"
+        "Keep every token beginning with __PL_ exactly unchanged and in the same order.\n"
+        "Return only the translated marked text.\n"
+        "English:\n" + marked + "\n"
+        "Chinese:"
     )
     stats["calls"] += 1
-    output, elapsed = chat(model, SYSTEM, request)
+    output, elapsed = chat(model, request)
     if TOKEN_RE.findall(output) != expected:
         stats["retry"] += 1
         stats["calls"] += 1
-        output2, elapsed2 = chat(model, RETRY_SYSTEM, request)
+        retry_request = (
+            "Translate the following text from English into Chinese.\n"
+            "CRITICAL: copy every __PL_ token exactly once and in exactly the same order.\n"
+            "Do not add explanations.\n"
+            "English:\n" + marked + "\n"
+            "Chinese:"
+        )
+        output2, elapsed2 = chat(model, retry_request)
         output, elapsed = output2, elapsed + elapsed2
 
     if TOKEN_RE.findall(output) != expected:
@@ -348,6 +380,7 @@ def main():
     },ensure_ascii=False), flush=True)
     model = load_model(model_info)
     try:
+        smoke = smoke_model(model)
         results = [run_site(site,url,model) for site,url in SITES]
     finally:
         unload()
@@ -356,7 +389,7 @@ def main():
         key: result[key]
         for key in ("site","blocks","marker_pass","protected_pass","structure_pass","duplicate_suspect","avg_ms","english_residue")
     } for result in results]
-    final = {"model":"LMT-60-0.6B","quantization":QUANT,"summary":compact,"stats":stats,"results":results}
+    final = {"model":"LMT-60-0.6B","quantization":QUANT,"smoke":smoke,"summary":compact,"stats":stats,"results":results}
     print("LMT_FINAL=" + json.dumps({"summary":compact,"stats":stats},ensure_ascii=False), flush=True)
     (OUT/"lmt-hybrid-results.json").write_text(json.dumps(final,ensure_ascii=False,indent=2),encoding="utf-8")
 
