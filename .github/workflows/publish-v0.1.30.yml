@@ -1,0 +1,84 @@
+name: Publish PageLingo v0.1.30
+
+on:
+  push:
+    branches:
+      - fix/github-font-size
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.event.head_commit.message == 'chore: publish v0.1.30'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      RELEASE_SHA: 1213fb6445c73d7f5fb2a361f537bbef12a4d3c2
+      RELEASE_TAG: v0.1.30
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify release commit
+        run: npm run verify
+
+      - name: Package XPI and checksums
+        shell: bash
+        run: |
+          npm run package
+          PACKAGE="$(find artifacts -maxdepth 1 -type f -name '*.zip' | head -n 1)"
+          test -n "$PACKAGE"
+          cp "$PACKAGE" artifacts/pagelingo-v0.1.30.xpi
+          (
+            cd artifacts
+            sha256sum pagelingo-v0.1.30.xpi > SHA256SUMS.txt
+          )
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > /tmp/release-notes.md <<'EOF'
+          PageLingo v0.1.30
+
+          First release candidate for private distribution.
+
+          Highlights:
+          - Local-first Firefox/Bergamot webpage translation
+          - Layout-preserving translation for dynamic and SPA pages
+          - Translation-only and bilingual display modes
+          - Site/language automatic translation rules
+          - Built-in and custom terminology protection
+          - Offline translation model packs
+          - Optional local image OCR and translation
+          - Optional Microsoft Translator, Google Cloud Translation, DeepL, Gemini, OpenRouter, OpenAI-compatible, LibreTranslate, and declarative Custom REST engines
+          - Custom REST JSON request bodies may be objects or arrays
+
+          Validation:
+          - TypeScript check passed
+          - 45/45 Vitest tests passed
+          - Production dependency audit: 0 vulnerabilities
+          - web-ext lint: 0 errors / 0 warnings / 0 notices
+          - Latest-Firefox + Selenium real GitHub regression passed
+
+          Release commit:
+          1213fb6445c73d7f5fb2a361f537bbef12a4d3c2
+          EOF
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$RELEASE_TAG"             artifacts/pagelingo-v0.1.30.xpi             artifacts/SHA256SUMS.txt             --repo "$GITHUB_REPOSITORY"             --target "$RELEASE_SHA"             --title "PageLingo v0.1.30"             --notes-file /tmp/release-notes.md
