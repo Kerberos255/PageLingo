@@ -66,7 +66,7 @@ jobs:
           curl -fsSL 'https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models-v2/900beaed-2dba-4a88-ad7c-852ec9e73f6a.zst' -o /tmp/lex.zst
           curl -fsSL 'https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models-v2/83278466-fec4-4944-a99d-c2372fa9de88.zst' -o /tmp/srcvocab.zst
           curl -fsSL 'https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models-v2/84236654-1b66-42fc-9ba2-74c37f27e5eb.zst' -o /tmp/trgvocab.zst
-          cat > /tmp/decompress.mjs <<'EOF'
+          cat > decompress.mjs <<'EOF'
           import { readFile, writeFile } from "node:fs/promises";
           import { decompress } from "fzstd";
           const assets = [
@@ -82,7 +82,7 @@ jobs:
             await writeFile(`bench-assets/${name}.bin`, out);
           }
           EOF
-          node /tmp/decompress.mjs
+          node decompress.mjs
 
           cat > bergamot-bench-worker.js <<'EOF'
           importScripts("/vendor/bergamot/bergamot-translator.js");
