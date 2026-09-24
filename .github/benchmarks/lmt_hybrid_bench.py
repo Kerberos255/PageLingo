@@ -20,9 +20,9 @@ QUANT = "Q4_K_M"
 TOKEN_RE = re.compile(r"__PL_[SEP][0-9]{4}__")
 SLOT_RE = re.compile(r"__PL_S([0-9]{4})__(.*?)__PL_E\1__", re.S)
 PROTECT_RE = re.compile(
-    r"https?://[^\\s<]+|"
-    r"\\b(?:OpenClaw|GitHub|Node[.]js|PowerShell|WebChat|WSL2|CLI|API|HTTP|HTTPS|JSON|YAML|npm|npx|Codex|Claude|DeepWiki|Docker|Nix|macOS|iOS|Android|Windows|Linux|Discord|iMessage|Slack|Teams|Telegram|WhatsApp)\\b|"
-    r"\\b[A-Za-z][A-Za-z0-9_.]*-[A-Za-z0-9_.-]+\\b"
+    r"https?://[^\s<]+|"
+    r"\b(?:OpenClaw|GitHub|Node[.]js|PowerShell|WebChat|WSL2|CLI|API|HTTP|HTTPS|JSON|YAML|npm|npx|Codex|Claude|DeepWiki|Docker|Nix|macOS|iOS|Android|Windows|Linux|Discord|iMessage|Slack|Teams|Telegram|WhatsApp)\b|"
+    r"\b[A-Za-z][A-Za-z0-9_.]*-[A-Za-z0-9_.-]+\b"
 )
 
 SYSTEM = """You are a precise machine-translation engine.
