@@ -1,0 +1,97 @@
+name: Qwen strict translation benchmark
+
+on:
+  push:
+    branches:
+      - fix/github-font-size
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    if: "${{ github.event.head_commit.message == 'test: qwen strict benchmark' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prepare corpus
+        run: |
+          cat > /tmp/corpus.json <<'EOF'
+          [
+            {"id":"ui","source":"Settings were saved successfully."},
+            {"id":"news","source":"The central bank kept interest rates unchanged, saying inflation had eased but remained above its target."},
+            {"id":"github","source":"This pull request fixes a race condition that could leave the cache in an inconsistent state after a failed retry."},
+            {"id":"docs","source":"If the server returns a 429 response, wait for the Retry-After interval before sending another request."},
+            {"id":"forum","source":"I thought the update would break everything, but honestly it runs way smoother than before."},
+            {"id":"game","source":"The old lighthouse keeper swears he saw blue fire dancing over the cliffs before the storm."},
+            {"id":"idiom","source":"That patch works in a pinch, but I wouldn't bet the farm on it."},
+            {"id":"html","source":"Click <strong>Save</strong> to keep your changes, or <a href=\"/docs\">read the documentation</a> for details."},
+            {"id":"product","source":"The app keeps your reading position in sync across devices, but it never uploads the contents of the pages you visit."},
+            {"id":"long","source":"After the migration finished, the dashboard looked normal at first. A few minutes later, however, several background jobs began retrying at once, which caused the queue to grow much faster than expected."}
+          ]
+          EOF
+
+      - name: Install and start LM Studio
+        shell: bash
+        run: |
+          curl -fsSL https://lmstudio.ai/install.sh | bash
+          echo "$HOME/.lmstudio/bin" >> "$GITHUB_PATH"
+          "$HOME/.lmstudio/bin/lms" daemon up
+          "$HOME/.lmstudio/bin/lms" server start --port 1234
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:1234/api/v1/models >/dev/null && exit 0
+            sleep 2
+          done
+          exit 1
+
+      - name: Write benchmark helper
+        shell: bash
+        run: |
+          cat > /tmp/strictbench.mjs <<'EOF'
+          import { readFile, writeFile } from "node:fs/promises";
+          const corpus=JSON.parse(await readFile("/tmp/corpus.json","utf8"));
+          const base="http://127.0.0.1:1234";
+          async function jfetch(url,init={}){const r=await fetch(url,init);if(!r.ok)throw new Error(`${r.status} ${await r.text()}`);return await r.json();}
+          async function download(repo){
+            const s=await jfetch(base+"/api/v1/models/download",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:repo,quantization:"Q4_K_M"})});
+            if(s.status!=="completed"&&s.status!=="already_downloaded"){
+              for(let i=0;i<300;i++){const x=await jfetch(base+"/api/v1/models/download/status/"+s.job_id);if(x.status==="completed")break;if(x.status==="failed")throw new Error("download failed");await new Promise(r=>setTimeout(r,1000));if(i===299)throw new Error("download timeout");}
+            }
+            for(let i=0;i<60;i++){const x=await jfetch(base+"/api/v1/models");const want=repo.includes("1.5B")?/1\.5b/i:/0\.5b/i;const m=(x.models||[]).find(v=>v.type==="llm"&&/qwen2\.5/i.test((v.key||"")+" "+(v.display_name||""))&&want.test((v.key||"")+" "+(v.display_name||"")));if(m)return m;await new Promise(r=>setTimeout(r,1000));}
+            throw new Error("model not indexed");
+          }
+          async function unload(){const x=await jfetch(base+"/api/v1/models");for(const m of x.models||[])for(const i of m.loaded_instances||[])await fetch(base+"/api/v1/models/unload",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({instance_id:i.id||i.instance_id})}).catch(()=>{});}
+          function tags(s){return [...s.matchAll(/<\/?[A-Za-z][^>]*>/g)].map(m=>m[0]);}
+          const prompt="You are a deterministic web-page translation engine. Translate only the human-readable English text to Simplified Chinese (zh-Hans). Use Simplified Chinese only. Do not infer, invent, or add facts, locations, organizations, names, or context that is not explicitly present in the source. Preserve every HTML tag, tag name, attribute, attribute value, URL, placeholder, code token, API identifier, and their order exactly. Preserve technical identifiers such as Retry-After unchanged. If the input contains no HTML tags, do not add any tags or Markdown. Do not add code fences, explanations, notes, or wrapper elements. Return only the translated text or translated HTML.";
+          async function run(label,repo){
+            await unload();const model=await download(repo);
+            const ld=await jfetch(base+"/api/v1/models/load",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:model.key,context_length:4096,flash_attention:false,offload_kv_cache_to_gpu:false})});
+            if(ld.status!=="loaded")throw new Error("load failed");
+            const rows=[];
+            for(const x of corpus){const t0=performance.now();const out=await jfetch(base+"/v1/chat/completions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:model.key,messages:[{role:"system",content:prompt},{role:"user",content:x.source}],temperature:0,max_tokens:384})});const output=(out.choices?.[0]?.message?.content||"").trim();rows.push({id:x.id,output,ms:performance.now()-t0,html_ok:JSON.stringify(tags(x.source))===JSON.stringify(tags(output))});}
+            const result={label,model:model.key,size_bytes:model.size_bytes,rows};console.log("STRICT_"+label.toUpperCase()+"="+JSON.stringify(result));await writeFile(`/tmp/${label}-strict.json`,JSON.stringify(result));await unload();
+          }
+          await run(process.argv[2],process.argv[3]);
+          EOF
+
+      - name: Qwen 0.5B strict
+        run: node /tmp/strictbench.mjs qwen05 https://huggingface.co/lmstudio-community/Qwen2.5-0.5B-Instruct-GGUF
+
+      - name: Qwen 1.5B strict
+        run: node /tmp/strictbench.mjs qwen15 https://huggingface.co/lmstudio-community/Qwen2.5-1.5B-Instruct-GGUF
+
+      - name: Cleanup
+        if: always()
+        run: |
+          lms server stop || true
+          lms unload --all || true
+          lms daemon down || true
