@@ -1,0 +1,117 @@
+name: LM Studio headless smoke
+
+on:
+  push:
+    branches:
+      - fix/github-font-size
+
+permissions:
+  contents: read
+
+jobs:
+  lmstudio-smoke:
+    if: "${{ github.event.head_commit.message == 'test: lmstudio headless smoke' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout PageLingo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install PageLingo dependencies
+        run: npm ci
+
+      - name: Install LM Studio llmster
+        shell: bash
+        run: |
+          curl -fsSL https://lmstudio.ai/install.sh | bash
+          echo "$HOME/.lmstudio/bin" >> "$GITHUB_PATH"
+          "$HOME/.lmstudio/bin/lms" --help >/dev/null
+
+      - name: Start llmster and download tiny Qwen
+        shell: bash
+        run: |
+          lms daemon up
+          yes | lms get qwen2.5-0.5b-instruct@q4_k_m --gguf
+          lms ls --llm --detailed
+
+      - name: Load model and start OpenAI-compatible server
+        shell: bash
+        run: |
+          lms load qwen2.5-0.5b-instruct --gpu off --context-length 2048 --identifier pagelingo-qwen --yes
+          lms server start --port 1234
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:1234/v1/models >/tmp/lm-models.json; then
+              cat /tmp/lm-models.json
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "LM Studio server did not become ready" >&2
+          exit 1
+
+      - name: Direct OpenAI-compatible inference smoke
+        shell: bash
+        run: |
+          curl -fsS http://127.0.0.1:1234/v1/chat/completions             -H 'Content-Type: application/json'             -d '{
+              "model":"pagelingo-qwen",
+              "messages":[
+                {"role":"system","content":"Translate the user HTML from English to Simplified Chinese. Preserve every HTML tag exactly. Output only translated HTML."},
+                {"role":"user","content":"Hello <strong>world</strong>"}
+              ],
+              "temperature":0
+            }' | tee /tmp/lm-response.json
+          node -e "const x=require('/tmp/lm-response.json');const c=x.choices?.[0]?.message?.content;if(!c)process.exit(2);console.log('LM_STUDIO_DIRECT=',c)"
+
+      - name: PageLingo live LM Studio integration
+        shell: bash
+        run: |
+          cat > tests/lmstudio-live.test.ts <<'EOF'
+          import { describe, expect, it } from "vitest";
+          import { translateWithExternalEngine } from "../src/providers/external-translation";
+          import type { TranslationEngineConfig } from "../src/shared/translation-engine-settings";
+
+          describe("LM Studio live OpenAI-compatible smoke", () => {
+            it("translates HTML through a real headless LM Studio model", async () => {
+              const config: TranslationEngineConfig = {
+                id: "lmstudio-live",
+                name: "LM Studio Qwen smoke",
+                type: "openai-compatible",
+                enabled: true,
+                baseUrl: "http://127.0.0.1:1234/v1",
+                apiKey: "",
+                model: "pagelingo-qwen",
+                region: "",
+                prompt: "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. Output only the translated HTML. Do not use Markdown or add explanations.",
+                headersJson: "",
+                bodyJson: "",
+                responsePath: "",
+              };
+
+              const translated = await translateWithExternalEngine(config, {
+                html: "Hello <strong>world</strong>",
+                sourceLanguage: "en",
+                targetLanguage: "zh-Hans",
+              });
+
+              console.log("PAGELINGO_LMSTUDIO_RESULT=", translated);
+              expect(translated).toContain("<strong>");
+              expect(translated).toContain("</strong>");
+              expect(translated).not.toBe("Hello <strong>world</strong>");
+            }, 120_000);
+          });
+          EOF
+          npx vitest run tests/lmstudio-live.test.ts --reporter=verbose
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          lms server stop || true
+          lms unload --all || true
+          lms daemon down || true
