@@ -341,37 +341,55 @@ jobs:
               residue=[w for w in words if w.lower() not in protected]
               return len(residue)
 
-          unload();qm=download_qwen();qkey=load_qwen(qm);berg=Bergamot()
           results=[]
-          variants=["bergamot_whole","bergamot_atomic","qwen_whole","qwen_atomic"]
+
+          def run_variant(site,url,variant,berg=None,qkey=None):
+              d=browser()
+              try:
+                  d.get(url);WebDriverWait(d,40).until(lambda x:x.execute_script("return document.readyState")=="complete");time.sleep(5)
+                  items=d.execute_script(COLLECT)
+                  if len(items)<6:raise RuntimeError(f"too few blocks {site} {variant}: {len(items)}")
+                  rows=[];total_ms=0
+                  for item in items:
+                      if variant=="bergamot_whole":
+                          outs,ms=berg.translate([item["html"]],True);output=outs[0];ap=d.execute_script(APPLY_HTML,item["id"],output);arch_ok=ap.get("fingerprint")==item["fingerprint"]
+                      elif variant=="bergamot_atomic":
+                          texts=[x["text"] for x in item["nodes"]];outs,ms=berg.translate(texts,False) if texts else ([],0);ap=d.execute_script(APPLY_NODES,item["id"],outs);arch_ok=bool(ap.get("count_ok")) and ap.get("fingerprint")==item["fingerprint"]
+                      elif variant=="qwen_whole":
+                          output,ms,tok_ok=qwen_whole(item["html"],qkey);ap=d.execute_script(APPLY_HTML,item["id"],output);arch_ok=tok_ok and ap.get("fingerprint")==item["fingerprint"]
+                      else:
+                          unit=build_atomic(item["html"],item["text"]);output,ms=qwen_atomic(unit,qkey);ap=d.execute_script(APPLY_HTML,item["id"],output);arch_ok=ap.get("fingerprint")==item["fingerprint"]
+                      total_ms+=ms
+                      rows.append({"source":item["text"],"translated":ap.get("text"),"structure_ok":bool(arch_ok),"ms":round(ms,1),"english_residue":english_ratio(ap.get("text") or "")})
+                  d.save_screenshot(str(OUT/f"{site}-{variant}.png"))
+                  try:d.get_full_page_screenshot_as_file(str(OUT/f"full-{site}-{variant}.png"))
+                  except Exception as e:print("FULL_SCREENSHOT_WARN",variant,repr(e),flush=True)
+                  summary={"site":site,"variant":variant,"blocks":len(rows),"structure_pass":sum(x["structure_ok"] for x in rows),"avg_ms":round(total_ms/len(rows),1),"english_residue":sum(x["english_residue"] for x in rows),"rows":rows}
+                  results.append(summary);print("ARCH_RESULT="+json.dumps(summary,ensure_ascii=False,separators=(",",":")),flush=True)
+              finally:
+                  d.quit()
+
+          # Download the Qwen weights once, but keep the model unloaded while Bergamot runs.
+          unload();qm=download_qwen();unload()
+
+          # Phase 1: Firefox/Bergamot only.
+          berg=Bergamot()
+          try:
+              berg.translate(["Warm up."],False)
+              for site,url in SITES:
+                  run_variant(site,url,"bergamot_whole",berg=berg)
+                  run_variant(site,url,"bergamot_atomic",berg=berg)
+          finally:
+              berg.close()
+
+          # Phase 2: Qwen only.
+          qkey=load_qwen(qm)
           try:
               for site,url in SITES:
-                  for variant in variants:
-                      d=browser()
-                      try:
-                          d.get(url);WebDriverWait(d,40).until(lambda x:x.execute_script("return document.readyState")=="complete");time.sleep(5)
-                          items=d.execute_script(COLLECT)
-                          if len(items)<6:raise RuntimeError(f"too few blocks {site} {variant}: {len(items)}")
-                          rows=[];total_ms=0
-                          for item in items:
-                              if variant=="bergamot_whole":
-                                  outs,ms=berg.translate([item["html"]],True);output=outs[0];ap=d.execute_script(APPLY_HTML,item["id"],output);arch_ok=ap.get("fingerprint")==item["fingerprint"]
-                              elif variant=="bergamot_atomic":
-                                  texts=[x["text"] for x in item["nodes"]];outs,ms=berg.translate(texts,False) if texts else ([],0);ap=d.execute_script(APPLY_NODES,item["id"],outs);arch_ok=bool(ap.get("count_ok")) and ap.get("fingerprint")==item["fingerprint"]
-                              elif variant=="qwen_whole":
-                                  output,ms,tok_ok=qwen_whole(item["html"],qkey);ap=d.execute_script(APPLY_HTML,item["id"],output);arch_ok=tok_ok and ap.get("fingerprint")==item["fingerprint"]
-                              else:
-                                  unit=build_atomic(item["html"],item["text"]);output,ms=qwen_atomic(unit,qkey);ap=d.execute_script(APPLY_HTML,item["id"],output);arch_ok=ap.get("fingerprint")==item["fingerprint"]
-                              total_ms+=ms
-                              rows.append({"source":item["text"],"translated":ap.get("text"),"structure_ok":bool(arch_ok),"ms":round(ms,1),"english_residue":english_ratio(ap.get("text") or "")})
-                          d.save_screenshot(str(OUT/f"{site}-{variant}.png"))
-                          try:d.get_full_page_screenshot_as_file(str(OUT/f"full-{site}-{variant}.png"))
-                          except Exception as e:print("FULL_SCREENSHOT_WARN",variant,repr(e),flush=True)
-                          summary={"site":site,"variant":variant,"blocks":len(rows),"structure_pass":sum(x["structure_ok"] for x in rows),"avg_ms":round(total_ms/len(rows),1),"english_residue":sum(x["english_residue"] for x in rows),"rows":rows}
-                          results.append(summary);print("ARCH_RESULT="+json.dumps(summary,ensure_ascii=False,separators=(",",":")),flush=True)
-                      finally:d.quit()
+                  run_variant(site,url,"qwen_whole",qkey=qkey)
+                  run_variant(site,url,"qwen_atomic",qkey=qkey)
           finally:
-              berg.close();unload()
+              unload()
 
           compact=[{k:x[k] for k in ("site","variant","blocks","structure_pass","avg_ms","english_residue")} for x in results]
           print("ARCH_SUMMARY="+json.dumps(compact,ensure_ascii=False),flush=True)
