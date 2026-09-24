@@ -34,6 +34,13 @@ function apiLanguage(code: string, type: TranslationEngineConfig["type"]): strin
   return code;
 }
 
+function deepLLanguage(code: string, direction: "source" | "target"): string {
+  if (code === "zh-Hans") return direction === "target" ? "ZH-HANS" : "ZH";
+  if (code === "zh-Hant") return direction === "target" ? "ZH-HANT" : "ZH";
+  if (code === "en" && direction === "target") return "EN-US";
+  return code.toUpperCase();
+}
+
 function tagSkeleton(html: string): string[] {
   return Array.from(html.matchAll(/<\s*(\/?)\s*([a-zA-Z0-9-]+)(?:\s[^>]*)?>/g), (match) => `${match[1] ? "/" : ""}${match[2]?.toLowerCase()}`);
 }
@@ -167,6 +174,38 @@ async function translateGoogle(config: TranslationEngineConfig, request: Externa
   return html;
 }
 
+async function translateDeepL(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
+  const key = requireApiKey(config);
+  const configuredBase = trimSlash(config.baseUrl);
+  const defaultBase = key.endsWith(":fx") ? "https://api-free.deepl.com/v2" : "https://api.deepl.com/v2";
+  const usesOfficialDefault = !configuredBase
+    || configuredBase === "https://api.deepl.com/v2"
+    || configuredBase === "https://api-free.deepl.com/v2";
+  const base = usesOfficialDefault
+    ? requireBaseUrl({ ...config, baseUrl: "" }, defaultBase)
+    : requireBaseUrl(config, defaultBase);
+  const endpoint = base.endsWith("/translate") ? base : `${base}/translate`;
+  const body: Record<string, unknown> = {
+    text: [request.html],
+    target_lang: deepLLanguage(request.targetLanguage, "target"),
+    tag_handling: "html",
+  };
+  if (request.sourceLanguage && request.sourceLanguage !== "auto") {
+    body.source_lang = deepLLanguage(request.sourceLanguage, "source");
+  }
+  const result = await jsonRequest(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `DeepL-Auth-Key ${key}`,
+    },
+    body: JSON.stringify(body),
+  }) as { translations?: Array<{ text?: string }> };
+  const html = result.translations?.[0]?.text;
+  if (typeof html !== "string") throw new Error("DeepL API 返回格式异常");
+  return html;
+}
+
 async function translateLibre(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
   const base = requireBaseUrl(config, "https://libretranslate.com");
   const endpoint = base.endsWith("/translate") ? base : `${base}/translate`;
@@ -229,14 +268,17 @@ async function translateGemini(config: TranslationEngineConfig, request: Externa
   return stripCodeFence(text);
 }
 
-function parseObjectJson(value: string, label: string): Record<string, unknown> {
+function parseJson(value: string, label: string): unknown {
   if (!value.trim()) return {};
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(value);
+    return JSON.parse(value);
   } catch {
     throw new Error(`${label} 不是有效 JSON`);
   }
+}
+
+function parseObjectJson(value: string, label: string): Record<string, unknown> {
+  const parsed = parseJson(value, label);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${label} 必须是 JSON 对象`);
   return parsed as Record<string, unknown>;
 }
@@ -286,7 +328,7 @@ async function translateCustomRest(config: TranslationEngineConfig, request: Ext
   const headersValue = replaceTemplate(rawHeaders, values) as Record<string, unknown>;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   for (const [key, value] of Object.entries(headersValue)) if (typeof value === "string") headers[key] = value;
-  const bodyTemplate = parseObjectJson(config.bodyJson, "请求体模板");
+  const bodyTemplate = parseJson(config.bodyJson, "请求体模板");
   const result = await jsonRequest(endpoint, {
     method: "POST",
     headers,
@@ -305,6 +347,7 @@ export async function translateWithExternalEngine(
   switch (config.type) {
     case "microsoft": translated = await translateMicrosoft(config, request); break;
     case "google": translated = await translateGoogle(config, request); break;
+    case "deepl": translated = await translateDeepL(config, request); break;
     case "libretranslate": translated = await translateLibre(config, request); break;
     case "gemini": translated = await translateGemini(config, request); break;
     case "openrouter":

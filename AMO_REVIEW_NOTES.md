@@ -37,9 +37,9 @@ See `PRIVACY.md`.
 
 ## External engines
 
-Supported presets are Microsoft Translator, Google Cloud Translation, Gemini, OpenRouter, OpenAI-compatible endpoints, LibreTranslate, and a constrained custom REST integration.
+Supported presets are Microsoft Translator, Google Cloud Translation, DeepL API, Gemini, OpenRouter, OpenAI-compatible endpoints, LibreTranslate, and a constrained custom REST integration.
 
-Custom REST accepts declarative JSON headers/body templates and a JSON response path. It does not execute user-provided JavaScript.
+Custom REST accepts declarative JSON header templates, JSON body templates (object or array), and a JSON response path. It does not execute user-provided JavaScript.
 
 Translated HTML is structure-checked and is then parsed through PageLingo's allowlist renderer, which strips unapproved tags/attributes and restores link destinations from the source DOM.
 

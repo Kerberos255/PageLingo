@@ -3,6 +3,7 @@ export const LOCAL_TRANSLATION_ENGINE_ID = "firefox-local";
 export type ExternalTranslationEngineType =
   | "microsoft"
   | "google"
+  | "deepl"
   | "gemini"
   | "openrouter"
   | "openai-compatible"
@@ -32,6 +33,7 @@ export interface TranslationEngineState {
 const ENGINE_TYPES = new Set<ExternalTranslationEngineType>([
   "microsoft",
   "google",
+  "deepl",
   "gemini",
   "openrouter",
   "openai-compatible",

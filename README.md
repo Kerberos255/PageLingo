@@ -11,7 +11,7 @@ PageLingo is a local-first Firefox translation extension built to preserve the s
 - **Offline language packs** — download supported Firefox translation models and use them without a translation API.
 - **Terminology protection** — built-in proper names are protected before translation; custom terminology collections can preserve names or specify preferred translations.
 - **Optional image translation** — local PP-OCRv5 + ONNX Runtime Web OCR with translated text rendered over the original image.
-- **Optional external engines** — Microsoft Translator, Google Cloud Translation, Gemini, OpenRouter, OpenAI-compatible APIs, LibreTranslate, and a constrained custom REST integration.
+- **Optional external engines** — Microsoft Translator, Google Cloud Translation, DeepL API, Gemini, OpenRouter, OpenAI-compatible APIs, LibreTranslate, and a constrained custom REST integration.
 
 ## Privacy
 

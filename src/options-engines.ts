@@ -39,6 +39,7 @@ interface EnginePreset {
 const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
   microsoft: { name: "Microsoft Translator", baseUrl: "https://api.cognitive.microsofttranslator.com" },
   google: { name: "Google Cloud Translation", baseUrl: "https://translation.googleapis.com/language/translate/v2" },
+  deepl: { name: "DeepL API", baseUrl: "https://api.deepl.com/v2" },
   gemini: { name: "Gemini API", baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-3.8-flash" },
   openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free" },
   "openai-compatible": { name: "OpenAI Compatible", baseUrl: "", model: "" },
@@ -55,6 +56,7 @@ const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
 const TYPE_LABELS: Record<ExternalTranslationEngineType, string> = {
   microsoft: "Microsoft Translator",
   google: "Google Cloud Translation",
+  deepl: "DeepL API",
   gemini: "Gemini API",
   openrouter: "OpenRouter",
   "openai-compatible": "OpenAI Compatible",
