@@ -135,28 +135,36 @@ jobs:
                   print("UNLOAD_WARN", repr(e), flush=True)
 
           def download_model(repo, size_re):
-              start = api("/api/v1/models/download", "POST", {"model": repo, "quantization": "Q4_K_M"})
-              if start.get("status") not in ("completed", "already_downloaded"):
-                  job = start.get("job_id")
-                  if not job:
-                      raise RuntimeError("No download job: " + json.dumps(start))
-                  for _ in range(360):
-                      s = api("/api/v1/models/download/status/" + job)
-                      if s.get("status") == "completed":
-                          break
-                      if s.get("status") == "failed":
-                          raise RuntimeError("Download failed: " + json.dumps(s))
-                      time.sleep(1)
-                  else:
-                      raise RuntimeError("Download timeout")
-              for _ in range(90):
-                  data = api("/api/v1/models")
-                  for model in data.get("models", []):
-                      desc = f"{model.get('key','')} {model.get('display_name','')}"
-                      if model.get("type") == "llm" and "qwen3.5" in desc.lower() and size_re.search(desc):
-                          return model
-                  time.sleep(1)
-              raise RuntimeError("Downloaded model not indexed")
+              last_error = None
+              for attempt in range(1, 5):
+                  try:
+                      start = api("/api/v1/models/download", "POST", {"model": repo, "quantization": "Q4_K_M"})
+                      if start.get("status") not in ("completed", "already_downloaded"):
+                          job = start.get("job_id")
+                          if not job:
+                              raise RuntimeError("No download job: " + json.dumps(start))
+                          for _ in range(420):
+                              s = api("/api/v1/models/download/status/" + job)
+                              if s.get("status") == "completed":
+                                  break
+                              if s.get("status") == "failed":
+                                  raise RuntimeError("Download failed: " + json.dumps(s))
+                              time.sleep(1)
+                          else:
+                              raise RuntimeError("Download timeout")
+                      for _ in range(120):
+                          data = api("/api/v1/models")
+                          for model in data.get("models", []):
+                              desc = f"{model.get('key','')} {model.get('display_name','')}"
+                              if model.get("type") == "llm" and "qwen3.5" in desc.lower() and size_re.search(desc):
+                                  return model
+                          time.sleep(1)
+                      raise RuntimeError("Downloaded model not indexed")
+                  except Exception as e:
+                      last_error = e
+                      print("DOWNLOAD_RETRY", repo, "attempt", attempt, "error", repr(e), flush=True)
+                      time.sleep(min(5 * attempt, 15))
+              raise RuntimeError(f"Model download failed after retries: {last_error}")
 
           def load_model(model):
               result = api("/api/v1/models/load", "POST", {
