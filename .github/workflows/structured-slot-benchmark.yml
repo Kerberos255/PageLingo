@@ -225,7 +225,7 @@ jobs:
                   line=raw.strip()
                   if not line:
                       continue
-                  m=re.match(r"^S(\\d+)\\s*[=：:]\\s*(.*)$",line,re.I)
+                  m=re.match(r"^S([0-9]+)[ \\t]*[=：:][ \\t]*(.*)$",line,re.I)
                   if not m:
                       extras.append(line)
                       continue
