@@ -200,18 +200,25 @@ jobs:
               text = "\n".join(payload_parts)
               expected = MARKER_RE.findall(text)
               t0 = time.perf_counter()
-              result = api("/v1/chat/completions", "POST", {
+              result = api("/api/v1/chat", "POST", {
                   "model": model_key,
-                  "messages": [
-                      {"role": "system", "content": SYSTEM},
-                      {"role": "user", "content": "/no_think\n" + text},
-                  ],
+                  "input": text,
+                  "system_prompt": SYSTEM,
                   "temperature": 0,
-                  "max_tokens": 2048,
-                  "chat_template_kwargs": {"enable_thinking": False},
+                  "max_output_tokens": 2048,
+                  "reasoning": "off",
+                  "context_length": 8192,
+                  "store": False,
               }, timeout=180)
               ms = (time.perf_counter() - t0) * 1000
-              output = (result.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+              messages = [x.get("content", "") for x in result.get("output", []) if x.get("type") == "message"]
+              output = "\n".join(messages).strip()
+              stats = result.get("stats", {})
+              print("NATIVE_STATS", model_key, json.dumps({
+                  "reasoning_tokens": stats.get("reasoning_output_tokens"),
+                  "tokens_per_second": stats.get("tokens_per_second"),
+                  "output_tokens": stats.get("total_output_tokens"),
+              }), flush=True)
               got = MARKER_RE.findall(output)
               return output, expected, got, ms
 
