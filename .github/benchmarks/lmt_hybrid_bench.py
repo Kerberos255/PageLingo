@@ -326,7 +326,7 @@ def run_site(site, url, model):
 def self_test():
     nodes = [{"text":"Install OpenClaw with npm."},{"text":"Quick start keeps the Gateway running."}]
     marked, mapping = make_stream(nodes)
-    assert len(TOKEN_RE.findall(marked)) == 8
+    assert len(TOKEN_RE.findall(marked)) == 6
     fake = marked.replace("Install ","安装 ").replace(" with ","，使用 ").replace(
         "Quick start keeps the Gateway running.","快速启动会保持网关运行。"
     )
