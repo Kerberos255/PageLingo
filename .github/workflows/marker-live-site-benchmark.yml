@@ -46,6 +46,7 @@ jobs:
           curl -fsSL https://lmstudio.ai/install.sh | bash
           echo "$HOME/.lmstudio/bin" >> "$GITHUB_PATH"
           "$HOME/.lmstudio/bin/lms" daemon up
+          sleep 5
           "$HOME/.lmstudio/bin/lms" server start --port 1234
           for i in $(seq 1 45); do
             if curl -fsS http://127.0.0.1:1234/api/v1/models >/dev/null; then
