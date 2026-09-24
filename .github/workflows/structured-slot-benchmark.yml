@@ -84,11 +84,12 @@ jobs:
           ]
 
           SYSTEM="""You are a deterministic website translation engine.
-          Translate each value in the segments object from English to fluent, concise Simplified Chinese.
-          Use context only to understand meaning and terminology.
+          Translate each numbered English segment into fluent, concise Simplified Chinese.
+          Use CONTEXT only to understand meaning and terminology.
           Preserve each segment's meaning and tone; do not add facts or omit information.
           Do not translate product names, commands, URLs, version numbers, API names, CLI flags, or code identifiers.
-          Return only the required JSON object. Never merge, split, add, remove, or rename segment keys."""
+          Output exactly one single-line result per input segment using the exact form S0=translation, S1=translation, and so on.
+          Keep every S index exactly once and in the same order. Output no Markdown, bullets, explanations, or extra lines."""
 
           def api(path,method="GET",payload=None,timeout=240):
               r=requests.request(method,BASE+path,json=payload,timeout=timeout)
@@ -217,52 +218,48 @@ jobs:
           return {found:true,count_ok:true,structure_ok:fingerprint(el)===expectedFingerprint,text:(el.innerText||"").trim().replace(/\s+/g," ")};
           """
 
-          def parse_json_array(content,n):
-              text=content.strip()
-              fence=chr(96)*3
-              if text.startswith(fence):
-                  lines=text.splitlines()
-                  if lines and lines[0].strip().lower() in (fence,fence+"json"):
-                      lines=lines[1:]
-                  if lines and lines[-1].strip()==fence:
-                      lines=lines[:-1]
-                  text="\n".join(lines).strip()
-              try:
-                  parsed=json.loads(text)
-              except Exception:
+          def parse_indexed_lines(content,n):
+              rows={}
+              extras=[]
+              for raw in content.strip().splitlines():
+                  line=raw.strip()
+                  if not line:
+                      continue
+                  m=re.match(r"^S(\\d+)\\s*[=：:]\\s*(.*)$",line,re.I)
+                  if not m:
+                      extras.append(line)
+                      continue
+                  idx=int(m.group(1))
+                  if idx in rows:
+                      return None
+                  value=m.group(2).strip()
+                  if len(value)>=2 and value[0]==value[-1] and value[0] in ('"',"'"):
+                      value=value[1:-1].strip()
+                  rows[idx]=value
+              if extras:
                   return None
-              candidates=[]
-              if isinstance(parsed,list) and all(isinstance(x,str) for x in parsed):
-                  candidates.append(parsed)
-              if isinstance(parsed,dict) and isinstance(parsed.get("segments"),list):
-                  candidates.append(parsed["segments"])
-              if isinstance(parsed,list) and len(parsed)==1 and isinstance(parsed[0],dict) and isinstance(parsed[0].get("segments"),list):
-                  candidates.append(parsed[0]["segments"])
-              for arr in candidates:
-                  if len(arr)==n and all(isinstance(x,str) for x in arr):
-                      return arr
-              return None
+              if set(rows.keys())!=set(range(n)):
+                  return None
+              if any(not rows[i] for i in range(n)):
+                  return None
+              return [rows[i] for i in range(n)]
 
           def translate_group(model,context,texts):
-              numbered="\n".join(f"{i+1}. {text}" for i,text in enumerate(texts))
-              base_input=f"CONTEXT:\n{context}\n\nSEGMENTS TO TRANSLATE:\n{numbered}"
+              numbered="\\n".join(f"S{i}: {text}" for i,text in enumerate(texts))
+              base_input=f"CONTEXT:\\n{context}\\n\\nSEGMENTS:\\n{numbered}"
               total_ms=0.0
               last_content=""
               stats_log=[]
               for attempt in range(2):
-                  instruction=(
-                      "Return ONLY a valid JSON array of exactly "
-                      + str(len(texts))
-                      + " translated strings, in the same order as the input segments. "
-                      + "No object keys, no Markdown, no commentary.\n"
-                      + base_input
-                  )
-                  if attempt:
+                  if attempt==0:
+                      instruction=base_input
+                  else:
                       instruction=(
-                          "Your previous response was invalid. "
-                          "Return ONLY the JSON array now. Exactly "
+                          "FORMAT RETRY: output exactly "
                           + str(len(texts))
-                          + " strings, same order.\n"
+                          + " lines and nothing else. Use S0=translation through S"
+                          + str(len(texts)-1)
+                          + "=translation.\\n\\n"
                           + base_input
                       )
                   t0=time.perf_counter()
@@ -271,7 +268,7 @@ jobs:
                       "input":instruction,
                       "system_prompt":SYSTEM,
                       "temperature":0,
-                      "max_output_tokens":700,
+                      "max_output_tokens":600,
                       "reasoning":"off",
                       "context_length":8192,
                       "store":False
@@ -279,7 +276,7 @@ jobs:
                   ms=(time.perf_counter()-t0)*1000
                   total_ms+=ms
                   messages=[x.get("content","") for x in r.get("output",[]) if x.get("type")=="message"]
-                  content="\n".join(messages).strip()
+                  content="\\n".join(messages).strip()
                   last_content=content
                   stats=r.get("stats",{})
                   stats_log.append({
@@ -287,10 +284,10 @@ jobs:
                       "output_tokens":stats.get("total_output_tokens"),
                       "tokens_per_second":stats.get("tokens_per_second")
                   })
-                  parsed=parse_json_array(content,len(texts))
+                  parsed=parse_indexed_lines(content,len(texts))
                   if parsed is not None:
                       return parsed,total_ms,attempt,stats_log
-              raise RuntimeError(f"invalid JSON array after retry; last={last_content[:500]!r}; stats={stats_log!r}")
+              raise RuntimeError(f"invalid indexed lines after retry; last={last_content[:500]!r}; stats={stats_log!r}")
 
           def translate(model,context,nodes):
               all_out=[]; total_ms=0.0; retries=0; stats=[]
