@@ -83,8 +83,8 @@ jobs:
           await run(process.argv[2],process.argv[3]);
           EOF
 
-      - name: Qwen 0.5B strict
-        run: node /tmp/strictbench.mjs qwen05 https://huggingface.co/lmstudio-community/Qwen2.5-0.5B-Instruct-GGUF
+      - name: Skip Qwen 0.5B (already measured)
+        run: echo "Qwen 0.5B strict result already captured in run 35962388369"
 
       - name: Qwen 1.5B strict
         run: node /tmp/strictbench.mjs qwen15 https://huggingface.co/lmstudio-community/Qwen2.5-1.5B-Instruct-GGUF
