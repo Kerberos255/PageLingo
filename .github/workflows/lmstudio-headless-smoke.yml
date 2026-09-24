@@ -98,6 +98,7 @@ jobs:
         shell: bash
         run: |
           cat > tests/lmstudio-live.test.ts <<'EOF'
+          // @vitest-environment node
           import { describe, expect, it } from "vitest";
           import { translateWithExternalEngine } from "../src/providers/external-translation";
           import type { TranslationEngineConfig } from "../src/shared/translation-engine-settings";
