@@ -61,13 +61,13 @@ button.addEventListener('pointerenter',()=>{
     document.body.append(tip);
   },80);
 });
-let n=0;
-const churn=setInterval(()=>{
-  document.body.classList.toggle('pulse');
-  button.classList.toggle('pulse');
-  n++;
-  if(n>=10000){clearInterval(churn);window.__churnDone=true;}
-},0);
+window.__runChurn=()=>{
+  for(let n=0;n<10000;n++){
+    document.body.classList.toggle('pulse');
+    button.classList.toggle('pulse');
+  }
+  window.__churnDone=true;
+};
 </script>
 </body>
 </html>"""
@@ -266,7 +266,6 @@ def main() -> None:
         fixture_handle = driver.current_window_handle
         driver.get(fixture_url)
         WebDriverWait(driver, 20).until(lambda d: d.execute_script("return document.readyState") == "complete")
-        WebDriverWait(driver, 20).until(lambda d: d.execute_script("return window.__churnDone === true"))
         before_requests = TranslationHandler.request_count
         result = translate_tab(driver, extension_handle, fixture_url, timeout=30)
         if not result.get("ok") or (result.get("value") or {}).get("ok") is not True:
@@ -274,12 +273,25 @@ def main() -> None:
         driver.switch_to.window(fixture_handle)
         if not page_responsive(driver):
             raise AssertionError("Dynamic fixture became unresponsive after translation")
+
+        # Stress the translated page with the kind of high-frequency class churn used by
+        # React/animation-heavy UIs. A translation observer must not turn these cosmetic
+        # mutations into another translation pass.
+        churn_before = TranslationHandler.request_count
+        driver.execute_script("window.__runChurn();")
+        WebDriverWait(driver, 5).until(lambda d: d.execute_script("return window.__churnDone === true"))
         time.sleep(1)
+        churn_delta = TranslationHandler.request_count - churn_before
+        if churn_delta > 5:
+            raise AssertionError(f"Cosmetic class churn caused translation request storm: {churn_delta}")
+        if not page_responsive(driver):
+            raise AssertionError("Dynamic fixture became unresponsive after class churn")
+
         request_delta = TranslationHandler.request_count - before_requests
         if request_delta > 200:
             raise AssertionError(f"Dynamic fixture caused translation request storm: {request_delta}")
         driver.save_screenshot(str(ARTIFACTS / "dynamic-ui-after.png"))
-        print("Dynamic UI fixture:", {"requests": request_delta, "elapsed": result["elapsed"]})
+        print("Dynamic UI fixture:", {"requests": request_delta, "churnRequests": churn_delta, "elapsed": result["elapsed"]})
 
         # 2) Real OpenClaw docs: screenshot and ensure temporary width guard is released.
         driver.switch_to.new_window("tab")
