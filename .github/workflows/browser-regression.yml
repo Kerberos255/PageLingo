@@ -51,6 +51,11 @@ jobs:
           test -n "$PACKAGE"
           cp "$PACKAGE" artifacts/pagelingo-browser-regression.xpi
 
+      - name: Install CJK fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+
       - name: Setup Firefox
         uses: browser-actions/setup-firefox@v1
         with:
