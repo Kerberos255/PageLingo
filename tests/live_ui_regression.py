@@ -17,7 +17,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 OPENCLAW_URL = "https://docs.openclaw.ai/start/getting-started"
 CLAUDE_URL = "https://claude.ai/new"
-ADDON_ID = "pagelingo@local"
+ADDON_ID = "pagelingo@kerberos255"
 ARTIFACTS = Path("artifacts")
 ARTIFACTS.mkdir(exist_ok=True)
 
