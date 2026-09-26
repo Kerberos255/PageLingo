@@ -329,7 +329,7 @@ def main() -> None:
         driver.get(CLAUDE_URL)
         WebDriverWait(driver, 60).until(lambda d: d.execute_script("return document.readyState") in ("interactive", "complete"))
         current_url = driver.current_url
-        driver.save_screenshot(str(ARTIFACTS / "claude-before.png"))
+        try:\n            driver.save_screenshot(str(ARTIFACTS / "claude-before.png"))\n        except Exception as error:\n            print("CLAUDE_BEFORE_SCREENSHOT_WARNING=", repr(error))
         before_requests = TranslationHandler.request_count
         result = translate_tab(driver, extension_handle, "https://claude.ai/", timeout=45)
         if not result.get("ok"):
@@ -346,7 +346,7 @@ def main() -> None:
         request_delta = TranslationHandler.request_count - before_requests
         if request_delta > 800:
             raise AssertionError(f"Claude caused translation request storm: {request_delta}")
-        driver.save_screenshot(str(ARTIFACTS / "claude-after.png"))
+        try:\n            driver.save_screenshot(str(ARTIFACTS / "claude-after.png"))\n        except Exception as error:\n            print("CLAUDE_AFTER_SCREENSHOT_WARNING=", repr(error))
         print("Claude smoke:", {"url": current_url, "requests": request_delta, "elapsed": result["elapsed"]})
 
         print("LIVE_UI_REGRESSION=PASS")
