@@ -4,7 +4,7 @@ import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, normalizeDisplayMode } from "./shared/settings";
 import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint } from "./core/rich-segment";
-import { freezeNavigationLayout, restoreNavigationLayout } from "./core/navigation-layout";
+import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint, restoreNavigationLayout } from "./core/navigation-layout";
 var translator = null;
 var imageOverlays = new Map();
 var activeImageOverlay = null;
@@ -248,9 +248,15 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     });
     activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
     activeTranslationTargetLanguage = normalizedTarget;
-    const count = await translator.translateAll();
-    translator.observe();
-    return count;
+    let count = 0;
+    try {
+        count = await translator.translateAll();
+        translator.observe();
+        return count;
+    }
+    finally {
+        if (settings.displayMode === "translation") releaseNavigationLayoutAfterPaint();
+    }
 }
 function normalizeAbsoluteUrl(value) {
     try {
@@ -790,6 +796,7 @@ browser.storage.onChanged.addListener((changes, areaName) => {
         stopRelativeTimeLocalization();
     }
     translator.setDisplayMode(mode);
+    if (mode === "translation") releaseNavigationLayoutAfterPaint();
 });
 async function runAutoTranslate(generation) {
     if (window.top !== window || generation !== autoTranslateGeneration)
@@ -915,7 +922,12 @@ async function rescanAfterRouteChange(generation) {
             freezeNavigationLayout(false);
             if (activeTranslationTargetLanguage) localizeRelativeTimeElements(activeTranslationTargetLanguage, document);
         }
-        await translator.translateAll(document.body);
+        try {
+            await translator.translateAll(document.body);
+        }
+        finally {
+            if (settings.displayMode === "translation") releaseNavigationLayoutAfterPaint();
+        }
     } catch (error) {
         console.warn("[PageLingo] SPA translation rescan failed", error);
     }
