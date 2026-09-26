@@ -2,7 +2,7 @@
 import { collectTranslationRoots, findTranslationRoot, isGeneratedNode } from "./dom-policy";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
-import { freezeNavigationLayout } from "./navigation-layout";
+import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./navigation-layout";
 
 export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[] }
 function translatedPlainText(_doc, html) {
@@ -261,10 +261,6 @@ export class PageTranslator {
         if (this.#observer || !this.#doc.body)
             return;
         this.#observer = new MutationObserver((mutations) => {
-            // SPA frameworks may replace navigation items after the initial page pass.
-            // Freeze new navigation slots while they still contain source-language text,
-            // before queued translation work can shorten their labels and shift flex/grid layout.
-            if (this.#displayMode === "translation") freezeNavigationLayout(false);
             for (const mutation of mutations) {
                 if (isGeneratedNode(mutation.target))
                     continue;
@@ -394,13 +390,20 @@ export class PageTranslator {
         this.#flushQueued = false;
         const roots = Array.from(this.#pending);
         this.#pending.clear();
-        for (const root of roots) {
-            try {
-                await this.translateRoot(root);
+        const guardNavigation = this.#displayMode === "translation" && roots.length > 0;
+        if (guardNavigation) freezeNavigationLayout(false);
+        try {
+            for (const root of roots) {
+                try {
+                    await this.translateRoot(root);
+                }
+                catch (error) {
+                    console.warn("[Local Immersive Translate] Dynamic translation failed", error);
+                }
             }
-            catch (error) {
-                console.warn("[Local Immersive Translate] Dynamic translation failed", error);
-            }
+        }
+        finally {
+            if (guardNavigation) releaseNavigationLayoutAfterPaint();
         }
     }
 }
