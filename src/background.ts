@@ -380,6 +380,14 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
 
   if (message.type === "ping-backend") return { ok: true };
 
+  if (message.type === "get-translation-performance") {
+    return { ok: true, stats: bergamot.performanceStats() };
+  }
+  if (message.type === "reset-translation-performance") {
+    bergamot.resetPerformanceStats();
+    return { ok: true };
+  }
+
   try {
     if (message.type === "translate-html") {
       const request = message.request;

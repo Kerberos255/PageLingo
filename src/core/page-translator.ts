@@ -3,6 +3,7 @@ import { collectTranslationRoots, findTranslationRoot, isGeneratedNode } from ".
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./navigation-layout";
+import { TooltipController } from "./tooltip-controller";
 
 export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[] }
 function translatedPlainText(_doc, html) {
@@ -62,6 +63,17 @@ function unwrapListDirectText(root) {
         wrapper.replaceWith(...Array.from(wrapper.childNodes));
     }
 }
+function singleTooltipTextNode(element) {
+    const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let current = walker.nextNode();
+    while (current) {
+        const text = current;
+        if ((text.data ?? "").trim()) nodes.push(text);
+        current = walker.nextNode();
+    }
+    return nodes.length === 1 ? nodes[0] : null;
+}
 export class PageTranslator {
     #doc;
     #provider;
@@ -76,6 +88,8 @@ export class PageTranslator {
     #inFlight = new Set();
     #rerun = new Set();
     #observer = null;
+    #tooltipController = null;
+    #tooltipSnapshots = new Map();
     #flushQueued = false;
     #disposed = false;
     #sourceLinkStyleSnapshots = new Map();
@@ -293,10 +307,54 @@ export class PageTranslator {
         });
         this.#observer.observe(this.#doc.body, { childList: true, subtree: true, characterData: true });
     }
+    observeTooltips() {
+        if (this.#disposed || this.#tooltipController)
+            return;
+        this.#tooltipController = new TooltipController(this.#doc, {
+            translate: (element) => this.#translateTooltipElement(element),
+        });
+        this.#tooltipController.start();
+    }
+    async #translateTooltipElement(element) {
+        if (this.#disposed || !element.isConnected)
+            return false;
+        const previous = this.#tooltipSnapshots.get(element);
+        if (previous?.node?.isConnected && previous.node.data === previous.translatedText)
+            return true;
+        const node = singleTooltipTextNode(element);
+        if (!node)
+            return false;
+        const originalText = node.data;
+        const sourceText = originalText.replace(/\s+/g, " ").trim();
+        if (!sourceText || !/\p{L}/u.test(sourceText))
+            return false;
+        const protectedTooltip = protectTerminologyHtml(this.#doc, escapeHtml(sourceText), this.#terminology);
+        let translatedHtml = await this.#provider.translateHtml({
+            html: protectedTooltip.html,
+            sourceLanguage: this.#sourceLanguage,
+            targetLanguage: this.#targetLanguage,
+            terminology: terminologyForText(this.#terminology, sourceText),
+        });
+        translatedHtml = restoreTerminologyHtml(this.#doc, translatedHtml, protectedTooltip.replacements);
+        translatedHtml = applyTerminologyCorrectionsHtml(this.#doc, translatedHtml, sourceText, this.#terminology);
+        const translated = translatedPlainText(this.#doc, translatedHtml);
+        if (!translated || hasBrokenTranslationText(translated))
+            return false;
+        if (this.#disposed || !element.isConnected || node.data !== originalText)
+            return false;
+        const leading = originalText.match(/^\s*/)?.[0] ?? "";
+        const trailing = originalText.match(/\s*$/)?.[0] ?? "";
+        const translatedText = leading + translated + trailing;
+        this.#tooltipSnapshots.set(element, { node, originalText, translatedText });
+        node.data = translatedText;
+        return true;
+    }
     restore() {
         this.#disposed = true;
         this.#observer?.disconnect();
         this.#observer = null;
+        this.#tooltipController?.dispose();
+        this.#tooltipController = null;
         this.#pending.clear();
         this.#rerun.clear();
         this.#inFlight.clear();
@@ -304,6 +362,12 @@ export class PageTranslator {
             this.#clearDisplayMode(root);
             translationNode.remove();
         }
+        for (const snapshot of this.#tooltipSnapshots.values()) {
+            if (snapshot.node?.isConnected && snapshot.node.data === snapshot.translatedText) {
+                snapshot.node.data = snapshot.originalText;
+            }
+        }
+        this.#tooltipSnapshots.clear();
         this.#records.clear();
         for (const translationNode of Array.from(this.#doc.querySelectorAll('[data-flt-generated="translation"]'))) {
             translationNode.remove();

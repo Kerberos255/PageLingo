@@ -7,12 +7,23 @@ interface PendingRequest {
   reject: (error: Error) => void;
 }
 
+export interface BergamotPerformanceStats {
+  inferenceCount: number;
+  inferenceMilliseconds: number;
+  translatedInputs: number;
+}
+
 class RouteSession {
   readonly #route: TranslationRoute;
   #worker: Worker | null = null;
   #ready: Promise<void> | null = null;
   #nextId = 1;
   readonly #pending = new Map<number, PendingRequest>();
+  #performance: BergamotPerformanceStats = {
+    inferenceCount: 0,
+    inferenceMilliseconds: 0,
+    translatedInputs: 0,
+  };
 
   constructor(route: TranslationRoute) {
     this.#route = route;
@@ -30,6 +41,18 @@ class RouteSession {
     const message: BergamotWorkerRequest = { type: "translate", id, html };
     worker.postMessage(message);
     return result;
+  }
+
+  performanceStats(): BergamotPerformanceStats {
+    return { ...this.#performance };
+  }
+
+  resetPerformanceStats(): void {
+    this.#performance = {
+      inferenceCount: 0,
+      inferenceMilliseconds: 0,
+      translatedInputs: 0,
+    };
   }
 
   terminate(): void {
@@ -68,6 +91,9 @@ class RouteSession {
         const pending = this.#pending.get(message.id);
         if (!pending) return;
         this.#pending.delete(message.id);
+        this.#performance.inferenceCount += 1;
+        this.#performance.inferenceMilliseconds += message.inferenceMilliseconds;
+        this.#performance.translatedInputs += 1;
         pending.resolve(message.html);
         return;
       }
@@ -123,6 +149,25 @@ export class BergamotClient {
       this.#sessions.set(route.key, session);
     }
     return session.translateHtml(html);
+  }
+
+  performanceStats(): BergamotPerformanceStats {
+    const totals: BergamotPerformanceStats = {
+      inferenceCount: 0,
+      inferenceMilliseconds: 0,
+      translatedInputs: 0,
+    };
+    for (const session of this.#sessions.values()) {
+      const stats = session.performanceStats();
+      totals.inferenceCount += stats.inferenceCount;
+      totals.inferenceMilliseconds += stats.inferenceMilliseconds;
+      totals.translatedInputs += stats.translatedInputs;
+    }
+    return totals;
+  }
+
+  resetPerformanceStats(): void {
+    for (const session of this.#sessions.values()) session.resetPerformanceStats();
   }
 
   reset(): void {

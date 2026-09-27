@@ -551,3 +551,73 @@ describe("PageTranslator display modes", () => {
     expect(document.querySelectorAll(".flt-source-hidden, .flt-source-content-hidden")).toHaveLength(0);
   });
 });
+
+
+describe("PageTranslator event-driven tooltips", () => {
+  it("translates an aria-describedby tooltip only after the control is hovered", async () => {
+    document.body.innerHTML = `<button id="trigger" aria-describedby="tip">Help</button><div id="tip" role="tooltip">Upgrade for long-running tasks</div>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    expect(provider.requests).toHaveLength(0);
+    document.querySelector("#trigger")!.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(document.querySelector("#tip")?.textContent).toContain("译:");
+    expect(provider.requests).toHaveLength(1);
+    translator.restore();
+    expect(document.querySelector("#tip")?.textContent).toBe("Upgrade for long-running tasks");
+  });
+
+  it("short-watches only child insertion after hover and translates a newly portaled tooltip", async () => {
+    document.body.innerHTML = `<button id="trigger">Cowork</button>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    document.querySelector("#trigger")!.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    const tip = document.createElement("div");
+    tip.id = "late-tip";
+    tip.setAttribute("role", "tooltip");
+    tip.textContent = "Upgrade to use Cowork for long-running tasks";
+    document.body.append(tip);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(tip.textContent).toContain("译:");
+    expect(provider.requests).toHaveLength(1);
+    translator.restore();
+  });
+
+  it("does not turn class/style churn into tooltip translation work", async () => {
+    document.body.innerHTML = `<button id="trigger">Cowork</button><div id="surface">Surface</div>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    const trigger = document.querySelector<HTMLElement>("#trigger")!;
+    trigger.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    for (let index = 0; index < 1000; index += 1) {
+      trigger.classList.toggle("pulse");
+      trigger.style.setProperty("--pulse", String(index));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(provider.requests).toHaveLength(0);
+    translator.restore();
+  });
+
+  it("skips interactive tooltip-like menus instead of rewriting their DOM", async () => {
+    document.body.innerHTML = `<button id="trigger" aria-controls="menu">More</button><div id="menu" role="tooltip"><button>Dangerous action</button></div>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    document.querySelector("#trigger")!.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(provider.requests).toHaveLength(0);
+    expect(document.querySelector("#menu")?.textContent).toBe("Dangerous action");
+    translator.restore();
+  });
+});

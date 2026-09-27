@@ -252,6 +252,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     try {
         count = await translator.translateAll();
         translator.observe();
+        translator.observeTooltips();
         return count;
     }
     finally {

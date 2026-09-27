@@ -79,11 +79,12 @@ function serializeChildren(parent, root, links, opaque) {
         if (tag === "A") {
             const linkIndex = links.length;
             links.push(snapshotLink(element));
-            // Link labels are opaque to the whole-sentence translator. The sentence model
-            // may move this anchor, but it cannot mistranslate the label or enlarge the
-            // clickable range by absorbing surrounding words. The label is translated once
-            // on its own and restored after the sentence returns.
-            html += `<a data-flt-link-id="${linkIndex}" href="${LINK_TRANSPORT_PREFIX}${linkIndex}"><code>__FLT_LINK_LABEL_${linkIndex}__</code></a>`;
+            // Keep the label inside the whole-sentence request. If the engine preserves
+            // link transport, that translated anchor is authoritative and no standalone
+            // link/gap inference is needed. Fallback translation still runs when transport
+            // is damaged or stripped.
+            const labelHtml = serializeChildren(element, root, links, opaque) || escapeHtml(element.textContent ?? "");
+            html += `<a data-flt-link-id="${linkIndex}" href="${LINK_TRANSPORT_PREFIX}${linkIndex}">${labelHtml}</a>`;
             continue;
         }
         if (OPAQUE_TAGS.has(tag)) {
@@ -139,7 +140,8 @@ export function serializeRichSegment(root) {
     let html = serializeChildren(root, root, links, opaque).trim();
     if (root.tagName === "A") {
         links.unshift(snapshotLink(root));
-        html = `<a data-flt-link-id="0" href="${LINK_TRANSPORT_PREFIX}0"><code>__FLT_LINK_LABEL_0__</code></a>`;
+        const labelHtml = html || escapeHtml(root.textContent ?? "");
+        html = `<a data-flt-link-id="0" href="${LINK_TRANSPORT_PREFIX}0">${labelHtml}</a>`;
     }
     return {
         html,
@@ -227,9 +229,9 @@ export function protectTerminologyHtml(doc, html, entries) {
     let current = walker.nextNode();
     while (current) {
         const text = current;
-        // Link labels are already structurally protected. Wrapping a brand inside <a>
-        // gives Bergamot an extra segmentation boundary and can duplicate/drop words.
-        if (!text.parentElement?.closest("code,kbd,samp,var,a")) nodes.push(text);
+        // Link labels now travel through the whole-sentence request. Protect hard terms
+        // inside anchors as well so skipping standalone link inference cannot corrupt brands.
+        if (!text.parentElement?.closest("code,kbd,samp,var")) nodes.push(text);
         current = walker.nextNode();
     }
     for (const textNode of nodes) {
