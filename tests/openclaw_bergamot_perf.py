@@ -134,6 +134,9 @@ def main() -> None:
         target_handle = driver.current_window_handle
         driver.get(OPENCLAW_URL)
         WebDriverWait(driver, 90).until(lambda d: d.execute_script("return document.readyState") == "complete")
+        # Let late documentation/navigation nodes settle before either variant starts timing.
+        # Model download is already complete and this delay is deliberately outside the A/B timer.
+        time.sleep(2.0)
 
         driver.switch_to.window(extension_handle)
         WebDriverWait(driver, 60).until(
