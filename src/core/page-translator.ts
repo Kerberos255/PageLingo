@@ -63,6 +63,33 @@ function unwrapListDirectText(root) {
         wrapper.replaceWith(...Array.from(wrapper.childNodes));
     }
 }
+function translatedLinkTransportComplete(html, links) {
+    if (!links.length)
+        return true;
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const seen = new Set();
+    for (const anchor of Array.from(parsed.body.querySelectorAll("a"))) {
+        let linkIndex = null;
+        const rawId = anchor.getAttribute("data-flt-link-id");
+        if (rawId && /^\d+$/.test(rawId)) {
+            linkIndex = Number.parseInt(rawId, 10);
+        }
+        else {
+            const href = anchor.getAttribute("href") ?? "";
+            const match = href.match(/^https:\/\/pagelingo\.invalid\/__link\/(\d+)$/);
+            if (match) linkIndex = Number.parseInt(match[1], 10);
+        }
+        if (linkIndex === null || linkIndex < 0 || linkIndex >= links.length)
+            continue;
+        if (seen.has(linkIndex))
+            return false;
+        const source = links[linkIndex];
+        if (source?.sourceText?.trim() && !(anchor.textContent ?? "").trim())
+            return false;
+        seen.add(linkIndex);
+    }
+    return seen.size === links.length;
+}
 function singleTooltipTextNode(element) {
     const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     const nodes = [];
@@ -210,12 +237,13 @@ export class PageTranslator {
             throw new Error("译文包含损坏字符，已保留原文");
         }
 
-        // Whole-sentence translation is authoritative. Standard href transport survives more
-        // engines than data-* attributes; matching anchor count is also enough to avoid a
-        // second link-label translation.
-        const translatedProbe = new DOMParser().parseFromString(translatedHtml, "text/html");
-        const probeAnchors = Array.from(translatedProbe.body.querySelectorAll("a"));
-        const translatedLinkTexts = await Promise.all(segment.links.map(async (link) => {
+        // The main HTML translation is authoritative when every source link keeps a
+        // unique transport identity and a non-empty translated label. In that common path
+        // there is nothing to recover, so do not spend extra Bergamot calls on each label
+        // and the text gaps around them. Keep the previous standalone path only as a
+        // transport-damage fallback.
+        const mainLinksComplete = translatedLinkTransportComplete(translatedHtml, segment.links);
+        const translatedLinkTexts = mainLinksComplete ? [] : await Promise.all(segment.links.map(async (link) => {
             if (!link.sourceText.trim()) return "";
             const exactTerm = exactTerminologyTarget(link.sourceText, this.#terminology);
             if (exactTerm) return exactTerm;
@@ -241,7 +269,7 @@ export class PageTranslator {
                 return link.sourceText;
             }
         }));
-        const translatedGapTexts = segment.linkGaps?.length ? await Promise.all(segment.linkGaps.map(async (gap) => {
+        const translatedGapTexts = mainLinksComplete || !segment.linkGaps?.length ? [] : await Promise.all(segment.linkGaps.map(async (gap) => {
             if (!gap.trim()) return "";
             try {
                 const protectedGap = protectTerminologyHtml(this.#doc, escapeHtml(gap.trim()), this.#terminology);
@@ -259,7 +287,7 @@ export class PageTranslator {
             catch {
                 return "";
             }
-        })) : [];
+        }));
         if (this.#disposed || !root.isConnected || sourceFingerprint(root) !== segment.fingerprint)
             return;
         const fragment = createSafeTranslatedFragment(this.#doc, translatedHtml, segment.links, segment.opaque, translatedLinkTexts, translatedGapTexts, []);

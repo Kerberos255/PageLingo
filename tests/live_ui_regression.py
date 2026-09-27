@@ -57,7 +57,7 @@ button.addEventListener('pointerenter',()=>{
   setTimeout(()=>{
     if(document.getElementById('tip'))return;
     const tip=document.createElement('div');
-    tip.id='tip'; tip.className='tip'; tip.textContent='Upgrade to use Cowork for long-running tasks';
+    tip.id='tip'; tip.className='tip'; tip.setAttribute('role','tooltip'); tip.textContent='Upgrade to use Cowork for long-running tasks';
     document.body.append(tip);
   },80);
 });
@@ -286,6 +286,24 @@ def main() -> None:
             raise AssertionError(f"Cosmetic class churn caused translation request storm: {churn_delta}")
         if not page_responsive(driver):
             raise AssertionError("Dynamic fixture became unresponsive after class churn")
+
+        # Hover is the only trigger for the late portal tooltip. PageLingo may short-watch
+        # child insertion after that event, but class/style churn above must stay invisible.
+        tooltip_before = TranslationHandler.request_count
+        driver.execute_script("""
+          const button = document.getElementById('hover');
+          button.dispatchEvent(new PointerEvent('pointerover', {bubbles:true}));
+          button.dispatchEvent(new PointerEvent('pointerenter'));
+        """)
+        WebDriverWait(driver, 5).until(
+            lambda d: d.execute_script("return document.getElementById('tip')?.textContent")
+            == "升级后可使用 Cowork 处理长时间任务"
+        )
+        tooltip_delta = TranslationHandler.request_count - tooltip_before
+        if tooltip_delta != 1:
+            raise AssertionError(f"Hover tooltip used unexpected translation request count: {tooltip_delta}")
+        if not page_responsive(driver):
+            raise AssertionError("Dynamic fixture became unresponsive after tooltip translation")
 
         request_delta = TranslationHandler.request_count - before_requests
         if request_delta > 200:

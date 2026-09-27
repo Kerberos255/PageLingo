@@ -137,6 +137,21 @@ describe("PageTranslator DOM preservation", () => {
     expect(document.querySelector("h2.sr-only")?.nextElementSibling?.classList.contains("flt-translation")).not.toBe(true);
   });
 
+  it("does not retranslate link labels or gaps when main HTML preserves link transport", async () => {
+    document.body.innerHTML = `<p>Read <a href="/docs">documentation</a> and <a href="/guide">guide</a> now.</p>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    const paragraph = document.querySelector<HTMLElement>("p")!;
+    await translator.translateRoot(paragraph);
+
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]?.html).toContain(">documentation<");
+    expect(provider.requests[0]?.html).toContain(">guide<");
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(".flt-translation a"));
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(["/docs", "/guide"]);
+    expect(links.map((link) => link.textContent)).toEqual(["译:documentation", "译:guide"]);
+  });
+
   it("restores links by translated label even when translation reorders link positions", async () => {
     document.body.innerHTML = `<p>Built by the <a href="https://openclaw.org">OpenClaw Foundation</a>. See the <a href="/gateway/telemetry">version check</a>.</p>`;
     class ReorderingProvider implements TranslationProvider {

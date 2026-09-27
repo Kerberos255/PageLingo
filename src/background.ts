@@ -55,6 +55,12 @@ interface RuntimeMessage {
     targetLanguage?: unknown;
     terminology?: unknown;
   };
+  requests?: Array<{
+    html?: unknown;
+    sourceLanguage?: unknown;
+    targetLanguage?: unknown;
+    terminology?: unknown;
+  }>;
   sourceLanguage?: unknown;
   targetLanguage?: unknown;
   language?: unknown;
@@ -421,6 +427,34 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       if (!route) throw new Error(`当前本地模型不支持 ${languageLabel(sourceLanguage)} → ${languageLabel(targetLanguage)}`);
       const html = await bergamot.translateHtml(request.html, route);
       return { ok: true, html };
+    }
+
+    if (message.type === "translate-html-batch") {
+      const requests = message.requests;
+      if (!Array.isArray(requests) || requests.length === 0 || requests.length > 32) {
+        throw new Error("Invalid translation batch");
+      }
+      const normalized = requests.map((request) => {
+        if (!request || typeof request.html !== "string") throw new Error("Invalid translation request");
+        const sourceLanguage = asLanguage(request.sourceLanguage);
+        const targetLanguage = asLanguage(request.targetLanguage);
+        if (!sourceLanguage || !targetLanguage) throw new Error("Invalid translation languages");
+        return { html: request.html, sourceLanguage, targetLanguage };
+      });
+      const first = normalized[0]!;
+      if (normalized.some((request) =>
+        request.sourceLanguage !== first.sourceLanguage || request.targetLanguage !== first.targetLanguage
+      )) {
+        throw new Error("Translation batch must use one language route");
+      }
+      if (await activeExternalEngine()) {
+        return { ok: false, batchUnsupported: true, error: "Batching is local-Bergamot only" };
+      }
+      const overrides = await currentOverrides();
+      const route = routeFor(first.sourceLanguage, first.targetLanguage, overrides);
+      if (!route) throw new Error(`当前本地模型不支持 ${languageLabel(first.sourceLanguage)} → ${languageLabel(first.targetLanguage)}`);
+      const htmls = await bergamot.translateHtmlBatch(normalized.map((request) => request.html), route);
+      return { ok: true, htmls };
     }
 
     if (message.type === "can-translate") {

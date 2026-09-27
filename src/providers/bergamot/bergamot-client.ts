@@ -7,6 +7,12 @@ interface PendingRequest {
   reject: (error: Error) => void;
 }
 
+interface PendingBatchRequest {
+  resolve: (htmls: string[]) => void;
+  reject: (error: Error) => void;
+  inputCount: number;
+}
+
 export interface BergamotPerformanceStats {
   inferenceCount: number;
   inferenceMilliseconds: number;
@@ -19,6 +25,7 @@ class RouteSession {
   #ready: Promise<void> | null = null;
   #nextId = 1;
   readonly #pending = new Map<number, PendingRequest>();
+  readonly #pendingBatches = new Map<number, PendingBatchRequest>();
   #performance: BergamotPerformanceStats = {
     inferenceCount: 0,
     inferenceMilliseconds: 0,
@@ -43,6 +50,21 @@ class RouteSession {
     return result;
   }
 
+  async translateHtmlBatch(htmls: string[]): Promise<string[]> {
+    if (htmls.length === 0) return [];
+    await this.#ensureReady();
+    const worker = this.#worker;
+    if (!worker) throw new Error("Bergamot worker is unavailable");
+
+    const id = this.#nextId++;
+    const result = new Promise<string[]>((resolve, reject) => {
+      this.#pendingBatches.set(id, { resolve, reject, inputCount: htmls.length });
+    });
+    const message: BergamotWorkerRequest = { type: "translate-batch", id, htmls };
+    worker.postMessage(message);
+    return result;
+  }
+
   performanceStats(): BergamotPerformanceStats {
     return { ...this.#performance };
   }
@@ -62,6 +84,8 @@ class RouteSession {
     const error = new Error("Bergamot session reset");
     for (const pending of this.#pending.values()) pending.reject(error);
     this.#pending.clear();
+    for (const pending of this.#pendingBatches.values()) pending.reject(error);
+    this.#pendingBatches.clear();
   }
 
   #ensureReady(): Promise<void> {
@@ -97,6 +121,16 @@ class RouteSession {
         pending.resolve(message.html);
         return;
       }
+      if (message.type === "batch-result") {
+        const pending = this.#pendingBatches.get(message.id);
+        if (!pending) return;
+        this.#pendingBatches.delete(message.id);
+        this.#performance.inferenceCount += 1;
+        this.#performance.inferenceMilliseconds += message.inferenceMilliseconds;
+        this.#performance.translatedInputs += pending.inputCount;
+        pending.resolve(message.htmls);
+        return;
+      }
       if (message.type === "error") {
         const error = new Error(message.error);
         if (message.id !== undefined) {
@@ -104,6 +138,12 @@ class RouteSession {
           if (pending) {
             this.#pending.delete(message.id);
             pending.reject(error);
+            return;
+          }
+          const batch = this.#pendingBatches.get(message.id);
+          if (batch) {
+            this.#pendingBatches.delete(message.id);
+            batch.reject(error);
           }
         } else {
           readyReject(error);
@@ -116,6 +156,8 @@ class RouteSession {
       readyReject(error);
       for (const pending of this.#pending.values()) pending.reject(error);
       this.#pending.clear();
+      for (const pending of this.#pendingBatches.values()) pending.reject(error);
+      this.#pendingBatches.clear();
     });
 
     try {
@@ -140,6 +182,37 @@ class RouteSession {
 
 export class BergamotClient {
   readonly #sessions = new Map<string, RouteSession>();
+
+  async translateHtmlBatch(htmls: string[], route: TranslationRoute): Promise<string[]> {
+    if (route.sourceLanguage === route.targetLanguage || htmls.length === 0) return [...htmls];
+
+    const activeIndexes: number[] = [];
+    const activeHtmls: string[] = [];
+    for (let index = 0; index < htmls.length; index += 1) {
+      const html = htmls[index] ?? "";
+      if (!html.trim()) continue;
+      activeIndexes.push(index);
+      activeHtmls.push(html);
+    }
+    if (activeHtmls.length === 0) return [...htmls];
+
+    let session = this.#sessions.get(route.key);
+    if (!session) {
+      session = new RouteSession(route);
+      this.#sessions.set(route.key, session);
+    }
+    const translated = await session.translateHtmlBatch(activeHtmls);
+    if (translated.length !== activeHtmls.length) {
+      throw new Error(`Bergamot batch result length mismatch: expected ${activeHtmls.length}, got ${translated.length}`);
+    }
+
+    const results = [...htmls];
+    for (let index = 0; index < activeIndexes.length; index += 1) {
+      const outputIndex = activeIndexes[index]!;
+      results[outputIndex] = translated[index] ?? activeHtmls[index]!;
+    }
+    return results;
+  }
 
   async translateHtml(html: string, route: TranslationRoute): Promise<string> {
     if (!html.trim() || route.sourceLanguage === route.targetLanguage) return html;
