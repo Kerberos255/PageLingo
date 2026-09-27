@@ -50,6 +50,35 @@ def runtime_message(driver: webdriver.Firefox, message: dict, timeout: int = 600
     return result
 
 
+
+def runtime_message_with_keepalive(driver: webdriver.Firefox, message: dict, timeout: int = 600) -> dict:
+    driver.set_script_timeout(timeout)
+    result = driver.execute_async_script(
+        """
+        const message = arguments[0];
+        const done = arguments[arguments.length - 1];
+        let finished = false;
+        let timer = null;
+        const finish = (value) => {
+          if (finished) return;
+          finished = true;
+          if (timer !== null) clearInterval(timer);
+          done(value);
+        };
+        timer = setInterval(() => {
+          browser.runtime.sendMessage({type:'ping-backend'}).catch(() => undefined);
+        }, 1000);
+        browser.runtime.sendMessage(message)
+          .then((value) => finish(value))
+          .catch((error) => finish({ok:false,error:String(error)}));
+        """,
+        message,
+    )
+    if not isinstance(result, dict):
+        raise AssertionError(f"Unexpected runtime response: {result!r}")
+    return result
+
+
 def content_message(driver: webdriver.Firefox, url_prefix: str, message: dict, timeout: int = 180) -> dict:
     driver.set_script_timeout(timeout)
     result = driver.execute_async_script(
@@ -85,6 +114,9 @@ def main() -> None:
 
     options = Options()
     options.add_argument("-headless")
+    # Keep first-install deterministic: this benchmark explicitly installs zh-Hans.
+    options.set_preference("intl.accept_languages", "en-US,en")
+    options.set_preference("intl.locale.requested", "en-US")
     firefox_binary = os.environ.get("FIREFOX_BINARY")
     if firefox_binary:
         options.binary_location = firefox_binary
@@ -92,6 +124,7 @@ def main() -> None:
     driver = webdriver.Firefox(options=options, service=Service(service_args=["--allow-system-access"]))
     driver.set_page_load_timeout(120)
     driver.set_script_timeout(900)
+    driver.set_window_size(1440, 1000)
 
     try:
         addon_id = driver.install_addon(str(xpi), temporary=True)
@@ -126,7 +159,11 @@ def main() -> None:
         if not engine.get("ok"):
             raise AssertionError(f"Could not select local engine: {engine}")
 
-        pack = runtime_message(driver, {"type": "download-language-pack", "language": "zh-Hans"}, timeout=900)
+        pack = runtime_message_with_keepalive(
+            driver,
+            {"type": "download-language-pack", "language": "zh-Hans"},
+            timeout=900,
+        )
         if not pack.get("ok"):
             raise AssertionError(f"Could not install zh-Hans pack: {pack}")
 
@@ -170,6 +207,7 @@ def main() -> None:
         )
         if not responsive or generated_count <= 0:
             raise AssertionError(f"OpenClaw page did not remain translated/responsive: generated={generated_count}")
+        driver.save_screenshot(str(output.with_suffix(".png")))
 
         result = {
             "url": OPENCLAW_URL,
