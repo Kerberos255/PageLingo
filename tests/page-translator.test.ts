@@ -318,6 +318,22 @@ describe("PageTranslator terminology safety", () => {
     expect(translatedLink?.textContent).not.toContain("松��");
   });
 
+  it("rejects HTML-entity replacement-character corruption without parsing it into visible text", async () => {
+    document.body.innerHTML = `<p id="p">A normal sentence.</p>`;
+    class BrokenEntityProvider implements TranslationProvider {
+      async translateHtml(): Promise<string> {
+        return "损坏的译文&#xfffd;";
+      }
+    }
+    const paragraph = document.querySelector<HTMLElement>("#p")!;
+    const translator = new PageTranslator(document, new BrokenEntityProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    expect(document.querySelector(".flt-translation")).toBeNull();
+    expect(paragraph.classList.contains("flt-source-hidden")).toBe(false);
+    expect(paragraph.textContent).toBe("A normal sentence.");
+  });
+
   it("rejects replacement-character corruption instead of showing broken output", async () => {
     document.body.innerHTML = `<p id="p">A normal sentence.</p>`;
     class BrokenProvider implements TranslationProvider {

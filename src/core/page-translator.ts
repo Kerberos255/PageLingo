@@ -22,6 +22,9 @@ function exactTerminologyTarget(value, entries) {
 function hasBrokenTranslationText(value) {
     return /\uFFFD/u.test(String(value || ""));
 }
+function hasBrokenTranslationHtml(html) {
+    return /\uFFFD|&#x0*fffd;|&#0*65533;/iu.test(String(html || ""));
+}
 function stripStandaloneLinkQuotes(source, translated) {
     let value = translated.trim();
     const sourceValue = source.trim();
@@ -235,7 +238,7 @@ export class PageTranslator {
         // post-correction. This lets the engine translate the whole sentence while making
         // immutable brands/identifiers impossible to corrupt in the visible output.
         translatedHtml = restoreTerminologyHtml(this.#doc, translatedHtml, protectedSegment.replacements);
-        if (hasBrokenTranslationText(translatedPlainText(this.#doc, translatedHtml))) {
+        if (hasBrokenTranslationHtml(translatedHtml)) {
             throw new Error("译文包含损坏字符，已保留原文");
         }
 
@@ -256,7 +259,7 @@ export class PageTranslator {
             } catch {}
         }));
         translatedHtml = applyTerminologyCorrectionsHtml(this.#doc, translatedHtml, segment.fingerprint, this.#terminology, dynamicAliases);
-        if (hasBrokenTranslationText(translatedPlainText(this.#doc, translatedHtml))) {
+        if (hasBrokenTranslationHtml(translatedHtml)) {
             throw new Error("译文包含损坏字符，已保留原文");
         }
 

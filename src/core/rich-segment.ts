@@ -283,6 +283,7 @@ export function restoreTerminology(container, replacements) {
     }
 }
 export function restoreTerminologyHtml(doc, html, replacements) {
+    if (!Array.isArray(replacements) || replacements.length === 0) return html;
     const content = parseHtmlFragment(doc, html);
     const holder = doc.createElement("div");
     holder.append(content);
