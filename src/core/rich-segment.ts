@@ -79,12 +79,13 @@ function serializeChildren(parent, root, links, opaque) {
         if (tag === "A") {
             const linkIndex = links.length;
             links.push(snapshotLink(element));
-            // Keep the label inside the whole-sentence request. If the engine preserves
-            // link transport, that translated anchor is authoritative and no standalone
-            // link/gap inference is needed. Fallback translation still runs when transport
-            // is damaged or stripped.
+            // Keep the label inside the whole-sentence request, but bracket it with
+            // opaque boundary sentinels. When both sentinels survive we can trust the main
+            // translation and still guarantee that surrounding translated words never become
+            // part of the clickable region. If either sentinel is damaged, PageTranslator
+            // falls back to the standalone link/gap recovery path.
             const labelHtml = serializeChildren(element, root, links, opaque) || escapeHtml(element.textContent ?? "");
-            html += `<a data-flt-link-id="${linkIndex}" href="${LINK_TRANSPORT_PREFIX}${linkIndex}">${labelHtml}</a>`;
+            html += `<a data-flt-link-id="${linkIndex}" href="${LINK_TRANSPORT_PREFIX}${linkIndex}"><code>__FLT_LINK_START_${linkIndex}__</code>${labelHtml}<code>__FLT_LINK_END_${linkIndex}__</code></a>`;
             continue;
         }
         if (OPAQUE_TAGS.has(tag)) {
@@ -141,13 +142,13 @@ export function serializeRichSegment(root) {
     if (root.tagName === "A") {
         links.unshift(snapshotLink(root));
         const labelHtml = html || escapeHtml(root.textContent ?? "");
-        html = `<a data-flt-link-id="0" href="${LINK_TRANSPORT_PREFIX}0">${labelHtml}</a>`;
+        html = `<a data-flt-link-id="0" href="${LINK_TRANSPORT_PREFIX}0"><code>__FLT_LINK_START_0__</code>${labelHtml}<code>__FLT_LINK_END_0__</code></a>`;
     }
     return {
         html,
         links,
         opaque,
-        linkGaps: links.length > 1 ? snapshotLinkGaps(root) : [],
+        linkGaps: links.length > 0 && root.tagName !== "A" ? snapshotLinkGaps(root) : [],
         fingerprint: sourceFingerprint(root),
     };
 }

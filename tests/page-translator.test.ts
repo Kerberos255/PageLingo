@@ -12,7 +12,8 @@ class FakeHtmlProvider implements TranslationProvider {
     const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
     let node = walker.nextNode();
     while (node) {
-      if (node.textContent?.trim()) node.textContent = `译:${node.textContent}`;
+      const text = node.textContent?.trim() ?? "";
+      if (text && !/^__FLT_LINK_(?:START|END)_\d+__$/.test(text)) node.textContent = `译:${node.textContent}`;
       node = walker.nextNode();
     }
     const holder = document.createElement("div");
@@ -150,6 +151,58 @@ describe("PageTranslator DOM preservation", () => {
     const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(".flt-translation a"));
     expect(links.map((link) => link.getAttribute("href"))).toEqual(["/docs", "/guide"]);
     expect(links.map((link) => link.textContent)).toEqual(["译:documentation", "译:guide"]);
+  });
+
+  it("keeps translated words outside the clickable link when the engine absorbs them around intact boundaries", async () => {
+    document.body.innerHTML = `<p>Read the <a href="/docs">documentation</a> now.</p>`;
+    class AbsorbingProvider implements TranslationProvider {
+      requests: TranslationRequest[] = [];
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.requests.push(request);
+        return `<a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0">阅读 <code>__FLT_LINK_START_0__</code><strong>文档</strong><code>__FLT_LINK_END_0__</code> 现在</a>`;
+      }
+    }
+    const provider = new AbsorbingProvider();
+    const translator = new PageTranslator(document, provider);
+    const paragraph = document.querySelector<HTMLElement>("p")!;
+    await translator.translateRoot(paragraph);
+
+    expect(provider.requests).toHaveLength(1);
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    const link = translated.querySelector<HTMLAnchorElement>("a")!;
+    expect(link.getAttribute("href")).toBe("/docs");
+    expect(link.textContent).toBe("文档");
+    expect(link.querySelector("strong")?.textContent).toBe("文档");
+    expect(translated.textContent).toContain("阅读");
+    expect(translated.textContent).toContain("现在");
+  });
+
+  it("falls back safely when link boundaries are damaged instead of keeping an expanded anchor", async () => {
+    document.body.innerHTML = `<p>Read the <a href="/docs">documentation</a> now.</p>`;
+    class DamagedBoundaryProvider implements TranslationProvider {
+      requests: TranslationRequest[] = [];
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.requests.push(request);
+        if (request.html.includes("__FLT_LINK_START_0__")) {
+          return `阅读<a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0">文档现在</a>`;
+        }
+        if (request.html.trim() === "documentation") return "文档";
+        if (request.html.trim() === "Read the") return "阅读";
+        if (request.html.trim() === "now.") return "现在。";
+        return request.html;
+      }
+    }
+    const provider = new DamagedBoundaryProvider();
+    const translator = new PageTranslator(document, provider);
+    const paragraph = document.querySelector<HTMLElement>("p")!;
+    await translator.translateRoot(paragraph);
+
+    expect(provider.requests).toHaveLength(4);
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    const link = translated.querySelector<HTMLAnchorElement>("a")!;
+    expect(link.getAttribute("href")).toBe("/docs");
+    expect(link.textContent).toBe("文档");
+    expect(translated.textContent).toContain("现在");
   });
 
   it("restores links by translated label even when translation reorders link positions", async () => {
@@ -583,6 +636,22 @@ describe("PageTranslator event-driven tooltips", () => {
     expect(provider.requests).toHaveLength(1);
     translator.restore();
     expect(document.querySelector("#tip")?.textContent).toBe("Upgrade for long-running tasks");
+  });
+
+  it("rechecks only an explicitly referenced hidden tooltip after hover without observing style changes", async () => {
+    document.body.innerHTML = `<button id="trigger" aria-describedby="tip">Help</button><div id="tip" role="tooltip" style="display:none">Hidden until hover</div>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    document.querySelector("#trigger")!.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    const tip = document.querySelector<HTMLElement>("#tip")!;
+    tip.style.display = "block";
+    await new Promise((resolve) => setTimeout(resolve, 90));
+
+    expect(tip.textContent).toContain("译:");
+    expect(provider.requests).toHaveLength(1);
+    translator.restore();
   });
 
   it("short-watches only child insertion after hover and translates a newly portaled tooltip", async () => {

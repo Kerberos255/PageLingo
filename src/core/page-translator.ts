@@ -83,8 +83,31 @@ function translatedLinkTransportComplete(html, links) {
             continue;
         if (seen.has(linkIndex))
             return false;
+
+        const startToken = `__FLT_LINK_START_${linkIndex}__`;
+        const endToken = `__FLT_LINK_END_${linkIndex}__`;
+        const markerElements = Array.from(anchor.querySelectorAll("code,kbd,samp,var"))
+            .filter((element) => {
+                const text = (element.textContent ?? "").trim();
+                return /^__FLT_LINK_(?:START|END)_\d+__$/.test(text);
+            });
+        const startMarkers = markerElements.filter((element) => (element.textContent ?? "").trim() === startToken);
+        const endMarkers = markerElements.filter((element) => (element.textContent ?? "").trim() === endToken);
+        const rawMarkers = (anchor.textContent ?? "").match(/__FLT_LINK_(?:START|END)_\d+__/g) ?? [];
+        if (markerElements.length !== 2 || startMarkers.length !== 1 || endMarkers.length !== 1 ||
+            rawMarkers.length !== 2 || rawMarkers[0] !== startToken || rawMarkers[1] !== endToken) {
+            return false;
+        }
+
+        const start = startMarkers[0];
+        const end = endMarkers[0];
+        if (!(start.compareDocumentPosition(end) & Node.DOCUMENT_POSITION_FOLLOWING))
+            return false;
+        const labelRange = parsed.createRange();
+        labelRange.setStartAfter(start);
+        labelRange.setEndBefore(end);
         const source = links[linkIndex];
-        if (source?.sourceText?.trim() && !(anchor.textContent ?? "").trim())
+        if (source?.sourceText?.trim() && !labelRange.toString().trim())
             return false;
         seen.add(linkIndex);
     }
