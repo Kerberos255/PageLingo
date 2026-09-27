@@ -11,6 +11,13 @@ on:
         description: "Candidate commit/ref (after inference optimizations)"
         required: true
         type: string
+  pull_request:
+    branches:
+      - fix/github-font-size
+    paths:
+      - "src/**"
+      - "tests/**"
+      - ".github/workflows/bergamot-perf-ab.yml"
 
 permissions:
   contents: read
@@ -32,13 +39,16 @@ jobs:
         env:
           BASELINE_REF: ${{ inputs.baseline_ref }}
           CANDIDATE_REF: ${{ inputs.candidate_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           LABEL: ${{ matrix.label }}
         run: |
           if [ "$LABEL" = "baseline" ]; then
-            echo "ref=$BASELINE_REF" >> "$GITHUB_OUTPUT"
+            REF="${BASELINE_REF:-test/browser-regression-perf-baseline-20260927}"
           else
-            echo "ref=$CANDIDATE_REF" >> "$GITHUB_OUTPUT"
+            REF="${CANDIDATE_REF:-$PR_HEAD_SHA}"
           fi
+          test -n "$REF"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@v4
