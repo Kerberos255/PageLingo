@@ -1,4 +1,5 @@
 import { loadModelPair } from "./model-cache";
+import { ShortTranslationCache } from "./translation-cache";
 import type { TranslationRoute } from "./model-manifest";
 import type { BergamotWorkerRequest, BergamotWorkerResponse, WorkerModelBundle } from "./protocol";
 
@@ -182,46 +183,62 @@ class RouteSession {
 
 export class BergamotClient {
   readonly #sessions = new Map<string, RouteSession>();
+  readonly #cache = new ShortTranslationCache();
 
   async translateHtmlBatch(htmls: string[], route: TranslationRoute): Promise<string[]> {
     if (route.sourceLanguage === route.targetLanguage || htmls.length === 0) return [...htmls];
 
-    const activeIndexes: number[] = [];
-    const activeHtmls: string[] = [];
+    const results = [...htmls];
+    const missing = new Map<string, { html: string; indexes: number[] }>();
     for (let index = 0; index < htmls.length; index += 1) {
       const html = htmls[index] ?? "";
       if (!html.trim()) continue;
-      activeIndexes.push(index);
-      activeHtmls.push(html);
-    }
-    if (activeHtmls.length === 0) return [...htmls];
 
+      const cached = this.#cache.get(route.key, html);
+      if (cached !== undefined) {
+        results[index] = cached;
+        continue;
+      }
+
+      const existing = missing.get(html);
+      if (existing) existing.indexes.push(index);
+      else missing.set(html, { html, indexes: [index] });
+    }
+    if (missing.size === 0) return results;
+
+    const unique = Array.from(missing.values());
     let session = this.#sessions.get(route.key);
     if (!session) {
       session = new RouteSession(route);
       this.#sessions.set(route.key, session);
     }
-    const translated = await session.translateHtmlBatch(activeHtmls);
-    if (translated.length !== activeHtmls.length) {
-      throw new Error(`Bergamot batch result length mismatch: expected ${activeHtmls.length}, got ${translated.length}`);
+    const translated = await session.translateHtmlBatch(unique.map((item) => item.html));
+    if (translated.length !== unique.length) {
+      throw new Error(`Bergamot batch result length mismatch: expected ${unique.length}, got ${translated.length}`);
     }
 
-    const results = [...htmls];
-    for (let index = 0; index < activeIndexes.length; index += 1) {
-      const outputIndex = activeIndexes[index]!;
-      results[outputIndex] = translated[index] ?? activeHtmls[index]!;
+    for (let index = 0; index < unique.length; index += 1) {
+      const item = unique[index]!;
+      const output = translated[index] ?? item.html;
+      this.#cache.set(route.key, item.html, output);
+      for (const outputIndex of item.indexes) results[outputIndex] = output;
     }
     return results;
   }
 
   async translateHtml(html: string, route: TranslationRoute): Promise<string> {
     if (!html.trim() || route.sourceLanguage === route.targetLanguage) return html;
+    const cached = this.#cache.get(route.key, html);
+    if (cached !== undefined) return cached;
+
     let session = this.#sessions.get(route.key);
     if (!session) {
       session = new RouteSession(route);
       this.#sessions.set(route.key, session);
     }
-    return session.translateHtml(html);
+    const translated = await session.translateHtml(html);
+    this.#cache.set(route.key, html, translated);
+    return translated;
   }
 
   performanceStats(): BergamotPerformanceStats {
@@ -246,5 +263,6 @@ export class BergamotClient {
   reset(): void {
     for (const session of this.#sessions.values()) session.terminate();
     this.#sessions.clear();
+    this.#cache.clear();
   }
 }
