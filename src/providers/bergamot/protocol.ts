@@ -22,9 +22,15 @@ export type BergamotWorkerRequest =
       type: "translate";
       id: number;
       html: string;
+    }
+  | {
+      type: "translate-batch";
+      id: number;
+      htmls: string[];
     };
 
 export type BergamotWorkerResponse =
   | { type: "ready" }
   | { type: "result"; id: number; html: string; inferenceMilliseconds: number }
+  | { type: "batch-result"; id: number; htmls: string[]; inferenceMilliseconds: number }
   | { type: "error"; id?: number; error: string };

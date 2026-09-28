@@ -233,7 +233,62 @@ function removeAdjacentAddedLinkQuotes(anchor, source) {
     const next = adjacentTextNode(anchor, "after");
     if (next && !sourceHasAdjacentQuote(source, "after")) next.data = next.data.replace(LINK_CLOSE_QUOTES, "");
 }
+function linkBoundaryElements(anchor) {
+    const markers = Array.from(anchor.querySelectorAll("code,kbd,samp,var"))
+        .filter((element) => /^__FLT_LINK_(?:START|END)_\d+__$/.test((element.textContent ?? "").trim()));
+    if (markers.length !== 2)
+        return null;
+    const start = markers.find((element) => /^__FLT_LINK_START_\d+__$/.test((element.textContent ?? "").trim()));
+    const end = markers.find((element) => /^__FLT_LINK_END_\d+__$/.test((element.textContent ?? "").trim()));
+    if (!start || !end)
+        return null;
+    const startMatch = (start.textContent ?? "").trim().match(/^__FLT_LINK_START_(\d+)__$/);
+    const endMatch = (end.textContent ?? "").trim().match(/^__FLT_LINK_END_(\d+)__$/);
+    if (!startMatch || !endMatch || startMatch[1] !== endMatch[1])
+        return null;
+    const rawMarkers = (anchor.textContent ?? "").match(/__FLT_LINK_(?:START|END)_\d+__/g) ?? [];
+    if (rawMarkers.length !== 2 ||
+        rawMarkers[0] !== `__FLT_LINK_START_${startMatch[1]}__` ||
+        rawMarkers[1] !== `__FLT_LINK_END_${startMatch[1]}__`) {
+        return null;
+    }
+    if (!(start.compareDocumentPosition(end) & Node.DOCUMENT_POSITION_FOLLOWING))
+        return null;
+    return { start, end };
+}
+function trimBoundaryAnchor(anchor, source) {
+    const boundary = linkBoundaryElements(anchor);
+    if (!boundary)
+        return null;
+    const doc = anchor.ownerDocument;
+    const prefixRange = doc.createRange();
+    prefixRange.selectNodeContents(anchor);
+    prefixRange.setEndBefore(boundary.start);
+    const labelRange = doc.createRange();
+    labelRange.setStartAfter(boundary.start);
+    labelRange.setEndBefore(boundary.end);
+    const suffixRange = doc.createRange();
+    suffixRange.selectNodeContents(anchor);
+    suffixRange.setStartAfter(boundary.end);
+
+    const prefix = prefixRange.cloneContents();
+    const label = labelRange.cloneContents();
+    const suffix = suffixRange.cloneContents();
+    const cleanAnchor = doc.createElement("a");
+    cleanAnchor.append(label);
+    if (!(cleanAnchor.textContent ?? "").trim())
+        cleanAnchor.textContent = source.sourceText;
+    configureRestoredLink(cleanAnchor, source);
+    anchor.replaceWith(prefix, cleanAnchor, suffix);
+    removeAdjacentAddedLinkQuotes(cleanAnchor, source);
+    removeAdjacentDuplicateLinkText(cleanAnchor, cleanAnchor.textContent ?? "");
+    return cleanAnchor;
+}
 function trimIdentifiedAnchor(anchor, label, source) {
+    const bounded = trimBoundaryAnchor(anchor, source);
+    if (bounded)
+        return bounded;
+
     const raw = anchor.textContent ?? "";
     const marker = raw.match(/__FLT_LINK_LABEL_\d+__/u);
     if (marker) {
@@ -279,11 +334,11 @@ function trimIdentifiedAnchor(anchor, label, source) {
         return cleanAnchor;
     }
 
-    // If the engine preserved the identified anchor but mistranslated a short label
-    // (for example Why -> When), prefer the separately translated stable label.
-    const rawNorm = normalizeLinkMatchText(raw);
-    const labelNorm = normalizeLinkMatchText(label);
-    if (label && rawNorm.length <= Math.max(40, labelNorm.length * 2)) anchor.textContent = label;
+    // Boundary loss means the main HTML path was not trusted, so a separately
+    // translated label is available here. Never keep an oversized anonymous anchor:
+    // using the stable label may lose an absorbed surrounding word, but it cannot enlarge
+    // the clickable region. Missing surrounding gaps are restored separately below.
+    anchor.textContent = label;
     configureRestoredLink(anchor, source);
     removeAdjacentAddedLinkQuotes(anchor, source);
     removeAdjacentDuplicateLinkText(anchor, label);
@@ -375,6 +430,57 @@ function restoreMissingLinkGaps(container, translatedGapTexts, resolvedByIndex) 
         }
     }
 }
+function restoreBareLinkBoundary(container, linkIndex, label, source) {
+    const startToken = `__FLT_LINK_START_${linkIndex}__`;
+    const endToken = `__FLT_LINK_END_${linkIndex}__`;
+    const markerElements = Array.from(container.querySelectorAll("code,kbd,samp,var"));
+    const starts = markerElements.filter((element) => (element.textContent ?? "").trim() === startToken);
+    const ends = markerElements.filter((element) => (element.textContent ?? "").trim() === endToken);
+    if (starts.length !== 1 || ends.length !== 1)
+        return null;
+    const start = starts[0];
+    const end = ends[0];
+    if (start.closest("a") || end.closest("a"))
+        return null;
+    if (!(start.compareDocumentPosition(end) & Node.DOCUMENT_POSITION_FOLLOWING))
+        return null;
+
+    const doc = container.ownerDocument;
+    const range = doc.createRange();
+    range.setStartBefore(start);
+    range.setEndAfter(end);
+    const markers = range.toString().match(/__FLT_LINK_(?:START|END)_\d+__/g) ?? [];
+    if (markers.length !== 2 || markers[0] !== startToken || markers[1] !== endToken)
+        return null;
+
+    const anchor = doc.createElement("a");
+    anchor.textContent = label || source.sourceText;
+    configureRestoredLink(anchor, source);
+    range.deleteContents();
+    range.insertNode(anchor);
+    removeAdjacentAddedLinkQuotes(anchor, source);
+    return anchor;
+}
+function cleanupLinkBoundaryMarkers(container) {
+    // Remove marker-only synthetic elements entirely. Leaving an empty <code>/<kbd>/
+    // <samp>/<var> behind would shift the positional opaque-restoration index.
+    for (const element of Array.from(container.querySelectorAll("code,kbd,samp,var"))) {
+        const text = (element.textContent ?? "").trim();
+        if (/^__FLT_LINK_(?:START|END)_\d+__$/.test(text)) {
+            element.remove();
+        }
+    }
+
+    // If a backend embedded a boundary token into ordinary text instead of preserving
+    // its wrapper, strip only the token and keep the surrounding translated text.
+    const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let current = walker.nextNode();
+    while (current) {
+        const text = current;
+        text.data = text.data.replace(/__FLT_LINK_(?:START|END)_\d+__/g, "");
+        current = walker.nextNode();
+    }
+}
 function restoreBareLinkMarker(container, linkIndex, label, source) {
     const token = `__FLT_LINK_LABEL_${linkIndex}__`;
     const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
@@ -408,7 +514,7 @@ function restoreBareLinkMarker(container, linkIndex, label, source) {
     return null;
 }
 function restoreLinks(container, links, translatedLinkTexts = [], translatedGapTexts = []) {
-    cleanupLegacyLinkMarkers(container);
+
     const resolvedLinks = new Set();
     const resolvedAnchors = new Set();
     const resolvedByIndex = new Map();
@@ -430,22 +536,23 @@ function restoreLinks(container, links, translatedLinkTexts = [], translatedGapT
         resolvedByIndex.set(linkIndex, restored);
     }
 
-    // If the engine stripped transport attributes but preserved the same number of <a>
-    // elements, the whole-sentence anchors are authoritative. Rebind them in source order
-    // instead of translating link labels a second time. This avoids semantic/quote conflicts.
-    const unresolvedBeforeFallback = links.map((_, i) => i).filter((i) => !resolvedLinks.has(i));
-    const anonymousBeforeFallback = Array.from(container.querySelectorAll("a")).filter((a) => !resolvedAnchors.has(a));
-    if (unresolvedBeforeFallback.length > 0 && unresolvedBeforeFallback.length === anonymousBeforeFallback.length) {
-        unresolvedBeforeFallback.forEach((linkIndex, position) => {
-            const anchor = anonymousBeforeFallback[position];
-            const source = links[linkIndex];
-            if (!anchor || !source) return;
-            configureRestoredLink(anchor, source);
-            removeAdjacentAddedLinkQuotes(anchor, source);
-            resolvedLinks.add(linkIndex);
-            resolvedAnchors.add(anchor);
-            resolvedByIndex.set(linkIndex, anchor);
-        });
+    // If the wrapper disappeared but both boundary sentinels survived, their range still
+    // gives an exact safe place to rebuild the link. Because the main path was rejected,
+    // use the separately translated fallback label instead of trusting the damaged range.
+    for (let linkIndex = 0; linkIndex < links.length; linkIndex += 1) {
+        if (resolvedLinks.has(linkIndex)) continue;
+        const source = links[linkIndex];
+        if (!source) continue;
+        const restored = restoreBareLinkBoundary(
+            container,
+            linkIndex,
+            translatedLinkTexts[linkIndex]?.trim() || source.sourceText,
+            source,
+        );
+        if (!restored) continue;
+        resolvedLinks.add(linkIndex);
+        resolvedAnchors.add(restored);
+        resolvedByIndex.set(linkIndex, restored);
     }
 
     // If an engine stripped the <a> wrapper but preserved the opaque code token, the
@@ -461,6 +568,10 @@ function restoreLinks(container, links, translatedLinkTexts = [], translatedGapT
         resolvedAnchors.add(restored);
         resolvedByIndex.set(linkIndex, restored);
     }
+
+    // Synthetic marker text must not participate in fuzzy label matching.
+    cleanupLinkBoundaryMarkers(container);
+    cleanupLegacyLinkMarkers(container);
 
     // True last-resort fallback for engines that removed/recreated only some anchors.
     const index = buildLinkTextIndex(container);
@@ -514,20 +625,22 @@ function restoreLinks(container, links, translatedLinkTexts = [], translatedGapT
         }
     }
 
-    // Last-resort one-to-one mapping if an engine kept an anchor but stripped the ID and
-    // translated its label differently from the standalone label request.
+    // Last resort: after marker and translated-label matching have had a chance to
+    // preserve link identity, bind any remaining anonymous anchors in source order.
+    // Delaying this fallback is important because translation engines may reorder links.
     const unresolvedIndexes = links.map((_, i) => i).filter((i) => !resolvedLinks.has(i));
     const anonymousAnchors = Array.from(container.querySelectorAll("a")).filter((a) => !resolvedAnchors.has(a));
-    if (unresolvedIndexes.length === 1 && anonymousAnchors.length === 1) {
-        const i = unresolvedIndexes[0];
-        const source = links[i];
-        const label = translatedLinkTexts[i]?.trim() || "";
-        if (source) {
-            const restored = trimIdentifiedAnchor(anonymousAnchors[0], label, source);
-            resolvedLinks.add(i);
+    if (unresolvedIndexes.length > 0 && unresolvedIndexes.length === anonymousAnchors.length) {
+        unresolvedIndexes.forEach((linkIndex, position) => {
+            const anchor = anonymousAnchors[position];
+            const source = links[linkIndex];
+            if (!anchor || !source) return;
+            const label = translatedLinkTexts[linkIndex]?.trim() || "";
+            const restored = trimIdentifiedAnchor(anchor, label, source);
+            resolvedLinks.add(linkIndex);
             resolvedAnchors.add(restored);
-            resolvedByIndex.set(i, restored);
-        }
+            resolvedByIndex.set(linkIndex, restored);
+        });
     }
 
     restoreMissingLinkGaps(container, translatedGapTexts, resolvedByIndex);
@@ -576,6 +689,7 @@ function copySourceLayout(root, node) {
     const properties = [
         "color", "font-family", "font-size", "font-weight", "font-style", "font-variant",
         "line-height", "letter-spacing", "word-spacing", "text-transform",
+        "white-space", "vertical-align",
         "text-align", "text-align-last", "text-indent", "direction", "writing-mode",
         "text-decoration-line", "text-decoration-style", "text-decoration-color", "text-decoration-thickness",
         "text-underline-offset",
@@ -594,9 +708,18 @@ export function mountTranslation(root, fragment, targetLanguage) {
     node.lang = targetLanguage;
     node.append(fragment);
     copySourceLayout(root, node);
-    if (root.tagName === "SPAN" && root.closest("a")) {
-        node.style.setProperty("display", "inline", "important");
+    const sourceDisplay = root.ownerDocument.defaultView?.getComputedStyle(root).display ?? "";
+    const inlineTag = ["SPAN", "LABEL", "STRONG", "EM", "B", "I", "U", "S", "SMALL", "SUB", "SUP", "MARK", "ABBR", "CITE", "Q", "DEL", "INS"].includes(root.tagName);
+    const inlineDisplays = ["inline", "inline-block", "inline-flex", "inline-grid"];
+    const inlineSource = inlineTag || inlineDisplays.includes(sourceDisplay);
+    if (inlineSource || (root.tagName === "SPAN" && root.closest("a"))) {
+        // A generated translation span must remain in the same inline formatting
+        // context as a short UI label. Preserve explicit inline-flex/inline-grid/
+        // inline-block when present; otherwise a semantic inline root stays inline.
+        const translatedDisplay = inlineDisplays.includes(sourceDisplay) ? sourceDisplay : "inline";
+        node.style.setProperty("display", translatedDisplay, "important");
         node.style.setProperty("margin-block-start", "0", "important");
+        node.style.setProperty("margin-block-end", "0", "important");
         node.style.removeProperty("margin-inline-start");
         node.style.removeProperty("margin-inline-end");
         node.style.removeProperty("padding-inline-start");

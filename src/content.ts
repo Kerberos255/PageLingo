@@ -3,8 +3,9 @@ import { PageTranslator } from "./core/page-translator";
 import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, normalizeDisplayMode } from "./shared/settings";
-import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml } from "./core/rich-segment";
-import { freezeNavigationLayout, restoreNavigationLayout } from "./core/navigation-layout";
+import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint } from "./core/rich-segment";
+import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint, restoreNavigationLayout } from "./core/navigation-layout";
+import { collectTranslationTelemetry } from "./core/translation-telemetry";
 var translator = null;
 var imageOverlays = new Map();
 var activeImageOverlay = null;
@@ -151,6 +152,56 @@ async function detectRootLanguage(root) {
 let autoTranslateGeneration = 0;
 let autoTranslateInFlightGeneration = -1;
 let autoTranslateInFlightPromise = null;
+let activeTranslationIsAutomatic = false;
+let activeTranslationTargetLanguage = null;
+var relativeTimeLangSnapshots = new Map();
+var relativeTimeObserver = null;
+function relativeTimeLocale(targetLanguage) {
+    const normalized = normalizeDetectedLanguage(targetLanguage) ?? targetLanguage;
+    if (normalized === "zh-Hans") return "zh-CN";
+    if (normalized === "zh-Hant") return "zh-TW";
+    return normalized;
+}
+function relativeTimeElements(scope = document) {
+    const elements = [];
+    if (scope instanceof Element && scope.matches("relative-time")) elements.push(scope);
+    if ("querySelectorAll" in scope) elements.push(...Array.from(scope.querySelectorAll("relative-time")));
+    return elements;
+}
+function localizeRelativeTimeElements(targetLanguage, scope = document) {
+    const locale = relativeTimeLocale(targetLanguage);
+    if (!locale) return;
+    for (const element of relativeTimeElements(scope)) {
+        if (!relativeTimeLangSnapshots.has(element)) {
+            relativeTimeLangSnapshots.set(element, element.getAttribute("lang"));
+        }
+        if (element.getAttribute("lang") !== locale) element.setAttribute("lang", locale);
+    }
+}
+function startRelativeTimeLocalization(targetLanguage) {
+    relativeTimeObserver?.disconnect();
+    relativeTimeObserver = null;
+    localizeRelativeTimeElements(targetLanguage, document);
+    if (!document.body) return;
+    relativeTimeObserver = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const added of Array.from(mutation.addedNodes)) {
+                if (added.nodeType !== Node.ELEMENT_NODE) continue;
+                localizeRelativeTimeElements(targetLanguage, added);
+            }
+        }
+    });
+    relativeTimeObserver.observe(document.body, { childList: true, subtree: true });
+}
+function stopRelativeTimeLocalization() {
+    relativeTimeObserver?.disconnect();
+    relativeTimeObserver = null;
+    for (const [element, lang] of relativeTimeLangSnapshots) {
+        if (lang === null) element.removeAttribute("lang");
+        else element.setAttribute("lang", lang);
+    }
+    relativeTimeLangSnapshots.clear();
+}
 async function translatePage(sourceLanguage, targetLanguage, expectedAutoGeneration = null, manualOverride = false) {
     const stale = () => expectedAutoGeneration !== null && expectedAutoGeneration !== autoTranslateGeneration;
     const settings = await loadSettings();
@@ -165,9 +216,13 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     }
     if (stale()) return 0;
     ensureStyle();
+    stopRelativeTimeLocalization();
     translator?.restore();
     restoreNavigationLayout();
-    if (settings.displayMode === "translation") freezeNavigationLayout();
+    if (settings.displayMode === "translation") {
+        freezeNavigationLayout();
+        startRelativeTimeLocalization(normalizedTarget);
+    }
     const shouldTranslateRoot = async (root) => {
         // Inspect only source text. LI/TD/TH keep the generated translation inside the root;
         // using innerText here would mistake our own Chinese output for source-language content
@@ -192,9 +247,18 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         shouldTranslateRoot,
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
     });
-    const count = await translator.translateAll();
-    translator.observe();
-    return count;
+    activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
+    activeTranslationTargetLanguage = normalizedTarget;
+    let count = 0;
+    try {
+        count = await translator.translateAll();
+        translator.observe();
+        translator.observeTooltips();
+        return count;
+    }
+    finally {
+        if (settings.displayMode === "translation") releaseNavigationLayoutAfterPaint();
+    }
 }
 function normalizeAbsoluteUrl(value) {
     try {
@@ -628,6 +692,9 @@ async function togglePageTranslation() {
     if (translator) {
         translator.restore();
         translator = null;
+        activeTranslationIsAutomatic = false;
+        activeTranslationTargetLanguage = null;
+        stopRelativeTimeLocalization();
         restoreNavigationLayout();
         document.getElementById("flt-style")?.remove();
         return { translated: false, count: 0 };
@@ -695,6 +762,15 @@ browser.runtime.onMessage.addListener(async (message) => {
     }
     if (message.type === "ping")
         return { ok: true };
+    if (message.type === "get-dom-translation-telemetry") {
+        try {
+            if (!document.body) throw new Error("Document body is not ready");
+            return { ok: true, telemetry: collectTranslationTelemetry(document.body) };
+        }
+        catch (error) {
+            return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+    }
     if (message.type === "get-page-language")
         return { ok: true, language: await detectPageLanguage() };
     if (message.type === "translate-page") {
@@ -710,6 +786,9 @@ browser.runtime.onMessage.addListener(async (message) => {
     if (message.type === "restore-page") {
         translator?.restore();
         translator = null;
+        activeTranslationIsAutomatic = false;
+        activeTranslationTargetLanguage = null;
+        stopRelativeTimeLocalization();
         restoreNavigationLayout();
         document.getElementById("flt-style")?.remove();
         return { ok: true };
@@ -720,8 +799,15 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local" || !changes.displayMode || !translator)
         return;
     const mode = normalizeDisplayMode(changes.displayMode.newValue);
-    if (mode === "translation") freezeNavigationLayout(); else restoreNavigationLayout();
+    if (mode === "translation") {
+        freezeNavigationLayout();
+        if (activeTranslationTargetLanguage) startRelativeTimeLocalization(activeTranslationTargetLanguage);
+    } else {
+        restoreNavigationLayout();
+        stopRelativeTimeLocalization();
+    }
     translator.setDisplayMode(mode);
+    if (mode === "translation") releaseNavigationLayoutAfterPaint();
 });
 async function runAutoTranslate(generation) {
     if (window.top !== window || generation !== autoTranslateGeneration)
@@ -817,8 +903,18 @@ function clearRouteRescanTimers() {
 function softResetForRoute() {
     translator?.restore();
     translator = null;
+    activeTranslationIsAutomatic = false;
+    activeTranslationTargetLanguage = null;
+    stopRelativeTimeLocalization();
     restoreNavigationLayout();
     document.getElementById("flt-style")?.remove();
+}
+function preserveAutomaticTranslationAcrossRoute() {
+    return Boolean(
+        translator &&
+        activeTranslationIsAutomatic &&
+        location.hostname.toLowerCase() === "github.com"
+    );
 }
 async function rescanAfterRouteChange(generation) {
     if (generation !== routeRescanGeneration || window.top !== window) return;
@@ -833,8 +929,16 @@ async function rescanAfterRouteChange(generation) {
         }
         // New navigation nodes can arrive after the first route render. Preserve their original
         // source-language box widths before translating any newly discovered roots.
-        if (settings.displayMode === "translation") freezeNavigationLayout(false);
-        await translator.translateAll(document.body);
+        if (settings.displayMode === "translation") {
+            freezeNavigationLayout(false);
+            if (activeTranslationTargetLanguage) localizeRelativeTimeElements(activeTranslationTargetLanguage, document);
+        }
+        try {
+            await translator.translateAll(document.body);
+        }
+        finally {
+            if (settings.displayMode === "translation") releaseNavigationLayoutAfterPaint();
+        }
     } catch (error) {
         console.warn("[PageLingo] SPA translation rescan failed", error);
     }
@@ -844,7 +948,15 @@ function scheduleRouteResetAndRescan() {
     autoTranslateGeneration += 1;
     const generation = routeRescanGeneration;
     clearRouteRescanTimers();
-    softResetForRoute();
+    // GitHub is a Turbo/SPA app whose persistent repository navigation is frequently
+    // re-rendered after the first automatic translation pass. Restoring the whole page
+    // here creates a visible English flash and can leave the persistent navigation in
+    // English if the later automatic pass is skipped. Keep the active automatic
+    // translator alive on GitHub and let its MutationObserver + settlement rescans
+    // translate only the route content that actually changed.
+    if (!preserveAutomaticTranslationAcrossRoute()) {
+        softResetForRoute();
+    }
     // One early rebuild plus later settlement passes. The translator observer remains active
     // between passes, so async route content is handled both reactively and deterministically.
     routeRescanTimers = [100, 360, 900, 1800, 3200].map((delay) => setTimeout(() => {
@@ -857,18 +969,20 @@ function noticePossibleRouteChange() {
     lastObservedUrl = currentUrl;
     scheduleRouteResetAndRescan();
 }
-window.addEventListener("popstate", () => { setTimeout(noticePossibleRouteChange, 0); }, { passive: true });
-window.addEventListener("hashchange", () => { setTimeout(noticePossibleRouteChange, 0); }, { passive: true });
-document.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
-    if (!(target instanceof HTMLAnchorElement)) return;
-    try {
-        const next = new URL(target.href, location.href);
-        if (next.origin === location.origin && next.href !== location.href) {
-            setTimeout(noticePossibleRouteChange, 0);
-            setTimeout(noticePossibleRouteChange, 120);
-        }
-    } catch {}
-}, true);
-setInterval(noticePossibleRouteChange, 400);
+if (window.top === window) {
+    window.addEventListener("popstate", () => { setTimeout(noticePossibleRouteChange, 0); }, { passive: true });
+    window.addEventListener("hashchange", () => { setTimeout(noticePossibleRouteChange, 0); }, { passive: true });
+    document.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
+        if (!(target instanceof HTMLAnchorElement)) return;
+        try {
+            const next = new URL(target.href, location.href);
+            if (next.origin === location.origin && next.href !== location.href) {
+                setTimeout(noticePossibleRouteChange, 0);
+                setTimeout(noticePossibleRouteChange, 120);
+            }
+        } catch {}
+    }, true);
+    setInterval(noticePossibleRouteChange, 400);
+}
 void maybeAutoTranslate(autoTranslateGeneration);

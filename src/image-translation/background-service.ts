@@ -40,6 +40,11 @@ interface PendingOcr {
   timeoutId: ReturnType<typeof setTimeout>;
 }
 
+interface ContextMenuFrameInfo {
+  frameId?: number | undefined;
+  srcUrl?: string | undefined;
+}
+
 class ImageOcrWorkerClient {
   private worker: Worker | null = null;
   private nextId = 1;
@@ -187,7 +192,7 @@ export async function handleImageRuntimeMessage(
       return { ok: false, error: "无效的图片像素数据" };
     }
     try {
-      const bundle = await getImageOcrBundle(undefined, (status) => {
+      const bundle = await getImageOcrBundle(undefined, (status: string) => {
         void sendProgress(sender, status);
       });
       await sendProgress(sender, "OCR 模型就绪 · 正在识别图片…");
@@ -233,7 +238,7 @@ async function syncContextMenu(): Promise<void> {
 
 function sendContextMessage(
   tabId: number,
-  info: browser.contextMenus.OnClickData | browser.contextMenus.OnShownInfo,
+  info: browser.contextMenus.OnClickData | ContextMenuFrameInfo,
   message: unknown,
 ): Promise<unknown> {
   const options = typeof info.frameId === "number" ? { frameId: info.frameId } : undefined;
@@ -241,7 +246,7 @@ function sendContextMessage(
 }
 
 async function refreshContextMenuTitles(
-  info: browser.contextMenus.OnShownInfo,
+  info: ContextMenuFrameInfo,
   tab?: browser.tabs.Tab,
 ): Promise<void> {
   if (!tab?.id) return;

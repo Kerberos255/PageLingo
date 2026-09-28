@@ -1,4 +1,5 @@
 import { sendRuntimeMessage } from "./shared/runtime-message";
+import { requestExternalTranslationConsent } from "./shared/data-consent";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
   type ExternalTranslationEngineType,
@@ -38,6 +39,7 @@ interface EnginePreset {
 const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
   microsoft: { name: "Microsoft Translator", baseUrl: "https://api.cognitive.microsofttranslator.com" },
   google: { name: "Google Cloud Translation", baseUrl: "https://translation.googleapis.com/language/translate/v2" },
+  deepl: { name: "DeepL API", baseUrl: "https://api.deepl.com/v2" },
   gemini: { name: "Gemini API", baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-3.8-flash" },
   openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free" },
   "openai-compatible": { name: "OpenAI Compatible", baseUrl: "", model: "" },
@@ -54,6 +56,7 @@ const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
 const TYPE_LABELS: Record<ExternalTranslationEngineType, string> = {
   microsoft: "Microsoft Translator",
   google: "Google Cloud Translation",
+  deepl: "DeepL API",
   gemini: "Gemini API",
   openrouter: "OpenRouter",
   "openai-compatible": "OpenAI Compatible",
@@ -193,6 +196,15 @@ function renderEngineList(): void {
       use.textContent = "使用";
       use.addEventListener("click", () => void setActive(engine.id));
       actions.append(use);
+    } else if (engine.enabled && engineState.activeEngineId === engine.id) {
+      const consent = document.createElement("button");
+      consent.type = "button";
+      consent.textContent = "数据权限";
+      consent.title = "查看或重新请求此外部引擎所需的数据传输权限";
+      consent.addEventListener("click", () => void requestExternalTranslationConsent(engine.hasApiKey)
+        .then((granted) => notify(granted ? "外部翻译数据权限已授权" : "未授予外部翻译数据权限", 5000))
+        .catch((error) => notify(error instanceof Error ? error.message : String(error), 5000)));
+      actions.append(consent);
     }
     const toggle = document.createElement("button");
     toggle.type = "button";
@@ -223,6 +235,15 @@ async function requestState(message: Record<string, unknown>): Promise<void> {
 
 async function setActive(id: string): Promise<void> {
   try {
+    if (id !== LOCAL_TRANSLATION_ENGINE_ID) {
+      const engine = engineState.engines.find((item) => item.id === id);
+      if (!engine) throw new Error("找不到翻译引擎");
+      const granted = await requestExternalTranslationConsent(engine.hasApiKey);
+      if (!granted) {
+        renderActiveSelect();
+        throw new Error("未授权向外部翻译服务发送网页内容");
+      }
+    }
     await requestState({ type: "set-active-translation-engine", id });
     notify(id === LOCAL_TRANSLATION_ENGINE_ID ? "已切换到 Firefox 本地翻译" : "翻译引擎已切换");
   } catch (error) {
@@ -254,6 +275,8 @@ async function testConfig(): Promise<void> {
   testButton.textContent = "测试中…";
   try {
     const config = collectConfig();
+    const granted = await requestExternalTranslationConsent(Boolean(config.apiKey));
+    if (!granted) throw new Error("未授权向外部翻译服务发送测试内容");
     const response = await sendRuntimeMessage<EngineResponse>({ type: "test-translation-engine", config });
     if (!response?.ok) throw new Error(response?.error ?? "连接测试失败");
     notify(`测试成功 · ${response.preview ?? "翻译服务可用"}`, 5000);

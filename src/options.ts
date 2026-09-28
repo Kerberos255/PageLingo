@@ -1,58 +1,131 @@
-// @ts-nocheck
-import { languageLabel, loadSettings, normalizeSitePattern, saveAutoTranslateEnabled, saveDisplayMode, saveImageTranslationEnabled, saveLanguageRules, saveModelUpdatePolicy, saveSiteRules, saveTargetLanguage, saveBuiltinGlossaryEnabled, saveGlossaryCollections, glossaryEntriesToText, parseGlossaryEditorText } from "./shared/settings";
+import {
+    createGlossaryId,
+    glossaryEntriesToText,
+    languageLabel,
+    loadSettings,
+    normalizeSitePattern,
+    parseGlossaryEditorText,
+    saveAutoTranslateEnabled,
+    saveBuiltinGlossaryEnabled,
+    saveDisplayMode,
+    saveGlossaryCollections,
+    saveImageTranslationEnabled,
+    saveLanguageRules,
+    saveModelUpdatePolicy,
+    saveSiteRules,
+    saveTargetLanguage,
+    type DisplayMode,
+    type GlossaryCollection,
+    type ModelUpdatePolicy,
+} from "./shared/settings";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { initializeTranslationEngines } from "./options-engines";
-var radios = Array.from(document.querySelectorAll('input[name="display-mode"]'));
-var status = document.querySelector("#save-status");
-var autoToggle = document.querySelector("#auto-translate-enabled");
-var targetSelect = document.querySelector("#target-language");
-var neverSiteInput = document.querySelector("#never-site-input");
-var neverSiteAdd = document.querySelector("#never-site-add");
-var neverSiteList = document.querySelector("#never-site-list");
-var alwaysSiteInput = document.querySelector("#always-site-input");
-var alwaysSiteAdd = document.querySelector("#always-site-add");
-var alwaysSiteList = document.querySelector("#always-site-list");
-var neverLanguageSelect = document.querySelector("#never-language-select");
-var neverLanguageAdd = document.querySelector("#never-language-add");
-var neverLanguageList = document.querySelector("#never-language-list");
-var alwaysLanguageSelect = document.querySelector("#always-language-select");
-var alwaysLanguageAdd = document.querySelector("#always-language-add");
-var alwaysLanguageList = document.querySelector("#always-language-list");
-var packSelect = document.querySelector("#language-pack-select");
-var downloadPackButton = document.querySelector("#download-language-pack");
-var packList = document.querySelector("#language-pack-list");
-var updatePolicy = document.querySelector("#model-update-policy");
-var checkUpdates = document.querySelector("#check-model-updates");
-var updateStatus = document.querySelector("#model-update-status");
-var imageToggle = document.querySelector("#image-translation-enabled");
-var builtinGlossaryToggle = document.querySelector("#builtin-glossary-enabled");
-var glossaryCollectionList = document.querySelector("#glossary-collection-list");
-var createGlossaryButton = document.querySelector("#create-glossary");
-var glossaryEditor = document.querySelector("#glossary-editor");
-var glossaryEditorTitle = document.querySelector("#glossary-editor-title");
-var glossaryNameInput = document.querySelector("#glossary-name");
-var glossaryEntriesTextarea = document.querySelector("#glossary-entries");
-var saveGlossaryButton = document.querySelector("#save-glossary");
-var cancelGlossaryButton = document.querySelector("#cancel-glossary");
-var closeGlossaryEditorButton = document.querySelector("#close-glossary-editor");
-var deleteGlossaryButton = document.querySelector("#delete-glossary");
-var imageStatus = document.querySelector("#image-ocr-status");
-var deleteOcrModels = document.querySelector("#delete-image-ocr-models");
-var navItems = Array.from(document.querySelectorAll("[data-settings-page]"));
-var pages = Array.from(document.querySelectorAll(".settings-page"));
-var neverTranslateSites = [];
-var alwaysTranslateSites = [];
-var neverTranslateLanguages = [];
-var alwaysTranslateLanguages = [];
-var sourceLanguages = [];
-var packs = [];
-var glossaryCollections = [];
-var editingGlossaryId = null;
-function setChecked(mode) {
+
+interface LanguageOption {
+    code: string;
+    label: string;
+}
+
+interface LanguagePackDirection {
+    key: string;
+    sourceLanguage: string;
+    targetLanguage: string;
+    bytes: number;
+    version: string;
+    installed: boolean;
+    updateAvailable: boolean;
+    latestVersion: string;
+}
+
+interface LanguagePackInfo {
+    language: string;
+    label: string;
+    canTranslateFromEnglish: boolean;
+    canTranslateToEnglish: boolean;
+    totalBytes: number;
+    installedBytes: number;
+    installed: boolean;
+    partial: boolean;
+    updateAvailable: boolean;
+    directions: LanguagePackDirection[];
+}
+
+interface LanguageCatalog {
+    sourceLanguages: LanguageOption[];
+    targetLanguages: LanguageOption[];
+    packs: LanguagePackInfo[];
+    updateCheckedAt: number;
+    updateCount: number;
+}
+
+interface ImageOcrStatus {
+    installed: boolean;
+    totalBytes: number;
+    runtimeSupported: boolean;
+}
+
+interface OptionsRuntimeResponse {
+    ok?: boolean;
+    error?: string;
+    catalog?: LanguageCatalog;
+    pack?: LanguagePackInfo;
+    status?: ImageOcrStatus;
+}
+
+const radios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="display-mode"]'));
+const status = document.querySelector<HTMLElement>("#save-status");
+const autoToggle = document.querySelector<HTMLInputElement>("#auto-translate-enabled");
+const targetSelect = document.querySelector<HTMLSelectElement>("#target-language");
+const neverSiteInput = document.querySelector<HTMLInputElement>("#never-site-input");
+const neverSiteAdd = document.querySelector<HTMLButtonElement>("#never-site-add");
+const neverSiteList = document.querySelector<HTMLElement>("#never-site-list");
+const alwaysSiteInput = document.querySelector<HTMLInputElement>("#always-site-input");
+const alwaysSiteAdd = document.querySelector<HTMLButtonElement>("#always-site-add");
+const alwaysSiteList = document.querySelector<HTMLElement>("#always-site-list");
+const neverLanguageSelect = document.querySelector<HTMLSelectElement>("#never-language-select");
+const neverLanguageAdd = document.querySelector<HTMLButtonElement>("#never-language-add");
+const neverLanguageList = document.querySelector<HTMLElement>("#never-language-list");
+const alwaysLanguageSelect = document.querySelector<HTMLSelectElement>("#always-language-select");
+const alwaysLanguageAdd = document.querySelector<HTMLButtonElement>("#always-language-add");
+const alwaysLanguageList = document.querySelector<HTMLElement>("#always-language-list");
+const packSelect = document.querySelector<HTMLSelectElement>("#language-pack-select");
+const downloadPackButton = document.querySelector<HTMLButtonElement>("#download-language-pack");
+const packList = document.querySelector<HTMLElement>("#language-pack-list");
+const updatePolicy = document.querySelector<HTMLSelectElement>("#model-update-policy");
+const checkUpdates = document.querySelector<HTMLButtonElement>("#check-model-updates");
+const updateStatus = document.querySelector<HTMLElement>("#model-update-status");
+const imageToggle = document.querySelector<HTMLInputElement>("#image-translation-enabled");
+const builtinGlossaryToggle = document.querySelector<HTMLInputElement>("#builtin-glossary-enabled");
+const glossaryCollectionList = document.querySelector<HTMLElement>("#glossary-collection-list");
+const createGlossaryButton = document.querySelector<HTMLButtonElement>("#create-glossary");
+const glossaryEditor = document.querySelector<HTMLElement>("#glossary-editor");
+const glossaryEditorTitle = document.querySelector<HTMLElement>("#glossary-editor-title");
+const glossaryNameInput = document.querySelector<HTMLInputElement>("#glossary-name");
+const glossaryEntriesTextarea = document.querySelector<HTMLTextAreaElement>("#glossary-entries");
+const saveGlossaryButton = document.querySelector<HTMLButtonElement>("#save-glossary");
+const cancelGlossaryButton = document.querySelector<HTMLButtonElement>("#cancel-glossary");
+const closeGlossaryEditorButton = document.querySelector<HTMLButtonElement>("#close-glossary-editor");
+const deleteGlossaryButton = document.querySelector<HTMLButtonElement>("#delete-glossary");
+const imageStatus = document.querySelector<HTMLElement>("#image-ocr-status");
+const deleteOcrModels = document.querySelector<HTMLButtonElement>("#delete-image-ocr-models");
+const navItems = Array.from(document.querySelectorAll<HTMLElement>("[data-settings-page]"));
+const pages = Array.from(document.querySelectorAll<HTMLElement>(".settings-page"));
+
+let neverTranslateSites: string[] = [];
+let alwaysTranslateSites: string[] = [];
+let neverTranslateLanguages: string[] = [];
+let alwaysTranslateLanguages: string[] = [];
+let sourceLanguages: LanguageOption[] = [];
+let packs: LanguagePackInfo[] = [];
+let glossaryCollections: GlossaryCollection[] = [];
+let editingGlossaryId: string | null = null;
+
+function setChecked(mode: DisplayMode): void {
     for (const radio of radios)
         radio.checked = radio.value === mode;
 }
-function showSaved(message = "已保存", timeout = 1600) {
+
+function showSaved(message = "已保存", timeout = 1600): void {
     if (!status)
         return;
     status.textContent = message;
@@ -61,15 +134,18 @@ function showSaved(message = "已保存", timeout = 1600) {
             status.textContent = "设置会自动保存并立即生效";
     }, timeout);
 }
-function formatBytes(bytes) {
+
+function formatBytes(bytes: number): string {
     return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 }
-function formatCheckedAt(value) {
+
+function formatCheckedAt(value: number): string {
     if (!value)
         return "尚未检查更新";
     return `上次检查：${new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "short" }).format(new Date(value))}`;
 }
-function applyCatalog(catalog) {
+
+function applyCatalog(catalog: LanguageCatalog): void {
     packs = [...catalog.packs].sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
     sourceLanguages = [...catalog.sourceLanguages];
     fillSelect(neverLanguageSelect, sourceLanguages);
@@ -82,7 +158,8 @@ function applyCatalog(catalog) {
     renderPacks();
     renderPackPicker();
 }
-function fillSelect(select, languages) {
+
+function fillSelect(select: HTMLSelectElement | null, languages: readonly LanguageOption[]): void {
     if (!select)
         return;
     select.replaceChildren();
@@ -93,7 +170,14 @@ function fillSelect(select, languages) {
         select.append(option);
     }
 }
-function renderRuleList(container, values, emptyText, labelFor, removeValue) {
+
+function renderRuleList(
+    container: HTMLElement | null,
+    values: readonly string[],
+    emptyText: string,
+    labelFor: (value: string) => string,
+    removeValue: (value: string) => void,
+): void {
     if (!container)
         return;
     container.replaceChildren();
@@ -117,7 +201,8 @@ function renderRuleList(container, values, emptyText, labelFor, removeValue) {
         container.append(row);
     }
 }
-function renderRuleLists() {
+
+function renderRuleLists(): void {
     renderRuleList(neverSiteList, neverTranslateSites, "暂无网址", (value) => value, (value) => {
         neverTranslateSites = neverTranslateSites.filter((item) => item !== value);
         void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(() => { renderRuleLists(); showSaved(); });
@@ -135,14 +220,16 @@ function renderRuleLists() {
         void saveLanguageRules(neverTranslateLanguages, alwaysTranslateLanguages).then(() => { renderRuleLists(); showSaved(); });
     });
 }
-function packRouteLabel(pack) {
+
+function packRouteLabel(pack: LanguagePackInfo): string {
     if (pack.canTranslateFromEnglish && pack.canTranslateToEnglish)
         return `English ↔ ${pack.label}`;
     if (pack.canTranslateFromEnglish)
         return `English → ${pack.label}`;
     return `${pack.label} → English`;
 }
-function renderPackPicker() {
+
+function renderPackPicker(): void {
     if (!packSelect || !downloadPackButton)
         return;
     downloadPackButton.textContent = "下载";
@@ -162,7 +249,8 @@ function renderPackPicker() {
     }
     downloadPackButton.disabled = available.length === 0;
 }
-function renderPacks() {
+
+function renderPacks(): void {
     if (!packList)
         return;
     packList.replaceChildren();
@@ -215,16 +303,17 @@ function renderPacks() {
         packList.append(row);
     }
 }
-async function changePack(pack, button) {
+
+async function changePack(pack: LanguagePackInfo, button: HTMLButtonElement): Promise<void> {
     button.disabled = true;
     const deleting = pack.installed;
     button.textContent = deleting ? "删除中…" : "下载中…";
     showSaved(deleting ? `正在删除 ${pack.label}` : `正在下载 ${pack.label} · ${formatBytes(pack.totalBytes)}`, 30_000);
     try {
-        const response = await sendRuntimeMessage({ type: deleting ? "delete-language-pack" : "download-language-pack", language: pack.language });
+        const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: deleting ? "delete-language-pack" : "download-language-pack", language: pack.language });
         if (!response?.ok || !response.pack)
             throw new Error(response?.error ?? "语言包操作失败");
-        packs = packs.map((item) => item.language === pack.language ? response.pack : item);
+        packs = packs.map((item) => item.language === pack.language ? response.pack as LanguagePackInfo : item);
         renderPacks();
         renderPackPicker();
         showSaved(deleting ? `已删除 ${pack.label}` : `已下载 ${pack.label}`);
@@ -235,12 +324,13 @@ async function changePack(pack, button) {
         showSaved(error instanceof Error ? error.message : String(error), 5000);
     }
 }
-async function updatePack(pack, button) {
+
+async function updatePack(pack: LanguagePackInfo, button: HTMLButtonElement): Promise<void> {
     button.disabled = true;
     button.textContent = "更新中…";
     showSaved(`正在安全更新 ${pack.label}`, 60_000);
     try {
-        const response = await sendRuntimeMessage({ type: "update-language-pack", language: pack.language });
+        const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "update-language-pack", language: pack.language });
         if (!response?.ok || !response.catalog)
             throw new Error(response?.error ?? "模型更新失败");
         applyCatalog(response.catalog);
@@ -252,20 +342,23 @@ async function updatePack(pack, button) {
         showSaved(error instanceof Error ? error.message : String(error), 5000);
     }
 }
-function glossarySummary(collection) {
+
+function glossarySummary(collection: GlossaryCollection): string {
     const protect = collection.entries.filter((entry) => entry.mode === "protect").length;
     const replace = collection.entries.length - protect;
-    const parts = [];
+    const parts: string[] = [];
     if (protect) parts.push(`${protect} 个保留原文`);
     if (replace) parts.push(`${replace} 个指定译法`);
     return parts.length ? parts.join(" · ") : "暂无术语";
 }
-async function persistGlossaryCollections(message = "术语库已保存") {
+
+async function persistGlossaryCollections(message = "术语库已保存"): Promise<void> {
     await saveGlossaryCollections(glossaryCollections);
     renderGlossaryCollections();
     showSaved(message);
 }
-function renderGlossaryCollections() {
+
+function renderGlossaryCollections(): void {
     if (!glossaryCollectionList) return;
     glossaryCollectionList.replaceChildren();
     if (!glossaryCollections.length) {
@@ -298,9 +391,10 @@ function renderGlossaryCollections() {
         glossaryCollectionList.append(card);
     }
 }
-function openGlossaryEditor(id = null) {
+
+function openGlossaryEditor(id: string | null = null): void {
     editingGlossaryId = id;
-    const collection = id ? glossaryCollections.find((item) => item.id === id) : null;
+    const collection = id ? glossaryCollections.find((item) => item.id === id) ?? null : null;
     if (glossaryEditorTitle) glossaryEditorTitle.textContent = collection ? "编辑术语库" : "新建术语库";
     if (glossaryNameInput) glossaryNameInput.value = collection?.name ?? "";
     if (glossaryEntriesTextarea) glossaryEntriesTextarea.value = collection ? glossaryEntriesToText(collection.entries) : "";
@@ -309,34 +403,39 @@ function openGlossaryEditor(id = null) {
     glossaryNameInput?.focus();
     glossaryEditor?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
-function closeGlossaryEditor() {
+
+function closeGlossaryEditor(): void {
     editingGlossaryId = null;
     if (glossaryEditor) glossaryEditor.hidden = true;
 }
-async function saveGlossaryEditor() {
+
+async function saveGlossaryEditor(): Promise<void> {
     const name = glossaryNameInput?.value.trim() ?? "";
     if (!name) { showSaved("请填写术语库名称", 3000); glossaryNameInput?.focus(); return; }
     const entries = parseGlossaryEditorText(glossaryEntriesTextarea?.value ?? "");
     if (editingGlossaryId) {
         const index = glossaryCollections.findIndex((item) => item.id === editingGlossaryId);
-        if (index >= 0) glossaryCollections[index] = { ...glossaryCollections[index], name, entries };
+        const current = index >= 0 ? glossaryCollections[index] : undefined;
+        if (current) glossaryCollections[index] = { ...current, name, entries };
     } else {
         glossaryCollections.push({ id: createGlossaryId(), name, enabled: true, entries });
     }
     await persistGlossaryCollections("术语库已保存");
     closeGlossaryEditor();
 }
-async function deleteEditingGlossary() {
+
+async function deleteEditingGlossary(): Promise<void> {
     if (!editingGlossaryId) return;
     glossaryCollections = glossaryCollections.filter((item) => item.id !== editingGlossaryId);
     await persistGlossaryCollections("术语库已删除");
     closeGlossaryEditor();
 }
-async function refreshImageOcrStatus() {
+
+async function refreshImageOcrStatus(): Promise<void> {
     if (!imageStatus || !deleteOcrModels)
         return;
     try {
-        const response = await sendRuntimeMessage({ type: "get-image-ocr-status" });
+        const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "get-image-ocr-status" });
         if (!response?.ok || !response.status)
             throw new Error(response?.error ?? "无法读取 OCR 状态");
         const current = response.status;
@@ -352,10 +451,11 @@ async function refreshImageOcrStatus() {
         deleteOcrModels.disabled = true;
     }
 }
-async function initialize() {
+
+async function initialize(): Promise<void> {
     const [settings, response] = await Promise.all([
         loadSettings(),
-        sendRuntimeMessage({ type: "get-language-catalog" }),
+        sendRuntimeMessage<OptionsRuntimeResponse>({ type: "get-language-catalog" }),
     ]);
     if (!response?.ok || !response.catalog)
         throw new Error(response?.error ?? "无法读取语言目录");
@@ -384,14 +484,16 @@ async function initialize() {
     selectSettingsPage(location.hash.slice(1) || "translation");
     await refreshImageOcrStatus();
 }
-function selectSettingsPage(pageId) {
+
+function selectSettingsPage(pageId: string): void {
     const next = pages.some((page) => page.id === pageId) ? pageId : "translation";
     for (const page of pages)
         page.classList.toggle("active", page.id === next);
     for (const item of navItems)
         item.classList.toggle("active", item.dataset.settingsPage === next);
 }
-function addSiteRule(kind) {
+
+function addSiteRule(kind: "never" | "always"): void {
     const input = kind === "never" ? neverSiteInput : alwaysSiteInput;
     if (!input)
         return;
@@ -415,7 +517,8 @@ function addSiteRule(kind) {
         showSaved();
     });
 }
-function addLanguageRule(kind) {
+
+function addLanguageRule(kind: "never" | "always"): void {
     const select = kind === "never" ? neverLanguageSelect : alwaysLanguageSelect;
     const language = select?.value;
     if (!language)
@@ -433,29 +536,43 @@ function addLanguageRule(kind) {
         showSaved();
     });
 }
+
 for (const radio of radios) {
     radio.addEventListener("change", () => {
-        if (radio.checked)
-            void saveDisplayMode(radio.value).then(() => showSaved());
+        if (radio.checked) {
+            const mode: DisplayMode = radio.value === "bilingual" ? "bilingual" : "translation";
+            void saveDisplayMode(mode).then(() => showSaved());
+        }
     });
 }
+
 for (const item of navItems) {
     item.addEventListener("click", () => selectSettingsPage(item.dataset.settingsPage ?? "translation"));
 }
+
 window.addEventListener("hashchange", () => selectSettingsPage(location.hash.slice(1) || "translation"));
-autoToggle?.addEventListener("change", () => void saveAutoTranslateEnabled(autoToggle.checked).then(() => showSaved()));
-targetSelect?.addEventListener("change", () => void saveTargetLanguage(targetSelect.value).then(() => showSaved()));
-builtinGlossaryToggle?.addEventListener("change", () => {
-    void saveBuiltinGlossaryEnabled(builtinGlossaryToggle.checked).then(() => showSaved(builtinGlossaryToggle.checked ? "默认术语库已启用" : "默认术语库已停用"));
-});
+
+if (autoToggle) {
+    autoToggle.addEventListener("change", () => void saveAutoTranslateEnabled(autoToggle.checked).then(() => showSaved()));
+}
+if (targetSelect) {
+    targetSelect.addEventListener("change", () => void saveTargetLanguage(targetSelect.value).then(() => showSaved()));
+}
+if (builtinGlossaryToggle) {
+    builtinGlossaryToggle.addEventListener("change", () => {
+        void saveBuiltinGlossaryEnabled(builtinGlossaryToggle.checked).then(() => showSaved(builtinGlossaryToggle.checked ? "默认术语库已启用" : "默认术语库已停用"));
+    });
+}
 createGlossaryButton?.addEventListener("click", () => openGlossaryEditor(null));
 saveGlossaryButton?.addEventListener("click", () => void saveGlossaryEditor());
 cancelGlossaryButton?.addEventListener("click", closeGlossaryEditor);
 closeGlossaryEditorButton?.addEventListener("click", closeGlossaryEditor);
 deleteGlossaryButton?.addEventListener("click", () => void deleteEditingGlossary());
-imageToggle?.addEventListener("change", () => {
-    void saveImageTranslationEnabled(imageToggle.checked).then(() => showSaved(imageToggle.checked ? "图片翻译已开启" : "图片翻译已关闭"));
-});
+if (imageToggle) {
+    imageToggle.addEventListener("change", () => {
+        void saveImageTranslationEnabled(imageToggle.checked).then(() => showSaved(imageToggle.checked ? "图片翻译已开启" : "图片翻译已关闭"));
+    });
+}
 neverSiteAdd?.addEventListener("click", () => addSiteRule("never"));
 alwaysSiteAdd?.addEventListener("click", () => addSiteRule("always"));
 neverSiteInput?.addEventListener("keydown", (event) => {
@@ -472,52 +589,63 @@ alwaysSiteInput?.addEventListener("keydown", (event) => {
 });
 neverLanguageAdd?.addEventListener("click", () => addLanguageRule("never"));
 alwaysLanguageAdd?.addEventListener("click", () => addLanguageRule("always"));
-downloadPackButton?.addEventListener("click", () => {
-    const pack = packs.find((item) => item.language === packSelect?.value);
-    if (pack)
-        void changePack(pack, downloadPackButton);
-});
-deleteOcrModels?.addEventListener("click", () => {
-    void (async () => {
-        deleteOcrModels.disabled = true;
-        showSaved("正在删除 OCR 模型…", 30_000);
-        try {
-            const response = await sendRuntimeMessage({ type: "delete-image-ocr-models" });
-            if (!response?.ok)
-                throw new Error(response?.error ?? "删除 OCR 模型失败");
-            await refreshImageOcrStatus();
-            showSaved("OCR 模型已删除");
-        }
-        catch (error) {
-            showSaved(error instanceof Error ? error.message : String(error), 5000);
-            await refreshImageOcrStatus();
-        }
-    })();
-});
-updatePolicy?.addEventListener("change", () => {
-    void saveModelUpdatePolicy(updatePolicy.value).then(() => showSaved("模型更新策略已保存"));
-});
-checkUpdates?.addEventListener("click", () => {
-    void (async () => {
-        checkUpdates.disabled = true;
-        checkUpdates.textContent = "检查中…";
-        showSaved("正在检查 Firefox 模型更新…", 60_000);
-        try {
-            const response = await sendRuntimeMessage({ type: "check-model-updates" });
-            if (!response?.ok || !response.catalog)
-                throw new Error(response?.error ?? "检查更新失败");
-            applyCatalog(response.catalog);
-            renderRuleLists();
-            showSaved(response.catalog.updateCount > 0 ? `发现 ${response.catalog.updateCount} 个模型方向有更新` : "所有已安装模型均为最新");
-        }
-        catch (error) {
-            showSaved(error instanceof Error ? error.message : String(error), 5000);
-        }
-        finally {
-            checkUpdates.disabled = false;
-            checkUpdates.textContent = "检查更新";
-        }
-    })();
-});
+if (downloadPackButton) {
+    downloadPackButton.addEventListener("click", () => {
+        const pack = packs.find((item) => item.language === packSelect?.value);
+        if (pack)
+            void changePack(pack, downloadPackButton);
+    });
+}
+if (deleteOcrModels) {
+    deleteOcrModels.addEventListener("click", () => {
+        void (async () => {
+            deleteOcrModels.disabled = true;
+            showSaved("正在删除 OCR 模型…", 30_000);
+            try {
+                const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "delete-image-ocr-models" });
+                if (!response?.ok)
+                    throw new Error(response?.error ?? "删除 OCR 模型失败");
+                await refreshImageOcrStatus();
+                showSaved("OCR 模型已删除");
+            }
+            catch (error) {
+                showSaved(error instanceof Error ? error.message : String(error), 5000);
+                await refreshImageOcrStatus();
+            }
+        })();
+    });
+}
+if (updatePolicy) {
+    updatePolicy.addEventListener("change", () => {
+        const value = updatePolicy.value;
+        const policy: ModelUpdatePolicy = value === "notify" || value === "manual" ? value : "auto";
+        void saveModelUpdatePolicy(policy).then(() => showSaved("模型更新策略已保存"));
+    });
+}
+if (checkUpdates) {
+    checkUpdates.addEventListener("click", () => {
+        void (async () => {
+            checkUpdates.disabled = true;
+            checkUpdates.textContent = "检查中…";
+            showSaved("正在检查 Firefox 模型更新…", 60_000);
+            try {
+                const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "check-model-updates" });
+                if (!response?.ok || !response.catalog)
+                    throw new Error(response?.error ?? "检查更新失败");
+                applyCatalog(response.catalog);
+                renderRuleLists();
+                showSaved(response.catalog.updateCount > 0 ? `发现 ${response.catalog.updateCount} 个模型方向有更新` : "所有已安装模型均为最新");
+            }
+            catch (error) {
+                showSaved(error instanceof Error ? error.message : String(error), 5000);
+            }
+            finally {
+                checkUpdates.disabled = false;
+                checkUpdates.textContent = "检查更新";
+            }
+        })();
+    });
+}
+
 void initialize().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));
 void initializeTranslationEngines().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));

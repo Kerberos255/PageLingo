@@ -27,6 +27,7 @@ import {
 } from "./providers/bergamot/model-updates";
 import { handleImageRuntimeMessage, initializeImageTranslation } from "./image-translation/background-service";
 import { languageLabel, loadSettings, normalizeDetectedLanguage } from "./shared/settings";
+import { hasExternalTranslationConsent } from "./shared/data-consent";
 import { translateWithExternalEngine } from "./providers/external-translation";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
@@ -52,7 +53,14 @@ interface RuntimeMessage {
     html?: unknown;
     sourceLanguage?: unknown;
     targetLanguage?: unknown;
+    terminology?: unknown;
   };
+  requests?: Array<{
+    html?: unknown;
+    sourceLanguage?: unknown;
+    targetLanguage?: unknown;
+    terminology?: unknown;
+  }>;
   sourceLanguage?: unknown;
   targetLanguage?: unknown;
   language?: unknown;
@@ -110,14 +118,25 @@ async function activeExternalEngine() {
   return state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
 }
 
-async function externalEngineReady(): Promise<boolean> {
-  return Boolean(await activeExternalEngine());
+function isLoopbackTranslationEndpoint(value: string): boolean {
+  if (!value) return false;
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return false;
+  }
 }
 
 async function translationEngineStateForUi() {
   const state = await currentTranslationEngineState();
+  const activeExternal = state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
+    ? null
+    : state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
   return {
     activeEngineId: state.activeEngineId,
+    structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
+      || Boolean(activeExternal && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
     engines: state.engines.map((engine) => ({
       id: engine.id,
       name: engine.name,
@@ -382,6 +401,14 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
 
   if (message.type === "ping-backend") return { ok: true };
 
+  if (message.type === "get-translation-performance") {
+    return { ok: true, stats: bergamot.performanceStats() };
+  }
+  if (message.type === "reset-translation-performance") {
+    bergamot.resetPerformanceStats();
+    return { ok: true };
+  }
+
   try {
     if (message.type === "translate-html") {
       const request = message.request;
@@ -389,9 +416,25 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const sourceLanguage = asLanguage(request.sourceLanguage);
       const targetLanguage = asLanguage(request.targetLanguage);
       if (!sourceLanguage || !targetLanguage) throw new Error("Invalid translation languages");
+      const terminology = Array.isArray(request.terminology)
+        ? request.terminology
+            .filter((entry): entry is { source: string; target: string; mode: "protect" | "replace" } =>
+              Boolean(
+                entry &&
+                typeof entry === "object" &&
+                typeof (entry as { source?: unknown }).source === "string" &&
+                typeof (entry as { target?: unknown }).target === "string" &&
+                ((entry as { mode?: unknown }).mode === "protect" || (entry as { mode?: unknown }).mode === "replace")
+              )
+            )
+            .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }))
+        : [];
       const external = await activeExternalEngine();
       if (external) {
-        const html = await translateWithExternalEngine(external, { html: request.html, sourceLanguage, targetLanguage });
+        if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
+          throw new Error("外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权");
+        }
+        const html = await translateWithExternalEngine(external, { html: request.html, sourceLanguage, targetLanguage, terminology });
         return { ok: true, html };
       }
       const overrides = await currentOverrides();
@@ -401,24 +444,68 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       return { ok: true, html };
     }
 
+    if (message.type === "translate-html-batch") {
+      const requests = message.requests;
+      if (!Array.isArray(requests) || requests.length === 0 || requests.length > 32) {
+        throw new Error("Invalid translation batch");
+      }
+      const normalized = requests.map((request) => {
+        if (!request || typeof request.html !== "string") throw new Error("Invalid translation request");
+        const sourceLanguage = asLanguage(request.sourceLanguage);
+        const targetLanguage = asLanguage(request.targetLanguage);
+        if (!sourceLanguage || !targetLanguage) throw new Error("Invalid translation languages");
+        return { html: request.html, sourceLanguage, targetLanguage };
+      });
+      const first = normalized[0]!;
+      if (normalized.some((request) =>
+        request.sourceLanguage !== first.sourceLanguage || request.targetLanguage !== first.targetLanguage
+      )) {
+        throw new Error("Translation batch must use one language route");
+      }
+      if (await activeExternalEngine()) {
+        return { ok: false, batchUnsupported: true, error: "Batching is local-Bergamot only" };
+      }
+      const overrides = await currentOverrides();
+      const route = routeFor(first.sourceLanguage, first.targetLanguage, overrides);
+      if (!route) throw new Error(`当前本地模型不支持 ${languageLabel(first.sourceLanguage)} → ${languageLabel(first.targetLanguage)}`);
+      const htmls = await bergamot.translateHtmlBatch(normalized.map((request) => request.html), route);
+      return { ok: true, htmls };
+    }
+
     if (message.type === "can-translate") {
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
-      const externalReady = await externalEngineReady();
-      const overrides = externalReady ? null : await currentOverrides();
+      const external = await activeExternalEngine();
+      const externalReady = external
+        ? await hasExternalTranslationConsent(Boolean(external.apiKey))
+        : false;
+      const overrides = external ? null : await currentOverrides();
       return {
         ok: true,
-        supported: Boolean(sourceLanguage && targetLanguage && sourceLanguage !== targetLanguage && (externalReady || (overrides && routeFor(sourceLanguage, targetLanguage, overrides)))),
+        supported: Boolean(
+          sourceLanguage &&
+          targetLanguage &&
+          sourceLanguage !== targetLanguage &&
+          (external ? externalReady : (overrides && routeFor(sourceLanguage, targetLanguage, overrides)))
+        ),
       };
     }
 
     if (message.type === "is-translation-ready") {
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
-      const externalReady = await externalEngineReady();
+      const external = await activeExternalEngine();
+      const externalReady = external
+        ? await hasExternalTranslationConsent(Boolean(external.apiKey))
+        : false;
       return {
         ok: true,
-        ready: Boolean(sourceLanguage && targetLanguage && sourceLanguage !== targetLanguage && (externalReady || await isTranslationRouteCached(sourceLanguage, targetLanguage))),
+        ready: Boolean(
+          sourceLanguage &&
+          targetLanguage &&
+          sourceLanguage !== targetLanguage &&
+          (external ? externalReady : await isTranslationRouteCached(sourceLanguage, targetLanguage))
+        ),
       };
     }
 
@@ -456,6 +543,9 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "test-translation-engine") {
       const config = normalizeTranslationEngineConfig(message.config);
       if (!config) throw new Error("翻译引擎配置无效");
+      if (!await hasExternalTranslationConsent(Boolean(config.apiKey))) {
+        throw new Error("未授权向外部翻译服务发送数据");
+      }
       const html = await translateWithExternalEngine(config, {
         html: "<strong>Hello</strong> world",
         sourceLanguage: "en",

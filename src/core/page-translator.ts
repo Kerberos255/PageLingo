@@ -1,23 +1,101 @@
 // @ts-nocheck
 import { collectTranslationRoots, findTranslationRoot, isGeneratedNode } from "./dom-policy";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
-import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, restoreTerminologyHtml } from "./rich-segment";
-import { freezeNavigationLayout } from "./navigation-layout";
+import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
+import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./navigation-layout";
+import { TooltipController } from "./tooltip-controller";
+import {
+    richHtmlStructureCompatible,
+    richMarkerCandidateCount,
+    splitRichHtmlByStructureBudget,
+    translateRichHtmlTextNodesSafely,
+} from "./rich-segment-splitter";
 
 export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[] }
-function translatedPlainText(doc, html) {
-    const template = doc.createElement("template");
-    template.innerHTML = html;
-    return (template.content.textContent ?? "").replace(/\s+/g, " ").trim();
+function translatedPlainText(_doc, html) {
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    return (parsed.body.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 function exactTerminologyTarget(value, entries) {
-    const key = String(value || "").trim().toLocaleLowerCase();
-    if (!key) return null;
-    const entry = (entries ?? []).find((item) => item.source.toLocaleLowerCase() === key);
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const lower = raw.toLocaleLowerCase();
+    const entry = (entries ?? []).find((item) =>
+        item.caseSensitive === true ? item.source === raw : item.source.toLocaleLowerCase() === lower
+    );
     return entry?.target ?? null;
 }
 function hasBrokenTranslationText(value) {
     return /\uFFFD/u.test(String(value || ""));
+}
+function hasBrokenTranslationHtml(html) {
+    return /\uFFFD|&#x0*fffd;|&#0*65533;/iu.test(String(html || ""));
+}
+const COMPLEX_ROOT_MARKER_THRESHOLD = 8;
+const COMPLEX_CHUNK_MARKER_BUDGET = 6;
+
+async function translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology) {
+    const protectedChunk = protectTerminologyHtml(doc, html, terminology);
+    const translated = await translateRichHtmlTextNodesSafely(protectedChunk.html, async (sourceText) => {
+        const leafHtml = await provider.translateHtml({
+            html: escapeHtml(sourceText),
+            sourceLanguage,
+            targetLanguage,
+            terminology: terminologyForText(terminology, sourceText),
+        });
+        const leafText = translatedPlainText(doc, leafHtml);
+        if (!leafText || hasBrokenTranslationText(leafText))
+            return sourceText;
+        return leafText;
+    });
+    return restoreTerminologyHtml(doc, translated, protectedChunk.replacements);
+}
+
+async function translateComplexRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology) {
+    let chunks;
+    try {
+        chunks = splitRichHtmlByStructureBudget(html, COMPLEX_CHUNK_MARKER_BUDGET);
+    }
+    catch (error) {
+        console.warn("[PageLingo] Complex root cannot be safely split; using leaf-safe fallback", error);
+        return translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology);
+    }
+
+    const translatedChunks = await Promise.all(chunks.map(async (chunk) => {
+        const chunkSourceText = translatedPlainText(doc, chunk);
+        const protectedChunk = protectTerminologyHtml(doc, chunk, terminology);
+        let translated = await provider.translateHtml({
+            html: protectedChunk.html,
+            sourceLanguage,
+            targetLanguage,
+            terminology: terminologyForText(terminology, chunkSourceText),
+        });
+
+        if (hasBrokenTranslationHtml(translated) || !richHtmlStructureCompatible(protectedChunk.html, translated)) {
+            return translateLeafSafeRichHtml(
+                doc,
+                provider,
+                chunk,
+                sourceLanguage,
+                targetLanguage,
+                terminology,
+            );
+        }
+
+        return restoreTerminologyHtml(doc, translated, protectedChunk.replacements);
+    }));
+    return translatedChunks.join("");
+}
+
+async function providerAllowsStructuralSplitting(provider) {
+    if (typeof provider.supportsStructuralSplitting !== "function")
+        return true;
+    try {
+        return await provider.supportsStructuralSplitting();
+    }
+    catch {
+        return false;
+    }
 }
 function stripStandaloneLinkQuotes(source, translated) {
     let value = translated.trim();
@@ -35,23 +113,13 @@ function stableLinkLabel(sourceText, translatedText, targetLanguage = "") {
     const questionWord = /^(why|what|how|where|when|who)\b/i;
     const sourceWord = source.match(questionWord)?.[1]?.toLocaleLowerCase();
     const translatedWord = translated.match(questionWord)?.[1]?.toLocaleLowerCase();
-    if (sourceWord && translatedWord && sourceWord !== translatedWord) {
-        if (sourceWord === "why" && /^zh(?:-|$)/i.test(targetLanguage)) {
-            const subject = source.replace(/^why\s+/i, "").trim();
-            return targetLanguage.toLowerCase().includes("hant") ? `為什麼選擇${subject}` : `为什么选择${subject}`;
-        }
-        return source;
-    }
-    // Bergamot can translate an English Why-title into a Chinese When-title. When the
-    // source semantic is unambiguous, prefer a deterministic title rather than silently
-    // changing the question being asked.
+    if (sourceWord && translatedWord && sourceWord !== translatedWord) return source;
+
+    // Guard only against the known semantic inversion (Why -> When). Do not manufacture
+    // a preferred Chinese title: natural wording belongs to the translation engine.
     if (/^why\s+/i.test(source) && /^zh(?:-|$)/i.test(targetLanguage)) {
-        const looksLikeWhy = /^(?:为什么|为何|為什麼|為何)/u.test(translated);
         const looksLikeWhen = /^(?:何时|何時|什么时候|什麼時候|幾時)/u.test(translated);
-        if (!looksLikeWhy || looksLikeWhen) {
-            const subject = source.replace(/^why\s+/i, "").trim();
-            return targetLanguage.toLowerCase().includes("hant") ? `為什麼選擇${subject}` : `为什么选择${subject}`;
-        }
+        if (looksLikeWhen) return source;
     }
     return translated;
 }
@@ -70,6 +138,67 @@ function unwrapListDirectText(root) {
         wrapper.replaceWith(...Array.from(wrapper.childNodes));
     }
 }
+function translatedLinkTransportComplete(html, links) {
+    if (!links.length)
+        return true;
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const seen = new Set();
+    for (const anchor of Array.from(parsed.body.querySelectorAll("a"))) {
+        let linkIndex = null;
+        const rawId = anchor.getAttribute("data-flt-link-id");
+        if (rawId && /^\d+$/.test(rawId)) {
+            linkIndex = Number.parseInt(rawId, 10);
+        }
+        else {
+            const href = anchor.getAttribute("href") ?? "";
+            const match = href.match(/^https:\/\/pagelingo\.invalid\/__link\/(\d+)$/);
+            if (match) linkIndex = Number.parseInt(match[1], 10);
+        }
+        if (linkIndex === null || linkIndex < 0 || linkIndex >= links.length)
+            continue;
+        if (seen.has(linkIndex))
+            return false;
+
+        const startToken = `__FLT_LINK_START_${linkIndex}__`;
+        const endToken = `__FLT_LINK_END_${linkIndex}__`;
+        const markerElements = Array.from(anchor.querySelectorAll("code,kbd,samp,var"))
+            .filter((element) => {
+                const text = (element.textContent ?? "").trim();
+                return /^__FLT_LINK_(?:START|END)_\d+__$/.test(text);
+            });
+        const startMarkers = markerElements.filter((element) => (element.textContent ?? "").trim() === startToken);
+        const endMarkers = markerElements.filter((element) => (element.textContent ?? "").trim() === endToken);
+        const rawMarkers = (anchor.textContent ?? "").match(/__FLT_LINK_(?:START|END)_\d+__/g) ?? [];
+        if (markerElements.length !== 2 || startMarkers.length !== 1 || endMarkers.length !== 1 ||
+            rawMarkers.length !== 2 || rawMarkers[0] !== startToken || rawMarkers[1] !== endToken) {
+            return false;
+        }
+
+        const start = startMarkers[0];
+        const end = endMarkers[0];
+        if (!(start.compareDocumentPosition(end) & Node.DOCUMENT_POSITION_FOLLOWING))
+            return false;
+        const labelRange = parsed.createRange();
+        labelRange.setStartAfter(start);
+        labelRange.setEndBefore(end);
+        const source = links[linkIndex];
+        if (source?.sourceText?.trim() && !labelRange.toString().trim())
+            return false;
+        seen.add(linkIndex);
+    }
+    return seen.size === links.length;
+}
+function singleTooltipTextNode(element) {
+    const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let current = walker.nextNode();
+    while (current) {
+        const text = current;
+        if ((text.data ?? "").trim()) nodes.push(text);
+        current = walker.nextNode();
+    }
+    return nodes.length === 1 ? nodes[0] : null;
+}
 export class PageTranslator {
     #doc;
     #provider;
@@ -84,9 +213,12 @@ export class PageTranslator {
     #inFlight = new Set();
     #rerun = new Set();
     #observer = null;
+    #tooltipController = null;
+    #tooltipSnapshots = new Map();
     #flushQueued = false;
     #disposed = false;
     #sourceLinkStyleSnapshots = new Map();
+    #sourceHadClassAttribute = new WeakMap();
     constructor(doc, provider, options = {}) {
         this.#doc = doc;
         this.#provider = provider;
@@ -149,31 +281,59 @@ export class PageTranslator {
             }
             return;
         }
-        const segment = serializeRichSegment(root);
-        if (!segment.html.trim())
-            return;
+        const currentFingerprint = sourceFingerprint(root);
         const previous = this.#records.get(root);
-        if (previous?.fingerprint === segment.fingerprint)
+        if (previous?.fingerprint === currentFingerprint)
             return;
         if (previous) {
+            // Restore the source before re-serializing. Translation-only mode may hide
+            // structural descendants with CSS; serializing while those rules are active
+            // can mistake PageLingo's own hiding for source-page visibility.
             this.#clearDisplayMode(root);
             previous.translationNode.remove();
             this.#records.delete(root);
         }
-        const protectedSegment = protectTerminologyHtml(this.#doc, segment.html, this.#terminology);
-        let translatedHtml = await this.#provider.translateHtml({
-            html: protectedSegment.html,
-            sourceLanguage: this.#sourceLanguage,
-            targetLanguage: this.#targetLanguage,
-        });
+        const segment = serializeRichSegment(root);
+        if (!segment.html.trim())
+            return;
+        const requestTerminology = terminologyForText(this.#terminology, segment.fingerprint);
+        let translatedHtml;
+        const complexRoot = richMarkerCandidateCount(segment.html) >= COMPLEX_ROOT_MARKER_THRESHOLD;
+        const splitComplexRoot = complexRoot && await providerAllowsStructuralSplitting(this.#provider);
+        if (splitComplexRoot) {
+            translatedHtml = await translateComplexRichHtml(
+                this.#doc,
+                this.#provider,
+                segment.html,
+                this.#sourceLanguage,
+                this.#targetLanguage,
+                this.#terminology,
+            );
+        }
+        else {
+            // Keep the common path byte-for-byte equivalent to the existing whole-root
+            // translation behavior. The splitter is deliberately reserved for the tiny
+            // high-complexity tail so normal Firefox/Bergamot output is unaffected.
+            const protectedSegment = protectTerminologyHtml(this.#doc, segment.html, this.#terminology);
+            translatedHtml = await this.#provider.translateHtml({
+                html: protectedSegment.html,
+                sourceLanguage: this.#sourceLanguage,
+                targetLanguage: this.#targetLanguage,
+                terminology: requestTerminology,
+            });
+            translatedHtml = restoreTerminologyHtml(this.#doc, translatedHtml, protectedSegment.replacements);
+        }
         if (this.#disposed)
             return;
+        if (hasBrokenTranslationHtml(translatedHtml)) {
+            throw new Error("译文包含损坏字符，已保留原文");
+        }
 
         // Preferred translations are post-corrections. For a user-only term we learn the
         // engine's standalone default as an alias, but never inject the preferred target into
         // the source sentence before translation.
         const dynamicAliases = new Map();
-        const userTerms = this.#terminology.filter((entry) => entry.mode === "replace" && entry.origin === "user" && termOccurrenceCount(segment.fingerprint, entry.source) > 0);
+        const userTerms = this.#terminology.filter((entry) => entry.mode === "replace" && entry.origin === "user" && termOccurrenceCount(segment.fingerprint, entry.source, entry.caseSensitive === true) > 0);
         await Promise.all(userTerms.map(async (entry) => {
             try {
                 const aliasHtml = await this.#provider.translateHtml({
@@ -186,23 +346,30 @@ export class PageTranslator {
             } catch {}
         }));
         translatedHtml = applyTerminologyCorrectionsHtml(this.#doc, translatedHtml, segment.fingerprint, this.#terminology, dynamicAliases);
+        if (hasBrokenTranslationHtml(translatedHtml)) {
+            throw new Error("译文包含损坏字符，已保留原文");
+        }
 
-        // Whole-sentence translation is authoritative. Standard href transport survives more
-        // engines than data-* attributes; matching anchor count is also enough to avoid a
-        // second link-label translation.
-        const translatedProbe = this.#doc.createElement("template");
-        translatedProbe.innerHTML = translatedHtml;
-        const probeAnchors = Array.from(translatedProbe.content.querySelectorAll("a"));
-        const translatedLinkTexts = await Promise.all(segment.links.map(async (link) => {
+        // The main HTML translation is authoritative when every source link keeps a
+        // unique transport identity and a non-empty translated label. In that common path
+        // there is nothing to recover, so do not spend extra Bergamot calls on each label
+        // and the text gaps around them. Keep the previous standalone path only as a
+        // transport-damage fallback.
+        const mainLinksComplete = translatedLinkTransportComplete(translatedHtml, segment.links);
+        const translatedLinkTexts = mainLinksComplete ? [] : await Promise.all(segment.links.map(async (link) => {
             if (!link.sourceText.trim()) return "";
             const exactTerm = exactTerminologyTarget(link.sourceText, this.#terminology);
             if (exactTerm) return exactTerm;
             try {
-                const linkHtml = await this.#provider.translateHtml({
-                    html: escapeHtml(link.sourceText),
+                const protectedLink = protectTerminologyHtml(this.#doc, escapeHtml(link.sourceText), this.#terminology);
+                let linkHtml = await this.#provider.translateHtml({
+                    html: protectedLink.html,
                     sourceLanguage: this.#sourceLanguage,
                     targetLanguage: this.#targetLanguage,
+                    terminology: terminologyForText(this.#terminology, link.sourceText),
                 });
+                linkHtml = restoreTerminologyHtml(this.#doc, linkHtml, protectedLink.replacements);
+                linkHtml = applyTerminologyCorrectionsHtml(this.#doc, linkHtml, link.sourceText, this.#terminology);
                 const translated = translatedPlainText(this.#doc, linkHtml);
                 if (hasBrokenTranslationText(translated)) {
                     console.warn("[PageLingo] Link label translation contained replacement characters; preserving source", link.sourceText);
@@ -215,24 +382,28 @@ export class PageTranslator {
                 return link.sourceText;
             }
         }));
-        const translatedGapTexts = segment.linkGaps?.length ? await Promise.all(segment.linkGaps.map(async (gap) => {
+        const translatedGapTexts = mainLinksComplete || !segment.linkGaps?.length ? [] : await Promise.all(segment.linkGaps.map(async (gap) => {
             if (!gap.trim()) return "";
             try {
                 const protectedGap = protectTerminologyHtml(this.#doc, escapeHtml(gap.trim()), this.#terminology);
-                const gapHtml = await this.#provider.translateHtml({
+                let gapHtml = await this.#provider.translateHtml({
                     html: protectedGap.html,
                     sourceLanguage: this.#sourceLanguage,
                     targetLanguage: this.#targetLanguage,
+                    terminology: terminologyForText(this.#terminology, gap.trim()),
                 });
-                return translatedPlainText(this.#doc, restoreTerminologyHtml(this.#doc, gapHtml, protectedGap.replacements));
+                gapHtml = restoreTerminologyHtml(this.#doc, gapHtml, protectedGap.replacements);
+                gapHtml = applyTerminologyCorrectionsHtml(this.#doc, gapHtml, gap.trim(), this.#terminology);
+                const translated = translatedPlainText(this.#doc, gapHtml);
+                return hasBrokenTranslationText(translated) ? gap.trim() : translated;
             }
             catch {
                 return "";
             }
-        })) : [];
+        }));
         if (this.#disposed || !root.isConnected || sourceFingerprint(root) !== segment.fingerprint)
             return;
-        const fragment = createSafeTranslatedFragment(this.#doc, translatedHtml, segment.links, segment.opaque, translatedLinkTexts, translatedGapTexts, protectedSegment.replacements);
+        const fragment = createSafeTranslatedFragment(this.#doc, translatedHtml, segment.links, segment.opaque, translatedLinkTexts, translatedGapTexts, []);
         const translationNode = mountTranslation(root, fragment, this.#targetLanguage);
         this.#records.set(root, { translationNode, fingerprint: segment.fingerprint });
         this.#applyDisplayMode(root, translationNode);
@@ -245,26 +416,26 @@ export class PageTranslator {
         if (this.#observer || !this.#doc.body)
             return;
         this.#observer = new MutationObserver((mutations) => {
-            // SPA frameworks may replace navigation items after the initial page pass.
-            // Freeze new navigation slots while they still contain source-language text,
-            // before queued translation work can shorten their labels and shift flex/grid layout.
-            if (this.#displayMode === "translation") freezeNavigationLayout(false);
             for (const mutation of mutations) {
                 if (isGeneratedNode(mutation.target))
                     continue;
                 if (mutation.type === "characterData" && mutation.target.nodeType === Node.TEXT_NODE) {
-                    const root = findTranslationRoot(mutation.target);
-                    if (root)
-                        this.#queue(root);
+                    const parent = mutation.target.parentElement;
+                    if (parent) {
+                        for (const root of collectTranslationRoots(parent))
+                            this.#queue(root);
+                    }
                     continue;
                 }
                 for (const added of Array.from(mutation.addedNodes)) {
                     if (isGeneratedNode(added))
                         continue;
                     if (added.nodeType === Node.TEXT_NODE) {
-                        const root = findTranslationRoot(added);
-                        if (root)
-                            this.#queue(root);
+                        const parent = added.parentElement;
+                        if (parent) {
+                            for (const root of collectTranslationRoots(parent))
+                                this.#queue(root);
+                        }
                     }
                     else if (added.nodeType === Node.ELEMENT_NODE) {
                         if (added.matches?.("[data-flt-source-text-wrapper]"))
@@ -277,10 +448,54 @@ export class PageTranslator {
         });
         this.#observer.observe(this.#doc.body, { childList: true, subtree: true, characterData: true });
     }
+    observeTooltips() {
+        if (this.#disposed || this.#tooltipController)
+            return;
+        this.#tooltipController = new TooltipController(this.#doc, {
+            translate: (element) => this.#translateTooltipElement(element),
+        });
+        this.#tooltipController.start();
+    }
+    async #translateTooltipElement(element) {
+        if (this.#disposed || !element.isConnected)
+            return false;
+        const previous = this.#tooltipSnapshots.get(element);
+        if (previous?.node?.isConnected && previous.node.data === previous.translatedText)
+            return true;
+        const node = singleTooltipTextNode(element);
+        if (!node)
+            return false;
+        const originalText = node.data;
+        const sourceText = originalText.replace(/\s+/g, " ").trim();
+        if (!sourceText || !/\p{L}/u.test(sourceText))
+            return false;
+        const protectedTooltip = protectTerminologyHtml(this.#doc, escapeHtml(sourceText), this.#terminology);
+        let translatedHtml = await this.#provider.translateHtml({
+            html: protectedTooltip.html,
+            sourceLanguage: this.#sourceLanguage,
+            targetLanguage: this.#targetLanguage,
+            terminology: terminologyForText(this.#terminology, sourceText),
+        });
+        translatedHtml = restoreTerminologyHtml(this.#doc, translatedHtml, protectedTooltip.replacements);
+        translatedHtml = applyTerminologyCorrectionsHtml(this.#doc, translatedHtml, sourceText, this.#terminology);
+        const translated = translatedPlainText(this.#doc, translatedHtml);
+        if (!translated || hasBrokenTranslationText(translated))
+            return false;
+        if (this.#disposed || !element.isConnected || node.data !== originalText)
+            return false;
+        const leading = originalText.match(/^\s*/)?.[0] ?? "";
+        const trailing = originalText.match(/\s*$/)?.[0] ?? "";
+        const translatedText = leading + translated + trailing;
+        this.#tooltipSnapshots.set(element, { node, originalText, translatedText });
+        node.data = translatedText;
+        return true;
+    }
     restore() {
         this.#disposed = true;
         this.#observer?.disconnect();
         this.#observer = null;
+        this.#tooltipController?.dispose();
+        this.#tooltipController = null;
         this.#pending.clear();
         this.#rerun.clear();
         this.#inFlight.clear();
@@ -288,6 +503,12 @@ export class PageTranslator {
             this.#clearDisplayMode(root);
             translationNode.remove();
         }
+        for (const snapshot of this.#tooltipSnapshots.values()) {
+            if (snapshot.node?.isConnected && snapshot.node.data === snapshot.translatedText) {
+                snapshot.node.data = snapshot.originalText;
+            }
+        }
+        this.#tooltipSnapshots.clear();
         this.#records.clear();
         for (const translationNode of Array.from(this.#doc.querySelectorAll('[data-flt-generated="translation"]'))) {
             translationNode.remove();
@@ -306,6 +527,9 @@ export class PageTranslator {
         }
     }
     #applyDisplayMode(root, translationNode) {
+        if (!this.#sourceHadClassAttribute.has(root)) {
+            this.#sourceHadClassAttribute.set(root, root.hasAttribute("class"));
+        }
         this.#clearDisplayMode(root);
         if (this.#displayMode !== "translation")
             return;
@@ -342,6 +566,9 @@ export class PageTranslator {
     }
     #clearDisplayMode(root) {
         root.classList.remove("flt-source-hidden", "flt-source-content-hidden", "flt-source-list-hidden");
+        if (this.#sourceHadClassAttribute.get(root) === false && root.classList.length === 0) {
+            root.removeAttribute("class");
+        }
         if (root.tagName === "LI") unwrapListDirectText(root);
         if (root.tagName !== "A") {
             root.style.removeProperty("--pagelingo-source-font-size");
@@ -368,13 +595,20 @@ export class PageTranslator {
         this.#flushQueued = false;
         const roots = Array.from(this.#pending);
         this.#pending.clear();
-        for (const root of roots) {
-            try {
-                await this.translateRoot(root);
+        const guardNavigation = this.#displayMode === "translation" && roots.length > 0;
+        if (guardNavigation) freezeNavigationLayout(false);
+        try {
+            for (const root of roots) {
+                try {
+                    await this.translateRoot(root);
+                }
+                catch (error) {
+                    console.warn("[Local Immersive Translate] Dynamic translation failed", error);
+                }
             }
-            catch (error) {
-                console.warn("[Local Immersive Translate] Dynamic translation failed", error);
-            }
+        }
+        finally {
+            if (guardNavigation) releaseNavigationLayoutAfterPaint();
         }
     }
 }

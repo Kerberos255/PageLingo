@@ -12,6 +12,8 @@ await Promise.all([
   cp("vendor/bergamot/LICENSE", "dist/vendor/bergamot/LICENSE"),
   cp("node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm", "dist/vendor/onnxruntime/ort-wasm-simd-threaded.wasm"),
   cp("THIRD_PARTY_NOTICES.md", "dist/THIRD_PARTY_NOTICES.md"),
+  cp("LICENSE.md", "dist/LICENSE.md"),
+  cp("PRIVACY.md", "dist/PRIVACY.md"),
 ]);
 
 await build({

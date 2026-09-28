@@ -3,6 +3,7 @@ export const LOCAL_TRANSLATION_ENGINE_ID = "firefox-local";
 export type ExternalTranslationEngineType =
   | "microsoft"
   | "google"
+  | "deepl"
   | "gemini"
   | "openrouter"
   | "openai-compatible"
@@ -32,6 +33,7 @@ export interface TranslationEngineState {
 const ENGINE_TYPES = new Set<ExternalTranslationEngineType>([
   "microsoft",
   "google",
+  "deepl",
   "gemini",
   "openrouter",
   "openai-compatible",
@@ -53,7 +55,11 @@ function cleanUrl(value: unknown): string {
   if (!raw) return "";
   try {
     const url = new URL(raw);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.href.replace(/\/+$/, "") : "";
+    const host = url.hostname.toLowerCase();
+    const loopback = host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1";
+    if (url.username || url.password) return "";
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) return "";
+    return url.href.replace(/\/+$/, "");
   } catch {
     return "";
   }
@@ -66,12 +72,15 @@ export function normalizeTranslationEngineConfig(value: unknown): TranslationEng
   const type = raw.type as ExternalTranslationEngineType;
   const name = cleanString(raw.name, 120);
   if (!name) return null;
+  const rawBaseUrl = cleanString(raw.baseUrl, 2048);
+  const baseUrl = cleanUrl(rawBaseUrl);
+  if (rawBaseUrl && !baseUrl) return null;
   return {
     id: cleanId(raw.id),
     name,
     type,
     enabled: raw.enabled !== false,
-    baseUrl: cleanUrl(raw.baseUrl),
+    baseUrl,
     apiKey: cleanString(raw.apiKey, 8192),
     model: cleanString(raw.model, 240),
     region: cleanString(raw.region, 160),

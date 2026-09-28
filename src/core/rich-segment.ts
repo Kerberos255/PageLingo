@@ -1,11 +1,11 @@
 // @ts-nocheck
-import { isTranslationRootElement } from "./dom-policy";
+import { isElementEffectivelyHidden, isTranslationRootElement } from "./dom-policy";
 import { normalizeGlossaryEntry } from "../shared/settings";
 
 export interface LinkStyleSnapshot { color:string; textDecorationLine:string; textDecorationStyle:string; textDecorationColor:string; textDecorationThickness:string; textUnderlineOffset:string }
 export interface LinkSnapshot { href:string|null; target:string|null; rel:string|null; title:string|null; className:string; sourceElement:HTMLAnchorElement; sourceText:string; linkStyle:LinkStyleSnapshot|null }
 export interface OpaqueSnapshot { tagName:string; text:string }
-export interface TerminologyEntry { source:string; target:string; mode:"protect"|"replace"; origin?:"builtin"|"user"; aliases?:string[] }
+export interface TerminologyEntry { source:string; target:string; mode:"protect"|"replace"; caseSensitive?:boolean; origin?:"builtin"|"user"; aliases?:string[] }
 export interface RichSegment { html:string; links:LinkSnapshot[]; opaque:OpaqueSnapshot[]; linkGaps:string[]; fingerprint:string }
 
 const LINK_TRANSPORT_PREFIX = "https://pagelingo.invalid/__link/";
@@ -15,11 +15,18 @@ var INLINE_TAGS = new Set([
     "CODE", "KBD", "SAMP", "VAR", "BR", "WBR",
 ]);
 var OPAQUE_TAGS = new Set(["CODE", "KBD", "SAMP", "VAR"]);
+var DYNAMIC_TIME_TAGS = new Set(["RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME"]);
 export function escapeHtml(value) {
     return value
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;");
+}
+function parseHtmlFragment(doc, html) {
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const fragment = doc.createDocumentFragment();
+    for (const child of Array.from(parsed.body.childNodes)) fragment.append(doc.importNode(child, true));
+    return fragment;
 }
 function snapshotLink(element) {
     const computed = element.ownerDocument.defaultView?.getComputedStyle(element);
@@ -53,6 +60,10 @@ function serializeChildren(parent, root, links, opaque) {
         const element = node;
         if (element.hasAttribute("data-flt-generated"))
             continue;
+        if (element !== root && DYNAMIC_TIME_TAGS.has(element.tagName))
+            continue;
+        if (element !== root && isElementEffectivelyHidden(element))
+            continue;
         if (element !== root && isTranslationRootElement(element))
             continue;
         const tag = element.tagName;
@@ -68,11 +79,13 @@ function serializeChildren(parent, root, links, opaque) {
         if (tag === "A") {
             const linkIndex = links.length;
             links.push(snapshotLink(element));
-            // Link labels are opaque to the whole-sentence translator. The sentence model
-            // may move this anchor, but it cannot mistranslate the label or enlarge the
-            // clickable range by absorbing surrounding words. The label is translated once
-            // on its own and restored after the sentence returns.
-            html += `<a data-flt-link-id="${linkIndex}" href="${LINK_TRANSPORT_PREFIX}${linkIndex}"><code>__FLT_LINK_LABEL_${linkIndex}__</code></a>`;
+            // Keep the label inside the whole-sentence request, but bracket it with
+            // opaque boundary sentinels. When both sentinels survive we can trust the main
+            // translation and still guarantee that surrounding translated words never become
+            // part of the clickable region. If either sentinel is damaged, PageTranslator
+            // falls back to the standalone link/gap recovery path.
+            const labelHtml = serializeChildren(element, root, links, opaque) || escapeHtml(element.textContent ?? "");
+            html += `<a data-flt-link-id="${linkIndex}" href="${LINK_TRANSPORT_PREFIX}${linkIndex}"><code>__FLT_LINK_START_${linkIndex}__</code>${labelHtml}<code>__FLT_LINK_END_${linkIndex}__</code></a>`;
             continue;
         }
         if (OPAQUE_TAGS.has(tag)) {
@@ -91,7 +104,7 @@ export function sourceFingerprint(root) {
     let current = walker.nextNode();
     while (current) {
         const node = current;
-        if (!node.parentElement?.closest("[data-flt-generated]")) text += node.data;
+        if (!node.parentElement?.closest("[data-flt-generated]") && !node.parentElement?.closest("[hidden],[aria-hidden='true'],tool-tip,[role='tooltip'],[inert]")) text += node.data;
         current = walker.nextNode();
     }
     return text;
@@ -108,6 +121,8 @@ function snapshotLinkGaps(root) {
             if (node.nodeType !== Node.ELEMENT_NODE) continue;
             const element = node;
             if (element.hasAttribute("data-flt-generated")) continue;
+            if (element !== root && DYNAMIC_TIME_TAGS.has(element.tagName)) continue;
+            if (element !== root && isElementEffectivelyHidden(element)) continue;
             if (element !== root && isTranslationRootElement(element)) continue;
             if (element.tagName === "A") {
                 linkIndex += 1;
@@ -126,13 +141,14 @@ export function serializeRichSegment(root) {
     let html = serializeChildren(root, root, links, opaque).trim();
     if (root.tagName === "A") {
         links.unshift(snapshotLink(root));
-        html = `<a data-flt-link-id="0" href="${LINK_TRANSPORT_PREFIX}0"><code>__FLT_LINK_LABEL_0__</code></a>`;
+        const labelHtml = html || escapeHtml(root.textContent ?? "");
+        html = `<a data-flt-link-id="0" href="${LINK_TRANSPORT_PREFIX}0"><code>__FLT_LINK_START_0__</code>${labelHtml}<code>__FLT_LINK_END_0__</code></a>`;
     }
     return {
         html,
         links,
         opaque,
-        linkGaps: links.length > 1 ? snapshotLinkGaps(root) : [],
+        linkGaps: links.length > 0 && root.tagName !== "A" ? snapshotLinkGaps(root) : [],
         fingerprint: sourceFingerprint(root),
     };
 }
@@ -142,17 +158,20 @@ export function serializeRichSegment(root) {
 function builtInTerminology(sourceLanguage, targetLanguage) {
     const catalog = globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ ?? {};
     const entries = [];
-    const hardProtect = Array.isArray(catalog.hardProtect) ? catalog.hardProtect : (Array.isArray(catalog.protect) ? catalog.protect : []);
+    const hardProtect = [
+        ...(Array.isArray(catalog.hardPreserve) ? catalog.hardPreserve : []),
+        ...(Array.isArray(catalog.hardProtect) ? catalog.hardProtect : (Array.isArray(catalog.protect) ? catalog.protect : [])),
+    ];
     for (const source of hardProtect) {
-        if (typeof source === "string" && source.trim()) entries.push({ source, target: source, mode: "protect", origin: "builtin", aliases: [] });
+        if (typeof source === "string" && source.trim()) entries.push({ source, target: source, mode: "protect", caseSensitive: true, origin: "builtin", aliases: [] });
     }
     for (const source of Array.isArray(catalog.preserve) ? catalog.preserve : []) {
-        if (typeof source === "string" && source.trim()) entries.push({ source, target: source, mode: "replace", origin: "builtin", aliases: [] });
+        if (typeof source === "string" && source.trim()) entries.push({ source, target: source, mode: "replace", caseSensitive: false, origin: "builtin", aliases: [] });
     }
     const pairKey = `${sourceLanguage}->${targetLanguage}`;
     for (const pair of Array.isArray(catalog.pairs?.[pairKey]) ? catalog.pairs[pairKey] : []) {
         if (!Array.isArray(pair) || typeof pair[0] !== "string" || typeof pair[1] !== "string") continue;
-        entries.push({ source: pair[0], target: pair[1], mode: "replace", origin: "builtin", aliases: [pair[1]] });
+        entries.push({ source: pair[0], target: pair[1], mode: "replace", caseSensitive: false, origin: "builtin", aliases: [pair[1]] });
     }
     return entries;
 }
@@ -183,45 +202,49 @@ function termBoundaryOkay(text, start, end, source) {
     const after = end < text.length ? text[end] : "";
     return !/[A-Za-z0-9_]/.test(before) && !/[A-Za-z0-9_]/.test(after);
 }
-export function termOccurrenceCount(text, source) {
+export function termOccurrenceCount(text, source, caseSensitive = false) {
     const raw = String(text || "");
-    const lower = raw.toLocaleLowerCase();
-    const needle = source.toLocaleLowerCase();
+    const haystack = caseSensitive ? raw : raw.toLocaleLowerCase();
+    const needle = caseSensitive ? source : source.toLocaleLowerCase();
     let count = 0, cursor = 0;
     while (cursor <= raw.length - needle.length) {
-        const at = lower.indexOf(needle, cursor);
+        const at = haystack.indexOf(needle, cursor);
         if (at < 0) break;
         if (termBoundaryOkay(raw, at, at + needle.length, source)) count += 1;
         cursor = at + Math.max(needle.length, 1);
     }
     return count;
 }
+export function terminologyForText(entries, text) {
+    return (entries ?? [])
+        .filter((entry) => termOccurrenceCount(text, entry.source, entry.caseSensitive === true) > 0)
+        .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }));
+}
 export function protectTerminologyHtml(doc, html, entries) {
     const protectedEntries = (entries ?? []).filter((entry) => entry.mode === "protect");
     if (!protectedEntries.length) return { html, replacements: [] };
-    const template = doc.createElement("template");
-    template.innerHTML = html;
+    const content = parseHtmlFragment(doc, html);
     const replacements = [];
-    const walker = doc.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+    const walker = doc.createTreeWalker(content, NodeFilter.SHOW_TEXT);
     const nodes = [];
     let current = walker.nextNode();
     while (current) {
         const text = current;
-        // Link labels are already structurally protected. Wrapping a brand inside <a>
-        // gives Bergamot an extra segmentation boundary and can duplicate/drop words.
-        if (!text.parentElement?.closest("code,kbd,samp,var,a")) nodes.push(text);
+        // Link labels now travel through the whole-sentence request. Protect hard terms
+        // inside anchors as well so skipping standalone link inference cannot corrupt brands.
+        if (!text.parentElement?.closest("code,kbd,samp,var")) nodes.push(text);
         current = walker.nextNode();
     }
     for (const textNode of nodes) {
         const raw = textNode.data;
-        const lower = raw.toLocaleLowerCase();
         const hits = [];
         let cursor = 0;
         while (cursor < raw.length) {
             let found = null;
             for (const entry of protectedEntries) {
-                const needle = entry.source.toLocaleLowerCase();
-                const at = lower.indexOf(needle, cursor);
+                const haystack = entry.caseSensitive === true ? raw : raw.toLocaleLowerCase();
+                const needle = entry.caseSensitive === true ? entry.source : entry.source.toLocaleLowerCase();
+                const at = haystack.indexOf(needle, cursor);
                 if (at < 0 || !termBoundaryOkay(raw, at, at + needle.length, entry.source)) continue;
                 if (!found || at < found.at || (at === found.at && needle.length > found.length)) found = { at, length: needle.length, entry };
             }
@@ -247,7 +270,7 @@ export function protectTerminologyHtml(doc, html, entries) {
         textNode.replaceWith(fragment);
     }
     const holder = doc.createElement("div");
-    holder.append(template.content.cloneNode(true));
+    holder.append(content.cloneNode(true));
     return { html: holder.innerHTML, replacements };
 }
 export function restoreTerminology(container, replacements) {
@@ -260,10 +283,10 @@ export function restoreTerminology(container, replacements) {
     }
 }
 export function restoreTerminologyHtml(doc, html, replacements) {
-    const template = doc.createElement("template");
-    template.innerHTML = html;
+    if (!Array.isArray(replacements) || replacements.length === 0) return html;
+    const content = parseHtmlFragment(doc, html);
     const holder = doc.createElement("div");
-    holder.append(template.content.cloneNode(true));
+    holder.append(content);
     restoreTerminology(holder, replacements);
     return holder.innerHTML;
 }
@@ -284,18 +307,17 @@ function replaceTextAlias(value, alias, target, limit) {
     return { value: output + value.slice(cursor), count: used };
 }
 export function applyTerminologyCorrectionsHtml(doc, html, sourceText, entries, dynamicAliases = new Map()) {
-    const active = (entries ?? []).filter((entry) => entry.mode === "replace" && termOccurrenceCount(sourceText, entry.source) > 0);
+    const active = (entries ?? []).filter((entry) => entry.mode === "replace" && termOccurrenceCount(sourceText, entry.source, entry.caseSensitive === true) > 0);
     if (!active.length) return html;
-    const template = doc.createElement("template");
-    template.innerHTML = html;
+    const content = parseHtmlFragment(doc, html);
     for (const entry of active) {
-        let remaining = termOccurrenceCount(sourceText, entry.source);
+        let remaining = termOccurrenceCount(sourceText, entry.source, entry.caseSensitive === true);
         if (!remaining) continue;
         const aliases = new Set([entry.source, ...(entry.aliases ?? [])]);
         const dynamic = dynamicAliases.get(entry.source.toLocaleLowerCase());
         if (dynamic) aliases.add(dynamic);
         const orderedAliases = Array.from(aliases).filter(Boolean).sort((a, b) => b.length - a.length);
-        const walker = doc.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+        const walker = doc.createTreeWalker(content, NodeFilter.SHOW_TEXT);
         let current = walker.nextNode();
         while (current && remaining > 0) {
             const text = current;
@@ -313,6 +335,6 @@ export function applyTerminologyCorrectionsHtml(doc, html, sourceText, entries, 
         }
     }
     const holder = doc.createElement("div");
-    holder.append(template.content.cloneNode(true));
+    holder.append(content);
     return holder.innerHTML;
 }

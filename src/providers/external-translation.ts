@@ -1,10 +1,17 @@
 import { languageLabel } from "../shared/settings";
 import type { TranslationEngineConfig } from "../shared/translation-engine-settings";
 
+export interface ExternalTranslationTerminologyEntry {
+  source: string;
+  target: string;
+  mode: "protect" | "replace";
+}
+
 export interface ExternalTranslationRequest {
   html: string;
   sourceLanguage: string;
   targetLanguage: string;
+  terminology?: ExternalTranslationTerminologyEntry[];
 }
 
 const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. Output only the translated HTML. Do not use Markdown or add explanations.";
@@ -25,6 +32,13 @@ function apiLanguage(code: string, type: TranslationEngineConfig["type"]): strin
     if (code === "zh-Hant") return "zt";
   }
   return code;
+}
+
+function deepLLanguage(code: string, direction: "source" | "target"): string {
+  if (code === "zh-Hans") return direction === "target" ? "ZH-HANS" : "ZH";
+  if (code === "zh-Hant") return direction === "target" ? "ZH-HANT" : "ZH";
+  if (code === "en" && direction === "target") return "EN-US";
+  return code.toUpperCase();
 }
 
 function tagSkeleton(html: string): string[] {
@@ -57,11 +71,26 @@ function stripCodeFence(value: string): string {
   return match?.[1]?.trim() ?? trimmed;
 }
 
+function terminologyPrompt(entries: ExternalTranslationTerminologyEntry[] | undefined): string {
+  if (!entries?.length) return "";
+  const hard = entries.filter((entry) => entry.mode === "protect");
+  const preferred = entries.filter((entry) => entry.mode === "replace");
+  const lines = [
+    "",
+    "Terminology rules for this segment:",
+    ...hard.map((entry) => `- KEEP EXACTLY, character-for-character: ${entry.source}`),
+    ...preferred.map((entry) => `- PREFERRED TRANSLATION: ${entry.source} => ${entry.target}`),
+    "Apply these rules while translating the complete sentence; do not omit surrounding context.",
+  ];
+  return lines.join("\n");
+}
+
 function renderPrompt(config: TranslationEngineConfig, request: ExternalTranslationRequest): string {
   const template = config.prompt || DEFAULT_LLM_PROMPT;
   return template
     .replaceAll("{{source}}", languageLabel(request.sourceLanguage))
-    .replaceAll("{{target}}", languageLabel(request.targetLanguage));
+    .replaceAll("{{target}}", languageLabel(request.targetLanguage))
+    + terminologyPrompt(request.terminology);
 }
 
 async function jsonRequest(url: string, init: RequestInit): Promise<unknown> {
@@ -83,13 +112,20 @@ async function jsonRequest(url: string, init: RequestInit): Promise<unknown> {
   }
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1";
+}
+
 function requireBaseUrl(config: TranslationEngineConfig, fallback: string): string {
   const value = config.baseUrl || fallback;
   try {
     const url = new URL(value);
-    if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error();
+    if (url.username || url.password) throw new Error();
+    const allowed = url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHostname(url.hostname));
+    if (!allowed) throw new Error();
   } catch {
-    throw new Error("翻译引擎 Base URL 无效");
+    throw new Error("翻译引擎地址必须使用 HTTPS；仅 localhost/127.0.0.1/[::1] 可使用 HTTP");
   }
   return trimSlash(value);
 }
@@ -138,6 +174,38 @@ async function translateGoogle(config: TranslationEngineConfig, request: Externa
   return html;
 }
 
+async function translateDeepL(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
+  const key = requireApiKey(config);
+  const configuredBase = trimSlash(config.baseUrl);
+  const defaultBase = key.endsWith(":fx") ? "https://api-free.deepl.com/v2" : "https://api.deepl.com/v2";
+  const usesOfficialDefault = !configuredBase
+    || configuredBase === "https://api.deepl.com/v2"
+    || configuredBase === "https://api-free.deepl.com/v2";
+  const base = usesOfficialDefault
+    ? requireBaseUrl({ ...config, baseUrl: "" }, defaultBase)
+    : requireBaseUrl(config, defaultBase);
+  const endpoint = base.endsWith("/translate") ? base : `${base}/translate`;
+  const body: Record<string, unknown> = {
+    text: [request.html],
+    target_lang: deepLLanguage(request.targetLanguage, "target"),
+    tag_handling: "html",
+  };
+  if (request.sourceLanguage && request.sourceLanguage !== "auto") {
+    body.source_lang = deepLLanguage(request.sourceLanguage, "source");
+  }
+  const result = await jsonRequest(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `DeepL-Auth-Key ${key}`,
+    },
+    body: JSON.stringify(body),
+  }) as { translations?: Array<{ text?: string }> };
+  const html = result.translations?.[0]?.text;
+  if (typeof html !== "string") throw new Error("DeepL API 返回格式异常");
+  return html;
+}
+
 async function translateLibre(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
   const base = requireBaseUrl(config, "https://libretranslate.com");
   const endpoint = base.endsWith("/translate") ? base : `${base}/translate`;
@@ -173,6 +241,7 @@ async function translateOpenAiCompatible(config: TranslationEngineConfig, reques
         { role: "system", content: renderPrompt(config, request) },
         { role: "user", content: request.html },
       ],
+      temperature: 0,
     }),
   }) as { choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> };
   const content = result.choices?.[0]?.message?.content;
@@ -200,14 +269,17 @@ async function translateGemini(config: TranslationEngineConfig, request: Externa
   return stripCodeFence(text);
 }
 
-function parseObjectJson(value: string, label: string): Record<string, unknown> {
+function parseJson(value: string, label: string): unknown {
   if (!value.trim()) return {};
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(value);
+    return JSON.parse(value);
   } catch {
     throw new Error(`${label} 不是有效 JSON`);
   }
+}
+
+function parseObjectJson(value: string, label: string): Record<string, unknown> {
+  const parsed = parseJson(value, label);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${label} 必须是 JSON 对象`);
   return parsed as Record<string, unknown>;
 }
@@ -247,6 +319,9 @@ async function translateCustomRest(config: TranslationEngineConfig, request: Ext
     target: request.targetLanguage,
     sourceLabel: languageLabel(request.sourceLanguage),
     targetLabel: languageLabel(request.targetLanguage),
+    terminology: (request.terminology ?? [])
+      .map((entry) => entry.mode === "protect" ? `${entry.source} = ${entry.source}` : `${entry.source} = ${entry.target}`)
+      .join("\n"),
     apiKey: config.apiKey,
     model: config.model,
   };
@@ -254,7 +329,7 @@ async function translateCustomRest(config: TranslationEngineConfig, request: Ext
   const headersValue = replaceTemplate(rawHeaders, values) as Record<string, unknown>;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   for (const [key, value] of Object.entries(headersValue)) if (typeof value === "string") headers[key] = value;
-  const bodyTemplate = parseObjectJson(config.bodyJson, "请求体模板");
+  const bodyTemplate = parseJson(config.bodyJson, "请求体模板");
   const result = await jsonRequest(endpoint, {
     method: "POST",
     headers,
@@ -273,6 +348,7 @@ export async function translateWithExternalEngine(
   switch (config.type) {
     case "microsoft": translated = await translateMicrosoft(config, request); break;
     case "google": translated = await translateGoogle(config, request); break;
+    case "deepl": translated = await translateDeepL(config, request); break;
     case "libretranslate": translated = await translateLibre(config, request); break;
     case "gemini": translated = await translateGemini(config, request); break;
     case "openrouter":
