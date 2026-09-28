@@ -9,6 +9,13 @@ interface TranslationResponse {
   error?: string;
 }
 
+interface TranslationEngineStateResponse {
+  ok?: boolean;
+  state?: {
+    structuralSplittingSafe?: boolean;
+  };
+}
+
 interface PendingTranslation {
   request: TranslationRequest;
   resolve: (html: string) => void;
@@ -18,6 +25,18 @@ interface PendingTranslation {
 export class RuntimeMessageProvider implements TranslationProvider {
   readonly #pending: PendingTranslation[] = [];
   #flushQueued = false;
+
+  async supportsStructuralSplitting(): Promise<boolean> {
+    try {
+      const response = await sendRuntimeMessage<TranslationEngineStateResponse>({
+        type: "get-translation-engines",
+      });
+      return response?.ok === true && response.state?.structuralSplittingSafe === true;
+    } catch {
+      return false;
+    }
+  }
+
   translateHtml(request: TranslationRequest): Promise<string> {
     if (request.signal?.aborted) return Promise.reject(new Error("Translation aborted"));
     return new Promise<string>((resolve, reject) => {
@@ -86,9 +105,10 @@ export class RuntimeMessageProvider implements TranslationProvider {
       }
 
       throw new Error(response?.error ?? "Translation batch backend unavailable");
-    } catch (error) {
-      const failure = error instanceof Error ? error : new Error(String(error));
-      for (const item of active) item.reject(failure);
+    } catch {
+      // A batch can fail because of one malformed/problematic input. Retry each item
+      // independently so one root cannot take unrelated translations down with it.
+      await Promise.all(active.map((item) => this.#translateSingle(item)));
     }
   }
 
