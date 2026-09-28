@@ -11,6 +11,7 @@ import {
     automaticTranslationSettingsSignature,
 } from "./shared/automatic-translation-state";
 import { relativeTimeElements } from "./shared/relative-time";
+import { sourceTextSample } from "./shared/source-text-sample";
 var translator = null;
 var imageOverlays = new Map();
 var activeImageOverlay = null;
@@ -37,33 +38,6 @@ function pageTextSample() {
     if (!root)
         return "";
     return (root.innerText || root.textContent || "").replace(/\s+/g, " ").trim().slice(0, 4096);
-}
-function pageSourceTextSample() {
-    const root = document.querySelector("article, main, [role='main']") ?? document.body;
-    if (!root)
-        return "";
-    const pieces = [];
-    let length = 0;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-        acceptNode(node) {
-            const parent = node.parentElement;
-            if (!parent)
-                return NodeFilter.FILTER_REJECT;
-            if (parent.closest('[data-flt-generated="translation"], script, style, noscript, template'))
-                return NodeFilter.FILTER_REJECT;
-            return NodeFilter.FILTER_ACCEPT;
-        },
-    });
-    let current = walker.nextNode();
-    while (current && length < 4096) {
-        const value = (current.data ?? "").replace(/\s+/g, " ").trim();
-        if (value) {
-            pieces.push(value);
-            length += value.length + 1;
-        }
-        current = walker.nextNode();
-    }
-    return pieces.join(" ").replace(/\s+/g, " ").trim().slice(0, 4096);
 }
 async function detectPageLanguage(sampleOverride = null) {
     const declaredLanguage = normalizeDetectedLanguage(document.documentElement.lang);
@@ -880,7 +854,7 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 async function resolveAutomaticSourceLanguage(targetLanguage) {
     // Translation-only mode hides original roots visually; source detection must ignore
     // PageLingo's generated target-language nodes and read the underlying source DOM.
-    const sample = pageSourceTextSample();
+    const sample = sourceTextSample(document);
     const routeLanguage = routeLocaleHint();
     // Never let a target-language shell/sidebar veto an explicit source-locale route.
     // /en/ pages can legitimately contain Chinese navigation while the article remains English.
