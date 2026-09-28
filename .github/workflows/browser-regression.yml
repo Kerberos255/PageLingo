@@ -78,6 +78,7 @@ jobs:
           path: |
             artifacts/pagelingo-browser-regression.xpi
             artifacts/dynamic-ui-after.png
+            artifacts/complex-splitter-after.png
             artifacts/openclaw-before.png
             artifacts/openclaw-after.png
             artifacts/claude-before.png
