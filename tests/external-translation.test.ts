@@ -333,6 +333,16 @@ describe("external translation HTML safety", () => {
       targetLanguage: "zh-Hans",
     });
     expect(html).toBe("你好");
+
+    const ipv6Html = await translateWithExternalEngine(config({
+      type: "libretranslate",
+      baseUrl: "http://[::1]:5000",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(ipv6Html).toBe("你好");
   });
 
   it("maps Traditional Chinese to LibreTranslate's zt language code", async () => {
