@@ -46,7 +46,7 @@ describe("temporary navigation layout guard", () => {
 
   it("holds the source width only while translation is in flight", async () => {
     const start = document.querySelector<HTMLElement>("#start")!;
-    freezeNavigationLayout();
+    const hold = freezeNavigationLayout();
 
     expect(start.style.getPropertyValue("min-inline-size")).toBe("132.25px");
     expect(start.style.getPropertyPriority("min-inline-size")).toBe("important");
@@ -56,7 +56,7 @@ describe("temporary navigation layout guard", () => {
     start.textContent = "开始";
     expect(start.style.getPropertyValue("min-inline-size")).toBe("132.25px");
 
-    releaseNavigationLayoutAfterPaint();
+    releaseNavigationLayoutAfterPaint(hold);
     await vi.advanceTimersByTimeAsync(3);
 
     expect(start.style.getPropertyValue("min-inline-size")).toBe("");
@@ -69,10 +69,10 @@ describe("temporary navigation layout guard", () => {
     start.style.setProperty("min-inline-size", "44px");
     start.style.setProperty("flex-shrink", "1");
 
-    freezeNavigationLayout();
+    const hold = freezeNavigationLayout();
     expect(start.style.getPropertyValue("min-inline-size")).toBe("132.25px");
 
-    releaseNavigationLayoutAfterPaint();
+    releaseNavigationLayoutAfterPaint(hold);
     await vi.advanceTimersByTimeAsync(3);
 
     expect(start.style.getPropertyValue("min-inline-size")).toBe("44px");
@@ -80,14 +80,28 @@ describe("temporary navigation layout guard", () => {
   });
   it("keeps the guard until every overlapping holder releases it", async () => {
     const start = document.querySelector<HTMLElement>("#start")!;
-    freezeNavigationLayout();
-    freezeNavigationLayout(false);
+    const first = freezeNavigationLayout();
+    const second = freezeNavigationLayout(false);
 
-    releaseNavigationLayoutAfterPaint();
+    releaseNavigationLayoutAfterPaint(first);
     await vi.advanceTimersByTimeAsync(3);
     expect(start.style.getPropertyValue("min-inline-size")).toBe("132.25px");
 
-    releaseNavigationLayoutAfterPaint();
+    releaseNavigationLayoutAfterPaint(second);
+    await vi.advanceTimersByTimeAsync(3);
+    expect(start.style.getPropertyValue("min-inline-size")).toBe("");
+  });
+
+  it("ignores a stale release after a replacement lifecycle resets the guard", async () => {
+    const start = document.querySelector<HTMLElement>("#start")!;
+    const stale = freezeNavigationLayout();
+    const replacement = freezeNavigationLayout();
+
+    releaseNavigationLayoutAfterPaint(stale);
+    await vi.advanceTimersByTimeAsync(3);
+    expect(start.style.getPropertyValue("min-inline-size")).toBe("132.25px");
+
+    releaseNavigationLayoutAfterPaint(replacement);
     await vi.advanceTimersByTimeAsync(3);
     expect(start.style.getPropertyValue("min-inline-size")).toBe("");
   });
