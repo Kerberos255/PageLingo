@@ -7,15 +7,17 @@ import { DEFAULT_SETTINGS } from "../src/shared/settings";
 describe("automatic translation settings signature", () => {
   it("changes when route or translation-affecting settings change", () => {
     const base = { ...DEFAULT_SETTINGS };
-    const signature = automaticTranslationSettingsSignature(base, "en");
+    const signature = automaticTranslationSettingsSignature(base, "en", "en");
 
-    expect(automaticTranslationSettingsSignature({ ...base, targetLanguage: "zh-Hant" }, "en"))
+    expect(automaticTranslationSettingsSignature({ ...base, targetLanguage: "zh-Hant" }, "en", "en"))
       .not.toBe(signature);
-    expect(automaticTranslationSettingsSignature({ ...base, autoTranslateEnabled: true }, "en"))
+    expect(automaticTranslationSettingsSignature({ ...base, autoTranslateEnabled: true }, "en", "en"))
       .not.toBe(signature);
-    expect(automaticTranslationSettingsSignature({ ...base, neverTranslateSites: ["github.com"] }, "en"))
+    expect(automaticTranslationSettingsSignature({ ...base, neverTranslateSites: ["github.com"] }, "en", "en"))
       .not.toBe(signature);
-    expect(automaticTranslationSettingsSignature(base, "fr"))
+    expect(automaticTranslationSettingsSignature(base, "fr", "en"))
+      .not.toBe(signature);
+    expect(automaticTranslationSettingsSignature(base, "en", "fr"))
       .not.toBe(signature);
   });
 
@@ -25,7 +27,7 @@ describe("automatic translation settings signature", () => {
       autoTranslateEnabled: true,
       neverTranslateSites: ["example.com"],
     };
-    expect(automaticTranslationSettingsSignature(base, "en"))
-      .toBe(automaticTranslationSettingsSignature({ ...base }, "en"));
+    expect(automaticTranslationSettingsSignature(base, "en", "en"))
+      .toBe(automaticTranslationSettingsSignature({ ...base }, "en", "en"));
   });
 });
