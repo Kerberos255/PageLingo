@@ -14,4 +14,5 @@ export interface TranslationRequest {
 
 export interface TranslationProvider {
   translateHtml(request: TranslationRequest): Promise<string>;
+  supportsStructuralSplitting?(): Promise<boolean>;
 }

@@ -720,4 +720,31 @@ describe("PageTranslator event-driven tooltips", () => {
     expect(document.querySelector("#menu")?.textContent).toBe("Dangerous action");
     translator.restore();
   });
+  it("removes damaged link-boundary wrappers before positional opaque restoration", async () => {
+    document.body.innerHTML =
+      '<p id="p">Read <a href="/docs">documentation</a> with <code>npm run build</code>.</p>';
+
+    class DamagedBoundaryOpaqueProvider implements TranslationProvider {
+      requests: TranslationRequest[] = [];
+
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.requests.push(request);
+        if (request.html.includes("__FLT_LINK_START_0__")) {
+          return '阅读 <code>__FLT_LINK_START_0__</code>文档，同时使用 <code>__FLT_OPAQUE_0__</code>。';
+        }
+        return "文档";
+      }
+    }
+
+    const translator = new PageTranslator(document, new DamagedBoundaryOpaqueProvider());
+    await translator.translateRoot(document.querySelector<HTMLElement>("#p")!);
+
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    const codes = Array.from(translated.querySelectorAll("code"));
+    expect(codes).toHaveLength(1);
+    expect(codes[0]?.textContent).toBe("npm run build");
+    expect(translated.textContent).not.toContain("__FLT_LINK_START_0__");
+    expect(translated.textContent).not.toContain("__FLT_OPAQUE_0__");
+  });
+
 });

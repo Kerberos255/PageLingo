@@ -118,10 +118,25 @@ async function activeExternalEngine() {
   return state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
 }
 
+function isLoopbackTranslationEndpoint(value: string): boolean {
+  if (!value) return false;
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
 async function translationEngineStateForUi() {
   const state = await currentTranslationEngineState();
+  const activeExternal = state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
+    ? null
+    : state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
   return {
     activeEngineId: state.activeEngineId,
+    structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
+      || Boolean(activeExternal && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
     engines: state.engines.map((engine) => ({
       id: engine.id,
       name: engine.name,

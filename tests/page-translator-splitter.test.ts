@@ -99,4 +99,42 @@ describe("PageTranslator marker budget splitter", () => {
     expect(translated.textContent).toContain("译:part 0");
     expect(translated.textContent).toContain("译:part 9");
   });
+  it("keeps external or paid engines on the original whole-root request", async () => {
+    class ExternalLikeProvider extends PreservingProvider {
+      async supportsStructuralSplitting(): Promise<boolean> {
+        return false;
+      }
+    }
+
+    document.body.innerHTML =
+      "<p id='root'>" +
+      Array.from({ length: 10 }, (_, index) => "<strong>part " + index + "</strong>").join(" ") +
+      "</p>";
+
+    const provider = new ExternalLikeProvider();
+    const translator = new PageTranslator(document, provider);
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    expect(provider.requests).toHaveLength(1);
+    expect(richMarkerCandidateCount(provider.requests[0]!.html)).toBe(10);
+    expect(document.querySelectorAll(".flt-translation strong")).toHaveLength(10);
+  });
+
+  it("uses leaf-safe translation when an oversized atomic anchor cannot be split", async () => {
+    document.body.innerHTML =
+      "<p id='root'>Read <a href='/docs'>" +
+      Array.from({ length: 8 }, (_, index) => "<strong>part " + index + "</strong>").join(" ") +
+      "</a> now.</p>";
+
+    const provider = new PreservingProvider();
+    const translator = new PageTranslator(document, provider);
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    expect(provider.requests.length).toBeGreaterThan(1);
+    expect(provider.requests.every((request) => richMarkerCandidateCount(request.html) <= 6)).toBe(true);
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    expect(translated.querySelectorAll("a strong")).toHaveLength(8);
+    expect(translated.querySelector("a")?.getAttribute("href")).toBe("/docs");
+  });
+
 });

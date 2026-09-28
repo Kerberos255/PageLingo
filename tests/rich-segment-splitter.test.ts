@@ -53,4 +53,26 @@ describe("rich segment structure budget", () => {
     expect(translated).toContain("__FLT_OPAQUE_0__");
     expect(translated).toContain("译:Before");
   });
+  it("rejects an oversized atomic anchor instead of violating the marker budget", () => {
+    const html =
+      '<a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0">' +
+      Array.from({ length: 8 }, (_, index) => "<strong>part " + index + "</strong>").join(" ") +
+      "</a>";
+    expect(() => splitRichHtmlByStructureBudget(html, 6)).toThrow(/oversized atomic/i);
+  });
+
+  it("escapes decoded text nodes while rebuilding split HTML", () => {
+    const html =
+      "Literal &lt;config&gt; &amp;copy; " +
+      Array.from({ length: 8 }, (_, index) => "<strong>part " + index + "</strong>").join(" ");
+    const chunks = splitRichHtmlByStructureBudget(html, 6);
+    const rebuilt = chunks.join("");
+    const parsed = new DOMParser().parseFromString(rebuilt, "text/html");
+
+    expect(parsed.body.querySelector("config")).toBeNull();
+    expect(parsed.body.textContent).toContain("Literal <config> &copy;");
+    expect(rebuilt).toContain("&lt;config&gt;");
+    expect(rebuilt).toContain("&amp;copy;");
+  });
+
 });

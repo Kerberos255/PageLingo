@@ -78,4 +78,18 @@ describe("temporary navigation layout guard", () => {
     expect(start.style.getPropertyValue("min-inline-size")).toBe("44px");
     expect(start.style.getPropertyValue("flex-shrink")).toBe("1");
   });
+  it("keeps the guard until every overlapping holder releases it", async () => {
+    const start = document.querySelector<HTMLElement>("#start")!;
+    freezeNavigationLayout();
+    freezeNavigationLayout(false);
+
+    releaseNavigationLayoutAfterPaint();
+    await vi.advanceTimersByTimeAsync(3);
+    expect(start.style.getPropertyValue("min-inline-size")).toBe("132.25px");
+
+    releaseNavigationLayoutAfterPaint();
+    await vi.advanceTimersByTimeAsync(3);
+    expect(start.style.getPropertyValue("min-inline-size")).toBe("");
+  });
+
 });
