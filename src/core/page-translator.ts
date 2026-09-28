@@ -4,6 +4,12 @@ import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./navigation-layout";
 import { TooltipController } from "./tooltip-controller";
+import {
+    richHtmlStructureCompatible,
+    richMarkerCandidateCount,
+    splitRichHtmlByStructureBudget,
+    translateRichHtmlTextNodesSafely,
+} from "./rich-segment-splitter";
 
 export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[] }
 function translatedPlainText(_doc, html) {
@@ -24,6 +30,40 @@ function hasBrokenTranslationText(value) {
 }
 function hasBrokenTranslationHtml(html) {
     return /\uFFFD|&#x0*fffd;|&#0*65533;/iu.test(String(html || ""));
+}
+const COMPLEX_ROOT_MARKER_THRESHOLD = 8;
+const COMPLEX_CHUNK_MARKER_BUDGET = 6;
+
+async function translateComplexRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology) {
+    const chunks = splitRichHtmlByStructureBudget(html, COMPLEX_CHUNK_MARKER_BUDGET);
+    const translatedChunks = await Promise.all(chunks.map(async (chunk) => {
+        const chunkSourceText = translatedPlainText(doc, chunk);
+        const protectedChunk = protectTerminologyHtml(doc, chunk, terminology);
+        let translated = await provider.translateHtml({
+            html: protectedChunk.html,
+            sourceLanguage,
+            targetLanguage,
+            terminology: terminologyForText(terminology, chunkSourceText),
+        });
+
+        if (hasBrokenTranslationHtml(translated) || !richHtmlStructureCompatible(protectedChunk.html, translated)) {
+            translated = await translateRichHtmlTextNodesSafely(protectedChunk.html, async (sourceText) => {
+                let leafHtml = await provider.translateHtml({
+                    html: escapeHtml(sourceText),
+                    sourceLanguage,
+                    targetLanguage,
+                    terminology: terminologyForText(terminology, sourceText),
+                });
+                const leafText = translatedPlainText(doc, leafHtml);
+                if (!leafText || hasBrokenTranslationText(leafText))
+                    return sourceText;
+                return leafText;
+            });
+        }
+
+        return restoreTerminologyHtml(doc, translated, protectedChunk.replacements);
+    }));
+    return translatedChunks.join("");
 }
 function stripStandaloneLinkQuotes(source, translated) {
     let value = translated.trim();
@@ -224,20 +264,33 @@ export class PageTranslator {
         const segment = serializeRichSegment(root);
         if (!segment.html.trim())
             return;
-        const protectedSegment = protectTerminologyHtml(this.#doc, segment.html, this.#terminology);
         const requestTerminology = terminologyForText(this.#terminology, segment.fingerprint);
-        let translatedHtml = await this.#provider.translateHtml({
-            html: protectedSegment.html,
-            sourceLanguage: this.#sourceLanguage,
-            targetLanguage: this.#targetLanguage,
-            terminology: requestTerminology,
-        });
+        let translatedHtml;
+        if (richMarkerCandidateCount(segment.html) >= COMPLEX_ROOT_MARKER_THRESHOLD) {
+            translatedHtml = await translateComplexRichHtml(
+                this.#doc,
+                this.#provider,
+                segment.html,
+                this.#sourceLanguage,
+                this.#targetLanguage,
+                this.#terminology,
+            );
+        }
+        else {
+            // Keep the common path byte-for-byte equivalent to the existing whole-root
+            // translation behavior. The splitter is deliberately reserved for the tiny
+            // high-complexity tail so normal Firefox/Bergamot output is unaffected.
+            const protectedSegment = protectTerminologyHtml(this.#doc, segment.html, this.#terminology);
+            translatedHtml = await this.#provider.translateHtml({
+                html: protectedSegment.html,
+                sourceLanguage: this.#sourceLanguage,
+                targetLanguage: this.#targetLanguage,
+                terminology: requestTerminology,
+            });
+            translatedHtml = restoreTerminologyHtml(this.#doc, translatedHtml, protectedSegment.replacements);
+        }
         if (this.#disposed)
             return;
-        // Hard-preserve terms are restored immediately, before QA and preferred-term
-        // post-correction. This lets the engine translate the whole sentence while making
-        // immutable brands/identifiers impossible to corrupt in the visible output.
-        translatedHtml = restoreTerminologyHtml(this.#doc, translatedHtml, protectedSegment.replacements);
         if (hasBrokenTranslationHtml(translatedHtml)) {
             throw new Error("译文包含损坏字符，已保留原文");
         }
