@@ -654,6 +654,20 @@ describe("PageTranslator event-driven tooltips", () => {
     expect(document.querySelector("#tip")?.textContent).toBe("Upgrade for long-running tasks");
   });
 
+  it("does not rewrite a persistent aria-describedby help paragraph", async () => {
+    document.body.innerHTML = `<button id="trigger" aria-describedby="help">Help</button><p id="help">Persistent validation guidance</p>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    document.querySelector("#trigger")!.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(provider.requests).toHaveLength(0);
+    expect(document.querySelector("#help")?.textContent).toBe("Persistent validation guidance");
+    translator.restore();
+  });
+
   it("rechecks only an explicitly referenced hidden tooltip after hover without observing style changes", async () => {
     document.body.innerHTML = `<button id="trigger" aria-describedby="tip">Help</button><div id="tip" role="tooltip" style="display:none">Hidden until hover</div>`;
     const provider = new FakeHtmlProvider();

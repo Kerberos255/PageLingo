@@ -55,7 +55,7 @@ function isSafeTooltipCandidate(
   const view = element.ownerDocument.defaultView;
   const style = view?.getComputedStyle(element);
   if (
-    relation === "controls" &&
+    (relation === "controls" || relation === "describedby") &&
     !element.matches(TOOLTIP_SELECTOR) &&
     !element.hasAttribute("popover") &&
     style?.position !== "absolute" &&

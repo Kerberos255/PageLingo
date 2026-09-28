@@ -1,3 +1,5 @@
+import { isLoopbackHostname } from "./network-endpoint";
+
 export const LOCAL_TRANSLATION_ENGINE_ID = "firefox-local";
 
 export type ExternalTranslationEngineType =
@@ -55,8 +57,7 @@ function cleanUrl(value: unknown): string {
   if (!raw) return "";
   try {
     const url = new URL(raw);
-    const host = url.hostname.toLowerCase();
-    const loopback = host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1";
+    const loopback = isLoopbackHostname(url.hostname);
     if (url.username || url.password) return "";
     if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) return "";
     return url.href.replace(/\/+$/, "");
