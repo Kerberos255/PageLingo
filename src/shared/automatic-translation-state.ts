@@ -19,3 +19,11 @@ export function automaticTranslationSettingsSignature(
     glossaryCollections: settings.glossaryCollections,
   });
 }
+
+
+export function automaticTranslationLifecyclePending(
+  activeTranslationIsAutomatic: boolean,
+  inFlightGeneration: number,
+): boolean {
+  return activeTranslationIsAutomatic || inFlightGeneration >= 0;
+}
