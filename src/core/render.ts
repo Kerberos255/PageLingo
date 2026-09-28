@@ -462,6 +462,17 @@ function restoreBareLinkBoundary(container, linkIndex, label, source) {
     return anchor;
 }
 function cleanupLinkBoundaryMarkers(container) {
+    // Remove marker-only synthetic elements entirely. Leaving an empty <code>/<kbd>/
+    // <samp>/<var> behind would shift the positional opaque-restoration index.
+    for (const element of Array.from(container.querySelectorAll("code,kbd,samp,var"))) {
+        const text = (element.textContent ?? "").trim();
+        if (/^__FLT_LINK_(?:START|END)_\d+__$/.test(text)) {
+            element.remove();
+        }
+    }
+
+    // If a backend embedded a boundary token into ordinary text instead of preserving
+    // its wrapper, strip only the token and keep the surrounding translated text.
     const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     let current = walker.nextNode();
     while (current) {
