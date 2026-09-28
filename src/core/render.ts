@@ -724,6 +724,11 @@ export function mountTranslation(root, fragment, targetLanguage) {
         node.style.removeProperty("padding-inline-start");
         node.style.removeProperty("padding-inline-end");
     }
+    else if (inlineTag && sourceDisplay && sourceDisplay !== "none" && sourceDisplay !== "contents") {
+        // Semantic inline elements are often restyled as block/flex UI shells. Preserve
+        // that explicit computed layout instead of letting .flt-translation force block.
+        node.style.setProperty("display", sourceDisplay, "important");
+    }
     if (["LI", "TD", "TH"].includes(root.tagName)) {
         root.append(node);
     }
