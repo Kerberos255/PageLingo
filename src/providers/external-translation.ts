@@ -1,4 +1,5 @@
 import { languageLabel } from "../shared/settings";
+import { isLoopbackHostname } from "../shared/network-endpoint";
 import type { TranslationEngineConfig } from "../shared/translation-engine-settings";
 
 export interface ExternalTranslationTerminologyEntry {
@@ -110,11 +111,6 @@ async function jsonRequest(url: string, init: RequestInit): Promise<unknown> {
   } finally {
     globalThis.clearTimeout(timeout);
   }
-}
-
-function isLoopbackHostname(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1";
 }
 
 function requireBaseUrl(config: TranslationEngineConfig, fallback: string): string {
