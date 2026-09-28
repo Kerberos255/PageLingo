@@ -11,6 +11,7 @@ import {
     automaticTranslationSettingsSignature,
 } from "./shared/automatic-translation-state";
 import { relativeTimeElements } from "./shared/relative-time";
+import { sourceTextSample } from "./shared/source-text-sample";
 var translator = null;
 var imageOverlays = new Map();
 var activeImageOverlay = null;
@@ -38,9 +39,9 @@ function pageTextSample() {
         return "";
     return (root.innerText || root.textContent || "").replace(/\s+/g, " ").trim().slice(0, 4096);
 }
-async function detectPageLanguage() {
+async function detectPageLanguage(sampleOverride = null) {
     const declaredLanguage = normalizeDetectedLanguage(document.documentElement.lang);
-    const sample = pageTextSample();
+    const sample = sampleOverride ?? pageTextSample();
     if (!sample)
         return { declaredLanguage, detectedLanguage: null, effectiveLanguage: declaredLanguage, percentage: 0, isReliable: false, sampleLength: 0 };
     try {
@@ -219,6 +220,12 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     stopRelativeTimeLocalization();
     translator?.restore();
     restoreNavigationLayout();
+    const automaticPass = expectedAutoGeneration !== null && !manualOverride;
+    activeTranslationIsAutomatic = automaticPass;
+    activeTranslationTargetLanguage = normalizedTarget;
+    activeAutomaticSettingsSignature = automaticPass
+        ? automaticTranslationSettingsSignature(settings, routeLocaleHint(), resolvedSource)
+        : null;
     const navigationHold = settings.displayMode === "translation"
         ? freezeNavigationLayout()
         : null;
@@ -250,18 +257,15 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
     });
     translator = pageTranslator;
-    activeTranslationTargetLanguage = normalizedTarget;
     let count = 0;
     try {
         count = await pageTranslator.translateAll();
+        // Cleanup belongs to the lifecycle that performed the reset/replacement.
+        // A stale pass must not call restore() here because restore() sweeps generated
+        // translation DOM across the document and could erase replacement results.
         if (stale() || translator !== pageTranslator) {
-            pageTranslator.restore();
             return 0;
         }
-        activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
-        activeAutomaticSettingsSignature = activeTranslationIsAutomatic
-            ? automaticTranslationSettingsSignature(settings, routeLocaleHint(), resolvedSource)
-            : null;
         pageTranslator.observe();
         pageTranslator.observeTooltips();
         return count;
@@ -848,14 +852,16 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     void maybeAutoTranslate(autoTranslateGeneration);
 });
 async function resolveAutomaticSourceLanguage(targetLanguage) {
-    const sample = pageTextSample();
+    // Translation-only mode hides original roots visually; source detection must ignore
+    // PageLingo's generated target-language nodes and read the underlying source DOM.
+    const sample = sourceTextSample(document);
     const routeLanguage = routeLocaleHint();
     // Never let a target-language shell/sidebar veto an explicit source-locale route.
     // /en/ pages can legitimately contain Chinese navigation while the article remains English.
     if (targetLooksChinese(targetLanguage) && looksLikeChineseText(sample) && !routeLanguage) {
         return { sourceLanguage: null, routeLanguage, info: null };
     }
-    const info = await detectPageLanguage();
+    const info = await detectPageLanguage(sample);
     let sourceLanguage = routeLanguage ?? info.declaredLanguage ?? info.effectiveLanguage;
     // An explicit page locale is a stronger hint than statistical detection when its
     // script agrees with the visible text. Technical documentation can contain enough
@@ -1005,6 +1011,8 @@ async function rescanAfterRouteChange(generation) {
         }
         try {
             await translator.translateAll(document.body);
+            translator.observe();
+            translator.observeTooltips();
         }
         finally {
             if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
