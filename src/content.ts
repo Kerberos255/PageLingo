@@ -789,6 +789,7 @@ browser.runtime.onMessage.addListener(async (message) => {
         translator = null;
         activeTranslationIsAutomatic = false;
         activeTranslationTargetLanguage = null;
+        activeAutomaticSettingsSignature = null;
         stopRelativeTimeLocalization();
         restoreNavigationLayout();
         document.getElementById("flt-style")?.remove();
@@ -809,6 +810,25 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     }
     translator.setDisplayMode(mode);
     if (mode === "translation") releaseNavigationLayoutAfterPaint();
+});
+const AUTO_TRANSLATION_INVALIDATING_SETTINGS = new Set([
+    "autoTranslateEnabled",
+    "targetLanguage",
+    "neverTranslateSites",
+    "alwaysTranslateSites",
+    "neverTranslateLanguages",
+    "alwaysTranslateLanguages",
+    "builtinGlossaryEnabled",
+    "glossaryCollections",
+]);
+browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local" || !translator || !activeTranslationIsAutomatic)
+        return;
+    if (!Object.keys(changes).some((key) => AUTO_TRANSLATION_INVALIDATING_SETTINGS.has(key)))
+        return;
+    autoTranslateGeneration += 1;
+    softResetForRoute();
+    void maybeAutoTranslate(autoTranslateGeneration);
 });
 async function runAutoTranslate(generation) {
     if (window.top !== window || generation !== autoTranslateGeneration)
