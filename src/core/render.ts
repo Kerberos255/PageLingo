@@ -711,11 +711,10 @@ export function mountTranslation(root, fragment, targetLanguage) {
     const sourceDisplay = root.ownerDocument.defaultView?.getComputedStyle(root).display ?? "";
     const inlineTag = ["SPAN", "LABEL", "STRONG", "EM", "B", "I", "U", "S", "SMALL", "SUB", "SUP", "MARK", "ABBR", "CITE", "Q", "DEL", "INS"].includes(root.tagName);
     const inlineDisplays = ["inline", "inline-block", "inline-flex", "inline-grid"];
-    const inlineSource = inlineTag || inlineDisplays.includes(sourceDisplay);
-    if (inlineSource || (root.tagName === "SPAN" && root.closest("a"))) {
-        // A generated translation span must remain in the same inline formatting
-        // context as a short UI label. Preserve explicit inline-flex/inline-grid/
-        // inline-block when present; otherwise a semantic inline root stays inline.
+    const inlineSource = inlineDisplays.includes(sourceDisplay) || (!sourceDisplay && inlineTag);
+    if (inlineSource) {
+        // Computed display wins over semantic tag defaults. Only fall back to
+        // "inline" when the environment cannot provide a computed display.
         const translatedDisplay = inlineDisplays.includes(sourceDisplay) ? sourceDisplay : "inline";
         node.style.setProperty("display", translatedDisplay, "important");
         node.style.setProperty("margin-block-start", "0", "important");
