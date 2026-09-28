@@ -238,7 +238,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         if (rootLanguage === normalizedTarget) return false;
         return !settings.neverTranslateLanguages.includes(rootLanguage);
     };
-    translator = new PageTranslator(document, new RuntimeMessageProvider(), {
+    const pageTranslator = new PageTranslator(document, new RuntimeMessageProvider(), {
         sourceLanguage: resolvedSource,
         targetLanguage: normalizedTarget,
         concurrency: 4,
@@ -246,16 +246,21 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         shouldTranslateRoot,
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
     });
-    activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
+    translator = pageTranslator;
     activeTranslationTargetLanguage = normalizedTarget;
-    activeAutomaticSettingsSignature = activeTranslationIsAutomatic
-        ? automaticTranslationSettingsSignature(settings, routeLocaleHint(), resolvedSource)
-        : null;
     let count = 0;
     try {
-        count = await translator.translateAll();
-        translator.observe();
-        translator.observeTooltips();
+        count = await pageTranslator.translateAll();
+        if (stale() || translator !== pageTranslator) {
+            pageTranslator.restore();
+            return 0;
+        }
+        activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
+        activeAutomaticSettingsSignature = activeTranslationIsAutomatic
+            ? automaticTranslationSettingsSignature(settings, routeLocaleHint(), resolvedSource)
+            : null;
+        pageTranslator.observe();
+        pageTranslator.observeTooltips();
         return count;
     }
     finally {
