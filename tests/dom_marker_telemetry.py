@@ -25,6 +25,11 @@ TARGETS = [
     ("mdn-regular-expressions", "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Regular_expressions"),
     ("rust-book-getting-started", "https://doc.rust-lang.org/book/ch01-00-getting-started.html"),
     ("django-tutorial-1", "https://docs.djangoproject.com/en/stable/intro/tutorial01/"),
+    ("game-a-dark-room", "https://adarkroom.doublespeakgames.com/"),
+    ("game-universal-paperclips", "https://www.decisionproblem.com/paperclips/"),
+    ("game-kittens", "https://kittensgame.com/web/"),
+    ("game-trimps", "https://trimps.github.io/"),
+    ("game-cookie-clicker", "https://orteil.dashnet.org/cookieclicker/"),
 ]
 
 
