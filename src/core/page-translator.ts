@@ -34,8 +34,33 @@ function hasBrokenTranslationHtml(html) {
 const COMPLEX_ROOT_MARKER_THRESHOLD = 8;
 const COMPLEX_CHUNK_MARKER_BUDGET = 6;
 
+async function translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology) {
+    const protectedChunk = protectTerminologyHtml(doc, html, terminology);
+    const translated = await translateRichHtmlTextNodesSafely(protectedChunk.html, async (sourceText) => {
+        const leafHtml = await provider.translateHtml({
+            html: escapeHtml(sourceText),
+            sourceLanguage,
+            targetLanguage,
+            terminology: terminologyForText(terminology, sourceText),
+        });
+        const leafText = translatedPlainText(doc, leafHtml);
+        if (!leafText || hasBrokenTranslationText(leafText))
+            return sourceText;
+        return leafText;
+    });
+    return restoreTerminologyHtml(doc, translated, protectedChunk.replacements);
+}
+
 async function translateComplexRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology) {
-    const chunks = splitRichHtmlByStructureBudget(html, COMPLEX_CHUNK_MARKER_BUDGET);
+    let chunks;
+    try {
+        chunks = splitRichHtmlByStructureBudget(html, COMPLEX_CHUNK_MARKER_BUDGET);
+    }
+    catch (error) {
+        console.warn("[PageLingo] Complex root cannot be safely split; using leaf-safe fallback", error);
+        return translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology);
+    }
+
     const translatedChunks = await Promise.all(chunks.map(async (chunk) => {
         const chunkSourceText = translatedPlainText(doc, chunk);
         const protectedChunk = protectTerminologyHtml(doc, chunk, terminology);
@@ -47,23 +72,30 @@ async function translateComplexRichHtml(doc, provider, html, sourceLanguage, tar
         });
 
         if (hasBrokenTranslationHtml(translated) || !richHtmlStructureCompatible(protectedChunk.html, translated)) {
-            translated = await translateRichHtmlTextNodesSafely(protectedChunk.html, async (sourceText) => {
-                let leafHtml = await provider.translateHtml({
-                    html: escapeHtml(sourceText),
-                    sourceLanguage,
-                    targetLanguage,
-                    terminology: terminologyForText(terminology, sourceText),
-                });
-                const leafText = translatedPlainText(doc, leafHtml);
-                if (!leafText || hasBrokenTranslationText(leafText))
-                    return sourceText;
-                return leafText;
-            });
+            return translateLeafSafeRichHtml(
+                doc,
+                provider,
+                chunk,
+                sourceLanguage,
+                targetLanguage,
+                terminology,
+            );
         }
 
         return restoreTerminologyHtml(doc, translated, protectedChunk.replacements);
     }));
     return translatedChunks.join("");
+}
+
+async function providerAllowsStructuralSplitting(provider) {
+    if (typeof provider.supportsStructuralSplitting !== "function")
+        return true;
+    try {
+        return await provider.supportsStructuralSplitting();
+    }
+    catch {
+        return false;
+    }
 }
 function stripStandaloneLinkQuotes(source, translated) {
     let value = translated.trim();
@@ -266,7 +298,9 @@ export class PageTranslator {
             return;
         const requestTerminology = terminologyForText(this.#terminology, segment.fingerprint);
         let translatedHtml;
-        if (richMarkerCandidateCount(segment.html) >= COMPLEX_ROOT_MARKER_THRESHOLD) {
+        const complexRoot = richMarkerCandidateCount(segment.html) >= COMPLEX_ROOT_MARKER_THRESHOLD;
+        const splitComplexRoot = complexRoot && await providerAllowsStructuralSplitting(this.#provider);
+        if (splitComplexRoot) {
             translatedHtml = await translateComplexRichHtml(
                 this.#doc,
                 this.#provider,
