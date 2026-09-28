@@ -6,6 +6,8 @@ import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, n
 import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint } from "./core/rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint, restoreNavigationLayout } from "./core/navigation-layout";
 import { collectTranslationTelemetry } from "./core/translation-telemetry";
+import { automaticTranslationSettingsSignature } from "./shared/automatic-translation-state";
+import { relativeTimeElements } from "./shared/relative-time";
 var translator = null;
 var imageOverlays = new Map();
 var activeImageOverlay = null;
@@ -154,6 +156,7 @@ let autoTranslateInFlightGeneration = -1;
 let autoTranslateInFlightPromise = null;
 let activeTranslationIsAutomatic = false;
 let activeTranslationTargetLanguage = null;
+let activeAutomaticSettingsSignature = null;
 var relativeTimeLangSnapshots = new Map();
 var relativeTimeObserver = null;
 function relativeTimeLocale(targetLanguage) {
@@ -161,12 +164,6 @@ function relativeTimeLocale(targetLanguage) {
     if (normalized === "zh-Hans") return "zh-CN";
     if (normalized === "zh-Hant") return "zh-TW";
     return normalized;
-}
-function relativeTimeElements(scope = document) {
-    const elements = [];
-    if (scope instanceof Element && scope.matches("relative-time")) elements.push(scope);
-    if ("querySelectorAll" in scope) elements.push(...Array.from(scope.querySelectorAll("relative-time")));
-    return elements;
 }
 function localizeRelativeTimeElements(targetLanguage, scope = document) {
     const locale = relativeTimeLocale(targetLanguage);
@@ -249,6 +246,9 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     });
     activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
     activeTranslationTargetLanguage = normalizedTarget;
+    activeAutomaticSettingsSignature = activeTranslationIsAutomatic
+        ? automaticTranslationSettingsSignature(settings, routeLocaleHint())
+        : null;
     let count = 0;
     try {
         count = await translator.translateAll();
@@ -694,6 +694,7 @@ async function togglePageTranslation() {
         translator = null;
         activeTranslationIsAutomatic = false;
         activeTranslationTargetLanguage = null;
+        activeAutomaticSettingsSignature = null;
         stopRelativeTimeLocalization();
         restoreNavigationLayout();
         document.getElementById("flt-style")?.remove();
@@ -905,6 +906,7 @@ function softResetForRoute() {
     translator = null;
     activeTranslationIsAutomatic = false;
     activeTranslationTargetLanguage = null;
+    activeAutomaticSettingsSignature = null;
     stopRelativeTimeLocalization();
     restoreNavigationLayout();
     document.getElementById("flt-style")?.remove();
@@ -920,6 +922,14 @@ async function rescanAfterRouteChange(generation) {
     if (generation !== routeRescanGeneration || window.top !== window) return;
     try {
         const settings = await loadSettings();
+        const currentAutomaticSignature = automaticTranslationSettingsSignature(settings, routeLocaleHint());
+        if (
+            translator &&
+            activeTranslationIsAutomatic &&
+            activeAutomaticSettingsSignature !== currentAutomaticSignature
+        ) {
+            softResetForRoute();
+        }
         if (isSiteListed(location.hostname, settings.neverTranslateSites)) return;
         const alwaysSite = isSiteListed(location.hostname, settings.alwaysTranslateSites);
         if (!alwaysSite && !settings.autoTranslateEnabled) return;
