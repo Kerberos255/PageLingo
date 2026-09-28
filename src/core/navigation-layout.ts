@@ -12,6 +12,7 @@ type NavigationLayoutSnapshot = {
 const navigationLayoutSnapshots = new Map<HTMLElement, NavigationLayoutSnapshot>();
 let releaseFrameOne: number | null = null;
 let releaseFrameTwo: number | null = null;
+let navigationLayoutHolds = 0;
 
 function captureProperty(element: HTMLElement, property: string): StylePropertySnapshot {
     return {
@@ -36,6 +37,7 @@ function cancelScheduledRelease(): void {
 
 export function restoreNavigationLayout(): void {
     cancelScheduledRelease();
+    navigationLayoutHolds = 0;
     for (const [element, snapshot] of navigationLayoutSnapshots) {
         restoreProperty(element, "box-sizing", snapshot.boxSizing);
         restoreProperty(element, "min-inline-size", snapshot.minInlineSize);
@@ -48,6 +50,7 @@ export function restoreNavigationLayout(): void {
 export function freezeNavigationLayout(resetExisting = true): void {
     if (resetExisting) restoreNavigationLayout();
     else cancelScheduledRelease();
+    navigationLayoutHolds += 1;
 
     const candidates = Array.from(document.querySelectorAll("nav a, [role='navigation'] a"));
     for (const anchor of candidates) {
@@ -113,6 +116,8 @@ export function freezeNavigationLayout(resetExisting = true): void {
 
 export function releaseNavigationLayoutAfterPaint(): void {
     cancelScheduledRelease();
+    if (navigationLayoutHolds > 0) navigationLayoutHolds -= 1;
+    if (navigationLayoutHolds > 0) return;
     if (navigationLayoutSnapshots.size === 0) return;
     const view = document.defaultView;
     if (!view) {
