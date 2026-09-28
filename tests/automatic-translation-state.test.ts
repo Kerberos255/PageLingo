@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  automaticTranslationLifecyclePending,
   automaticTranslationSettingsSignature,
 } from "../src/shared/automatic-translation-state";
 import { DEFAULT_SETTINGS } from "../src/shared/settings";
@@ -29,5 +30,11 @@ describe("automatic translation settings signature", () => {
     };
     expect(automaticTranslationSettingsSignature(base, "en", "en"))
       .toBe(automaticTranslationSettingsSignature({ ...base }, "en", "en"));
+  });
+
+  it("keeps settings invalidation active while a restart is still in flight", () => {
+    expect(automaticTranslationLifecyclePending(false, 12)).toBe(true);
+    expect(automaticTranslationLifecyclePending(true, -1)).toBe(true);
+    expect(automaticTranslationLifecyclePending(false, -1)).toBe(false);
   });
 });
