@@ -28,6 +28,7 @@ import {
 import { handleImageRuntimeMessage, initializeImageTranslation } from "./image-translation/background-service";
 import { languageLabel, loadSettings, normalizeDetectedLanguage } from "./shared/settings";
 import { hasExternalTranslationConsent } from "./shared/data-consent";
+import { isLoopbackTranslationEndpoint } from "./shared/network-endpoint";
 import { translateWithExternalEngine } from "./providers/external-translation";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
@@ -116,16 +117,6 @@ async function activeExternalEngine() {
   const state = await currentTranslationEngineState();
   if (state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID) return null;
   return state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
-}
-
-function isLoopbackTranslationEndpoint(value: string): boolean {
-  if (!value) return false;
-  try {
-    const host = new URL(value).hostname.toLowerCase();
-    return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1";
-  } catch {
-    return false;
-  }
 }
 
 async function translationEngineStateForUi() {
