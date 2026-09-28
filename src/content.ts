@@ -5,6 +5,7 @@ import { sendRuntimeMessage } from "./shared/runtime-message";
 import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, normalizeDisplayMode } from "./shared/settings";
 import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint } from "./core/rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint, restoreNavigationLayout } from "./core/navigation-layout";
+import { collectTranslationTelemetry } from "./core/translation-telemetry";
 var translator = null;
 var imageOverlays = new Map();
 var activeImageOverlay = null;
@@ -761,6 +762,15 @@ browser.runtime.onMessage.addListener(async (message) => {
     }
     if (message.type === "ping")
         return { ok: true };
+    if (message.type === "get-dom-translation-telemetry") {
+        try {
+            if (!document.body) throw new Error("Document body is not ready");
+            return { ok: true, telemetry: collectTranslationTelemetry(document.body) };
+        }
+        catch (error) {
+            return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+    }
     if (message.type === "get-page-language")
         return { ok: true, language: await detectPageLanguage() };
     if (message.type === "translate-page") {
