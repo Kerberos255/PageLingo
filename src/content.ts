@@ -6,7 +6,10 @@ import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, n
 import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint } from "./core/rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint, restoreNavigationLayout } from "./core/navigation-layout";
 import { collectTranslationTelemetry } from "./core/translation-telemetry";
-import { automaticTranslationSettingsSignature } from "./shared/automatic-translation-state";
+import {
+    automaticTranslationLifecyclePending,
+    automaticTranslationSettingsSignature,
+} from "./shared/automatic-translation-state";
 import { relativeTimeElements } from "./shared/relative-time";
 var translator = null;
 var imageOverlays = new Map();
@@ -833,11 +836,10 @@ browser.storage.onChanged.addListener((changes, areaName) => {
         return;
     if (!Object.keys(changes).some((key) => AUTO_TRANSLATION_INVALIDATING_SETTINGS.has(key)))
         return;
-    const automaticLifecyclePending =
-        activeTranslationIsAutomatic ||
-        autoTranslateInFlightPromise !== null ||
-        autoTranslateInFlightGeneration >= 0;
-    if (!automaticLifecyclePending)
+    if (!automaticTranslationLifecyclePending(
+        activeTranslationIsAutomatic,
+        autoTranslateInFlightGeneration,
+    ))
         return;
     autoTranslateGeneration += 1;
     routeRescanGeneration += 1;
