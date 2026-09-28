@@ -51,6 +51,7 @@ nav{display:flex;gap:12px}
 <nav><a href="#start">GET STARTED</a><a href="#overview">Overview</a></nav>
 <div id="editor" contenteditable="true" data-placeholder="How can I help you today?"></div>
 <button id="hover">Cowork</button>
+<p id="complex">Status <strong>alpha</strong> <strong>bravo</strong> <strong>charlie</strong> <strong>delta</strong> <strong>echo</strong> <strong>foxtrot</strong> <strong>golf</strong> <strong>hotel</strong> <strong>india</strong> <strong>juliet</strong>.</p>
 <script>
 const button=document.getElementById('hover');
 button.addEventListener('pointerenter',()=>{
@@ -94,6 +95,17 @@ window.__runChurn=()=>{
             ("Search documentation", "搜索文档"),
             ("What you need", "你需要什么"),
             ("Quick setup", "快速设置"),
+            ("Status", "状态"),
+            ("alpha", "甲"),
+            ("bravo", "乙"),
+            ("charlie", "丙"),
+            ("delta", "丁"),
+            ("echo", "戊"),
+            ("foxtrot", "己"),
+            ("golf", "庚"),
+            ("hotel", "辛"),
+            ("india", "壬"),
+            ("juliet", "癸"),
         ]
         for source, target in replacements:
             translated = translated.replace(source, target)
@@ -273,6 +285,26 @@ def main() -> None:
         driver.switch_to.window(fixture_handle)
         if not page_responsive(driver):
             raise AssertionError("Dynamic fixture became unresponsive after translation")
+
+        complex_result = driver.execute_script(
+            """
+            const source = document.getElementById('complex');
+            const translated = source?.nextElementSibling;
+            return {
+              generated: Boolean(translated?.matches('.flt-translation')),
+              strongCount: translated?.querySelectorAll('strong').length ?? 0,
+              text: (translated?.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+            };
+            """
+        )
+        if not complex_result.get("generated"):
+            raise AssertionError(f"Complex splitter fixture produced no translation: {complex_result}")
+        if complex_result.get("strongCount") != 10:
+            raise AssertionError(f"Complex splitter lost inline structure: {complex_result}")
+        if "甲" not in complex_result.get("text", "") or "癸" not in complex_result.get("text", ""):
+            raise AssertionError(f"Complex splitter did not translate both ends: {complex_result}")
+        driver.save_screenshot(str(ARTIFACTS / "complex-splitter-after.png"))
+        print("Complex splitter fixture:", complex_result)
 
         # Stress the translated page with the kind of high-frequency class churn used by
         # React/animation-heavy UIs. A translation observer must not turn these cosmetic
