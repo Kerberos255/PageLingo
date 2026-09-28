@@ -6,7 +6,10 @@ import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, n
 import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint } from "./core/rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint, restoreNavigationLayout } from "./core/navigation-layout";
 import { collectTranslationTelemetry } from "./core/translation-telemetry";
-import { automaticTranslationSettingsSignature } from "./shared/automatic-translation-state";
+import {
+    automaticTranslationLifecyclePending,
+    automaticTranslationSettingsSignature,
+} from "./shared/automatic-translation-state";
 import { relativeTimeElements } from "./shared/relative-time";
 var translator = null;
 var imageOverlays = new Map();
@@ -216,8 +219,10 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     stopRelativeTimeLocalization();
     translator?.restore();
     restoreNavigationLayout();
-    if (settings.displayMode === "translation") {
-        freezeNavigationLayout();
+    const navigationHold = settings.displayMode === "translation"
+        ? freezeNavigationLayout()
+        : null;
+    if (navigationHold) {
         startRelativeTimeLocalization(normalizedTarget);
     }
     const shouldTranslateRoot = async (root) => {
@@ -236,7 +241,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         if (rootLanguage === normalizedTarget) return false;
         return !settings.neverTranslateLanguages.includes(rootLanguage);
     };
-    translator = new PageTranslator(document, new RuntimeMessageProvider(), {
+    const pageTranslator = new PageTranslator(document, new RuntimeMessageProvider(), {
         sourceLanguage: resolvedSource,
         targetLanguage: normalizedTarget,
         concurrency: 4,
@@ -244,20 +249,25 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         shouldTranslateRoot,
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
     });
-    activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
+    translator = pageTranslator;
     activeTranslationTargetLanguage = normalizedTarget;
-    activeAutomaticSettingsSignature = activeTranslationIsAutomatic
-        ? automaticTranslationSettingsSignature(settings, routeLocaleHint())
-        : null;
     let count = 0;
     try {
-        count = await translator.translateAll();
-        translator.observe();
-        translator.observeTooltips();
+        count = await pageTranslator.translateAll();
+        if (stale() || translator !== pageTranslator) {
+            pageTranslator.restore();
+            return 0;
+        }
+        activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
+        activeAutomaticSettingsSignature = activeTranslationIsAutomatic
+            ? automaticTranslationSettingsSignature(settings, routeLocaleHint(), resolvedSource)
+            : null;
+        pageTranslator.observe();
+        pageTranslator.observeTooltips();
         return count;
     }
     finally {
-        if (settings.displayMode === "translation") releaseNavigationLayoutAfterPaint();
+        if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
     }
 }
 function normalizeAbsoluteUrl(value) {
@@ -801,15 +811,15 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local" || !changes.displayMode || !translator)
         return;
     const mode = normalizeDisplayMode(changes.displayMode.newValue);
+    const navigationHold = mode === "translation" ? freezeNavigationLayout() : null;
     if (mode === "translation") {
-        freezeNavigationLayout();
         if (activeTranslationTargetLanguage) startRelativeTimeLocalization(activeTranslationTargetLanguage);
     } else {
         restoreNavigationLayout();
         stopRelativeTimeLocalization();
     }
     translator.setDisplayMode(mode);
-    if (mode === "translation") releaseNavigationLayoutAfterPaint();
+    if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
 });
 const AUTO_TRANSLATION_INVALIDATING_SETTINGS = new Set([
     "autoTranslateEnabled",
@@ -822,29 +832,30 @@ const AUTO_TRANSLATION_INVALIDATING_SETTINGS = new Set([
     "glossaryCollections",
 ]);
 browser.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "local" || !translator || !activeTranslationIsAutomatic)
+    if (areaName !== "local")
         return;
     if (!Object.keys(changes).some((key) => AUTO_TRANSLATION_INVALIDATING_SETTINGS.has(key)))
         return;
+    if (!automaticTranslationLifecyclePending(
+        activeTranslationIsAutomatic,
+        autoTranslateInFlightGeneration,
+    ))
+        return;
     autoTranslateGeneration += 1;
+    routeRescanGeneration += 1;
+    clearRouteRescanTimers();
     softResetForRoute();
     void maybeAutoTranslate(autoTranslateGeneration);
 });
-async function runAutoTranslate(generation) {
-    if (window.top !== window || generation !== autoTranslateGeneration)
-        return;
-    const settings = await loadSettings();
-    if (generation !== autoTranslateGeneration) return;
-    if (isSiteListed(location.hostname, settings.neverTranslateSites))
-        return;
-    const targetLanguage = normalizeDetectedLanguage(settings.targetLanguage) ?? settings.targetLanguage;
+async function resolveAutomaticSourceLanguage(targetLanguage) {
     const sample = pageTextSample();
     const routeLanguage = routeLocaleHint();
     // Never let a target-language shell/sidebar veto an explicit source-locale route.
     // /en/ pages can legitimately contain Chinese navigation while the article remains English.
-    if (targetLooksChinese(targetLanguage) && looksLikeChineseText(sample) && !routeLanguage) return;
+    if (targetLooksChinese(targetLanguage) && looksLikeChineseText(sample) && !routeLanguage) {
+        return { sourceLanguage: null, routeLanguage, info: null };
+    }
     const info = await detectPageLanguage();
-    if (generation !== autoTranslateGeneration) return;
     let sourceLanguage = routeLanguage ?? info.declaredLanguage ?? info.effectiveLanguage;
     // An explicit page locale is a stronger hint than statistical detection when its
     // script agrees with the visible text. Technical documentation can contain enough
@@ -865,6 +876,20 @@ async function runAutoTranslate(generation) {
             ? detected
             : (routeLooksEnglish() ? "en" : sourceLanguage);
     }
+    return { sourceLanguage, routeLanguage, info };
+}
+
+async function runAutoTranslate(generation) {
+    if (window.top !== window || generation !== autoTranslateGeneration)
+        return;
+    const settings = await loadSettings();
+    if (generation !== autoTranslateGeneration) return;
+    if (isSiteListed(location.hostname, settings.neverTranslateSites))
+        return;
+    const targetLanguage = normalizeDetectedLanguage(settings.targetLanguage) ?? settings.targetLanguage;
+    const resolved = await resolveAutomaticSourceLanguage(targetLanguage);
+    if (generation !== autoTranslateGeneration) return;
+    const { sourceLanguage, info } = resolved;
     if (!sourceLanguage || sourceLanguage === targetLanguage)
         return;
     const alwaysSite = isSiteListed(location.hostname, settings.alwaysTranslateSites);
@@ -876,13 +901,13 @@ async function runAutoTranslate(generation) {
             return;
         if (!await translationRouteReady(sourceLanguage, targetLanguage)) {
             console.info("[PageLingo] Automatic translation skipped: route not ready", {
-                declaredLanguage: info.declaredLanguage,
-                detectedLanguage: info.detectedLanguage,
-                effectiveLanguage: info.effectiveLanguage,
+                declaredLanguage: info?.declaredLanguage ?? null,
+                detectedLanguage: info?.detectedLanguage ?? null,
+                effectiveLanguage: info?.effectiveLanguage ?? null,
                 sourceLanguage,
                 targetLanguage,
-                detectorReliable: info.isReliable,
-                detectorPercentage: info.percentage,
+                detectorReliable: info?.isReliable ?? false,
+                detectorPercentage: info?.percentage ?? 0,
             });
             return;
         }
@@ -942,7 +967,20 @@ async function rescanAfterRouteChange(generation) {
     if (generation !== routeRescanGeneration || window.top !== window) return;
     try {
         const settings = await loadSettings();
-        const currentAutomaticSignature = automaticTranslationSettingsSignature(settings, routeLocaleHint());
+        let currentSourceLanguage = null;
+        let currentRouteLanguage = routeLocaleHint();
+        if (translator && activeTranslationIsAutomatic) {
+            const targetLanguage = normalizeDetectedLanguage(settings.targetLanguage) ?? settings.targetLanguage;
+            const resolved = await resolveAutomaticSourceLanguage(targetLanguage);
+            if (generation !== routeRescanGeneration) return;
+            currentSourceLanguage = resolved.sourceLanguage;
+            currentRouteLanguage = resolved.routeLanguage;
+        }
+        const currentAutomaticSignature = automaticTranslationSettingsSignature(
+            settings,
+            currentRouteLanguage,
+            currentSourceLanguage,
+        );
         if (
             translator &&
             activeTranslationIsAutomatic &&
@@ -959,15 +997,17 @@ async function rescanAfterRouteChange(generation) {
         }
         // New navigation nodes can arrive after the first route render. Preserve their original
         // source-language box widths before translating any newly discovered roots.
-        if (settings.displayMode === "translation") {
-            freezeNavigationLayout(false);
-            if (activeTranslationTargetLanguage) localizeRelativeTimeElements(activeTranslationTargetLanguage, document);
+        const navigationHold = settings.displayMode === "translation"
+            ? freezeNavigationLayout(false)
+            : null;
+        if (navigationHold && activeTranslationTargetLanguage) {
+            localizeRelativeTimeElements(activeTranslationTargetLanguage, document);
         }
         try {
             await translator.translateAll(document.body);
         }
         finally {
-            if (settings.displayMode === "translation") releaseNavigationLayoutAfterPaint();
+            if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
         }
     } catch (error) {
         console.warn("[PageLingo] SPA translation rescan failed", error);

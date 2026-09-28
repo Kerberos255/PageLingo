@@ -596,7 +596,7 @@ export class PageTranslator {
         const roots = Array.from(this.#pending);
         this.#pending.clear();
         const guardNavigation = this.#displayMode === "translation" && roots.length > 0;
-        if (guardNavigation) freezeNavigationLayout(false);
+        const navigationHold = guardNavigation ? freezeNavigationLayout(false) : null;
         try {
             for (const root of roots) {
                 try {
@@ -608,7 +608,7 @@ export class PageTranslator {
             }
         }
         finally {
-            if (guardNavigation) releaseNavigationLayoutAfterPaint();
+            if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
         }
     }
 }
