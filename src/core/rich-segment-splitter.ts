@@ -3,6 +3,20 @@ const LINK_BOUNDARY_RE = /^__FLT_LINK_(?:START|END)_\d+__$/;
 const OPAQUE_RE = /^__FLT_OPAQUE_(\d+)__$/;
 const ATOMIC_TAGS = new Set(["A", "CODE", "KBD", "SAMP", "VAR", "BR", "WBR"]);
 
+export class RichSegmentBudgetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RichSegmentBudgetError";
+  }
+}
+
+function escapeHtmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function parseBody(html: string): HTMLElement {
   return new DOMParser().parseFromString(html, "text/html").body;
 }
@@ -31,7 +45,7 @@ export function richMarkerCandidateCount(html: string): number {
 }
 
 function serializeNode(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
+  if (node.nodeType === Node.TEXT_NODE) return escapeHtmlText(node.textContent ?? "");
   if (node instanceof Element) return node.outerHTML;
   return "";
 }
@@ -65,7 +79,12 @@ function explodeNode(node: Node, budget: number): string[] {
   if (!(node instanceof Element)) return [serializeNode(node)];
 
   const count = structuralCountNode(node);
-  if (count <= budget || ATOMIC_TAGS.has(node.tagName)) return [node.outerHTML];
+  if (count <= budget) return [node.outerHTML];
+  if (ATOMIC_TAGS.has(node.tagName)) {
+    throw new RichSegmentBudgetError(
+      `Cannot safely split oversized atomic <${node.tagName.toLowerCase()}> with ${count} markers (budget ${budget})`,
+    );
+  }
 
   const ownCount = isMarkerCandidate(node) ? 1 : 0;
   const childBudget = Math.max(1, budget - ownCount);
@@ -82,7 +101,14 @@ export function splitRichHtmlByStructureBudget(html: string, budget = 6): string
   const body = parseBody(html);
   const pieces: string[] = [];
   for (const child of Array.from(body.childNodes)) pieces.push(...explodeNode(child, budget));
-  return packPieces(pieces, budget).filter((chunk) => chunk.trim());
+  const chunks = packPieces(pieces, budget).filter((chunk) => chunk.trim());
+  const oversized = chunks.find((chunk) => richMarkerCandidateCount(chunk) > budget);
+  if (oversized) {
+    throw new RichSegmentBudgetError(
+      `Structural chunk exceeds marker budget ${budget}: ${richMarkerCandidateCount(oversized)}`,
+    );
+  }
+  return chunks;
 }
 
 function transportLinkIdentity(anchor: Element): string {
