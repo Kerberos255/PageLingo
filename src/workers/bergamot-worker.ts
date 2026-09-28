@@ -118,7 +118,7 @@ async function initialize(request: Extract<BergamotWorkerRequest, { type: "initi
   engine = { bergamot, models, service, routeKind: request.routeKind };
 }
 
-function translateHtml(html: string): { html: string; inferenceMilliseconds: number } {
+function translateHtmlBatch(htmls: string[]): { htmls: string[]; inferenceMilliseconds: number } {
   if (!engine) throw new Error("Bergamot worker is not initialized");
   const { bergamot, models, service, routeKind } = engine;
   const messages = new bergamot.VectorString();
@@ -126,19 +126,29 @@ function translateHtml(html: string): { html: string; inferenceMilliseconds: num
   let responses: any = null;
 
   try {
-    messages.push_back(html);
-    options.push_back({ qualityScores: false, alignment: true, html: true });
+    for (const html of htmls) {
+      messages.push_back(html);
+      options.push_back({ qualityScores: false, alignment: true, html: true });
+    }
     const started = performance.now();
     responses = routeKind === "pivot"
       ? service.translateViaPivoting(models[0], models[1], messages, options)
       : service.translate(models[0], messages, options);
     const inferenceMilliseconds = performance.now() - started;
-    return { html: responses.get(0).getTranslatedText(), inferenceMilliseconds };
+    return {
+      htmls: htmls.map((_, index) => responses.get(index).getTranslatedText()),
+      inferenceMilliseconds,
+    };
   } finally {
     responses?.delete?.();
     messages.delete();
     options.delete();
   }
+}
+
+function translateHtml(html: string): { html: string; inferenceMilliseconds: number } {
+  const result = translateHtmlBatch([html]);
+  return { html: result.htmls[0] ?? "", inferenceMilliseconds: result.inferenceMilliseconds };
 }
 
 scope.addEventListener("message", async (event: MessageEvent<BergamotWorkerRequest>) => {
@@ -152,10 +162,13 @@ scope.addEventListener("message", async (event: MessageEvent<BergamotWorkerReque
     if (message.type === "translate") {
       post({ type: "result", id: message.id, ...translateHtml(message.html) });
     }
+    if (message.type === "translate-batch") {
+      post({ type: "batch-result", id: message.id, ...translateHtmlBatch(message.htmls) });
+    }
   } catch (error) {
     post({
       type: "error",
-      ...(message.type === "translate" ? { id: message.id } : {}),
+      ...((message.type === "translate" || message.type === "translate-batch") ? { id: message.id } : {}),
       error: error instanceof Error ? error.message : String(error),
     });
   }

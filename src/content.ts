@@ -4,7 +4,8 @@ import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, normalizeDisplayMode } from "./shared/settings";
 import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint } from "./core/rich-segment";
-import { freezeNavigationLayout, restoreNavigationLayout } from "./core/navigation-layout";
+import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint, restoreNavigationLayout } from "./core/navigation-layout";
+import { collectTranslationTelemetry } from "./core/translation-telemetry";
 var translator = null;
 var imageOverlays = new Map();
 var activeImageOverlay = null;
@@ -248,9 +249,16 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     });
     activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
     activeTranslationTargetLanguage = normalizedTarget;
-    const count = await translator.translateAll();
-    translator.observe();
-    return count;
+    let count = 0;
+    try {
+        count = await translator.translateAll();
+        translator.observe();
+        translator.observeTooltips();
+        return count;
+    }
+    finally {
+        if (settings.displayMode === "translation") releaseNavigationLayoutAfterPaint();
+    }
 }
 function normalizeAbsoluteUrl(value) {
     try {
@@ -754,6 +762,15 @@ browser.runtime.onMessage.addListener(async (message) => {
     }
     if (message.type === "ping")
         return { ok: true };
+    if (message.type === "get-dom-translation-telemetry") {
+        try {
+            if (!document.body) throw new Error("Document body is not ready");
+            return { ok: true, telemetry: collectTranslationTelemetry(document.body) };
+        }
+        catch (error) {
+            return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+    }
     if (message.type === "get-page-language")
         return { ok: true, language: await detectPageLanguage() };
     if (message.type === "translate-page") {
@@ -790,6 +807,7 @@ browser.storage.onChanged.addListener((changes, areaName) => {
         stopRelativeTimeLocalization();
     }
     translator.setDisplayMode(mode);
+    if (mode === "translation") releaseNavigationLayoutAfterPaint();
 });
 async function runAutoTranslate(generation) {
     if (window.top !== window || generation !== autoTranslateGeneration)
@@ -915,7 +933,12 @@ async function rescanAfterRouteChange(generation) {
             freezeNavigationLayout(false);
             if (activeTranslationTargetLanguage) localizeRelativeTimeElements(activeTranslationTargetLanguage, document);
         }
-        await translator.translateAll(document.body);
+        try {
+            await translator.translateAll(document.body);
+        }
+        finally {
+            if (settings.displayMode === "translation") releaseNavigationLayoutAfterPaint();
+        }
     } catch (error) {
         console.warn("[PageLingo] SPA translation rescan failed", error);
     }

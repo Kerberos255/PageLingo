@@ -12,7 +12,8 @@ class FakeHtmlProvider implements TranslationProvider {
     const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
     let node = walker.nextNode();
     while (node) {
-      if (node.textContent?.trim()) node.textContent = `译:${node.textContent}`;
+      const text = node.textContent?.trim() ?? "";
+      if (text && !/^__FLT_LINK_(?:START|END)_\d+__$/.test(text)) node.textContent = `译:${node.textContent}`;
       node = walker.nextNode();
     }
     const holder = document.createElement("div");
@@ -137,6 +138,73 @@ describe("PageTranslator DOM preservation", () => {
     expect(document.querySelector("h2.sr-only")?.nextElementSibling?.classList.contains("flt-translation")).not.toBe(true);
   });
 
+  it("does not retranslate link labels or gaps when main HTML preserves link transport", async () => {
+    document.body.innerHTML = `<p>Read <a href="/docs">documentation</a> and <a href="/guide">guide</a> now.</p>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    const paragraph = document.querySelector<HTMLElement>("p")!;
+    await translator.translateRoot(paragraph);
+
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]?.html).toContain(">documentation<");
+    expect(provider.requests[0]?.html).toContain(">guide<");
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(".flt-translation a"));
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(["/docs", "/guide"]);
+    expect(links.map((link) => link.textContent)).toEqual(["译:documentation", "译:guide"]);
+  });
+
+  it("keeps translated words outside the clickable link when the engine absorbs them around intact boundaries", async () => {
+    document.body.innerHTML = `<p>Read the <a href="/docs">documentation</a> now.</p>`;
+    class AbsorbingProvider implements TranslationProvider {
+      requests: TranslationRequest[] = [];
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.requests.push(request);
+        return `<a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0">阅读 <code>__FLT_LINK_START_0__</code><strong>文档</strong><code>__FLT_LINK_END_0__</code> 现在</a>`;
+      }
+    }
+    const provider = new AbsorbingProvider();
+    const translator = new PageTranslator(document, provider);
+    const paragraph = document.querySelector<HTMLElement>("p")!;
+    await translator.translateRoot(paragraph);
+
+    expect(provider.requests).toHaveLength(1);
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    const link = translated.querySelector<HTMLAnchorElement>("a")!;
+    expect(link.getAttribute("href")).toBe("/docs");
+    expect(link.textContent).toBe("文档");
+    expect(link.querySelector("strong")?.textContent).toBe("文档");
+    expect(translated.textContent).toContain("阅读");
+    expect(translated.textContent).toContain("现在");
+  });
+
+  it("falls back safely when link boundaries are damaged instead of keeping an expanded anchor", async () => {
+    document.body.innerHTML = `<p>Read the <a href="/docs">documentation</a> now.</p>`;
+    class DamagedBoundaryProvider implements TranslationProvider {
+      requests: TranslationRequest[] = [];
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.requests.push(request);
+        if (request.html.includes("__FLT_LINK_START_0__")) {
+          return `阅读<a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0">文档现在</a>`;
+        }
+        if (request.html.trim() === "documentation") return "文档";
+        if (request.html.trim() === "Read the") return "阅读";
+        if (request.html.trim() === "now.") return "现在。";
+        return request.html;
+      }
+    }
+    const provider = new DamagedBoundaryProvider();
+    const translator = new PageTranslator(document, provider);
+    const paragraph = document.querySelector<HTMLElement>("p")!;
+    await translator.translateRoot(paragraph);
+
+    expect(provider.requests).toHaveLength(4);
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    const link = translated.querySelector<HTMLAnchorElement>("a")!;
+    expect(link.getAttribute("href")).toBe("/docs");
+    expect(link.textContent).toBe("文档");
+    expect(translated.textContent).toContain("现在");
+  });
+
   it("restores links by translated label even when translation reorders link positions", async () => {
     document.body.innerHTML = `<p>Built by the <a href="https://openclaw.org">OpenClaw Foundation</a>. See the <a href="/gateway/telemetry">version check</a>.</p>`;
     class ReorderingProvider implements TranslationProvider {
@@ -248,6 +316,22 @@ describe("PageTranslator terminology safety", () => {
     expect(translatedLink?.textContent).toContain("Slack");
     expect(translatedLink?.textContent).toContain("设置");
     expect(translatedLink?.textContent).not.toContain("松��");
+  });
+
+  it("rejects HTML-entity replacement-character corruption without parsing it into visible text", async () => {
+    document.body.innerHTML = `<p id="p">A normal sentence.</p>`;
+    class BrokenEntityProvider implements TranslationProvider {
+      async translateHtml(): Promise<string> {
+        return "损坏的译文&#xfffd;";
+      }
+    }
+    const paragraph = document.querySelector<HTMLElement>("#p")!;
+    const translator = new PageTranslator(document, new BrokenEntityProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    expect(document.querySelector(".flt-translation")).toBeNull();
+    expect(paragraph.classList.contains("flt-source-hidden")).toBe(false);
+    expect(paragraph.textContent).toBe("A normal sentence.");
   });
 
   it("rejects replacement-character corruption instead of showing broken output", async () => {
@@ -549,5 +633,91 @@ describe("PageTranslator display modes", () => {
     expect(document.querySelectorAll("[data-flt-generated='translation']")).toHaveLength(0);
     expect(document.querySelectorAll("[data-flt-source-text-wrapper]")).toHaveLength(0);
     expect(document.querySelectorAll(".flt-source-hidden, .flt-source-content-hidden")).toHaveLength(0);
+  });
+});
+
+
+describe("PageTranslator event-driven tooltips", () => {
+  it("translates an aria-describedby tooltip only after the control is hovered", async () => {
+    document.body.innerHTML = `<button id="trigger" aria-describedby="tip">Help</button><div id="tip" role="tooltip">Upgrade for long-running tasks</div>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    expect(provider.requests).toHaveLength(0);
+    document.querySelector("#trigger")!.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(document.querySelector("#tip")?.textContent).toContain("译:");
+    expect(provider.requests).toHaveLength(1);
+    translator.restore();
+    expect(document.querySelector("#tip")?.textContent).toBe("Upgrade for long-running tasks");
+  });
+
+  it("rechecks only an explicitly referenced hidden tooltip after hover without observing style changes", async () => {
+    document.body.innerHTML = `<button id="trigger" aria-describedby="tip">Help</button><div id="tip" role="tooltip" style="display:none">Hidden until hover</div>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    document.querySelector("#trigger")!.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    const tip = document.querySelector<HTMLElement>("#tip")!;
+    tip.style.display = "block";
+    await new Promise((resolve) => setTimeout(resolve, 90));
+
+    expect(tip.textContent).toContain("译:");
+    expect(provider.requests).toHaveLength(1);
+    translator.restore();
+  });
+
+  it("short-watches only child insertion after hover and translates a newly portaled tooltip", async () => {
+    document.body.innerHTML = `<button id="trigger">Cowork</button>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    document.querySelector("#trigger")!.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    const tip = document.createElement("div");
+    tip.id = "late-tip";
+    tip.setAttribute("role", "tooltip");
+    tip.textContent = "Upgrade to use Cowork for long-running tasks";
+    document.body.append(tip);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(tip.textContent).toContain("译:");
+    expect(provider.requests).toHaveLength(1);
+    translator.restore();
+  });
+
+  it("does not turn class/style churn into tooltip translation work", async () => {
+    document.body.innerHTML = `<button id="trigger">Cowork</button><div id="surface">Surface</div>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    const trigger = document.querySelector<HTMLElement>("#trigger")!;
+    trigger.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    for (let index = 0; index < 1000; index += 1) {
+      trigger.classList.toggle("pulse");
+      trigger.style.setProperty("--pulse", String(index));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(provider.requests).toHaveLength(0);
+    translator.restore();
+  });
+
+  it("skips interactive tooltip-like menus instead of rewriting their DOM", async () => {
+    document.body.innerHTML = `<button id="trigger" aria-controls="menu">More</button><div id="menu" role="tooltip"><button>Dangerous action</button></div>`;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider);
+    translator.observeTooltips();
+
+    document.querySelector("#trigger")!.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(provider.requests).toHaveLength(0);
+    expect(document.querySelector("#menu")?.textContent).toBe("Dangerous action");
+    translator.restore();
   });
 });
