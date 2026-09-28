@@ -216,8 +216,10 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     stopRelativeTimeLocalization();
     translator?.restore();
     restoreNavigationLayout();
-    if (settings.displayMode === "translation") {
-        freezeNavigationLayout();
+    const navigationHold = settings.displayMode === "translation"
+        ? freezeNavigationLayout()
+        : null;
+    if (navigationHold) {
         startRelativeTimeLocalization(normalizedTarget);
     }
     const shouldTranslateRoot = async (root) => {
@@ -247,7 +249,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     activeTranslationIsAutomatic = expectedAutoGeneration !== null && !manualOverride;
     activeTranslationTargetLanguage = normalizedTarget;
     activeAutomaticSettingsSignature = activeTranslationIsAutomatic
-        ? automaticTranslationSettingsSignature(settings, routeLocaleHint())
+        ? automaticTranslationSettingsSignature(settings, routeLocaleHint(), resolvedSource)
         : null;
     let count = 0;
     try {
@@ -257,7 +259,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         return count;
     }
     finally {
-        if (settings.displayMode === "translation") releaseNavigationLayoutAfterPaint();
+        if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
     }
 }
 function normalizeAbsoluteUrl(value) {
@@ -801,15 +803,15 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local" || !changes.displayMode || !translator)
         return;
     const mode = normalizeDisplayMode(changes.displayMode.newValue);
+    const navigationHold = mode === "translation" ? freezeNavigationLayout() : null;
     if (mode === "translation") {
-        freezeNavigationLayout();
         if (activeTranslationTargetLanguage) startRelativeTimeLocalization(activeTranslationTargetLanguage);
     } else {
         restoreNavigationLayout();
         stopRelativeTimeLocalization();
     }
     translator.setDisplayMode(mode);
-    if (mode === "translation") releaseNavigationLayoutAfterPaint();
+    if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
 });
 const AUTO_TRANSLATION_INVALIDATING_SETTINGS = new Set([
     "autoTranslateEnabled",
@@ -822,11 +824,19 @@ const AUTO_TRANSLATION_INVALIDATING_SETTINGS = new Set([
     "glossaryCollections",
 ]);
 browser.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "local" || !translator || !activeTranslationIsAutomatic)
+    if (areaName !== "local")
         return;
     if (!Object.keys(changes).some((key) => AUTO_TRANSLATION_INVALIDATING_SETTINGS.has(key)))
         return;
+    const automaticLifecyclePending =
+        activeTranslationIsAutomatic ||
+        autoTranslateInFlightPromise !== null ||
+        autoTranslateInFlightGeneration >= 0;
+    if (!automaticLifecyclePending)
+        return;
     autoTranslateGeneration += 1;
+    routeRescanGeneration += 1;
+    clearRouteRescanTimers();
     softResetForRoute();
     void maybeAutoTranslate(autoTranslateGeneration);
 });
