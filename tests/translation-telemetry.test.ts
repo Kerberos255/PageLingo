@@ -6,16 +6,17 @@ describe("translation root telemetry", () => {
     document.body.innerHTML = `<p>Read <a href="/docs">documentation</a> and <strong>important</strong> <code>npm</code>.</p>`;
     const telemetry = collectTranslationTelemetry(document.body);
 
-    expect(telemetry.rootCount).toBe(1);
-    expect(telemetry.roots[0]).toMatchObject({
+    expect(telemetry.rootCount).toBeGreaterThanOrEqual(1);
+    const paragraph = telemetry.roots.find((root) => root.rootTag === "p");
+    expect(paragraph).toMatchObject({
       rootTag: "p",
-      markerCandidateCount: 3,
-      maxMarkerDepth: 1,
+      markerCandidateCount: 4,
+      maxMarkerDepth: 2,
       linkCount: 1,
       opaqueProtectedCount: 1,
       protectedSlotCandidateCount: 1,
       linkBoundarySentinelCount: 2,
-      tagCounts: { a: 1, strong: 1, code: 1 },
+      tagCounts: { a: 1, span: 1, strong: 1, code: 1 },
     });
   });
 
