@@ -137,4 +137,58 @@ describe("PageTranslator marker budget splitter", () => {
     expect(translated.querySelector("a")?.getAttribute("href")).toBe("/docs");
   });
 
+  it("routes 5-marker nested local roots through leaf-safe translation", async () => {
+    document.body.innerHTML =
+      "<p id='root'>" +
+      "<strong>alpha <em>beta</em></strong> " +
+      "<span>gamma <b>delta</b></span> " +
+      "<i>epsilon</i>" +
+      "</p>";
+
+    const provider = new PreservingProvider();
+    const translator = new PageTranslator(document, provider);
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    expect(provider.requests.length).toBeGreaterThan(1);
+    expect(provider.requests.every((request) => richMarkerCandidateCount(request.html) === 0)).toBe(true);
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    expect(translated.querySelectorAll("strong,em,span,b,i")).toHaveLength(5);
+    expect(translated.textContent).toContain("译:alpha");
+    expect(translated.textContent).toContain("译:epsilon");
+  });
+
+  it("keeps a 4-marker nested local root on the whole-root path", async () => {
+    document.body.innerHTML =
+      "<p id='root'><strong>alpha <em>beta</em></strong><span>gamma</span><i>delta</i></p>";
+
+    const provider = new PreservingProvider();
+    const translator = new PageTranslator(document, provider);
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    expect(provider.requests).toHaveLength(1);
+    expect(richMarkerCandidateCount(provider.requests[0]!.html)).toBe(4);
+  });
+
+  it("keeps risky nested roots whole for external engines", async () => {
+    class ExternalLikeProvider extends PreservingProvider {
+      async supportsStructuralSplitting(): Promise<boolean> {
+        return false;
+      }
+    }
+
+    document.body.innerHTML =
+      "<p id='root'>" +
+      "<strong>alpha <em>beta</em></strong> " +
+      "<span>gamma <b>delta</b></span> " +
+      "<i>epsilon</i>" +
+      "</p>";
+
+    const provider = new ExternalLikeProvider();
+    const translator = new PageTranslator(document, provider);
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    expect(provider.requests).toHaveLength(1);
+    expect(richMarkerCandidateCount(provider.requests[0]!.html)).toBe(5);
+  });
+
 });
