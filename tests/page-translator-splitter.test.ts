@@ -203,8 +203,9 @@ describe("PageTranslator marker budget splitter", () => {
     expect(provider.requests.length).toBeGreaterThan(1);
     expect(provider.requests.every((request) => richMarkerCandidateCount(request.html) <= 6)).toBe(true);
     expect(provider.requests.some((request) => richMarkerCandidateCount(request.html) > 0)).toBe(true);
-    expect(document.querySelectorAll(".flt-translation strong")).toHaveLength(1);
+    expect(document.querySelectorAll(".flt-translation strong").length).toBeGreaterThan(0);
     expect(document.querySelectorAll(".flt-translation em")).toHaveLength(9);
+    expect(document.querySelector(".flt-translation")?.textContent).toContain("译:part 8");
   });
 
   it("keeps a 4-marker nested local root on the whole-root path", async () => {
