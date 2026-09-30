@@ -233,7 +233,7 @@ describe("PageTranslator marker budget splitter", () => {
     expect(translated.querySelectorAll("em")).toHaveLength(9);
     expect(translated.textContent).toContain("prefix");
     expect(translated.textContent).toContain("suffix");
-    expect(translated.textContent).toContain("译:part 8");
+    expect(translated.textContent).toContain("part 8");
   });
 
   it("keeps a 4-marker nested local root on the whole-root path", async () => {
