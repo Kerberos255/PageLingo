@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   richHtmlStructureCompatible,
   richMarkerCandidateCount,
+  richMarkerCandidateMaxDepth,
   splitRichHtmlByStructureBudget,
   translateRichHtmlTextNodesSafely,
 } from "../src/core/rich-segment-splitter";
@@ -73,6 +74,12 @@ describe("rich segment structure budget", () => {
     expect(parsed.body.textContent).toContain("Literal <config> &copy;");
     expect(rebuilt).toContain("&lt;config&gt;");
     expect(rebuilt).toContain("&amp;copy;");
+  });
+
+  it("measures marker nesting depth independently from marker count", () => {
+    expect(richMarkerCandidateMaxDepth("<strong>A</strong><em>B</em>")).toBe(1);
+    expect(richMarkerCandidateMaxDepth("<strong>A <em>B</em></strong>")).toBe(2);
+    expect(richMarkerCandidateMaxDepth("<strong><em><span>C</span></em></strong>")).toBe(3);
   });
 
 });
