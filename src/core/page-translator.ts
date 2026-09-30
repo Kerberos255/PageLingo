@@ -306,7 +306,7 @@ export class PageTranslator {
         // with 2-3 levels of nesting. For local engines, route that narrow tail
         // through deterministic leaf-safe translation so PageLingo retains markup
         // ownership instead of asking the model to reproduce deep marker structure.
-        const nestingRiskRoot = markerCount >= 5 && markerDepth >= 2;
+        const nestingRiskRoot = markerCount >= 5 && markerCount <= 6 && markerDepth >= 2;
         const structuralFallbackAllowed =
             (complexRoot || nestingRiskRoot) &&
             await providerAllowsStructuralSplitting(this.#provider);
