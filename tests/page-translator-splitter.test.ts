@@ -208,6 +208,34 @@ describe("PageTranslator marker budget splitter", () => {
     expect(document.querySelector(".flt-translation")?.textContent).toContain("译:part 8");
   });
 
+  it("preserves boundary text when a split text-only chunk translates empty", async () => {
+    class EmptyPlainTextProvider extends PreservingProvider {
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        if (!/<[a-z][\\s\\S]*>/i.test(request.html)) {
+          this.requests.push(request);
+          return "";
+        }
+        return super.translateHtml(request);
+      }
+    }
+
+    document.body.innerHTML =
+      "<p id='root'>prefix <strong>" +
+      Array.from({ length: 9 }, (_, index) => "<em>part " + index + "</em>").join(" ") +
+      "</strong> suffix</p>";
+
+    const provider = new EmptyPlainTextProvider();
+    const translator = new PageTranslator(document, provider);
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    expect(translated.querySelectorAll("strong")).toHaveLength(1);
+    expect(translated.querySelectorAll("em")).toHaveLength(9);
+    expect(translated.textContent).toContain("prefix");
+    expect(translated.textContent).toContain("suffix");
+    expect(translated.textContent).toContain("译:part 8");
+  });
+
   it("keeps a 4-marker nested local root on the whole-root path", async () => {
     document.body.innerHTML =
       "<p id='root'><strong>alpha <em>beta</em></strong><span>gamma</span><i>delta</i></p>";
