@@ -44,6 +44,25 @@ export function richMarkerCandidateCount(html: string): number {
   return count;
 }
 
+function structuralMaxDepthNode(node: Node, parentDepth = 0): number {
+  if (!(node instanceof Element)) return parentDepth;
+  const depth = parentDepth + (isMarkerCandidate(node) ? 1 : 0);
+  let maxDepth = depth;
+  for (const child of Array.from(node.children)) {
+    maxDepth = Math.max(maxDepth, structuralMaxDepthNode(child, depth));
+  }
+  return maxDepth;
+}
+
+export function richMarkerCandidateMaxDepth(html: string): number {
+  const body = parseBody(html);
+  let maxDepth = 0;
+  for (const child of Array.from(body.children)) {
+    maxDepth = Math.max(maxDepth, structuralMaxDepthNode(child, 0));
+  }
+  return maxDepth;
+}
+
 function serializeNode(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return escapeHtmlText(node.textContent ?? "");
   if (node instanceof Element) return node.outerHTML;
