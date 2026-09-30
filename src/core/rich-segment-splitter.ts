@@ -130,6 +130,63 @@ export function splitRichHtmlByStructureBudget(html: string, budget = 6): string
   return chunks;
 }
 
+export async function translateRichHtmlByStructureBudgetPreservingWrappers(
+  html: string,
+  budget: number,
+  translateChunk: (chunk: string) => Promise<string>,
+  translateLeaf: (leaf: string) => Promise<string>,
+): Promise<string> {
+  if (!html.trim()) return "";
+
+  const body = parseBody(html);
+
+  async function translateNode(node: Node): Promise<string> {
+    if (!(node instanceof Element)) return serializeNode(node);
+
+    const count = structuralCountNode(node);
+    if (count <= budget) return translateChunk(node.outerHTML);
+    if (ATOMIC_TAGS.has(node.tagName)) return translateLeaf(node.outerHTML);
+
+    const clone = node.cloneNode(false) as Element;
+    clone.innerHTML = await translateChildren(Array.from(node.childNodes));
+    return clone.outerHTML;
+  }
+
+  async function translateChildren(nodes: Node[]): Promise<string> {
+    const tasks: Array<Promise<string>> = [];
+    let pending = "";
+    let pendingCount = 0;
+
+    const flush = () => {
+      if (!pending) return;
+      const chunk = pending;
+      pending = "";
+      pendingCount = 0;
+      tasks.push(chunk.trim() ? translateChunk(chunk) : Promise.resolve(chunk));
+    };
+
+    for (const node of nodes) {
+      const serialized = serializeNode(node);
+      const count = node instanceof Element ? structuralCountNode(node) : 0;
+
+      if (node instanceof Element && count > budget) {
+        flush();
+        tasks.push(translateNode(node));
+        continue;
+      }
+
+      if (pending && pendingCount + count > budget) flush();
+      pending += serialized;
+      pendingCount += count;
+    }
+
+    flush();
+    return (await Promise.all(tasks)).join("");
+  }
+
+  return translateChildren(Array.from(body.childNodes));
+}
+
 function transportLinkIdentity(anchor: Element): string {
   const dataId = anchor.getAttribute("data-flt-link-id");
   if (dataId && /^\d+$/.test(dataId)) return dataId;

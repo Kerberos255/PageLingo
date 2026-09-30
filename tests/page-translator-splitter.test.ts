@@ -157,6 +157,85 @@ describe("PageTranslator marker budget splitter", () => {
     expect(translated.textContent).toContain("译:epsilon");
   });
 
+  it("routes 6-marker nested local roots through leaf-safe translation", async () => {
+    document.body.innerHTML =
+      "<p id='root'>" +
+      "<strong>alpha <em>beta</em></strong> " +
+      "<span>gamma <b>delta</b></span> " +
+      "<i>epsilon</i><u>zeta</u>" +
+      "</p>";
+
+    const provider = new PreservingProvider();
+    const translator = new PageTranslator(document, provider);
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    expect(provider.requests.length).toBeGreaterThan(1);
+    expect(provider.requests.every((request) => richMarkerCandidateCount(request.html) === 0)).toBe(true);
+    expect(document.querySelectorAll(".flt-translation strong,.flt-translation em,.flt-translation span,.flt-translation b,.flt-translation i,.flt-translation u")).toHaveLength(6);
+  });
+
+  it("keeps a 7-marker nested local root on the whole-root path", async () => {
+    document.body.innerHTML =
+      "<p id='root'>" +
+      "<strong>alpha <em>beta</em></strong> " +
+      "<span>gamma <b>delta</b></span> " +
+      "<i>epsilon</i><u>zeta</u><small>eta</small>" +
+      "</p>";
+
+    const provider = new PreservingProvider();
+    const translator = new PageTranslator(document, provider);
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    expect(provider.requests).toHaveLength(1);
+    expect(richMarkerCandidateCount(provider.requests[0]!.html)).toBe(7);
+  });
+
+  it("keeps nested 10-marker roots on the bounded structural splitter path", async () => {
+    document.body.innerHTML =
+      "<p id='root'><strong>outer " +
+      Array.from({ length: 9 }, (_, index) => "<em>part " + index + "</em>").join(" ") +
+      "</strong></p>";
+
+    const provider = new PreservingProvider();
+    const translator = new PageTranslator(document, provider);
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    expect(provider.requests.length).toBeGreaterThan(1);
+    expect(provider.requests.every((request) => richMarkerCandidateCount(request.html) <= 6)).toBe(true);
+    expect(provider.requests.some((request) => richMarkerCandidateCount(request.html) > 0)).toBe(true);
+    expect(document.querySelectorAll(".flt-translation strong")).toHaveLength(1);
+    expect(document.querySelectorAll(".flt-translation em")).toHaveLength(9);
+    expect(document.querySelector(".flt-translation")?.textContent).toContain("译:part 8");
+  });
+
+  it("preserves boundary text when a split text-only chunk translates empty", async () => {
+    class EmptyPlainTextProvider extends PreservingProvider {
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        if (!/<[a-z][\\s\\S]*>/i.test(request.html)) {
+          this.requests.push(request);
+          return "";
+        }
+        return super.translateHtml(request);
+      }
+    }
+
+    document.body.innerHTML =
+      "<p id='root'>prefix <strong>" +
+      Array.from({ length: 9 }, (_, index) => "<em>part " + index + "</em>").join(" ") +
+      "</strong> suffix</p>";
+
+    const provider = new EmptyPlainTextProvider();
+    const translator = new PageTranslator(document, provider);
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    expect(translated.querySelectorAll("strong")).toHaveLength(1);
+    expect(translated.querySelectorAll("em")).toHaveLength(9);
+    expect(translated.textContent).toContain("prefix");
+    expect(translated.textContent).toContain("suffix");
+    expect(translated.textContent).toContain("part 8");
+  });
+
   it("keeps a 4-marker nested local root on the whole-root path", async () => {
     document.body.innerHTML =
       "<p id='root'><strong>alpha <em>beta</em></strong><span>gamma</span><i>delta</i></p>";
