@@ -14,6 +14,7 @@ on:
   pull_request:
     branches:
       - fix/github-font-size
+      - main
     paths:
       - "src/**"
       - "tests/**"
