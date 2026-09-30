@@ -63,7 +63,12 @@ async function translateComplexRichHtml(doc, provider, html, sourceLanguage, tar
             terminology: terminologyForText(terminology, chunkSourceText),
         });
 
-        if (hasBrokenTranslationHtml(translated) || !richHtmlStructureCompatible(protectedChunk.html, translated)) {
+        const translatedText = translatedPlainText(doc, translated);
+        if (
+            hasBrokenTranslationHtml(translated)
+            || (chunkSourceText && !translatedText)
+            || !richHtmlStructureCompatible(protectedChunk.html, translated)
+        ) {
             return translateLeafSafeRichHtml(
                 doc,
                 provider,
