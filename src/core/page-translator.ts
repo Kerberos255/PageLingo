@@ -7,6 +7,7 @@ import { TooltipController } from "./tooltip-controller";
 import {
     richHtmlStructureCompatible,
     richMarkerCandidateCount,
+    richMarkerCandidateMaxDepth,
     splitRichHtmlByStructureBudget,
     translateRichHtmlTextNodesSafely,
 } from "./rich-segment-splitter";
@@ -298,9 +299,28 @@ export class PageTranslator {
             return;
         const requestTerminology = terminologyForText(this.#terminology, segment.fingerprint);
         let translatedHtml;
-        const complexRoot = richMarkerCandidateCount(segment.html) >= COMPLEX_ROOT_MARKER_THRESHOLD;
-        const splitComplexRoot = complexRoot && await providerAllowsStructuralSplitting(this.#provider);
-        if (splitComplexRoot) {
+        const markerCount = richMarkerCandidateCount(segment.html);
+        const markerDepth = richMarkerCandidateMaxDepth(segment.html);
+        const complexRoot = markerCount >= COMPLEX_ROOT_MARKER_THRESHOLD;
+        // Hy-MT regression testing shows a distinct failure pocket at 5-6 markers
+        // with 2-3 levels of nesting. For local engines, route that narrow tail
+        // through deterministic leaf-safe translation so PageLingo retains markup
+        // ownership instead of asking the model to reproduce deep marker structure.
+        const nestingRiskRoot = markerCount >= 5 && markerDepth >= 2;
+        const structuralFallbackAllowed =
+            (complexRoot || nestingRiskRoot) &&
+            await providerAllowsStructuralSplitting(this.#provider);
+        if (structuralFallbackAllowed && nestingRiskRoot) {
+            translatedHtml = await translateLeafSafeRichHtml(
+                this.#doc,
+                this.#provider,
+                segment.html,
+                this.#sourceLanguage,
+                this.#targetLanguage,
+                this.#terminology,
+            );
+        }
+        else if (structuralFallbackAllowed && complexRoot) {
             translatedHtml = await translateComplexRichHtml(
                 this.#doc,
                 this.#provider,
