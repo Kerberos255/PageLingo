@@ -8,7 +8,7 @@ import {
     richHtmlStructureCompatible,
     richMarkerCandidateCount,
     richMarkerCandidateMaxDepth,
-    splitRichHtmlByStructureBudget,
+    translateRichHtmlByStructureBudgetPreservingWrappers,
     translateRichHtmlTextNodesSafely,
 } from "./rich-segment-splitter";
 
@@ -53,16 +53,7 @@ async function translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, ta
 }
 
 async function translateComplexRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology) {
-    let chunks;
-    try {
-        chunks = splitRichHtmlByStructureBudget(html, COMPLEX_CHUNK_MARKER_BUDGET);
-    }
-    catch (error) {
-        console.warn("[PageLingo] Complex root cannot be safely split; using leaf-safe fallback", error);
-        return translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology);
-    }
-
-    const translatedChunks = await Promise.all(chunks.map(async (chunk) => {
+    const translateChunk = async (chunk) => {
         const chunkSourceText = translatedPlainText(doc, chunk);
         const protectedChunk = protectTerminologyHtml(doc, chunk, terminology);
         let translated = await provider.translateHtml({
@@ -84,8 +75,21 @@ async function translateComplexRichHtml(doc, provider, html, sourceLanguage, tar
         }
 
         return restoreTerminologyHtml(doc, translated, protectedChunk.replacements);
-    }));
-    return translatedChunks.join("");
+    };
+
+    return translateRichHtmlByStructureBudgetPreservingWrappers(
+        html,
+        COMPLEX_CHUNK_MARKER_BUDGET,
+        translateChunk,
+        (leaf) => translateLeafSafeRichHtml(
+            doc,
+            provider,
+            leaf,
+            sourceLanguage,
+            targetLanguage,
+            terminology,
+        ),
+    );
 }
 
 async function providerAllowsStructuralSplitting(provider) {
