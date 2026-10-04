@@ -19,7 +19,8 @@ import {
     type ModelUpdatePolicy,
 } from "./shared/settings";
 import { sendRuntimeMessage } from "./shared/runtime-message";
-import { initializeTranslationEngines } from "./options-engines";
+import { initializeTranslationEngines, refreshTranslationEngines } from "./options-engines";
+import { PAGELINGO_MT_ENGINE_ID } from "./shared/translation-engine-settings";
 
 interface LanguageOption {
     code: string;
@@ -64,12 +65,27 @@ interface ImageOcrStatus {
     runtimeSupported: boolean;
 }
 
+interface PageLingoMtStatus {
+    installed: boolean;
+    verified: boolean;
+    totalBytes: number;
+    version: string;
+    quant: string;
+    sha256: string;
+    active: boolean;
+    downloading: boolean;
+    loadedBytes: number;
+    downloadTotalBytes: number;
+    error?: string;
+}
+
 interface OptionsRuntimeResponse {
     ok?: boolean;
     error?: string;
     catalog?: LanguageCatalog;
     pack?: LanguagePackInfo;
     status?: ImageOcrStatus;
+    mtStatus?: PageLingoMtStatus;
 }
 
 const radios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="display-mode"]'));
@@ -108,6 +124,11 @@ const closeGlossaryEditorButton = document.querySelector<HTMLButtonElement>("#cl
 const deleteGlossaryButton = document.querySelector<HTMLButtonElement>("#delete-glossary");
 const imageStatus = document.querySelector<HTMLElement>("#image-ocr-status");
 const deleteOcrModels = document.querySelector<HTMLButtonElement>("#delete-image-ocr-models");
+const mtModelStatus = document.querySelector<HTMLElement>("#mt-model-status");
+const mtModelProgress = document.querySelector<HTMLProgressElement>("#mt-model-progress");
+const downloadMtModel = document.querySelector<HTMLButtonElement>("#download-mt-model");
+const useMtModel = document.querySelector<HTMLButtonElement>("#use-mt-model");
+const deleteMtModel = document.querySelector<HTMLButtonElement>("#delete-mt-model");
 const navItems = Array.from(document.querySelectorAll<HTMLElement>("[data-settings-page]"));
 const pages = Array.from(document.querySelectorAll<HTMLElement>(".settings-page"));
 
@@ -452,6 +473,80 @@ async function refreshImageOcrStatus(): Promise<void> {
     }
 }
 
+function renderPageLingoMtStatus(current: PageLingoMtStatus): void {
+    if (!mtModelStatus || !downloadMtModel || !useMtModel || !deleteMtModel) return;
+    const size = formatBytes(current.totalBytes);
+    if (current.downloading) {
+        const total = current.downloadTotalBytes || current.totalBytes;
+        const loaded = Math.min(current.loadedBytes, total);
+        mtModelStatus.textContent = `正在下载 · ${formatBytes(loaded)} / ${formatBytes(total)}`;
+        if (mtModelProgress) {
+            mtModelProgress.hidden = false;
+            mtModelProgress.max = Math.max(1, total);
+            mtModelProgress.value = loaded;
+        }
+    } else {
+        if (mtModelProgress) mtModelProgress.hidden = true;
+        mtModelStatus.textContent = current.error
+            ? `下载失败 · ${current.error}`
+            : current.installed && current.verified
+                ? `${current.version} ${current.quant} · 已下载并校验 · ${size}${current.active ? " · 当前正在使用" : ""}`
+                : `${current.version} ${current.quant} · 未下载 · ${size}`;
+    }
+    downloadMtModel.disabled = current.downloading || (current.installed && current.verified);
+    downloadMtModel.textContent = current.installed && current.verified ? "已下载" : current.downloading ? "下载中…" : "下载模型";
+    useMtModel.disabled = current.downloading || !current.installed || !current.verified || current.active;
+    useMtModel.textContent = current.active ? "当前引擎" : "设为当前引擎";
+    deleteMtModel.disabled = current.downloading || !current.installed;
+}
+
+async function refreshPageLingoMtStatus(): Promise<PageLingoMtStatus> {
+    const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "get-mt-model-status" });
+    if (!response?.ok || !response.mtStatus) throw new Error(response?.error ?? "无法读取 PageLingo MT 状态");
+    renderPageLingoMtStatus(response.mtStatus);
+    return response.mtStatus;
+}
+
+async function downloadPageLingoMtFromUi(): Promise<void> {
+    if (!downloadMtModel) return;
+    downloadMtModel.disabled = true;
+    let poll: number | null = window.setInterval(() => {
+        void refreshPageLingoMtStatus().catch(() => undefined);
+    }, 500);
+    try {
+        showSaved("正在下载 PageLingo MT（约 1.21 GiB）…", 60_000);
+        const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "download-mt-model" });
+        if (!response?.ok || !response.mtStatus) throw new Error(response?.error ?? "PageLingo MT 下载失败");
+        renderPageLingoMtStatus(response.mtStatus);
+        await refreshTranslationEngines();
+        showSaved("PageLingo MT 已下载并通过完整性校验");
+    } catch (error) {
+        showSaved(error instanceof Error ? error.message : String(error), 7000);
+        await refreshPageLingoMtStatus().catch(() => undefined);
+    } finally {
+        if (poll !== null) window.clearInterval(poll);
+        poll = null;
+    }
+}
+
+async function usePageLingoMt(): Promise<void> {
+    const response = await sendRuntimeMessage<{ ok?: boolean; error?: string }>({
+        type: "set-active-translation-engine",
+        id: PAGELINGO_MT_ENGINE_ID,
+    });
+    if (!response?.ok) throw new Error(response?.error ?? "无法启用 PageLingo MT");
+    await Promise.all([refreshPageLingoMtStatus(), refreshTranslationEngines()]);
+    showSaved("已切换到 PageLingo MT（Experimental）");
+}
+
+async function deletePageLingoMtFromUi(): Promise<void> {
+    const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "delete-mt-model" });
+    if (!response?.ok || !response.mtStatus) throw new Error(response?.error ?? "删除 PageLingo MT 模型失败");
+    renderPageLingoMtStatus(response.mtStatus);
+    await refreshTranslationEngines();
+    showSaved("PageLingo MT 模型已删除");
+}
+
 async function initialize(): Promise<void> {
     const [settings, response] = await Promise.all([
         loadSettings(),
@@ -482,7 +577,7 @@ async function initialize(): Promise<void> {
     alwaysTranslateLanguages = [...settings.alwaysTranslateLanguages];
     renderRuleLists();
     selectSettingsPage(location.hash.slice(1) || "translation");
-    await refreshImageOcrStatus();
+    await Promise.all([refreshImageOcrStatus(), refreshPageLingoMtStatus()]);
 }
 
 function selectSettingsPage(pageId: string): void {
@@ -615,6 +710,13 @@ if (deleteOcrModels) {
         })();
     });
 }
+downloadMtModel?.addEventListener("click", () => void downloadPageLingoMtFromUi());
+useMtModel?.addEventListener("click", () => {
+    void usePageLingoMt().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));
+});
+deleteMtModel?.addEventListener("click", () => {
+    void deletePageLingoMtFromUi().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));
+});
 if (updatePolicy) {
     updatePolicy.addEventListener("change", () => {
         const value = updatePolicy.value;
