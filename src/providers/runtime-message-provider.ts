@@ -6,6 +6,8 @@ interface TranslationResponse {
   html?: string;
   htmls?: string[];
   batchUnsupported?: boolean;
+  accepted?: boolean;
+  reason?: string;
   error?: string;
 }
 
@@ -26,10 +28,13 @@ export class RuntimeMessageProvider implements TranslationProvider {
   readonly #pending: PendingTranslation[] = [];
   #flushQueued = false;
 
+  constructor(protected readonly engineId?: string) {}
+
   async supportsStructuralSplitting(): Promise<boolean> {
     try {
       const response = await sendRuntimeMessage<TranslationEngineStateResponse>({
         type: "get-translation-engines",
+        engineId: this.engineId,
       });
       return response?.ok === true && response.state?.structuralSplittingSafe === true;
     } catch {
@@ -90,6 +95,7 @@ export class RuntimeMessageProvider implements TranslationProvider {
       const response = await sendRuntimeMessage<TranslationResponse>({
         type: "translate-html-batch",
         requests,
+        engineId: this.engineId,
       });
 
       if (response?.ok && Array.isArray(response.htmls) && response.htmls.length === active.length) {
@@ -115,7 +121,7 @@ export class RuntimeMessageProvider implements TranslationProvider {
   async #translateSingle(item: PendingTranslation): Promise<void> {
     try {
       const { signal: _signal, ...request } = item.request;
-      const response = await sendRuntimeMessage<TranslationResponse>({ type: "translate-html", request });
+      const response = await sendRuntimeMessage<TranslationResponse>({ type: "translate-html", request, engineId: this.engineId });
       if (!response?.ok || typeof response.html !== "string") {
         throw new Error(response?.error ?? "Translation backend unavailable");
       }
@@ -123,5 +129,25 @@ export class RuntimeMessageProvider implements TranslationProvider {
     } catch (error) {
       item.reject(error instanceof Error ? error : new Error(String(error)));
     }
+  }
+}
+
+
+export class CheckedRuntimeMessageProvider extends RuntimeMessageProvider {
+  async translateHtmlChecked(request: TranslationRequest) {
+    const { signal: _signal, ...wireRequest } = request;
+    const response = await sendRuntimeMessage<TranslationResponse>({
+      type: "translate-html-checked",
+      request: wireRequest,
+      engineId: this.engineId,
+    });
+    if (!response?.ok || typeof response.html !== "string" || typeof response.accepted !== "boolean") {
+      throw new Error(response?.error ?? "Checked translation backend unavailable");
+    }
+    return {
+      html: response.html,
+      accepted: response.accepted,
+      reason: response.reason,
+    };
   }
 }
