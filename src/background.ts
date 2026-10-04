@@ -32,6 +32,7 @@ import { isLoopbackTranslationEndpoint } from "./shared/network-endpoint";
 import { translateWithExternalEngine } from "./providers/external-translation";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
+  PAGELINGO_MT_ENGINE_ID,
   deleteTranslationEngine,
   loadTranslationEngineState,
   normalizeTranslationEngineConfig,
@@ -39,8 +40,18 @@ import {
   setActiveTranslationEngine,
   setTranslationEngineEnabled,
 } from "./shared/translation-engine-settings";
+import { PageLingoMtProvider } from "./providers/pagelingo-mt/provider";
+import {
+  PAGELINGO_MT_SIZE,
+  deletePageLingoMtModel,
+  downloadPageLingoMtModel,
+  pageLingoMtModelStatus,
+} from "./providers/pagelingo-mt/model-manager";
 
 const bergamot = new BergamotClient();
+const pageLingoMt = new PageLingoMtProvider();
+let mtDownloadPromise: Promise<void> | null = null;
+let mtDownloadProgress = { loaded: 0, total: PAGELINGO_MT_SIZE, error: "" };
 const MODEL_UPDATE_ALARM = "pagelingo-model-updates";
 const MODEL_UPDATE_INTERVAL_MINUTES = 24 * 60;
 let overridesPromise = loadModelOverrides();
@@ -68,6 +79,7 @@ interface RuntimeMessage {
   config?: unknown;
   id?: unknown;
   enabled?: unknown;
+  engineId?: unknown;
 }
 
 function asLanguage(value: unknown): string | null {
@@ -113,21 +125,49 @@ async function refreshTranslationEngineState() {
   return state;
 }
 
-async function activeExternalEngine() {
+async function requestedTranslationEngineId(value?: unknown): Promise<string> {
   const state = await currentTranslationEngineState();
-  if (state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID) return null;
-  return state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
+  if (typeof value !== "string" || !value) return state.activeEngineId;
+  if (value === LOCAL_TRANSLATION_ENGINE_ID || value === PAGELINGO_MT_ENGINE_ID) return value;
+  return state.engines.some((engine) => engine.id === value && engine.enabled)
+    ? value
+    : state.activeEngineId;
 }
 
-async function translationEngineStateForUi() {
+async function externalEngineForId(id: string) {
+  if (id === LOCAL_TRANSLATION_ENGINE_ID || id === PAGELINGO_MT_ENGINE_ID) return null;
   const state = await currentTranslationEngineState();
-  const activeExternal = state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
-    ? null
-    : state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
+  return state.engines.find((engine) => engine.id === id && engine.enabled) ?? null;
+}
+
+function pageLingoMtSupports(sourceLanguage: string | null, targetLanguage: string | null): boolean {
+  return sourceLanguage === "en" && Boolean(targetLanguage && /^zh(?:-|$)/i.test(targetLanguage));
+}
+
+async function pageLingoMtStatusForUi() {
+  const status = await pageLingoMtModelStatus();
+  const state = await currentTranslationEngineState();
+  return {
+    ...status,
+    active: state.activeEngineId === PAGELINGO_MT_ENGINE_ID,
+    downloading: Boolean(mtDownloadPromise),
+    loadedBytes: mtDownloadProgress.loaded,
+    downloadTotalBytes: mtDownloadProgress.total,
+    error: mtDownloadProgress.error || undefined,
+  };
+}
+
+async function translationEngineStateForUi(requestedId?: unknown) {
+  const state = await currentTranslationEngineState();
+  const effectiveId = await requestedTranslationEngineId(requestedId);
+  const activeExternal = await externalEngineForId(effectiveId);
+  const mt = await pageLingoMtStatusForUi();
   return {
     activeEngineId: state.activeEngineId,
-    structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
+    structuralSplittingSafe: effectiveId === LOCAL_TRANSLATION_ENGINE_ID
+      || effectiveId === PAGELINGO_MT_ENGINE_ID
       || Boolean(activeExternal && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
+    mt,
     engines: state.engines.map((engine) => ({
       id: engine.id,
       name: engine.name,
