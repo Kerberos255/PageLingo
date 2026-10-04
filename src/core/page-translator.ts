@@ -4,6 +4,8 @@ import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./navigation-layout";
 import { TooltipController } from "./tooltip-controller";
+import { assessTranslationQuality } from "./translation-quality";
+import type { TranslationProvider } from "./provider";
 import {
     richHtmlStructureCompatible,
     richMarkerCandidateCount,
@@ -12,7 +14,7 @@ import {
     translateRichHtmlTextNodesSafely,
 } from "./rich-segment-splitter";
 
-export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[] }
+export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[]; fallbackProvider?:TranslationProvider }
 function translatedPlainText(_doc, html) {
     const parsed = new DOMParser().parseFromString(html, "text/html");
     return (parsed.body.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -35,16 +37,78 @@ function hasBrokenTranslationHtml(html) {
 const COMPLEX_ROOT_MARKER_THRESHOLD = 8;
 const COMPLEX_CHUNK_MARKER_BUDGET = 6;
 
-async function translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology) {
+async function translateProviderWholeRoot(doc, provider, html, sourceLanguage, targetLanguage, terminology, checkedOnly = false) {
+    if (!provider)
+        return null;
+
+    const sourceText = translatedPlainText(doc, html);
+    const protectedChunk = protectTerminologyHtml(doc, html, terminology);
+    const request = {
+        html: protectedChunk.html,
+        sourceLanguage,
+        targetLanguage,
+        terminology: terminologyForText(terminology, sourceText),
+    };
+
+    let translated;
+    try {
+        if (checkedOnly) {
+            if (typeof provider.translateHtmlChecked !== "function")
+                return null;
+            const result = await provider.translateHtmlChecked(request);
+            if (!result?.accepted || typeof result.html !== "string")
+                return null;
+            translated = result.html;
+        }
+        else {
+            translated = await provider.translateHtml(request);
+        }
+    }
+    catch {
+        return null;
+    }
+
+    const translatedText = translatedPlainText(doc, translated);
+    if (
+        typeof translated !== "string"
+        || hasBrokenTranslationHtml(translated)
+        || (sourceText && !translatedText)
+        || !richHtmlStructureCompatible(protectedChunk.html, translated)
+    ) {
+        return null;
+    }
+
+    return restoreTerminologyHtml(doc, translated, protectedChunk.replacements);
+}
+
+async function translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology, fallbackProvider = null) {
     const protectedChunk = protectTerminologyHtml(doc, html, terminology);
     const translated = await translateRichHtmlTextNodesSafely(protectedChunk.html, async (sourceText) => {
-        const leafHtml = await provider.translateHtml({
-            html: escapeHtml(sourceText),
+        const leafSourceHtml = escapeHtml(sourceText);
+        const useCheckedPrimary = typeof provider?.translateHtmlChecked === "function";
+        let leafHtml = await translateProviderWholeRoot(
+            doc,
+            provider,
+            leafSourceHtml,
             sourceLanguage,
             targetLanguage,
-            terminology: terminologyForText(terminology, sourceText),
-        });
-        const leafText = translatedPlainText(doc, leafHtml);
+            terminology,
+            useCheckedPrimary,
+        );
+
+        if (leafHtml === null && fallbackProvider) {
+            leafHtml = await translateProviderWholeRoot(
+                doc,
+                fallbackProvider,
+                leafSourceHtml,
+                sourceLanguage,
+                targetLanguage,
+                terminology,
+                false,
+            );
+        }
+
+        const leafText = leafHtml === null ? "" : translatedPlainText(doc, leafHtml);
         if (!leafText || hasBrokenTranslationText(leafText))
             return sourceText;
         return leafText;
@@ -52,23 +116,32 @@ async function translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, ta
     return restoreTerminologyHtml(doc, translated, protectedChunk.replacements);
 }
 
-async function translateComplexRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology) {
+async function translateComplexRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology, fallbackProvider = null) {
     const translateChunk = async (chunk) => {
-        const chunkSourceText = translatedPlainText(doc, chunk);
-        const protectedChunk = protectTerminologyHtml(doc, chunk, terminology);
-        let translated = await provider.translateHtml({
-            html: protectedChunk.html,
+        const useCheckedPrimary = typeof provider?.translateHtmlChecked === "function";
+        let translated = await translateProviderWholeRoot(
+            doc,
+            provider,
+            chunk,
             sourceLanguage,
             targetLanguage,
-            terminology: terminologyForText(terminology, chunkSourceText),
-        });
+            terminology,
+            useCheckedPrimary,
+        );
 
-        const translatedText = translatedPlainText(doc, translated);
-        if (
-            hasBrokenTranslationHtml(translated)
-            || (chunkSourceText && !translatedText)
-            || !richHtmlStructureCompatible(protectedChunk.html, translated)
-        ) {
+        if (translated === null && fallbackProvider) {
+            translated = await translateProviderWholeRoot(
+                doc,
+                fallbackProvider,
+                chunk,
+                sourceLanguage,
+                targetLanguage,
+                terminology,
+                false,
+            );
+        }
+
+        if (translated === null) {
             return translateLeafSafeRichHtml(
                 doc,
                 provider,
@@ -76,10 +149,11 @@ async function translateComplexRichHtml(doc, provider, html, sourceLanguage, tar
                 sourceLanguage,
                 targetLanguage,
                 terminology,
+                fallbackProvider,
             );
         }
 
-        return restoreTerminologyHtml(doc, translated, protectedChunk.replacements);
+        return translated;
     };
 
     return translateRichHtmlByStructureBudgetPreservingWrappers(
@@ -93,6 +167,7 @@ async function translateComplexRichHtml(doc, provider, html, sourceLanguage, tar
             sourceLanguage,
             targetLanguage,
             terminology,
+            fallbackProvider,
         ),
     );
 }
@@ -212,6 +287,7 @@ function singleTooltipTextNode(element) {
 export class PageTranslator {
     #doc;
     #provider;
+    #fallbackProvider;
     #sourceLanguage;
     #targetLanguage;
     #concurrency;
@@ -232,6 +308,7 @@ export class PageTranslator {
     constructor(doc, provider, options = {}) {
         this.#doc = doc;
         this.#provider = provider;
+        this.#fallbackProvider = options.fallbackProvider ?? null;
         this.#sourceLanguage = options.sourceLanguage ?? "en";
         this.#targetLanguage = options.targetLanguage ?? "zh";
         this.#concurrency = Math.max(1, options.concurrency ?? 4);
@@ -320,14 +397,57 @@ export class PageTranslator {
             (complexRoot || nestingRiskRoot) &&
             await providerAllowsStructuralSplitting(this.#provider);
         if (structuralFallbackAllowed && nestingRiskRoot) {
-            translatedHtml = await translateLeafSafeRichHtml(
-                this.#doc,
-                this.#provider,
-                segment.html,
-                this.#sourceLanguage,
-                this.#targetLanguage,
-                this.#terminology,
-            );
+            // Guarded local engines (for example PageLingo-MT) get one chance to
+            // translate the complete natural sentence. This preserves semantic
+            // context while the provider owns marker/slot/language validation.
+            // Rejection falls back to a safe whole-root engine when configured;
+            // otherwise retain the previous deterministic leaf-safe behavior.
+            let checkedWholeRoot = null;
+            if (typeof this.#provider.translateHtmlChecked === "function") {
+                checkedWholeRoot = await translateProviderWholeRoot(
+                    this.#doc,
+                    this.#provider,
+                    segment.html,
+                    this.#sourceLanguage,
+                    this.#targetLanguage,
+                    this.#terminology,
+                    true,
+                );
+            }
+
+            if (checkedWholeRoot !== null) {
+                translatedHtml = checkedWholeRoot;
+            }
+            else if (this.#fallbackProvider) {
+                const fallbackWholeRoot = await translateProviderWholeRoot(
+                    this.#doc,
+                    this.#fallbackProvider,
+                    segment.html,
+                    this.#sourceLanguage,
+                    this.#targetLanguage,
+                    this.#terminology,
+                    false,
+                );
+                translatedHtml = fallbackWholeRoot ?? await translateLeafSafeRichHtml(
+                    this.#doc,
+                    this.#provider,
+                    segment.html,
+                    this.#sourceLanguage,
+                    this.#targetLanguage,
+                    this.#terminology,
+                    this.#fallbackProvider,
+                );
+            }
+            else {
+                translatedHtml = await translateLeafSafeRichHtml(
+                    this.#doc,
+                    this.#provider,
+                    segment.html,
+                    this.#sourceLanguage,
+                    this.#targetLanguage,
+                    this.#terminology,
+                );
+            }
         }
         else if (structuralFallbackAllowed && complexRoot) {
             translatedHtml = await translateComplexRichHtml(
@@ -337,6 +457,7 @@ export class PageTranslator {
                 this.#sourceLanguage,
                 this.#targetLanguage,
                 this.#terminology,
+                this.#fallbackProvider,
             );
         }
         else {
@@ -356,6 +477,57 @@ export class PageTranslator {
             return;
         if (hasBrokenTranslationHtml(translatedHtml)) {
             throw new Error("译文包含损坏字符，已保留原文");
+        }
+
+        // Final product-level quality gate. This runs after whole-root / leaf-safe /
+        // complex routing so obviously broken mixed-language or template-garbage
+        // output never reaches the DOM even when its HTML structure is technically
+        // valid. A configured fallback provider (normally Bergamot) gets one
+        // whole-root attempt; otherwise PageLingo preserves the source.
+        const finalQualityGuardEnabled =
+            typeof this.#provider.translateHtmlChecked === "function"
+            || Boolean(this.#fallbackProvider);
+        if (finalQualityGuardEnabled) {
+            const sourceQualityText = translatedPlainText(this.#doc, segment.html);
+            let translatedQuality = assessTranslationQuality({
+                sourceText: sourceQualityText,
+                translatedText: translatedPlainText(this.#doc, translatedHtml),
+                sourceLanguage: this.#sourceLanguage,
+                targetLanguage: this.#targetLanguage,
+            });
+            if (!translatedQuality.accepted) {
+                let recoveredHtml = null;
+                if (this.#fallbackProvider && this.#fallbackProvider !== this.#provider) {
+                    recoveredHtml = await translateProviderWholeRoot(
+                        this.#doc,
+                        this.#fallbackProvider,
+                        segment.html,
+                        this.#sourceLanguage,
+                        this.#targetLanguage,
+                        this.#terminology,
+                        false,
+                    );
+                }
+
+                if (recoveredHtml !== null) {
+                    const recoveredQuality = assessTranslationQuality({
+                        sourceText: sourceQualityText,
+                        translatedText: translatedPlainText(this.#doc, recoveredHtml),
+                        sourceLanguage: this.#sourceLanguage,
+                        targetLanguage: this.#targetLanguage,
+                    });
+                    if (recoveredQuality.accepted) {
+                        translatedHtml = recoveredHtml;
+                        translatedQuality = recoveredQuality;
+                    }
+                    else {
+                        throw new Error(`译文质量校验未通过（${translatedQuality.reasons.join(", ")}），回退译文也未通过，已保留原文`);
+                    }
+                }
+                else {
+                    throw new Error(`译文质量校验未通过（${translatedQuality.reasons.join(", ")}），已保留原文`);
+                }
+            }
         }
 
         // Preferred translations are post-corrections. For a user-only term we learn the
@@ -385,13 +557,14 @@ export class PageTranslator {
         // and the text gaps around them. Keep the previous standalone path only as a
         // transport-damage fallback.
         const mainLinksComplete = translatedLinkTransportComplete(translatedHtml, segment.links);
+        const recoveryProvider = this.#fallbackProvider ?? this.#provider;
         const translatedLinkTexts = mainLinksComplete ? [] : await Promise.all(segment.links.map(async (link) => {
             if (!link.sourceText.trim()) return "";
             const exactTerm = exactTerminologyTarget(link.sourceText, this.#terminology);
             if (exactTerm) return exactTerm;
             try {
                 const protectedLink = protectTerminologyHtml(this.#doc, escapeHtml(link.sourceText), this.#terminology);
-                let linkHtml = await this.#provider.translateHtml({
+                let linkHtml = await recoveryProvider.translateHtml({
                     html: protectedLink.html,
                     sourceLanguage: this.#sourceLanguage,
                     targetLanguage: this.#targetLanguage,
@@ -415,7 +588,7 @@ export class PageTranslator {
             if (!gap.trim()) return "";
             try {
                 const protectedGap = protectTerminologyHtml(this.#doc, escapeHtml(gap.trim()), this.#terminology);
-                let gapHtml = await this.#provider.translateHtml({
+                let gapHtml = await recoveryProvider.translateHtml({
                     html: protectedGap.html,
                     sourceLanguage: this.#sourceLanguage,
                     targetLanguage: this.#targetLanguage,
