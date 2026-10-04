@@ -2,6 +2,7 @@ import { sendRuntimeMessage } from "./shared/runtime-message";
 import { requestExternalTranslationConsent } from "./shared/data-consent";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
+  PAGELINGO_MT_ENGINE_ID,
   type ExternalTranslationEngineType,
   type TranslationEngineConfig,
 } from "./shared/translation-engine-settings";
@@ -18,6 +19,13 @@ interface EngineView {
 interface EngineUiState {
   activeEngineId: string;
   engines: EngineView[];
+  mt?: {
+    installed: boolean;
+    verified: boolean;
+    version: string;
+    quant: string;
+    active: boolean;
+  };
 }
 
 interface EngineResponse {
@@ -151,6 +159,12 @@ function renderActiveSelect(): void {
   local.value = LOCAL_TRANSLATION_ENGINE_ID;
   local.textContent = "Firefox 本地 · Bergamot WASM";
   activeSelect.append(local);
+  if (engineState.mt?.installed && engineState.mt.verified) {
+    const mt = document.createElement("option");
+    mt.value = PAGELINGO_MT_ENGINE_ID;
+    mt.textContent = `PageLingo MT · ${engineState.mt.version} ${engineState.mt.quant} · Experimental`;
+    activeSelect.append(mt);
+  }
   for (const engine of engineState.engines.filter((item) => item.enabled)) {
     const option = document.createElement("option");
     option.value = engine.id;
@@ -235,7 +249,7 @@ async function requestState(message: Record<string, unknown>): Promise<void> {
 
 async function setActive(id: string): Promise<void> {
   try {
-    if (id !== LOCAL_TRANSLATION_ENGINE_ID) {
+    if (id !== LOCAL_TRANSLATION_ENGINE_ID && id !== PAGELINGO_MT_ENGINE_ID) {
       const engine = engineState.engines.find((item) => item.id === id);
       if (!engine) throw new Error("找不到翻译引擎");
       const granted = await requestExternalTranslationConsent(engine.hasApiKey);
@@ -245,7 +259,13 @@ async function setActive(id: string): Promise<void> {
       }
     }
     await requestState({ type: "set-active-translation-engine", id });
-    notify(id === LOCAL_TRANSLATION_ENGINE_ID ? "已切换到 Firefox 本地翻译" : "翻译引擎已切换");
+    notify(
+      id === LOCAL_TRANSLATION_ENGINE_ID
+        ? "已切换到 Firefox 本地翻译"
+        : id === PAGELINGO_MT_ENGINE_ID
+          ? "已切换到 PageLingo MT（Experimental）"
+          : "翻译引擎已切换"
+    );
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error), 5000);
   }
@@ -303,6 +323,10 @@ async function addConfig(): Promise<void> {
     addButton.disabled = false;
     addButton.textContent = "添加引擎";
   }
+}
+
+export async function refreshTranslationEngines(): Promise<void> {
+  await refreshTranslationEngines();
 }
 
 export async function initializeTranslationEngines(): Promise<void> {
