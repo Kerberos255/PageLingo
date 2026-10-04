@@ -762,3 +762,112 @@ describe("PageTranslator event-driven tooltips", () => {
   });
 
 });
+
+
+describe("PageTranslator final translation quality gate", () => {
+  it("falls back to the configured provider when the primary output contains unexpected kana", async () => {
+    class MixedLanguageProvider implements TranslationProvider {
+      requests: TranslationRequest[] = [];
+
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.requests.push(request);
+        return "请阅读安全指南かくのように，然后再公开 Gateway。";
+      }
+    }
+
+    class SafeFallbackProvider implements TranslationProvider {
+      requests: TranslationRequest[] = [];
+
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.requests.push(request);
+        return "请先阅读安全指南，再公开 Gateway。";
+      }
+    }
+
+    document.body.innerHTML =
+      "<p id='root'>Read the security guide before exposing the Gateway remotely.</p>";
+
+    const primary = new MixedLanguageProvider();
+    const fallback = new SafeFallbackProvider();
+    const translator = new PageTranslator(document, primary, {
+      targetLanguage: "zh-Hans",
+      fallbackProvider: fallback,
+    });
+
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    expect(primary.requests).toHaveLength(1);
+    expect(fallback.requests).toHaveLength(1);
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    expect(translated.textContent).toBe("请先阅读安全指南，再公开 Gateway。");
+    expect(translated.textContent).not.toMatch(/[\u3040-\u30ff]/u);
+  });
+
+  it("falls back when an otherwise structured translation contains template garbage", async () => {
+    class GarbageProvider implements TranslationProvider {
+      async translateHtml(): Promise<string> {
+        return "Windows 用户可以安装桌面应用。（______）取消";
+      }
+    }
+
+    class SafeFallbackProvider implements TranslationProvider {
+      async translateHtml(): Promise<string> {
+        return "Windows 用户可以安装桌面应用。";
+      }
+    }
+
+    document.body.innerHTML =
+      "<p id='root'>Windows users can install the desktop application.</p>";
+
+    const translator = new PageTranslator(document, new GarbageProvider(), {
+      targetLanguage: "zh-Hans",
+      fallbackProvider: new SafeFallbackProvider(),
+    });
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    expect(translated.textContent).toBe("Windows 用户可以安装桌面应用。");
+    expect(translated.textContent).not.toContain("______");
+  });
+});
+
+
+describe("PageTranslator recovery provider routing", () => {
+  it("uses the fallback provider for damaged link-label recovery instead of re-calling the guarded primary", async () => {
+    class GuardedPrimary implements TranslationProvider {
+      calls: TranslationRequest[] = [];
+
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.calls.push(request);
+        // Keep the anchor identity but deliberately drop the PageLingo boundary
+        // wrappers so the later link-label recovery path is exercised.
+        return '请阅读 <a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0">文档</a>。';
+      }
+    }
+
+    class RecoveryProvider implements TranslationProvider {
+      calls: TranslationRequest[] = [];
+
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.calls.push(request);
+        if (request.html.includes("documentation")) return "文档";
+        return "请阅读文档。";
+      }
+    }
+
+    document.body.innerHTML = '<p id="root">Read <a href="/docs">documentation</a>.</p>';
+    const primary = new GuardedPrimary();
+    const fallback = new RecoveryProvider();
+    const translator = new PageTranslator(document, primary, {
+      targetLanguage: "zh-Hans",
+      fallbackProvider: fallback,
+    });
+
+    await translator.translateRoot(document.querySelector<HTMLElement>("#root")!);
+
+    expect(primary.calls).toHaveLength(1);
+    expect(fallback.calls.some((request) => request.html.includes("documentation"))).toBe(true);
+    const translated = document.querySelector<HTMLElement>(".flt-translation")!;
+    expect(translated.querySelector("a")?.textContent).toBe("文档");
+  });
+});
