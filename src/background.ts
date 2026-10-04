@@ -634,7 +634,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     }
 
     if (message.type === "get-mt-model-status") {
-      return { ok: true, status: await pageLingoMtStatusForUi() };
+      return { ok: true, mtStatus: await pageLingoMtStatusForUi() };
     }
 
     if (message.type === "download-mt-model") {
@@ -669,7 +669,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         await refreshTranslationEngineState();
       }
       mtDownloadProgress = { loaded: 0, total: PAGELINGO_MT_SIZE, error: "" };
-      return { ok: true, status: await pageLingoMtStatusForUi(), state: await translationEngineStateForUi() };
+      return { ok: true, mtStatus: await pageLingoMtStatusForUi(), state: await translationEngineStateForUi() };
     }
 
     if (message.type === "get-language-catalog") {
