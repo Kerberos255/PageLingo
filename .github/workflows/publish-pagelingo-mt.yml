@@ -1,0 +1,116 @@
+name: Publish PageLingo MT
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-pagelingo-mt.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN_A: ${{ secrets.HF_TOKEN }}
+      HF_TOKEN_B: ${{ secrets.HUGGINGFACE_TOKEN }}
+      HF_TOKEN_C: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
+    steps:
+      - name: Resolve Hugging Face credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN=""
+          if [[ -n "${HF_TOKEN_A}" ]]; then TOKEN="${HF_TOKEN_A}"; fi
+          if [[ -z "${TOKEN}" && -n "${HF_TOKEN_B}" ]]; then TOKEN="${HF_TOKEN_B}"; fi
+          if [[ -z "${TOKEN}" && -n "${HF_TOKEN_C}" ]]; then TOKEN="${HF_TOKEN_C}"; fi
+          test -n "${TOKEN}"
+          echo "::add-mask::${TOKEN}"
+          echo "HF_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Install audit client
+        run: python -m pip install --disable-pip-version-check --quiet "huggingface_hub>=1.0,<2"
+
+      - name: Audit private repository and publish
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, re, tempfile
+          from pathlib import Path
+          from huggingface_hub import HfApi, hf_hub_download
+
+          REPO = "kerberos255/PageLingo-Translate-1.8B"
+          FILE = "PageLingo-Translate-1.8B-v0.2.2-Q5_K_M.gguf"
+          EXPECTED_SIZE = 1298755616
+          EXPECTED_SHA = "8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc"
+          token = os.environ["HF_TOKEN"]
+          api = HfApi(token=token)
+          info = api.model_info(REPO, files_metadata=True)
+          siblings = list(info.siblings or [])
+          if not siblings:
+              raise SystemExit("AUDIT FAIL: repository has no files")
+
+          suspicious_name = re.compile(
+              r"(^|/)(?:\.env(?:\.|$)|.*(?:token|secret|credential|cookie).*|.*\.log$|.*\.pid$|"
+              r".*\.sqlite(?:3)?$|.*\.db$|wandb(?:/|$)|runs?(?:/|$)|checkpoint[-_/]|"
+              r"trainer_state|optimizer\.(?:pt|bin)|scheduler\.(?:pt|bin)|rng_state)",
+              re.I,
+          )
+          bad_names = [s.rfilename for s in siblings if suspicious_name.search(s.rfilename)]
+          if bad_names:
+              raise SystemExit("AUDIT FAIL: suspicious repository filenames: " + ", ".join(sorted(bad_names)))
+
+          target = next((s for s in siblings if s.rfilename == FILE), None)
+          if target is None:
+              raise SystemExit("AUDIT FAIL: expected RC2 GGUF is missing")
+          size = int(getattr(target, "size", 0) or 0)
+          lfs = getattr(target, "lfs", None)
+          if isinstance(lfs, dict):
+              sha = str(lfs.get("sha256") or lfs.get("oid") or "")
+              lfs_size = int(lfs.get("size") or 0)
+          else:
+              sha = str(getattr(lfs, "sha256", "") or getattr(lfs, "oid", "") or "")
+              lfs_size = int(getattr(lfs, "size", 0) or 0)
+          if size not in (0, EXPECTED_SIZE) or lfs_size not in (0, EXPECTED_SIZE):
+              raise SystemExit(f"AUDIT FAIL: GGUF size mismatch metadata={size} lfs={lfs_size}")
+          if sha and sha != EXPECTED_SHA:
+              raise SystemExit(f"AUDIT FAIL: GGUF SHA256 mismatch: {sha}")
+
+          card = info.card_data
+          license_name = str(getattr(card, "license", "") or "").lower()
+          if license_name != "apache-2.0":
+              raise SystemExit(f"AUDIT FAIL: model card license is {license_name!r}, expected apache-2.0")
+
+          text_suffixes = {".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini"}
+          secret_patterns = [
+              re.compile(r"hf_[A-Za-z0-9]{20,}"),
+              re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
+              re.compile(r"\bsk-[A-Za-z0-9_-]{20,}"),
+              re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+              re.compile(r"(?i)authorization\s*:\s*bearer\s+[A-Za-z0-9._-]{16,}"),
+              re.compile(r"(?i)(?:password|api[_-]?key|access[_-]?token)\s*[=:]\s*['\"]?[A-Za-z0-9._/-]{16,}"),
+              re.compile(r"\b[A-Za-z]:\\(?:Users|Documents and Settings|PageLingo-MT|openclaw)\\", re.I),
+              re.compile(r"/(?:home|Users)/[^/\s]+/"),
+          ]
+          with tempfile.TemporaryDirectory() as tmp:
+              for sibling in siblings:
+                  name = sibling.rfilename
+                  if Path(name).suffix.lower() not in text_suffixes:
+                      continue
+                  file_size = int(getattr(sibling, "size", 0) or 0)
+                  if file_size > 2_000_000:
+                      continue
+                  local = hf_hub_download(REPO, name, repo_type="model", token=token, local_dir=tmp)
+                  text = Path(local).read_text(encoding="utf-8", errors="replace")
+                  for pattern in secret_patterns:
+                      if pattern.search(text):
+                          raise SystemExit(f"AUDIT FAIL: sensitive-looking content in {name}")
+
+          print(f"AUDIT PASS: {len(siblings)} files; RC2 identity verified; license={license_name}; sensitive scan clean")
+          api.update_repo_settings(repo_id=REPO, repo_type="model", private=False)
+          public_info = HfApi(token=False).model_info(REPO)
+          if getattr(public_info, "private", True):
+              raise SystemExit("PUBLISH FAIL: repository is still private after update")
+          print("PUBLISH PASS: repository is public")
+          PY
