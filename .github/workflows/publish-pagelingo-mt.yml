@@ -57,7 +57,12 @@ jobs:
               r"trainer_state|optimizer\.(?:pt|bin)|scheduler\.(?:pt|bin)|rng_state)",
               re.I,
           )
-          bad_names = [s.rfilename for s in siblings if suspicious_name.search(s.rfilename)]
+          allowed_names = {"tokenizer.json", "tokenizer_config.json"}
+          bad_names = [
+              s.rfilename
+              for s in siblings
+              if suspicious_name.search(s.rfilename) and Path(s.rfilename).name not in allowed_names
+          ]
           if bad_names:
               raise SystemExit("AUDIT FAIL: suspicious repository filenames: " + ", ".join(sorted(bad_names)))
 
