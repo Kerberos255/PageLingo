@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { PageTranslator } from "./core/page-translator";
-import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
+import { CheckedRuntimeMessageProvider, RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, normalizeDisplayMode } from "./shared/settings";
 import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint } from "./core/rich-segment";
@@ -12,6 +12,7 @@ import {
 } from "./shared/automatic-translation-state";
 import { relativeTimeElements } from "./shared/relative-time";
 import { sourceTextSample } from "./shared/source-text-sample";
+import { LOCAL_TRANSLATION_ENGINE_ID, PAGELINGO_MT_ENGINE_ID } from "./shared/translation-engine-settings";
 var translator = null;
 var imageOverlays = new Map();
 var activeImageOverlay = null;
@@ -248,13 +249,23 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         if (rootLanguage === normalizedTarget) return false;
         return !settings.neverTranslateLanguages.includes(rootLanguage);
     };
-    const pageTranslator = new PageTranslator(document, new RuntimeMessageProvider(), {
+    const engineResponse = await sendRuntimeMessage({ type: "get-translation-engines" });
+    const pageLingoMtActive = engineResponse?.ok === true
+        && engineResponse.state?.activeEngineId === PAGELINGO_MT_ENGINE_ID;
+    const primaryProvider = pageLingoMtActive
+        ? new CheckedRuntimeMessageProvider(PAGELINGO_MT_ENGINE_ID)
+        : new RuntimeMessageProvider();
+    const fallbackProvider = pageLingoMtActive
+        ? new RuntimeMessageProvider(LOCAL_TRANSLATION_ENGINE_ID)
+        : undefined;
+    const pageTranslator = new PageTranslator(document, primaryProvider, {
         sourceLanguage: resolvedSource,
         targetLanguage: normalizedTarget,
-        concurrency: 4,
+        concurrency: pageLingoMtActive ? 1 : 4,
         displayMode: settings.displayMode,
         shouldTranslateRoot,
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
+        fallbackProvider,
     });
     translator = pageTranslator;
     let count = 0;
