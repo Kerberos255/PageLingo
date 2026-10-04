@@ -633,6 +633,45 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       return { ok: true, preview: html };
     }
 
+    if (message.type === "get-mt-model-status") {
+      return { ok: true, status: await pageLingoMtStatusForUi() };
+    }
+
+    if (message.type === "download-mt-model") {
+      if (!mtDownloadPromise) {
+        mtDownloadProgress = { loaded: 0, total: PAGELINGO_MT_SIZE, error: "" };
+        mtDownloadPromise = (async () => {
+          await downloadPageLingoMtModel(({ loaded, total }) => {
+            mtDownloadProgress = { loaded, total: total || PAGELINGO_MT_SIZE, error: "" };
+          });
+          mtDownloadProgress = { loaded: PAGELINGO_MT_SIZE, total: PAGELINGO_MT_SIZE, error: "" };
+        })().catch((error) => {
+          mtDownloadProgress = {
+            ...mtDownloadProgress,
+            error: error instanceof Error ? error.message : String(error),
+          };
+          throw error;
+        }).finally(() => {
+          mtDownloadPromise = null;
+        });
+      }
+      await mtDownloadPromise;
+      return { ok: true, status: await pageLingoMtStatusForUi() };
+    }
+
+    if (message.type === "delete-mt-model") {
+      if (mtDownloadPromise) throw new Error("PageLingo MT 正在下载，请等待下载结束后再删除");
+      await pageLingoMt.close();
+      await deletePageLingoMtModel();
+      const state = await currentTranslationEngineState();
+      if (state.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
+        await setActiveTranslationEngine(LOCAL_TRANSLATION_ENGINE_ID);
+        await refreshTranslationEngineState();
+      }
+      mtDownloadProgress = { loaded: 0, total: PAGELINGO_MT_SIZE, error: "" };
+      return { ok: true, status: await pageLingoMtStatusForUi(), state: await translationEngineStateForUi() };
+    }
+
     if (message.type === "get-language-catalog") {
       return { ok: true, catalog: await languageCatalog() };
     }
