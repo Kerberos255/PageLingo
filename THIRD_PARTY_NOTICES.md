@@ -121,6 +121,18 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
+## wllama / llama.cpp WebAssembly runtime
+
+PageLingo bundles the browser WebAssembly runtime from `@wllama/wllama` for the optional PageLingo MT Experimental engine.
+
+- Package: `@wllama/wllama` 3.6.1
+- Source: https://github.com/ngxson/wllama
+- License: MIT
+- Bundled license text: `vendor/wllama/LICENSE`
+- The PageLingo MT GGUF model is downloaded separately as model data and is not bundled in the extension package.
+
+The PageLingo MT model is derived from Tencent Hy-MT2-1.8B and is published separately under Apache-2.0. The upstream model is available at https://huggingface.co/tencent/Hy-MT2-1.8B.
+
 ## Dependency versions
 
 The exact npm dependency graph used for release builds is pinned by `package-lock.json`. Build-time tools are not shipped as executable extension dependencies unless their output is explicitly copied or bundled by `tools/build.mjs`.
