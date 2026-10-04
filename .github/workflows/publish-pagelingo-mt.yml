@@ -108,9 +108,9 @@ jobs:
                       continue
                   local = hf_hub_download(REPO, name, repo_type="model", token=token, local_dir=tmp)
                   text = Path(local).read_text(encoding="utf-8", errors="replace")
-                  for pattern in secret_patterns:
+                  for rule_index, pattern in enumerate(secret_patterns):
                       if pattern.search(text):
-                          raise SystemExit(f"AUDIT FAIL: sensitive-looking content in {name}")
+                          raise SystemExit(f"AUDIT FAIL: sensitive-looking content in {name} (rule {rule_index})")
 
           print(f"AUDIT PASS: {len(siblings)} files; RC2 identity verified; license={license_name}; sensitive scan clean")
           api.update_repo_settings(repo_id=REPO, repo_type="model", private=False)
