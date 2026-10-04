@@ -103,6 +103,21 @@
             <div class="setting-row"><span><strong>当前翻译引擎</strong><small>外部引擎会把需要翻译的文本发送给对应服务商。</small></span><select id="active-engine-select"></select></div>
             <div class="hint">Firefox 本地引擎不需要 API Key，也不会上传网页文本。首次使用外部引擎时 Firefox 会请求数据传输权限；公网 Endpoint 必须使用 HTTPS，本机 localhost 可使用 HTTP。服务商的数据策略以其当前规则为准。</div>
           </div>
+          <div class="setting-card stack-card">
+            <div class="setting-copy">
+              <div><strong>PageLingo MT <span class="beta-badge">Experimental</span></strong><span>本地 English → 简体中文翻译。模型按需下载，不随 XPI 打包。</span></div>
+            </div>
+            <div class="mt-model-status-row">
+              <span id="mt-model-status">正在读取 PageLingo MT 状态…</span>
+              <progress id="mt-model-progress" max="1" value="0" hidden></progress>
+            </div>
+            <div class="mt-model-actions">
+              <button id="download-mt-model" type="button">下载模型</button>
+              <button id="use-mt-model" type="button" disabled>设为当前引擎</button>
+              <button id="delete-mt-model" type="button" class="danger-button" disabled>删除模型</button>
+            </div>
+            <div class="hint">RC2 · Q5_K_M · 约 1.21 GiB。浏览器内 CPU + WebAssembly 推理；下载后按固定文件大小和 Hugging Face LFS SHA-256 校验。译文未通过结构/语言质量检查时自动回退 Firefox/Bergamot。</div>
+          </div>
           <div class="setting-card">
             <div class="setting-copy"><div><strong>已添加引擎</strong><span>API Key 仅保存在 Firefox 的 <code>browser.storage.local</code>，不会写入项目文件或日志。</span></div></div>
             <div id="translation-engine-list" class="engine-list"></div>
