@@ -228,6 +228,7 @@ export class PageLingoMtClient implements TranslationProvider {
       await engine.loadModel(model, {
         n_ctx: 1536,
         n_threads: threads,
+        n_gpu_layers: 0,
       });
       this.#wllama = engine;
       return engine;
