@@ -17,10 +17,10 @@ export interface MtValidation {
   errors: string[];
 }
 
-const markerRe = /⟦(\\/?)(\\d{1,2})⟧/g;
-const slotRe = /⟪P(\\d{1,2})⟫/g;
+const markerRe = /⟦(\/?)(\d{1,2})⟧/g;
+const slotRe = /⟪P(\d{1,2})⟫/g;
 const protectedTags = new Set(["CODE", "KBD", "SAMP", "VAR"]);
-const linkBoundaryRe = /^__FLT_LINK_(?:START|END)_\\d+__$/;
+const linkBoundaryRe = /^__FLT_LINK_(?:START|END)_\d+__$/;
 
 export function mtPrompt(source: string): string {
   return `Translate the following text from English into Simplified Chinese.
@@ -134,8 +134,8 @@ export function validateMtOutput(encoded: EncodedMtHtml, output: string): MtVali
     expectedSlots.every((key) => output.split(`⟪${key}⟫`).length === 2);
   if (!slotOk) errors.push("slot mismatch");
 
-  const sourceHasLetters = /\\p{L}/u.test(encoded.source.replace(markerRe, "").replace(slotRe, ""));
-  const cjkOk = !sourceHasLetters || /[\\u3400-\\u9fff]/u.test(output);
+  const sourceHasLetters = /\p{L}/u.test(encoded.source.replace(markerRe, "").replace(slotRe, ""));
+  const cjkOk = !sourceHasLetters || /[\u3400-\u9fff]/u.test(output);
   if (!cjkOk) errors.push("no CJK");
 
   const lowered = output.trim().toLowerCase();
