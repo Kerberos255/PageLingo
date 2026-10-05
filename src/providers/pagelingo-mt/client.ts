@@ -3,7 +3,7 @@ import {
   ModelManager,
   ModelValidationStatus,
   Wllama,
-} from "@wllama/wllama";
+} from "@wllama/wllama/esm/index.js";
 import { assessTranslationQuality } from "../../core/translation-quality";
 import type {
   CheckedTranslationResult,
