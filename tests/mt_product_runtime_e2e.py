@@ -141,9 +141,9 @@ def main():
                     .then(v=>done({ok:true,value:v})).catch(e=>done({ok:false,error:String(e)}));
                 """, timeout=15)
                 mt=((status_probe.get("value") or {}).get("mt") or {})
-                phase=mt.get("phase")
+                phase=mt.get("runtimePhase")
                 if phase != last_phase:
-                    phase_row={"at":round(time.monotonic()-started,2),"phase":phase,"since":mt.get("phaseSince"),"crossOriginIsolated":mt.get("crossOriginIsolated"),"requestedThreads":mt.get("requestedThreads"),"actualThreads":mt.get("actualThreads"),"lastLoadMs":mt.get("lastLoadMs"),"lastInferenceMs":mt.get("lastInferenceMs"),"error":mt.get("error")}
+                    phase_row={"at":round(time.monotonic()-started,2),"phase":phase,"since":mt.get("runtimeSince"),"crossOriginIsolated":mt.get("crossOriginIsolated"),"requestedThreads":mt.get("requestedThreads"),"actualThreads":mt.get("actualThreads"),"lastLoadMs":mt.get("lastLoadMs"),"lastInferenceMs":mt.get("lastInferenceMs"),"error":mt.get("error")}
                     phases.append(phase_row)
                     print("MT_PHASE=",json.dumps(phase_row,ensure_ascii=False))
                     last_phase=phase
