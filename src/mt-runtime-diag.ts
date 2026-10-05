@@ -44,13 +44,21 @@ async function run(): Promise<void> {
   );
 
   try {
+    const modelUrl = new URLSearchParams(location.search).get("model");
+    if (!modelUrl) throw new Error("missing ?model= diagnostic URL");
+    const fetchedAt = performance.now();
+    const response = await fetch(modelUrl);
+    if (!response.ok) throw new Error(`tiny model fetch failed: HTTP ${response.status}`);
+    const blob = await response.blob();
+    push("diag", ["tiny-model-fetched", { bytes: blob.size, ms: performance.now() - fetchedAt }]);
+
     const timeout = new Promise<never>((_, reject) => {
       window.setTimeout(() => reject(new Error("tiny wllama load timed out after 20s")), 20_000);
     });
     await Promise.race([
-      engine.loadModelFromUrl(
-        "https://huggingface.co/ggml-org/tiny-llamas/resolve/main/stories260K.gguf",
-        { n_ctx: 128, n_threads: 1, n_gpu_layers: 0, useCache: false },
+      engine.loadModel(
+        [blob],
+        { n_ctx: 128, n_threads: 1, n_gpu_layers: 0 },
       ),
       timeout,
     ]);
