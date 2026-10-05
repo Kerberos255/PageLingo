@@ -17,7 +17,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         body = b"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>MT fixture</title></head>
 <body><main>
-<p id="one">PageLingo translates webpages locally while preserving the original layout and links.</p>
+<p id="one">Hello world.</p>
 </main></body></html>"""
         self.send_response(200)
         self.send_header("Content-Type","text/html; charset=utf-8")
@@ -69,14 +69,9 @@ def main():
         try:
             download=ext_async(driver, """
               const done=arguments[arguments.length-1];
-              let polls=0;
-              const timer=setInterval(()=>{
-                polls++;
-                browser.runtime.sendMessage({type:'get-pagelingo-mt-status'}).catch(()=>{});
-              },500);
               browser.runtime.sendMessage({type:'download-pagelingo-mt'})
-                .then(v=>{clearInterval(timer);done({ok:true,value:v,polls});})
-                .catch(e=>{clearInterval(timer);done({ok:false,error:String(e),name:e?.name,message:e?.message,stack:e?.stack,polls});});
+                .then(v=>done({ok:true,value:v}))
+                .catch(e=>done({ok:false,error:String(e),name:e?.name,message:e?.message,stack:e?.stack}));
             """, timeout=1200)
         except Exception as exc:
             download={"ok":False,"selenium_exception":repr(exc),"traceback":traceback.format_exc()}
@@ -124,9 +119,11 @@ def main():
 
         translated=None
         page=None
-        deadline=time.monotonic()+600
+        phases=[]
+        last_phase=None
+        deadline=time.monotonic()+240
         while time.monotonic() < deadline:
-            time.sleep(5)
+            time.sleep(3)
             driver.switch_to.window(fixture_handle)
             page=driver.execute_script("""
               return {
@@ -137,12 +134,28 @@ def main():
             """)
             driver.switch_to.window(ext_handle)
             state=driver.execute_script("return window.__mtProductResult || {state:'missing'};")
+            try:
+                status_probe=ext_async(driver, """
+                  const done=arguments[arguments.length-1];
+                  browser.runtime.sendMessage({type:'get-pagelingo-mt-status'})
+                    .then(v=>done({ok:true,value:v})).catch(e=>done({ok:false,error:String(e)}));
+                """, timeout=15)
+                mt=((status_probe.get("value") or {}).get("mt") or {})
+                phase=mt.get("runtimePhase")
+                if phase != last_phase:
+                    phase_row={"at":round(time.monotonic()-started,2),"phase":phase,"since":mt.get("runtimeSince"),"error":mt.get("error")}
+                    phases.append(phase_row)
+                    print("MT_PHASE=",json.dumps(phase_row,ensure_ascii=False))
+                    last_phase=phase
+            except Exception as exc:
+                phases.append({"at":round(time.monotonic()-started,2),"phase":"status-probe-error","error":repr(exc)})
             if state.get("state") in ("done","error"):
                 translated={"ok":state.get("state")=="done", **state}
                 break
             if page.get("translations"):
                 translated={"ok":True,"state":"page-translated-before-message-finished"}
                 break
+        result["phases"]=phases
 
         result["translate"]=translated or {"ok":False,"state":"timeout"}
         result["translate_seconds"]=time.monotonic()-started
