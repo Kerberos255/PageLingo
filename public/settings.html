@@ -103,6 +103,15 @@
             <div class="setting-row"><span><strong>当前翻译引擎</strong><small>外部引擎会把需要翻译的文本发送给对应服务商。</small></span><select id="active-engine-select"></select></div>
             <div class="hint">Firefox 本地引擎不需要 API Key，也不会上传网页文本。首次使用外部引擎时 Firefox 会请求数据传输权限；公网 Endpoint 必须使用 HTTPS，本机 localhost 可使用 HTTP。服务商的数据策略以其当前规则为准。</div>
           </div>
+          <div class="setting-card stack-card">
+            <div class="setting-copy"><div><strong>PageLingo MT <span class="experimental-badge">Experimental</span></strong><span>PageLingo 自训 1.8B 英→简中模型，约 1.21 GiB。模型下载后保存在 Firefox 本地；网页文本不会因使用该模型上传到外部服务。</span></div></div>
+            <div class="mt-status-row">
+              <div><span class="meta-label">本地模型</span><strong>PageLingo-Translate-1.8B v0.2.2 · Q5_K_M</strong><small id="pagelingo-mt-status">正在读取模型状态…</small></div>
+              <div class="mt-actions"><button id="download-pagelingo-mt" type="button">下载模型</button><button id="delete-pagelingo-mt" type="button" class="danger-button" disabled>删除模型</button></div>
+            </div>
+            <progress id="pagelingo-mt-progress" class="mt-progress" max="100" value="0" hidden></progress>
+            <div class="hint">当前仅支持 English → 简体中文。MT 输出会经过 marker / nesting / slot / 语言质量校验；校验失败自动回退 Firefox/Bergamot，不把异常译文写入页面。</div>
+          </div>
           <div class="setting-card">
             <div class="setting-copy"><div><strong>已添加引擎</strong><span>API Key 仅保存在 Firefox 的 <code>browser.storage.local</code>，不会写入项目文件或日志。</span></div></div>
             <div id="translation-engine-list" class="engine-list"></div>

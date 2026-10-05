@@ -32,6 +32,7 @@ import { isLoopbackTranslationEndpoint } from "./shared/network-endpoint";
 import { translateWithExternalEngine } from "./providers/external-translation";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
+  PAGELINGO_MT_ENGINE_ID,
   deleteTranslationEngine,
   loadTranslationEngineState,
   normalizeTranslationEngineConfig,
@@ -39,8 +40,11 @@ import {
   setActiveTranslationEngine,
   setTranslationEngineEnabled,
 } from "./shared/translation-engine-settings";
+import { PageLingoMtClient } from "./providers/pagelingo-mt/client";
+import { mtRouteSupported } from "./providers/pagelingo-mt/protocol";
 
 const bergamot = new BergamotClient();
+const pagelingoMt = new PageLingoMtClient();
 const MODEL_UPDATE_ALARM = "pagelingo-model-updates";
 const MODEL_UPDATE_INTERVAL_MINUTES = 24 * 60;
 let overridesPromise = loadModelOverrides();
@@ -121,13 +125,16 @@ async function activeExternalEngine() {
 
 async function translationEngineStateForUi() {
   const state = await currentTranslationEngineState();
-  const activeExternal = state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
+  const activeExternal = state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID || state.activeEngineId === PAGELINGO_MT_ENGINE_ID
     ? null
     : state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
+  const mt = await pagelingoMt.status();
   return {
     activeEngineId: state.activeEngineId,
     structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
+      || state.activeEngineId === PAGELINGO_MT_ENGINE_ID
       || Boolean(activeExternal && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
+    mt,
     engines: state.engines.map((engine) => ({
       id: engine.id,
       name: engine.name,
@@ -420,6 +427,17 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
             )
             .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }))
         : [];
+      const engineState = await currentTranslationEngineState();
+      if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
+        const mtRequest = { html: request.html, sourceLanguage, targetLanguage, terminology };
+        const mtResult = await pagelingoMt.translateHtmlChecked(mtRequest);
+        if (mtResult.accepted) return { ok: true, html: mtResult.html, engine: PAGELINGO_MT_ENGINE_ID };
+        const overrides = await currentOverrides();
+        const route = routeFor(sourceLanguage, targetLanguage, overrides);
+        if (!route) throw new Error(mtResult.reason ?? "PageLingo MT rejected the translation");
+        const html = await bergamot.translateHtml(request.html, route);
+        return { ok: true, html, engine: LOCAL_TRANSLATION_ENGINE_ID, fallbackFrom: PAGELINGO_MT_ENGINE_ID, fallbackReason: mtResult.reason };
+      }
       const external = await activeExternalEngine();
       if (external) {
         if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
@@ -453,6 +471,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       )) {
         throw new Error("Translation batch must use one language route");
       }
+      const batchEngineState = await currentTranslationEngineState();
+      if (batchEngineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
+        return { ok: false, batchUnsupported: true, error: "PageLingo MT currently runs serial inference" };
+      }
       if (await activeExternalEngine()) {
         return { ok: false, batchUnsupported: true, error: "Batching is local-Bergamot only" };
       }
@@ -466,6 +488,20 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "can-translate") {
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
+      const engineState = await currentTranslationEngineState();
+      if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
+        const mt = await pagelingoMt.status();
+        return {
+          ok: true,
+          supported: Boolean(
+            mt.installed &&
+            sourceLanguage &&
+            targetLanguage &&
+            sourceLanguage !== targetLanguage &&
+            mtRouteSupported({ html: "", sourceLanguage, targetLanguage })
+          ),
+        };
+      }
       const external = await activeExternalEngine();
       const externalReady = external
         ? await hasExternalTranslationConsent(Boolean(external.apiKey))
@@ -485,6 +521,20 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "is-translation-ready") {
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
+      const engineState = await currentTranslationEngineState();
+      if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
+        const mt = await pagelingoMt.status();
+        return {
+          ok: true,
+          ready: Boolean(
+            mt.installed &&
+            sourceLanguage &&
+            targetLanguage &&
+            sourceLanguage !== targetLanguage &&
+            mtRouteSupported({ html: "", sourceLanguage, targetLanguage })
+          ),
+        };
+      }
       const external = await activeExternalEngine();
       const externalReady = external
         ? await hasExternalTranslationConsent(Boolean(external.apiKey))
@@ -526,6 +576,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
 
     if (message.type === "set-active-translation-engine") {
       if (typeof message.id !== "string") throw new Error("Invalid engine id");
+      if (message.id === PAGELINGO_MT_ENGINE_ID) {
+        const mt = await pagelingoMt.status();
+        if (!mt.installed) throw new Error("请先下载 PageLingo MT 模型");
+      }
       await setActiveTranslationEngine(message.id);
       await refreshTranslationEngineState();
       return { ok: true, state: await translationEngineStateForUi() };
@@ -543,6 +597,23 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         targetLanguage: "zh-Hans",
       });
       return { ok: true, preview: html };
+    }
+
+    if (message.type === "get-pagelingo-mt-status") {
+      return { ok: true, mt: await pagelingoMt.status() };
+    }
+
+    if (message.type === "download-pagelingo-mt") {
+      return { ok: true, mt: await pagelingoMt.download() };
+    }
+
+    if (message.type === "delete-pagelingo-mt") {
+      const state = await currentTranslationEngineState();
+      if (state.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
+        await setActiveTranslationEngine(LOCAL_TRANSLATION_ENGINE_ID);
+        await refreshTranslationEngineState();
+      }
+      return { ok: true, mt: await pagelingoMt.remove(), state: await translationEngineStateForUi() };
     }
 
     if (message.type === "get-language-catalog") {

@@ -2,6 +2,7 @@ import { sendRuntimeMessage } from "./shared/runtime-message";
 import { requestExternalTranslationConsent } from "./shared/data-consent";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
+  PAGELINGO_MT_ENGINE_ID,
   type ExternalTranslationEngineType,
   type TranslationEngineConfig,
 } from "./shared/translation-engine-settings";
@@ -18,6 +19,11 @@ interface EngineView {
 interface EngineUiState {
   activeEngineId: string;
   engines: EngineView[];
+  mt?: {
+    installed?: boolean;
+    downloading?: boolean;
+    modelBytes?: number;
+  };
 }
 
 interface EngineResponse {
@@ -151,6 +157,13 @@ function renderActiveSelect(): void {
   local.value = LOCAL_TRANSLATION_ENGINE_ID;
   local.textContent = "Firefox 本地 · Bergamot WASM";
   activeSelect.append(local);
+  const mt = document.createElement("option");
+  mt.value = PAGELINGO_MT_ENGINE_ID;
+  mt.textContent = engineState.mt?.installed
+    ? "PageLingo MT · 本地 1.8B"
+    : "PageLingo MT · 未下载";
+  mt.disabled = engineState.mt?.installed !== true;
+  activeSelect.append(mt);
   for (const engine of engineState.engines.filter((item) => item.enabled)) {
     const option = document.createElement("option");
     option.value = engine.id;
@@ -235,7 +248,7 @@ async function requestState(message: Record<string, unknown>): Promise<void> {
 
 async function setActive(id: string): Promise<void> {
   try {
-    if (id !== LOCAL_TRANSLATION_ENGINE_ID) {
+    if (id !== LOCAL_TRANSLATION_ENGINE_ID && id !== PAGELINGO_MT_ENGINE_ID) {
       const engine = engineState.engines.find((item) => item.id === id);
       if (!engine) throw new Error("找不到翻译引擎");
       const granted = await requestExternalTranslationConsent(engine.hasApiKey);
@@ -245,7 +258,11 @@ async function setActive(id: string): Promise<void> {
       }
     }
     await requestState({ type: "set-active-translation-engine", id });
-    notify(id === LOCAL_TRANSLATION_ENGINE_ID ? "已切换到 Firefox 本地翻译" : "翻译引擎已切换");
+    notify(id === LOCAL_TRANSLATION_ENGINE_ID
+      ? "已切换到 Firefox 本地翻译"
+      : id === PAGELINGO_MT_ENGINE_ID
+        ? "已切换到 PageLingo MT"
+        : "翻译引擎已切换");
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error), 5000);
   }
@@ -305,13 +322,18 @@ async function addConfig(): Promise<void> {
   }
 }
 
+async function refreshTranslationEngines(): Promise<void> {
+  const response = await sendRuntimeMessage<EngineResponse>({ type: "get-translation-engines" });
+  if (!response?.ok || !response.state) throw new Error(response?.error ?? "无法读取翻译引擎");
+  applyState(response.state);
+}
+
 export async function initializeTranslationEngines(): Promise<void> {
   typeSelect?.addEventListener("change", applyPreset);
   activeSelect?.addEventListener("change", () => void setActive(activeSelect.value));
   testButton?.addEventListener("click", () => void testConfig());
   addButton?.addEventListener("click", () => void addConfig());
+  window.addEventListener("pagelingo-mt-changed", () => void refreshTranslationEngines().catch((error) => notify(error instanceof Error ? error.message : String(error), 5000)));
   applyPreset();
-  const response = await sendRuntimeMessage<EngineResponse>({ type: "get-translation-engines" });
-  if (!response?.ok || !response.state) throw new Error(response?.error ?? "无法读取翻译引擎");
-  applyState(response.state);
+  await refreshTranslationEngines();
 }

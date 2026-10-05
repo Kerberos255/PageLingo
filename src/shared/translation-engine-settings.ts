@@ -1,6 +1,7 @@
 import { isLoopbackHostname } from "./network-endpoint";
 
 export const LOCAL_TRANSLATION_ENGINE_ID = "firefox-local";
+export const PAGELINGO_MT_ENGINE_ID = "pagelingo-mt";
 
 export type ExternalTranslationEngineType =
   | "microsoft"
@@ -100,7 +101,7 @@ export async function loadTranslationEngineState(): Promise<TranslationEngineSta
         .filter((engine): engine is TranslationEngineConfig => Boolean(engine))
     : [];
   const requested = cleanString(stored.activeTranslationEngineId, 96) || LOCAL_TRANSLATION_ENGINE_ID;
-  const active = requested === LOCAL_TRANSLATION_ENGINE_ID || engines.some((engine) => engine.id === requested && engine.enabled)
+  const active = requested === LOCAL_TRANSLATION_ENGINE_ID || requested === PAGELINGO_MT_ENGINE_ID || engines.some((engine) => engine.id === requested && engine.enabled)
     ? requested
     : LOCAL_TRANSLATION_ENGINE_ID;
   return { activeEngineId: active, engines };
@@ -136,7 +137,7 @@ export async function setTranslationEngineEnabled(id: string, enabled: boolean):
 
 export async function setActiveTranslationEngine(id: string): Promise<TranslationEngineState> {
   const state = await loadTranslationEngineState();
-  if (id !== LOCAL_TRANSLATION_ENGINE_ID && !state.engines.some((engine) => engine.id === id && engine.enabled)) {
+  if (id !== LOCAL_TRANSLATION_ENGINE_ID && id !== PAGELINGO_MT_ENGINE_ID && !state.engines.some((engine) => engine.id === id && engine.enabled)) {
     throw new Error("该翻译引擎未启用或不存在");
   }
   await browser.storage.local.set({ activeTranslationEngineId: id });
