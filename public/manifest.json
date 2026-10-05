@@ -16,6 +16,12 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; object-src 'self'"
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["mt-keepalive.html"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
   "background": {
     "scripts": [
       "background.js"
