@@ -80,7 +80,7 @@ async function writeStaticWllamaWorker() {
     runOptions,
     `function wModuleInit(){ ${mainModuleCode}; return Module; }`,
     llamaWorkerSource,
-  ].join(";\\n\\n");
+  ].join(";\n\n");
   await writeFile("dist/vendor/wllama/pagelingo-worker.js", workerSource);
 }
 
