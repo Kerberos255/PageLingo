@@ -28,7 +28,9 @@ def main():
         uuid=extension_uuid(driver,addon)
         driver.get(f"moz-extension://{uuid}/mt-runtime-diag.html")
         started=time.monotonic()
-        WebDriverWait(driver,60).until(lambda d:d.execute_script("return window.__mtRuntimeDiag !== undefined"))
+        WebDriverWait(driver,60).until(
+            lambda d:d.execute_script("return window.__mtRuntimeDiag && window.__mtRuntimeDiag.state !== 'running'")
+        )
         result=driver.execute_script("return window.__mtRuntimeDiag")
         elapsed=time.monotonic()-started
         print("TINY_WLLAMA_RESULT=",json.dumps(result,ensure_ascii=False))
