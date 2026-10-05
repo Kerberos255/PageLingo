@@ -149,6 +149,34 @@ export class PageLingoMtClient implements TranslationProvider {
     return await this.status();
   }
 
+  async diagnoseTinyWllamaLoad(): Promise<{ loadMs: number; threads: number; multithread: boolean }> {
+    const engine = new Wllama(
+      { default: browser.runtime.getURL("vendor/wllama/wllama.wasm") },
+      { logger: console },
+    );
+    const started = performance.now();
+    try {
+      await engine.loadModelFromUrl(
+        "https://huggingface.co/ggml-org/tiny-llamas/resolve/main/stories260K.gguf",
+        {
+          n_ctx: 128,
+          n_threads: 1,
+          n_gpu_layers: 0,
+          useCache: false,
+        },
+      );
+      return {
+        loadMs: performance.now() - started,
+        threads: engine.getNumThreads(),
+        multithread: engine.isMultithread(),
+      };
+    } finally {
+      try {
+        await engine.exit();
+      } catch {}
+    }
+  }
+
   async supportsStructuralSplitting(): Promise<boolean> {
     return true;
   }
