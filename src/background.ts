@@ -600,13 +600,6 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       return { ok: true, preview: html };
     }
 
-    if (message.type === "diag-pagelingo-mt-tiny-wllama") {
-      return {
-        ok: true,
-        result: await keepEventPageAlive(pagelingoMt.diagnoseTinyWllamaLoad(), "mt-tiny-diagnostic"),
-      };
-    }
-
     if (message.type === "get-pagelingo-mt-status") {
       return { ok: true, mt: await pagelingoMt.status() };
     }
