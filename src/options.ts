@@ -64,12 +64,25 @@ interface ImageOcrStatus {
     runtimeSupported: boolean;
 }
 
+interface PageLingoMtStatus {
+    installed: boolean;
+    valid: boolean;
+    downloading: boolean;
+    loadedBytes: number;
+    totalBytes: number;
+    modelBytes: number;
+    modelFile: string;
+    modelSha256: string;
+    error?: string;
+}
+
 interface OptionsRuntimeResponse {
     ok?: boolean;
     error?: string;
     catalog?: LanguageCatalog;
     pack?: LanguagePackInfo;
     status?: ImageOcrStatus;
+    mt?: PageLingoMtStatus;
 }
 
 const radios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="display-mode"]'));
@@ -94,6 +107,10 @@ const packList = document.querySelector<HTMLElement>("#language-pack-list");
 const updatePolicy = document.querySelector<HTMLSelectElement>("#model-update-policy");
 const checkUpdates = document.querySelector<HTMLButtonElement>("#check-model-updates");
 const updateStatus = document.querySelector<HTMLElement>("#model-update-status");
+const mtStatus = document.querySelector<HTMLElement>("#pagelingo-mt-status");
+const mtProgress = document.querySelector<HTMLProgressElement>("#pagelingo-mt-progress");
+const downloadMtButton = document.querySelector<HTMLButtonElement>("#download-pagelingo-mt");
+const deleteMtButton = document.querySelector<HTMLButtonElement>("#delete-pagelingo-mt");
 const imageToggle = document.querySelector<HTMLInputElement>("#image-translation-enabled");
 const builtinGlossaryToggle = document.querySelector<HTMLInputElement>("#builtin-glossary-enabled");
 const glossaryCollectionList = document.querySelector<HTMLElement>("#glossary-collection-list");
@@ -431,6 +448,97 @@ async function deleteEditingGlossary(): Promise<void> {
     closeGlossaryEditor();
 }
 
+function renderMtStatus(current: PageLingoMtStatus): void {
+    if (!mtStatus || !downloadMtButton || !deleteMtButton || !mtProgress)
+        return;
+    const total = current.totalBytes || 1;
+    const loaded = Math.max(0, current.loadedBytes || 0);
+    const percent = Math.max(0, Math.min(100, Math.round((loaded / total) * 100)));
+    mtProgress.max = 100;
+    mtProgress.value = percent;
+    mtProgress.hidden = !current.downloading;
+    downloadMtButton.disabled = current.downloading || current.installed;
+    deleteMtButton.disabled = current.downloading || !current.installed;
+    downloadMtButton.textContent = current.downloading ? `下载中… ${percent}%` : current.installed ? "已下载" : "下载模型";
+    if (current.downloading) {
+        mtStatus.textContent = `正在下载 · ${formatBytes(loaded)} / ${formatBytes(total)} · ${percent}%`;
+    } else if (current.installed && current.valid) {
+        mtStatus.textContent = `已下载并校验 · ${formatBytes(current.modelBytes)} · SHA256 ${current.modelSha256.slice(0, 12)}…`;
+    } else if (current.error) {
+        mtStatus.textContent = `未就绪 · ${current.error}`;
+    } else {
+        mtStatus.textContent = `未下载 · 约 ${formatBytes(current.totalBytes)}`;
+    }
+}
+
+async function refreshMtStatus(): Promise<PageLingoMtStatus | null> {
+    if (!mtStatus)
+        return null;
+    try {
+        const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "get-pagelingo-mt-status" });
+        if (!response?.ok || !response.mt)
+            throw new Error(response?.error ?? "无法读取 PageLingo MT 状态");
+        renderMtStatus(response.mt);
+        return response.mt;
+    }
+    catch (error) {
+        mtStatus.textContent = error instanceof Error ? error.message : String(error);
+        if (downloadMtButton) downloadMtButton.disabled = false;
+        if (deleteMtButton) deleteMtButton.disabled = true;
+        return null;
+    }
+}
+
+async function downloadMt(): Promise<void> {
+    if (!downloadMtButton)
+        return;
+    downloadMtButton.disabled = true;
+    showSaved("正在下载 PageLingo MT 模型…", 120_000);
+    let polling = true;
+    const poll = async () => {
+        while (polling) {
+            await refreshMtStatus();
+            await new Promise((resolve) => window.setTimeout(resolve, 500));
+        }
+    };
+    const pollPromise = poll();
+    try {
+        const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "download-pagelingo-mt" });
+        if (!response?.ok || !response.mt)
+            throw new Error(response?.error ?? "PageLingo MT 下载失败");
+        renderMtStatus(response.mt);
+        window.dispatchEvent(new Event("pagelingo-mt-changed"));
+        showSaved("PageLingo MT 已下载并通过完整性校验");
+    }
+    catch (error) {
+        showSaved(error instanceof Error ? error.message : String(error), 7000);
+    }
+    finally {
+        polling = false;
+        await pollPromise;
+        await refreshMtStatus();
+    }
+}
+
+async function deleteMt(): Promise<void> {
+    if (!deleteMtButton)
+        return;
+    deleteMtButton.disabled = true;
+    showSaved("正在删除 PageLingo MT 模型…", 30_000);
+    try {
+        const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "delete-pagelingo-mt" });
+        if (!response?.ok || !response.mt)
+            throw new Error(response?.error ?? "删除 PageLingo MT 失败");
+        renderMtStatus(response.mt);
+        window.dispatchEvent(new Event("pagelingo-mt-changed"));
+        showSaved("PageLingo MT 已删除，翻译引擎已回到 Firefox/Bergamot");
+    }
+    catch (error) {
+        showSaved(error instanceof Error ? error.message : String(error), 7000);
+        await refreshMtStatus();
+    }
+}
+
 async function refreshImageOcrStatus(): Promise<void> {
     if (!imageStatus || !deleteOcrModels)
         return;
@@ -482,7 +590,7 @@ async function initialize(): Promise<void> {
     alwaysTranslateLanguages = [...settings.alwaysTranslateLanguages];
     renderRuleLists();
     selectSettingsPage(location.hash.slice(1) || "translation");
-    await refreshImageOcrStatus();
+    await Promise.all([refreshImageOcrStatus(), refreshMtStatus()]);
 }
 
 function selectSettingsPage(pageId: string): void {
@@ -596,6 +704,9 @@ if (downloadPackButton) {
             void changePack(pack, downloadPackButton);
     });
 }
+downloadMtButton?.addEventListener("click", () => void downloadMt());
+deleteMtButton?.addEventListener("click", () => void deleteMt());
+
 if (deleteOcrModels) {
     deleteOcrModels.addEventListener("click", () => {
         void (async () => {
