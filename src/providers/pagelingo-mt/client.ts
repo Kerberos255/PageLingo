@@ -33,6 +33,8 @@ export const PAGELINGO_MT_MODEL_URL =
 export const PAGELINGO_MT_MODEL_SIZE = 1_298_755_616;
 export const PAGELINGO_MT_MODEL_SHA256 = "8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc";
 
+export type PageLingoMtRuntimePhase = "idle" | "opening-cache" | "loading-wasm" | "ready" | "inference" | "error";
+
 export interface PageLingoMtStatus {
   installed: boolean;
   valid: boolean;
@@ -43,6 +45,13 @@ export interface PageLingoMtStatus {
   modelFile: string;
   modelSha256: string;
   error?: string;
+  runtimePhase: PageLingoMtRuntimePhase;
+  runtimeSince: number;
+  crossOriginIsolated: boolean;
+  requestedThreads: number;
+  actualThreads: number;
+  lastLoadMs: number;
+  lastInferenceMs: number;
 }
 
 function plainText(html: string): string {
@@ -65,6 +74,12 @@ export class PageLingoMtClient implements TranslationProvider {
   #loadedBytes = 0;
   #totalBytes = PAGELINGO_MT_MODEL_SIZE;
   #lastError = "";
+  #requestedThreads = 0;
+  #actualThreads = 0;
+  #lastLoadMs = 0;
+  #lastInferenceMs = 0;
+  #runtimePhase: PageLingoMtRuntimePhase = "idle";
+  #runtimeSince = Date.now();
 
   async status(): Promise<PageLingoMtStatus> {
     try {
@@ -79,6 +94,13 @@ export class PageLingoMtClient implements TranslationProvider {
         modelBytes: valid ? model!.size : 0,
         modelFile: PAGELINGO_MT_MODEL_FILE,
         modelSha256: PAGELINGO_MT_MODEL_SHA256,
+        runtimePhase: this.#runtimePhase,
+        runtimeSince: this.#runtimeSince,
+        crossOriginIsolated: Boolean(globalThis.crossOriginIsolated),
+        requestedThreads: this.#requestedThreads,
+        actualThreads: this.#actualThreads,
+        lastLoadMs: this.#lastLoadMs,
+        lastInferenceMs: this.#lastInferenceMs,
         ...(this.#lastError ? { error: this.#lastError } : {}),
       };
     } catch (error) {
@@ -92,6 +114,13 @@ export class PageLingoMtClient implements TranslationProvider {
         modelBytes: 0,
         modelFile: PAGELINGO_MT_MODEL_FILE,
         modelSha256: PAGELINGO_MT_MODEL_SHA256,
+        runtimePhase: this.#runtimePhase,
+        runtimeSince: this.#runtimeSince,
+        crossOriginIsolated: Boolean(globalThis.crossOriginIsolated),
+        requestedThreads: this.#requestedThreads,
+        actualThreads: this.#actualThreads,
+        lastLoadMs: this.#lastLoadMs,
+        lastInferenceMs: this.#lastInferenceMs,
         error: message,
       };
     }
@@ -174,13 +203,24 @@ export class PageLingoMtClient implements TranslationProvider {
   async #translateSerial(request: TranslationRequest): Promise<CheckedTranslationResult> {
     const encoded = encodeMtHtml(request.html);
     const engine = await this.#ensureLoaded();
-    const response: any = await engine.createCompletion({
+    this.#setRuntimePhase("inference");
+    const inferenceStarted = performance.now();
+    let response: any;
+    try {
+      response = await engine.createCompletion({
       prompt: mtPrompt(encoded.source),
       max_tokens: mtMaxTokens(encoded),
       temperature: 0,
       top_k: 1,
-      stream: false,
-    });
+        stream: false,
+      });
+      this.#lastInferenceMs = performance.now() - inferenceStarted;
+      this.#setRuntimePhase("ready");
+    } catch (error) {
+      this.#lastError = describeMtError(error);
+      this.#setRuntimePhase("error");
+      throw error;
+    }
     const raw = String(response?.choices?.[0]?.text ?? "").trim();
     const validation = validateMtOutput(encoded, raw);
     if (!validation.ok) {
@@ -217,6 +257,9 @@ export class PageLingoMtClient implements TranslationProvider {
       if (!model) throw new Error("PageLingo MT 模型尚未下载");
       await this.#assertExpectedModel(model);
 
+      this.#setRuntimePhase("opening-cache");
+      const blobs = await model.open();
+      this.#setRuntimePhase("loading-wasm");
       const engine = new Wllama(
         { default: browser.runtime.getURL("vendor/wllama/wllama.wasm") },
         {
@@ -225,19 +268,35 @@ export class PageLingoMtClient implements TranslationProvider {
         },
       );
       const threads = Math.max(1, Math.min(8, Math.floor((navigator.hardwareConcurrency || 2) / 2) || 1));
-      await engine.loadModel(model, {
+      this.#requestedThreads = threads;
+      const loadStarted = performance.now();
+      await engine.loadModel(blobs, {
         n_ctx: 1536,
         n_threads: threads,
+        n_gpu_layers: 0,
       });
+      this.#lastLoadMs = performance.now() - loadStarted;
+      this.#actualThreads = engine.getNumThreads();
       this.#wllama = engine;
+      this.#setRuntimePhase("ready");
       return engine;
     })();
 
     try {
       return await this.#loadPromise;
+    } catch (error) {
+      this.#lastError = describeMtError(error);
+      this.#setRuntimePhase("error");
+      throw error;
     } finally {
       this.#loadPromise = null;
     }
+  }
+
+  #setRuntimePhase(phase: PageLingoMtRuntimePhase): void {
+    if (this.#runtimePhase === phase) return;
+    this.#runtimePhase = phase;
+    this.#runtimeSince = Date.now();
   }
 
   async #findModel(includeInvalid: boolean) {
