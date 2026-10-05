@@ -28,6 +28,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Inspect installed wllama package
+        shell: bash
+        run: |
+          find node_modules/@wllama/wllama -maxdepth 3 -type f | sort | sed -n '1,120p'
+          echo "--- worker symbols ---"
+          grep -n -m 3 'LLAMA_CPP_WORKER_CODE\|WLLAMA_EMSCRIPTEN_CODE\|createWorker' node_modules/@wllama/wllama/esm/index.js || true
       - run: npm run verify
       - name: Package XPI
         shell: bash
