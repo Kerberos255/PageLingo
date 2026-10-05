@@ -5,12 +5,12 @@ await rm("dist", { recursive: true, force: true });
 await mkdir("dist", { recursive: true });
 await cp("public", "dist", { recursive: true });
 await mkdir("dist/vendor/bergamot", { recursive: true });
-await mkdir("dist/vendor/onnxruntime", { recursive: true });
+await mkdir("dist/vendor/onnxruntime", { recursive: true });\nawait mkdir("dist/vendor/wllama", { recursive: true });
 await Promise.all([
   cp("vendor/bergamot/bergamot-translator.js", "dist/vendor/bergamot/bergamot-translator.js"),
   cp("vendor/bergamot/bergamot-translator-v4.wasm", "dist/vendor/bergamot/bergamot-translator.wasm"),
   cp("vendor/bergamot/LICENSE", "dist/vendor/bergamot/LICENSE"),
-  cp("node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm", "dist/vendor/onnxruntime/ort-wasm-simd-threaded.wasm"),
+  cp("node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm", "dist/vendor/onnxruntime/ort-wasm-simd-threaded.wasm"),\n  cp("node_modules/@wllama/wllama/esm/wasm/wllama.wasm", "dist/vendor/wllama/wllama.wasm"),\n  cp("node_modules/@wllama/wllama/LICENCE", "dist/vendor/wllama/LICENSE"),
   cp("THIRD_PARTY_NOTICES.md", "dist/THIRD_PARTY_NOTICES.md"),
   cp("LICENSE.md", "dist/LICENSE.md"),
   cp("PRIVACY.md", "dist/PRIVACY.md"),
