@@ -47,6 +47,11 @@ export interface PageLingoMtStatus {
   error?: string;
   runtimePhase: PageLingoMtRuntimePhase;
   runtimeSince: number;
+  crossOriginIsolated: boolean;
+  requestedThreads: number;
+  actualThreads: number;
+  lastLoadMs: number;
+  lastInferenceMs: number;
 }
 
 function plainText(html: string): string {
@@ -69,29 +74,10 @@ export class PageLingoMtClient implements TranslationProvider {
   #loadedBytes = 0;
   #totalBytes = PAGELINGO_MT_MODEL_SIZE;
   #lastError = "";
-  #phase = "idle";
-  #phaseSince = Date.now();
   #requestedThreads = 0;
   #actualThreads = 0;
   #lastLoadMs = 0;
   #lastInferenceMs = 0;
-
-  #setPhase(phase: string): void {
-    this.#phase = phase;
-    this.#phaseSince = Date.now();
-  }
-
-  #runtimeStatus() {
-    return {
-      phase: this.#phase,
-      phaseSince: this.#phaseSince,
-      crossOriginIsolated: Boolean(globalThis.crossOriginIsolated),
-      requestedThreads: this.#requestedThreads,
-      actualThreads: this.#actualThreads,
-      lastLoadMs: this.#lastLoadMs,
-      lastInferenceMs: this.#lastInferenceMs,
-    };
-  }
   #runtimePhase: PageLingoMtRuntimePhase = "idle";
   #runtimeSince = Date.now();
 
@@ -110,7 +96,11 @@ export class PageLingoMtClient implements TranslationProvider {
         modelSha256: PAGELINGO_MT_MODEL_SHA256,
         runtimePhase: this.#runtimePhase,
         runtimeSince: this.#runtimeSince,
-        ...this.#runtimeStatus(),
+        crossOriginIsolated: Boolean(globalThis.crossOriginIsolated),
+        requestedThreads: this.#requestedThreads,
+        actualThreads: this.#actualThreads,
+        lastLoadMs: this.#lastLoadMs,
+        lastInferenceMs: this.#lastInferenceMs,
         ...(this.#lastError ? { error: this.#lastError } : {}),
       };
     } catch (error) {
@@ -126,7 +116,11 @@ export class PageLingoMtClient implements TranslationProvider {
         modelSha256: PAGELINGO_MT_MODEL_SHA256,
         runtimePhase: this.#runtimePhase,
         runtimeSince: this.#runtimeSince,
-        ...this.#runtimeStatus(),
+        crossOriginIsolated: Boolean(globalThis.crossOriginIsolated),
+        requestedThreads: this.#requestedThreads,
+        actualThreads: this.#actualThreads,
+        lastLoadMs: this.#lastLoadMs,
+        lastInferenceMs: this.#lastInferenceMs,
         error: message,
       };
     }
@@ -238,6 +232,7 @@ export class PageLingoMtClient implements TranslationProvider {
     const encoded = encodeMtHtml(request.html);
     const engine = await this.#ensureLoaded();
     this.#setRuntimePhase("inference");
+    const inferenceStarted = performance.now();
     let response: any;
     try {
       response = await engine.createCompletion({
@@ -247,14 +242,13 @@ export class PageLingoMtClient implements TranslationProvider {
       top_k: 1,
         stream: false,
       });
+      this.#lastInferenceMs = performance.now() - inferenceStarted;
       this.#setRuntimePhase("ready");
     } catch (error) {
       this.#lastError = describeMtError(error);
       this.#setRuntimePhase("error");
       throw error;
     }
-    this.#lastInferenceMs = performance.now() - inferenceStarted;
-    this.#setPhase("validating");
     const raw = String(response?.choices?.[0]?.text ?? "").trim();
     const validation = validateMtOutput(encoded, raw);
     if (!validation.ok) {
@@ -279,7 +273,6 @@ export class PageLingoMtClient implements TranslationProvider {
         reason: quality.reasons.join(", ") || "MT quality validation failed",
       };
     }
-    this.#setPhase("ready");
     return { html: decoded, accepted: true };
   }
 
@@ -303,11 +296,15 @@ export class PageLingoMtClient implements TranslationProvider {
         },
       );
       const threads = Math.max(1, Math.min(8, Math.floor((navigator.hardwareConcurrency || 2) / 2) || 1));
+      this.#requestedThreads = threads;
+      const loadStarted = performance.now();
       await engine.loadModel(blobs, {
         n_ctx: 1536,
         n_threads: threads,
         n_gpu_layers: 0,
       });
+      this.#lastLoadMs = performance.now() - loadStarted;
+      this.#actualThreads = engine.getNumThreads();
       this.#wllama = engine;
       this.#setRuntimePhase("ready");
       return engine;
