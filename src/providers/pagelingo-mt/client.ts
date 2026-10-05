@@ -1,4 +1,5 @@
 import {
+  CacheManager,
   LoggerWithoutDebug,
   ModelManager,
   ModelValidationStatus,
@@ -18,6 +19,11 @@ import {
   mtRouteSupported,
   validateMtOutput,
 } from "./protocol";
+import {
+  PageLingoOpfsBackend,
+  describeMtError,
+  ensureMtStorageCapacity,
+} from "./opfs-backend";
 
 export const PAGELINGO_MT_ENGINE_ID = "pagelingo-mt";
 export const PAGELINGO_MT_MODEL_REPO = "kerberos255/PageLingo-Translate-1.8B";
@@ -45,7 +51,9 @@ function plainText(html: string): string {
 }
 
 export class PageLingoMtClient implements TranslationProvider {
+  readonly #cacheManager = new CacheManager([new PageLingoOpfsBackend() as any]);
   readonly #modelManager = new ModelManager({
+    cacheManager: this.#cacheManager,
     logger: LoggerWithoutDebug,
     parallelDownloads: 1,
   });
@@ -95,6 +103,7 @@ export class PageLingoMtClient implements TranslationProvider {
     this.#loadedBytes = 0;
     this.#totalBytes = PAGELINGO_MT_MODEL_SIZE;
     try {
+      await ensureMtStorageCapacity(PAGELINGO_MT_MODEL_SIZE + 64 * 1024 * 1024);
       const model = await this.#modelManager.getModelOrDownload(
         { url: PAGELINGO_MT_MODEL_URL },
         {
@@ -109,12 +118,12 @@ export class PageLingoMtClient implements TranslationProvider {
       this.#totalBytes = model.size;
       return await this.status();
     } catch (error) {
-      this.#lastError = error instanceof Error ? error.message : String(error);
+      this.#lastError = describeMtError(error);
       try {
         const model = await this.#findModel(true);
         if (model) await model.remove();
       } catch {}
-      throw error;
+      throw new Error(this.#lastError);
     } finally {
       this.#downloading = false;
     }
