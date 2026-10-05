@@ -228,6 +228,10 @@ export class PageLingoMtClient implements TranslationProvider {
       await engine.loadModel(model, {
         n_ctx: 1536,
         n_threads: threads,
+        // wllama v3 enables WebGPU by default. Firefox needs an explicit
+        // compatibility mode for that path; PageLingo's validated RC2 path is
+        // CPU/WASM, so keep production deterministic until WebGPU is tested.
+        n_gpu_layers: 0,
       });
       this.#wllama = engine;
       return engine;
