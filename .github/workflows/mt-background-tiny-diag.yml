@@ -1,0 +1,52 @@
+name: PageLingo MT tiny background diagnostic
+
+on:
+  push:
+    branches:
+      - fix/pagelingo-mt-runtime-keepalive-20261005
+    paths:
+      - "src/background.ts"
+      - "src/providers/pagelingo-mt/client.ts"
+      - "tests/mt_background_wllama_smoke.py"
+      - ".github/workflows/mt-background-tiny-diag.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tiny-background:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - name: Package XPI
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("dist/manifest.json")
+          m=json.loads(p.read_text())
+          perms=m["browser_specific_settings"]["gecko"]["data_collection_permissions"]
+          perms["required"]=["websiteContent"]
+          perms["optional"]=["authenticationInfo"]
+          p.write_text(json.dumps(m,ensure_ascii=False,indent=2)+"\n")
+          PY
+          npx web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest
+          PACKAGE="$(find artifacts -maxdepth 1 -type f -name '*.zip' | head -n1)"
+          cp "$PACKAGE" artifacts/pagelingo-tiny-diag.xpi
+      - uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+      - uses: browser-actions/setup-geckodriver@latest
+      - run: python -m pip install --disable-pip-version-check selenium==4.35.0
+      - name: Run tiny wllama in extension background
+        run: python tests/mt_background_wllama_smoke.py artifacts/pagelingo-tiny-diag.xpi
