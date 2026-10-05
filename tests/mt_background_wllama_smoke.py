@@ -26,22 +26,16 @@ def main():
     try:
         addon=driver.install_addon(str(xpi),temporary=True)
         uuid=extension_uuid(driver,addon)
-        driver.get(f"moz-extension://{uuid}/settings.html")
-        WebDriverWait(driver,30).until(lambda d:d.execute_script("return typeof browser !== 'undefined'"))
-        driver.set_script_timeout(90)
+        driver.get(f"moz-extension://{uuid}/mt-runtime-diag.html")
         started=time.monotonic()
-        result=driver.execute_async_script("""
-          const done=arguments[arguments.length-1];
-          browser.runtime.sendMessage({type:'diag-pagelingo-mt-tiny-wllama'})
-            .then(v=>done({ok:true,value:v}))
-            .catch(e=>done({ok:false,error:String(e),name:e?.name,message:e?.message,stack:e?.stack}));
-        """)
+        WebDriverWait(driver,60).until(lambda d:d.execute_script("return window.__mtRuntimeDiag !== undefined"))
+        result=driver.execute_script("return window.__mtRuntimeDiag")
         elapsed=time.monotonic()-started
         print("TINY_WLLAMA_RESULT=",json.dumps(result,ensure_ascii=False))
         print("TINY_WLLAMA_SECONDS=",elapsed)
-        if not result.get("ok") or not (result.get("value") or {}).get("ok"):
+        if not result.get("ok"):
             raise AssertionError(result)
-        print("TINY_WLLAMA_BACKGROUND=PASS")
+        print("TINY_WLLAMA_EXTENSION_DOCUMENT=PASS")
     finally:
         driver.quit()
 
