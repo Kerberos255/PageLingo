@@ -33,6 +33,8 @@ export const PAGELINGO_MT_MODEL_URL =
 export const PAGELINGO_MT_MODEL_SIZE = 1_298_755_616;
 export const PAGELINGO_MT_MODEL_SHA256 = "8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc";
 
+export type PageLingoMtRuntimePhase = "idle" | "opening-cache" | "loading-wasm" | "ready" | "inference" | "error";
+
 export interface PageLingoMtStatus {
   installed: boolean;
   valid: boolean;
@@ -43,8 +45,8 @@ export interface PageLingoMtStatus {
   modelFile: string;
   modelSha256: string;
   error?: string;
-  runtimePhase?: "idle" | "opening-cache" | "loading-wasm" | "ready" | "inference" | "error";
-  runtimeSince?: number;
+  runtimePhase: PageLingoMtRuntimePhase;
+  runtimeSince: number;
 }
 
 function plainText(html: string): string {
@@ -67,7 +69,7 @@ export class PageLingoMtClient implements TranslationProvider {
   #loadedBytes = 0;
   #totalBytes = PAGELINGO_MT_MODEL_SIZE;
   #lastError = "";
-  #runtimePhase: PageLingoMtStatus["runtimePhase"] = "idle";
+  #runtimePhase: PageLingoMtRuntimePhase = "idle";
   #runtimeSince = Date.now();
 
   async status(): Promise<PageLingoMtStatus> {
@@ -266,7 +268,7 @@ export class PageLingoMtClient implements TranslationProvider {
     }
   }
 
-  #setRuntimePhase(phase: NonNullable<PageLingoMtStatus["runtimePhase"]>): void {
+  #setRuntimePhase(phase: PageLingoMtRuntimePhase): void {
     if (this.#runtimePhase === phase) return;
     this.#runtimePhase = phase;
     this.#runtimeSince = Date.now();
