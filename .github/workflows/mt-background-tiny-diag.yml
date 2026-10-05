@@ -52,10 +52,15 @@ jobs:
           npx web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest
           PACKAGE="$(find artifacts -maxdepth 1 -type f -name '*.zip' | head -n1)"
           cp "$PACKAGE" artifacts/pagelingo-tiny-diag.xpi
+      - name: Download tiny GGUF outside Firefox
+        shell: bash
+        run: |
+          curl -L --fail --retry 3 --retry-delay 2             -o artifacts/tiny.gguf             "https://huggingface.co/ggml-org/tiny-llamas/resolve/main/stories260K.gguf"
+          test "$(stat -c%s artifacts/tiny.gguf)" -gt 100000
       - uses: browser-actions/setup-firefox@v1
         with:
           firefox-version: latest
       - uses: browser-actions/setup-geckodriver@latest
       - run: python -m pip install --disable-pip-version-check selenium==4.35.0
       - name: Run tiny wllama in extension document
-        run: python tests/mt_background_wllama_smoke.py artifacts/pagelingo-tiny-diag.xpi
+        run: python tests/mt_background_wllama_smoke.py artifacts/pagelingo-tiny-diag.xpi artifacts/tiny.gguf
