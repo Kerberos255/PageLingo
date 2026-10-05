@@ -42,6 +42,7 @@ import {
 } from "./shared/translation-engine-settings";
 import { PageLingoMtClient } from "./providers/pagelingo-mt/client";
 import { mtRouteSupported } from "./providers/pagelingo-mt/protocol";
+import { keepEventPageAlive } from "./shared/event-page-keepalive";
 
 const bergamot = new BergamotClient();
 const pagelingoMt = new PageLingoMtClient();
@@ -430,7 +431,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const engineState = await currentTranslationEngineState();
       if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
         const mtRequest = { html: request.html, sourceLanguage, targetLanguage, terminology };
-        const mtResult = await pagelingoMt.translateHtmlChecked(mtRequest);
+        const mtResult = await keepEventPageAlive(pagelingoMt.translateHtmlChecked(mtRequest), "mt-translate");
         if (mtResult.accepted) return { ok: true, html: mtResult.html, engine: PAGELINGO_MT_ENGINE_ID };
         const overrides = await currentOverrides();
         const route = routeFor(sourceLanguage, targetLanguage, overrides);
@@ -604,7 +605,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     }
 
     if (message.type === "download-pagelingo-mt") {
-      return { ok: true, mt: await pagelingoMt.download() };
+      return { ok: true, mt: await keepEventPageAlive(pagelingoMt.download(), "mt-download") };
     }
 
     if (message.type === "delete-pagelingo-mt") {
