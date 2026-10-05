@@ -41,7 +41,7 @@ jobs:
           perms=m["browser_specific_settings"]["gecko"]["data_collection_permissions"]
           perms["required"]=["websiteContent"]
           perms["optional"]=["authenticationInfo"]
-          p.write_text(json.dumps(m,ensure_ascii=False,indent=2)+"\\n")
+          p.write_text(json.dumps(m,ensure_ascii=False,indent=2)+chr(10))
           PY
           npx web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest
           PACKAGE="$(find artifacts -maxdepth 1 -type f -name '*.zip' | head -n1)"
