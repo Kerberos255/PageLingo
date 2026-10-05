@@ -94,7 +94,7 @@ describe("RuntimeMessageProvider batching", () => {
 
 
   it("holds an extension view while a long single translation is pending", async () => {
-    let finish: ((value: unknown) => void) | null = null;
+    let finish: (value: unknown) => void = () => { throw new Error("deferred resolver not initialized"); };
     const sendMessage = vi.fn((message: any) => {
       if (message.type !== "translate-html") throw new Error(`Unexpected message: ${message.type}`);
       return new Promise((resolve) => { finish = resolve; });
@@ -108,12 +108,12 @@ describe("RuntimeMessageProvider batching", () => {
 
     const provider = new RuntimeMessageProvider();
     const pending = provider.translateHtml({ html: "one", sourceLanguage: "en", targetLanguage: "zh-Hans" });
-    await new Promise((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
 
     const frame = document.querySelector<HTMLIFrameElement>('iframe[src*="mt-keepalive.html"]');
     expect(frame).not.toBeNull();
 
-    finish?.({ ok: true, html: "译:one" });
+    finish({ ok: true, html: "译:one" });
     await expect(pending).resolves.toBe("译:one");
     expect(document.querySelector('iframe[src*="mt-keepalive.html"]')).toBeNull();
   });
