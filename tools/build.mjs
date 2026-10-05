@@ -25,6 +25,7 @@ await build({
     content: "src/content.ts",
     popup: "src/popup.ts",
     options: "src/options.ts",
+    "mt-runtime-diag": "src/mt-runtime-diag.ts",
     "bergamot-worker": "src/workers/bergamot-worker.ts",
   },
   bundle: true,
