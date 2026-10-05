@@ -600,11 +600,11 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     }
 
     if (message.type === "get-pagelingo-mt-status") {
-      return { ok: true, status: await pagelingoMt.status() };
+      return { ok: true, mt: await pagelingoMt.status() };
     }
 
     if (message.type === "download-pagelingo-mt") {
-      return { ok: true, status: await pagelingoMt.download() };
+      return { ok: true, mt: await pagelingoMt.download() };
     }
 
     if (message.type === "delete-pagelingo-mt") {
@@ -613,7 +613,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         await setActiveTranslationEngine(LOCAL_TRANSLATION_ENGINE_ID);
         await refreshTranslationEngineState();
       }
-      return { ok: true, status: await pagelingoMt.remove(), state: await translationEngineStateForUi() };
+      return { ok: true, mt: await pagelingoMt.remove(), state: await translationEngineStateForUi() };
     }
 
     if (message.type === "get-language-catalog") {
