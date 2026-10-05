@@ -236,7 +236,7 @@ export class PageLingoMtClient implements TranslationProvider {
     return models.find((model) => model.url === PAGELINGO_MT_MODEL_URL) ?? null;
   }
 
-  #modelIsExpected(model: Awaited<ReturnType<PageLingoMtClient["#findModel"]>> extends infer T ? Exclude<T, null> : never): boolean {
+  #modelIsExpected(model: any): boolean {
     if (model.validate() !== ModelValidationStatus.VALID) return false;
     if (model.size !== PAGELINGO_MT_MODEL_SIZE) return false;
     if (model.files.length !== 1) return false;
