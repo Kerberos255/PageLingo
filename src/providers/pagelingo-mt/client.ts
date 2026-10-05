@@ -69,6 +69,29 @@ export class PageLingoMtClient implements TranslationProvider {
   #loadedBytes = 0;
   #totalBytes = PAGELINGO_MT_MODEL_SIZE;
   #lastError = "";
+  #phase = "idle";
+  #phaseSince = Date.now();
+  #requestedThreads = 0;
+  #actualThreads = 0;
+  #lastLoadMs = 0;
+  #lastInferenceMs = 0;
+
+  #setPhase(phase: string): void {
+    this.#phase = phase;
+    this.#phaseSince = Date.now();
+  }
+
+  #runtimeStatus() {
+    return {
+      phase: this.#phase,
+      phaseSince: this.#phaseSince,
+      crossOriginIsolated: Boolean(globalThis.crossOriginIsolated),
+      requestedThreads: this.#requestedThreads,
+      actualThreads: this.#actualThreads,
+      lastLoadMs: this.#lastLoadMs,
+      lastInferenceMs: this.#lastInferenceMs,
+    };
+  }
   #runtimePhase: PageLingoMtRuntimePhase = "idle";
   #runtimeSince = Date.now();
 
@@ -87,6 +110,7 @@ export class PageLingoMtClient implements TranslationProvider {
         modelSha256: PAGELINGO_MT_MODEL_SHA256,
         runtimePhase: this.#runtimePhase,
         runtimeSince: this.#runtimeSince,
+        ...this.#runtimeStatus(),
         ...(this.#lastError ? { error: this.#lastError } : {}),
       };
     } catch (error) {
@@ -102,6 +126,7 @@ export class PageLingoMtClient implements TranslationProvider {
         modelSha256: PAGELINGO_MT_MODEL_SHA256,
         runtimePhase: this.#runtimePhase,
         runtimeSince: this.#runtimeSince,
+        ...this.#runtimeStatus(),
         error: message,
       };
     }
@@ -228,6 +253,8 @@ export class PageLingoMtClient implements TranslationProvider {
       this.#setRuntimePhase("error");
       throw error;
     }
+    this.#lastInferenceMs = performance.now() - inferenceStarted;
+    this.#setPhase("validating");
     const raw = String(response?.choices?.[0]?.text ?? "").trim();
     const validation = validateMtOutput(encoded, raw);
     if (!validation.ok) {
@@ -252,6 +279,7 @@ export class PageLingoMtClient implements TranslationProvider {
         reason: quality.reasons.join(", ") || "MT quality validation failed",
       };
     }
+    this.#setPhase("ready");
     return { html: decoded, accepted: true };
   }
 
