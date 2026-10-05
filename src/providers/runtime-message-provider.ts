@@ -22,6 +22,43 @@ interface PendingTranslation {
   reject: (error: Error) => void;
 }
 
+let mtKeepaliveFrame: HTMLIFrameElement | null = null;
+let mtKeepaliveUsers = 0;
+
+function acquireMtKeepaliveView(): () => void {
+  if (typeof document === "undefined" || typeof browser?.runtime?.getURL !== "function") return () => {};
+  mtKeepaliveUsers += 1;
+  if (!mtKeepaliveFrame || !mtKeepaliveFrame.isConnected) {
+    const frame = document.createElement("iframe");
+    frame.src = browser.runtime.getURL("mt-keepalive.html");
+    frame.setAttribute("aria-hidden", "true");
+    frame.tabIndex = -1;
+    Object.assign(frame.style, {
+      position: "fixed",
+      width: "1px",
+      height: "1px",
+      left: "-10000px",
+      top: "0",
+      opacity: "0",
+      pointerEvents: "none",
+      border: "0",
+    });
+    (document.documentElement || document.body).append(frame);
+    mtKeepaliveFrame = frame;
+  }
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    mtKeepaliveUsers = Math.max(0, mtKeepaliveUsers - 1);
+    if (mtKeepaliveUsers === 0) {
+      mtKeepaliveFrame?.remove();
+      mtKeepaliveFrame = null;
+    }
+  };
+}
+
 export class RuntimeMessageProvider implements TranslationProvider {
   readonly #pending: PendingTranslation[] = [];
   #flushQueued = false;
@@ -113,6 +150,7 @@ export class RuntimeMessageProvider implements TranslationProvider {
   }
 
   async #translateSingle(item: PendingTranslation): Promise<void> {
+    const releaseKeepalive = acquireMtKeepaliveView();
     try {
       const { signal: _signal, ...request } = item.request;
       const response = await sendRuntimeMessage<TranslationResponse>({ type: "translate-html", request });
@@ -122,6 +160,8 @@ export class RuntimeMessageProvider implements TranslationProvider {
       item.resolve(response.html);
     } catch (error) {
       item.reject(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      releaseKeepalive();
     }
   }
 }
