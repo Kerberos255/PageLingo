@@ -322,13 +322,18 @@ async function addConfig(): Promise<void> {
   }
 }
 
+async function refreshTranslationEngines(): Promise<void> {
+  const response = await sendRuntimeMessage<EngineResponse>({ type: "get-translation-engines" });
+  if (!response?.ok || !response.state) throw new Error(response?.error ?? "无法读取翻译引擎");
+  applyState(response.state);
+}
+
 export async function initializeTranslationEngines(): Promise<void> {
   typeSelect?.addEventListener("change", applyPreset);
   activeSelect?.addEventListener("change", () => void setActive(activeSelect.value));
   testButton?.addEventListener("click", () => void testConfig());
   addButton?.addEventListener("click", () => void addConfig());
+  window.addEventListener("pagelingo-mt-changed", () => void refreshTranslationEngines().catch((error) => notify(error instanceof Error ? error.message : String(error), 5000)));
   applyPreset();
-  const response = await sendRuntimeMessage<EngineResponse>({ type: "get-translation-engines" });
-  if (!response?.ok || !response.state) throw new Error(response?.error ?? "无法读取翻译引擎");
-  applyState(response.state);
+  await refreshTranslationEngines();
 }
