@@ -14,5 +14,13 @@ export interface TranslationRequest {
 
 export interface TranslationProvider {
   translateHtml(request: TranslationRequest): Promise<string>;
+  translateHtmlChecked?(request: TranslationRequest): Promise<CheckedTranslationResult>;
   supportsStructuralSplitting?(): Promise<boolean>;
+}
+
+
+export interface CheckedTranslationResult {
+  html: string;
+  accepted: boolean;
+  reason?: string;
 }
