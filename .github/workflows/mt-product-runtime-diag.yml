@@ -1,0 +1,70 @@
+name: PageLingo MT product runtime diagnostic
+
+on:
+  push:
+    branches:
+      - diag/pagelingo-mt-product-runtime-20261005
+    paths:
+      - "src/**"
+      - "public/**"
+      - "tests/mt_product_runtime_e2e.py"
+      - ".github/workflows/mt-product-runtime-diag.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pagelingo-mt-product-runtime-diag
+  cancel-in-progress: true
+
+jobs:
+  mt-product-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - name: Package diagnostic XPI
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("dist/manifest.json")
+          m=json.loads(p.read_text())
+          perms=m["browser_specific_settings"]["gecko"]["data_collection_permissions"]
+          perms["required"]=["websiteContent"]
+          perms["optional"]=["authenticationInfo"]
+          p.write_text(json.dumps(m,ensure_ascii=False,indent=2)+"\n")
+          PY
+          npx web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest
+          PACKAGE="$(find artifacts -maxdepth 1 -type f -name '*.zip' | head -n1)"
+          cp "$PACKAGE" artifacts/pagelingo-mt-product-runtime.xpi
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+      - uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+      - uses: browser-actions/setup-geckodriver@latest
+      - run: python -m pip install --disable-pip-version-check selenium==4.35.0
+      - name: Run real product MT path
+        run: python tests/mt_product_runtime_e2e.py artifacts/pagelingo-mt-product-runtime.xpi
+      - name: Upload diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pagelingo-mt-product-runtime-diag
+          path: |
+            artifacts/pagelingo-mt-product-runtime.xpi
+            artifacts/mt-product-runtime-result.json
+            artifacts/mt-product-runtime-after.png
+          if-no-files-found: warn
+          retention-days: 7
