@@ -1,4 +1,4 @@
-import type { TranslationRequest } from "../core/provider";
+import type { TranslationRequest } from "../../core/provider";
 
 export interface EncodedMtHtml {
   source: string;
