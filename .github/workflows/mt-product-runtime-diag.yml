@@ -3,7 +3,7 @@ name: PageLingo MT product runtime diagnostic
 on:
   push:
     branches:
-      - diag/pagelingo-mt-product-runtime-20261005
+      - fix/pagelingo-mt-runtime-keepalive-20261005
     paths:
       - "src/**"
       - "public/**"
