@@ -5,7 +5,7 @@ on:
     branches:
       - fix/pagelingo-mt-runtime-keepalive-20261005
     paths:
-      - "src/background.ts"
+      - "src/background.ts"\n      - "src/mt-runtime-diag.ts"\n      - "public/mt-runtime-diag.html"\n      - "tools/build.mjs"
       - "src/providers/pagelingo-mt/client.ts"
       - "tests/mt_background_wllama_smoke.py"
       - ".github/workflows/mt-background-tiny-diag.yml"
@@ -48,5 +48,5 @@ jobs:
           firefox-version: latest
       - uses: browser-actions/setup-geckodriver@latest
       - run: python -m pip install --disable-pip-version-check selenium==4.35.0
-      - name: Run tiny wllama in extension background
+      - name: Run tiny wllama in extension document
         run: python tests/mt_background_wllama_smoke.py artifacts/pagelingo-tiny-diag.xpi
