@@ -92,6 +92,32 @@ describe("RuntimeMessageProvider batching", () => {
     expect(sendMessage.mock.calls.slice(1).filter((call) => call[0].type === "translate-html")).toHaveLength(3);
   });
 
+
+  it("holds an extension view while a long single translation is pending", async () => {
+    let finish: ((value: unknown) => void) | null = null;
+    const sendMessage = vi.fn((message: any) => {
+      if (message.type !== "translate-html") throw new Error(`Unexpected message: ${message.type}`);
+      return new Promise((resolve) => { finish = resolve; });
+    });
+    vi.stubGlobal("browser", {
+      runtime: {
+        sendMessage,
+        getURL: (path: string) => `moz-extension://pagelingo-test/${path}`,
+      },
+    });
+
+    const provider = new RuntimeMessageProvider();
+    const pending = provider.translateHtml({ html: "one", sourceLanguage: "en", targetLanguage: "zh-Hans" });
+    await new Promise((resolve) => queueMicrotask(resolve));
+
+    const frame = document.querySelector<HTMLIFrameElement>('iframe[src*="mt-keepalive.html"]');
+    expect(frame).not.toBeNull();
+
+    finish?.({ ok: true, html: "译:one" });
+    await expect(pending).resolves.toBe("译:one");
+    expect(document.querySelector('iframe[src*="mt-keepalive.html"]')).toBeNull();
+  });
+
   it("reports structural splitting only for engines marked safe by the background", async () => {
     const sendMessage = vi.fn(async () => ({
       ok: true,
