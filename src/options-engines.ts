@@ -48,6 +48,8 @@ const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
   deepl: { name: "DeepL API", baseUrl: "https://api.deepl.com/v2" },
   gemini: { name: "Gemini API", baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-3.8-flash" },
   openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free" },
+  "opencode-go": { name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1", model: "deepseek-v4.1-flash" },
+  deepseek: { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
   "openai-compatible": { name: "OpenAI Compatible", baseUrl: "", model: "" },
   libretranslate: { name: "LibreTranslate", baseUrl: "https://libretranslate.com" },
   "custom-rest": {
@@ -65,6 +67,8 @@ const TYPE_LABELS: Record<ExternalTranslationEngineType, string> = {
   deepl: "DeepL API",
   gemini: "Gemini API",
   openrouter: "OpenRouter",
+  "opencode-go": "OpenCode Go",
+  deepseek: "DeepSeek",
   "openai-compatible": "OpenAI Compatible",
   libretranslate: "LibreTranslate",
   "custom-rest": "自定义 REST",
@@ -104,7 +108,7 @@ function currentType(): ExternalTranslationEngineType {
 
 function updateConditionalFields(): void {
   const type = currentType();
-  const llm = type === "gemini" || type === "openrouter" || type === "openai-compatible";
+  const llm = type === "gemini" || type === "openrouter" || type === "opencode-go" || type === "deepseek" || type === "openai-compatible";
   for (const field of conditionalFields) {
     const kind = field.dataset.engineField;
     const visible = kind === "model" ? llm || type === "custom-rest"
