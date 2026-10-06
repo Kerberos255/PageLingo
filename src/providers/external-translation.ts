@@ -17,7 +17,7 @@ export interface ExternalTranslationRequest {
 
 const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. Output only the translated HTML. Do not use Markdown or add explanations.";
 const EXTERNAL_REQUEST_TIMEOUT_MS = 30_000;
-const OPENCODE_GO_SESSION_ID = crypto.randomUUID();
+const OPENCODE_GO_SESSION_ID = "pagelingo";
 
 function trimSlash(value: string): string {
   return value.replace(/\/+$/, "");
@@ -257,7 +257,13 @@ function isOpenCodeGoUrl(value: string): boolean {
 }
 
 async function translateOpenAiCompatible(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
-  const fallback = config.type === "openrouter" ? "https://openrouter.ai/api/v1" : "";
+  const fallback = config.type === "openrouter"
+    ? "https://openrouter.ai/api/v1"
+    : config.type === "opencode-go"
+      ? "https://opencode.ai/zen/go/v1"
+      : config.type === "deepseek"
+        ? "https://api.deepseek.com"
+        : "";
   const base = requireBaseUrl(config, fallback);
   const endpoint = base.endsWith("/chat/completions") ? base : `${base}/chat/completions`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -384,6 +390,8 @@ export async function translateWithExternalEngine(
     case "libretranslate": translated = await translateLibre(config, request); break;
     case "gemini": translated = await translateGemini(config, request); break;
     case "openrouter":
+    case "opencode-go":
+    case "deepseek":
     case "openai-compatible": translated = await translateOpenAiCompatible(config, request); break;
     case "custom-rest": translated = await translateCustomRest(config, request); break;
   }
