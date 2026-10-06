@@ -19,3 +19,12 @@ export async function hasExternalTranslationConsent(hasApiKey: boolean): Promise
 export async function requestExternalTranslationConsent(hasApiKey: boolean): Promise<boolean> {
   return browser.permissions.request(externalTranslationPermissionSpec(hasApiKey));
 }
+
+
+function authenticationPermissionSpec(): FirefoxPermissionsWithDataCollection {
+  return { data_collection: ["authenticationInfo"] };
+}
+
+export async function requestExternalAuthenticationConsent(): Promise<boolean> {
+  return browser.permissions.request(authenticationPermissionSpec());
+}
