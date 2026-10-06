@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { translateWithExternalEngine, validateTranslatedHtml } from "../src/providers/external-translation";
+import { listExternalTranslationModels, translateWithExternalEngine, validateTranslatedHtml } from "../src/providers/external-translation";
 import type { TranslationEngineConfig } from "../src/shared/translation-engine-settings";
 
 function config(overrides: Partial<TranslationEngineConfig> = {}): TranslationEngineConfig {
@@ -95,6 +95,137 @@ describe("external translation HTML safety", () => {
       ],
     });
     expect(html).toBe("你好 <strong>世界</strong>");
+  });
+
+
+  it("adds a stable x-opencode-session header for OpenCode Go", async () => {
+    const sessions: string[] = [];
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer test-key");
+      const session = headers["x-opencode-session"];
+      expect(session).toBe("pagelingo");
+      if (!session) throw new Error("missing x-opencode-session");
+      sessions.push(session);
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "你好" } }],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const engine = config({
+      type: "opencode-go",
+      baseUrl: "https://opencode.ai/zen/go/v1",
+      model: "deepseek-v4.1-flash",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    });
+
+    await translateWithExternalEngine(engine, {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    await translateWithExternalEngine(engine, {
+      html: "World",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0]).toBe(sessions[1]);
+  });
+
+
+  it("discovers OpenCode Go models with the required session header", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://opencode.ai/zen/go/v1/models");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer test-key");
+      expect(headers["x-opencode-session"]).toBe("pagelingo");
+      return new Response(JSON.stringify({
+        object: "list",
+        data: [
+          { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", owned_by: "opencode" },
+          { id: "hy4-preview", owned_by: "opencode" },
+        ],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    const models = await listExternalTranslationModels(config({
+      type: "opencode-go",
+      baseUrl: "https://opencode.ai/zen/go/v1",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }));
+    expect(models.map((model) => model.id)).toEqual(["deepseek-v4.1-flash", "hy4-preview"]);
+    expect(models[0]?.name).toBe("DeepSeek V4.1 Flash");
+  });
+
+  it("discovers DeepSeek models and keeps picker metadata", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://api.deepseek.com/models");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer test-key");
+      return new Response(JSON.stringify({
+        object: "list",
+        data: [{
+          id: "deepseek-flash",
+          name: "DeepSeek-V4.1-Flash",
+          owned_by: "deepseek",
+          context_window: 1048576,
+          max_output_tokens: 393216,
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    const models = await listExternalTranslationModels(config({
+      type: "deepseek",
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-flash",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }));
+    expect(models).toEqual([{
+      id: "deepseek-flash",
+      name: "DeepSeek-V4.1-Flash",
+      ownedBy: "deepseek",
+      contextWindow: 1048576,
+      maxOutputTokens: 393216,
+    }]);
+  });
+
+  it("surfaces the provider error message for HTTP failures", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      type: "error",
+      error: {
+        type: "MissingSessionID",
+        message: "Request is missing x-opencode-session and cannot be routed efficiently.",
+      },
+    }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    })));
+
+    await expect(translateWithExternalEngine(config({
+      type: "openai-compatible",
+      baseUrl: "https://example.invalid/v1",
+      model: "test-model",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    })).rejects.toThrow(/HTTP 400.*missing x-opencode-session/i);
   });
 
   it("sends Microsoft Translator HTML requests with key and optional region", async () => {

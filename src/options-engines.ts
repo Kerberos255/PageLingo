@@ -1,5 +1,5 @@
 import { sendRuntimeMessage } from "./shared/runtime-message";
-import { requestExternalTranslationConsent } from "./shared/data-consent";
+import { requestExternalAuthenticationConsent, requestExternalTranslationConsent } from "./shared/data-consent";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
   PAGELINGO_MT_ENGINE_ID,
@@ -26,10 +26,19 @@ interface EngineUiState {
   };
 }
 
+interface ModelInfo {
+  id: string;
+  name?: string | undefined;
+  ownedBy?: string | undefined;
+  contextWindow?: number | undefined;
+  maxOutputTokens?: number | undefined;
+}
+
 interface EngineResponse {
   ok?: boolean;
   state?: EngineUiState;
   preview?: string;
+  models?: ModelInfo[];
   error?: string;
 }
 
@@ -48,6 +57,8 @@ const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
   deepl: { name: "DeepL API", baseUrl: "https://api.deepl.com/v2" },
   gemini: { name: "Gemini API", baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-3.8-flash" },
   openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free" },
+  "opencode-go": { name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1", model: "deepseek-v4.1-flash" },
+  deepseek: { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
   "openai-compatible": { name: "OpenAI Compatible", baseUrl: "", model: "" },
   libretranslate: { name: "LibreTranslate", baseUrl: "https://libretranslate.com" },
   "custom-rest": {
@@ -65,6 +76,8 @@ const TYPE_LABELS: Record<ExternalTranslationEngineType, string> = {
   deepl: "DeepL API",
   gemini: "Gemini API",
   openrouter: "OpenRouter",
+  "opencode-go": "OpenCode Go",
+  deepseek: "DeepSeek",
   "openai-compatible": "OpenAI Compatible",
   libretranslate: "LibreTranslate",
   "custom-rest": "自定义 REST",
@@ -86,8 +99,22 @@ const testButton = document.querySelector<HTMLButtonElement>("#test-translation-
 const addButton = document.querySelector<HTMLButtonElement>("#add-translation-engine");
 const conditionalFields = Array.from(document.querySelectorAll<HTMLElement>("[data-engine-field]"));
 const saveStatus = document.querySelector<HTMLElement>("#save-status");
+const getModelsButton = document.querySelector<HTMLButtonElement>("#get-engine-models");
+const modelPickerDialog = document.querySelector<HTMLDialogElement>("#model-picker-dialog");
+const modelPickerCount = document.querySelector<HTMLElement>("#model-picker-count");
+const modelPickerSearch = document.querySelector<HTMLInputElement>("#model-picker-search");
+const modelPickerList = document.querySelector<HTMLElement>("#model-picker-list");
+const modelPickerEmpty = document.querySelector<HTMLElement>("#model-picker-empty");
+const refreshModelPickerButton = document.querySelector<HTMLButtonElement>("#refresh-model-picker");
+const cancelModelPickerButton = document.querySelector<HTMLButtonElement>("#cancel-model-picker");
+const closeModelPickerButton = document.querySelector<HTMLButtonElement>("#close-model-picker");
+const selectModelPickerButton = document.querySelector<HTMLButtonElement>("#select-model-picker");
 
 let engineState: EngineUiState = { activeEngineId: LOCAL_TRANSLATION_ENGINE_ID, engines: [] };
+let modelPickerModels: ModelInfo[] = [];
+let selectedPickerModel = "";
+let modelPickerLoading = false;
+let modelPickerError = "";
 
 function notify(message: string, timeout = 2200): void {
   if (!saveStatus) return;
@@ -102,9 +129,13 @@ function currentType(): ExternalTranslationEngineType {
   return value && value in PRESETS ? value : "microsoft";
 }
 
+function supportsModelDiscovery(type: ExternalTranslationEngineType): boolean {
+  return type === "openrouter" || type === "opencode-go" || type === "deepseek" || type === "openai-compatible";
+}
+
 function updateConditionalFields(): void {
   const type = currentType();
-  const llm = type === "gemini" || type === "openrouter" || type === "openai-compatible";
+  const llm = type === "gemini" || type === "openrouter" || type === "opencode-go" || type === "deepseek" || type === "openai-compatible";
   for (const field of conditionalFields) {
     const kind = field.dataset.engineField;
     const visible = kind === "model" ? llm || type === "custom-rest"
@@ -114,6 +145,7 @@ function updateConditionalFields(): void {
             : true;
     field.hidden = !visible;
   }
+  if (getModelsButton) getModelsButton.hidden = !supportsModelDiscovery(type);
 }
 
 function applyPreset(): void {
@@ -286,6 +318,113 @@ async function removeEngine(id: string): Promise<void> {
   }
 }
 
+
+function renderModelPicker(): void {
+  if (!modelPickerList || !modelPickerCount || !modelPickerEmpty || !selectModelPickerButton) return;
+  const query = modelPickerSearch?.value.trim().toLocaleLowerCase() ?? "";
+  const filtered = query
+    ? modelPickerModels.filter((model) => model.id.toLocaleLowerCase().includes(query) || model.ownedBy?.toLocaleLowerCase().includes(query))
+    : modelPickerModels;
+
+  modelPickerCount.textContent = modelPickerLoading
+    ? "正在获取模型…"
+    : modelPickerError
+      ? "获取失败"
+      : query
+        ? `已加载 ${modelPickerModels.length} 个 · 显示 ${filtered.length} 个`
+        : `已加载 ${modelPickerModels.length} 个`;
+  modelPickerList.replaceChildren();
+
+  for (const model of filtered) {
+    const row = document.createElement("label");
+    row.className = `model-picker-item${selectedPickerModel === model.id ? " selected" : ""}`;
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "pagelingo-model-picker";
+    radio.value = model.id;
+    radio.checked = selectedPickerModel === model.id;
+    const copy = document.createElement("span");
+    copy.className = "model-picker-item-copy";
+    const title = document.createElement("strong");
+    title.textContent = model.name || model.id;
+    const idLine = document.createElement("small");
+    idLine.textContent = model.name && model.name !== model.id ? model.id : (model.ownedBy ? `提供方：${model.ownedBy}` : "可用模型");
+    copy.append(title, idLine);
+    if (model.contextWindow || model.maxOutputTokens) {
+      const details = document.createElement("small");
+      const parts: string[] = [];
+      if (model.contextWindow) parts.push(`上下文 ${model.contextWindow.toLocaleString()}`);
+      if (model.maxOutputTokens) parts.push(`最大输出 ${model.maxOutputTokens.toLocaleString()}`);
+      details.textContent = parts.join(" · ");
+      copy.append(details);
+    }
+    row.append(radio, copy);
+    if (model.id === modelInput?.value.trim()) {
+      const current = document.createElement("span");
+      current.className = "model-picker-current";
+      current.textContent = "当前";
+      row.append(current);
+    }
+    radio.addEventListener("change", () => {
+      selectedPickerModel = model.id;
+      renderModelPicker();
+    });
+    modelPickerList.append(row);
+  }
+
+  modelPickerEmpty.hidden = modelPickerLoading || filtered.length > 0;
+  if (!modelPickerLoading && filtered.length === 0) {
+    modelPickerEmpty.textContent = modelPickerError || (query ? "没有匹配的模型" : "没有可用模型");
+  }
+  selectModelPickerButton.disabled = !selectedPickerModel;
+  if (refreshModelPickerButton) refreshModelPickerButton.disabled = modelPickerLoading;
+}
+
+async function loadModelPickerModels(): Promise<void> {
+  if (!modelPickerDialog) return;
+  modelPickerLoading = true;
+  modelPickerError = "";
+  modelPickerModels = [];
+  selectedPickerModel = modelInput?.value.trim() ?? "";
+  if (modelPickerSearch) modelPickerSearch.value = "";
+  renderModelPicker();
+  try {
+    const config = collectConfig();
+    if (!supportsModelDiscovery(config.type)) throw new Error("当前类型不支持自动获取模型");
+    if (config.apiKey) {
+      const granted = await requestExternalAuthenticationConsent();
+      if (!granted) throw new Error("未授权向模型服务发送 API Key");
+    }
+    const response = await sendRuntimeMessage<EngineResponse>({ type: "list-translation-models", config });
+    if (!response?.ok || !Array.isArray(response.models)) throw new Error(response?.error ?? "获取模型失败");
+    modelPickerModels = response.models;
+    if (!modelPickerModels.some((model) => model.id === selectedPickerModel)) selectedPickerModel = "";
+  } catch (error) {
+    modelPickerModels = [];
+    modelPickerError = error instanceof Error ? error.message : String(error);
+  } finally {
+    modelPickerLoading = false;
+    renderModelPicker();
+  }
+}
+
+function openModelPicker(): void {
+  if (!modelPickerDialog || !supportsModelDiscovery(currentType())) return;
+  if (!modelPickerDialog.open) modelPickerDialog.showModal();
+  void loadModelPickerModels();
+}
+
+function closeModelPicker(): void {
+  modelPickerDialog?.close();
+}
+
+function chooseModelPicker(): void {
+  if (!selectedPickerModel || !modelInput) return;
+  modelInput.value = selectedPickerModel;
+  closeModelPicker();
+  notify(`已选择模型 · ${selectedPickerModel}`);
+}
+
 async function testConfig(): Promise<void> {
   if (!testButton) return;
   testButton.disabled = true;
@@ -330,6 +469,15 @@ async function refreshTranslationEngines(): Promise<void> {
 
 export async function initializeTranslationEngines(): Promise<void> {
   typeSelect?.addEventListener("change", applyPreset);
+  getModelsButton?.addEventListener("click", openModelPicker);
+  refreshModelPickerButton?.addEventListener("click", () => void loadModelPickerModels());
+  cancelModelPickerButton?.addEventListener("click", closeModelPicker);
+  closeModelPickerButton?.addEventListener("click", closeModelPicker);
+  selectModelPickerButton?.addEventListener("click", chooseModelPicker);
+  modelPickerSearch?.addEventListener("input", renderModelPicker);
+  modelPickerDialog?.addEventListener("click", (event) => {
+    if (event.target === modelPickerDialog) closeModelPicker();
+  });
   activeSelect?.addEventListener("change", () => void setActive(activeSelect.value));
   testButton?.addEventListener("click", () => void testConfig());
   addButton?.addEventListener("click", () => void addConfig());

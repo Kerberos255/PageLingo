@@ -29,6 +29,30 @@ class TranslationHandler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self) -> None:
+        if self.path == "/v1/models":
+            payload = json.dumps({
+                "object": "list",
+                "data": [
+                    {"id": "deepseek-flash", "name": "DeepSeek-V4.1-Flash", "owned_by": "fixture", "context_window": 1048576, "max_output_tokens": 393216},
+                    {"id": "deepseek-v4-pro", "name": "DeepSeek-V4-Pro", "owned_by": "fixture", "context_window": 1048576, "max_output_tokens": 393216},
+                    {"id": "deepseek-v4.1-flash", "name": "DeepSeek V4.1 Flash", "owned_by": "fixture"},
+                    {"id": "hy4-preview", "name": "Hy4 Preview", "owned_by": "fixture"},
+                    {"id": "kimi-k2.6", "name": "Kimi K2.6", "owned_by": "fixture"},
+                    {"id": "longcat-2.0", "name": "LongCat 2.0", "owned_by": "fixture"},
+                    {"id": "mimo-v2.5", "name": "MiMo V2.5", "owned_by": "fixture"},
+                    {"id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro", "owned_by": "fixture"},
+                    {"id": "qwen3.8-flash", "name": "Qwen3.8 Flash", "owned_by": "fixture"},
+                    {"id": "qwen3.8-max", "name": "Qwen3.8 Max", "owned_by": "fixture"},
+                    {"id": "test-alpha", "owned_by": "fixture"},
+                    {"id": "test-beta", "owned_by": "fixture"}
+                ]
+            }).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         if self.path != "/dynamic-ui":
             self.send_response(404)
             self.end_headers()
@@ -117,11 +141,11 @@ window.__runChurn=()=>{
         self.wfile.write(payload)
 
 
-def start_server() -> tuple[ThreadingHTTPServer, str, str]:
+def start_server() -> tuple[ThreadingHTTPServer, str, str, str]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), TranslationHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
-    return server, f"{base}/translate", f"{base}/dynamic-ui"
+    return server, f"{base}/translate", f"{base}/dynamic-ui", f"{base}/v1"
 
 
 def extension_uuid(driver: webdriver.Firefox, addon_id: str) -> str:
@@ -185,15 +209,28 @@ def translate_tab(driver: webdriver.Firefox, extension_handle: str, url_prefix: 
         """
         const prefix = arguments[0];
         const done = arguments[arguments.length - 1];
-        browser.tabs.query({}).then((tabs) => {
+        const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
+        browser.tabs.query({}).then(async (tabs) => {
           const candidates = tabs.filter((item) => item.url && item.url.startsWith(prefix));
           const tab = candidates[candidates.length - 1];
           if (!tab || tab.id === undefined) throw new Error('Target tab not found: ' + prefix);
-          return browser.tabs.sendMessage(tab.id, {
-            type: 'translate-page',
-            sourceLanguage: 'en',
-            targetLanguage: 'zh-Hans'
-          });
+          let lastError = null;
+          for (let attempt=0; attempt<30; attempt+=1) {
+            try {
+              const pong = await browser.tabs.sendMessage(tab.id, {type:'ping'});
+              if (pong?.ok === true) {
+                return browser.tabs.sendMessage(tab.id, {
+                  type: 'translate-page',
+                  sourceLanguage: 'en',
+                  targetLanguage: 'zh-Hans'
+                });
+              }
+            } catch (error) {
+              lastError = error;
+            }
+            await sleep(100);
+          }
+          throw lastError || new Error('PageLingo content script did not become ready');
         }).then((value) => done({ok:true,value}))
           .catch((error) => done({ok:false,error:String(error)}));
         """,
@@ -251,13 +288,14 @@ def main() -> None:
     if not xpi.is_file():
         raise SystemExit(f"XPI not found: {xpi}")
 
-    server, translation_url, fixture_url = start_server()
+    server, translation_url, fixture_url, model_base_url = start_server()
     options = Options()
     options.add_argument("-headless")
     firefox_binary = os.environ.get("FIREFOX_BINARY")
     if firefox_binary:
         options.binary_location = firefox_binary
     driver = webdriver.Firefox(options=options, service=Service(service_args=["--allow-system-access"]))
+    driver.set_window_size(1440, 1000)
     driver.set_page_load_timeout(90)
     driver.set_script_timeout(90)
 
@@ -271,6 +309,77 @@ def main() -> None:
         extension_handle = driver.current_window_handle
         driver.get(f"moz-extension://{uuid}/settings.html")
         WebDriverWait(driver, 30).until(lambda d: d.execute_script("return typeof browser !== 'undefined'"))
+
+        # Model picker UI: real extension runtime call against a local OpenAI-compatible /models fixture.
+        driver.execute_script("location.hash='engine'")
+        WebDriverWait(driver, 10).until(
+            lambda d: d.execute_script("return document.getElementById('engine')?.classList.contains('active')")
+        )
+        picker_setup = driver.execute_script(
+            """
+            const baseUrl=arguments[0];
+            const type=document.getElementById('engine-type');
+            type.value='openai-compatible';
+            type.dispatchEvent(new Event('change',{bubbles:true}));
+            document.getElementById('engine-base-url').value=baseUrl;
+            document.getElementById('engine-api-key').value='';
+            document.getElementById('engine-model').value='deepseek-v4-pro';
+            document.getElementById('get-engine-models').click();
+            return {
+              buttonHidden:document.getElementById('get-engine-models').hidden,
+              dialogOpen:document.getElementById('model-picker-dialog').open
+            };
+            """,
+            model_base_url,
+        )
+        if picker_setup.get("buttonHidden"):
+            raise AssertionError(f"Model picker button unexpectedly hidden: {picker_setup}")
+        WebDriverWait(driver, 10).until(
+            lambda d: d.execute_script(
+                "return document.querySelectorAll('#model-picker-list .model-picker-item').length >= 10"
+            )
+        )
+        picker_state = driver.execute_script(
+            """
+            const dialog=document.getElementById('model-picker-dialog');
+            return {
+              open:dialog.open,
+              count:document.querySelectorAll('#model-picker-list .model-picker-item').length,
+              label:document.getElementById('model-picker-count').textContent,
+              current:document.querySelector('#model-picker-list .model-picker-current')?.parentElement?.innerText || ''
+            };
+            """
+        )
+        if not picker_state.get("open") or picker_state.get("count", 0) < 10:
+            raise AssertionError(f"Model picker did not render model list: {picker_state}")
+        driver.save_screenshot(str(ARTIFACTS / "model-picker.png"))
+        print("Model picker:", picker_state)
+
+        driver.execute_script(
+            """
+            const search=document.getElementById('model-picker-search');
+            search.value='deepseek';
+            search.dispatchEvent(new Event('input',{bubbles:true}));
+            """
+        )
+        WebDriverWait(driver, 5).until(
+            lambda d: d.execute_script(
+                "return document.querySelectorAll('#model-picker-list .model-picker-item').length === 3"
+            )
+        )
+        driver.execute_script(
+            """
+            const radio=Array.from(document.querySelectorAll('#model-picker-list input[type=radio]'))
+              .find((item)=>item.value==='deepseek-flash');
+            if(!radio) throw new Error('deepseek-flash missing');
+            radio.click();
+            document.getElementById('select-model-picker').click();
+            """
+        )
+        chosen_model = driver.execute_script("return document.getElementById('engine-model').value")
+        if chosen_model != "deepseek-flash":
+            raise AssertionError(f"Model picker did not fill selected model: {chosen_model}")
+
         configure_extension(driver, extension_handle, translation_url)
 
         # 1) Deterministic high-mutation fixture: this catches observer feedback loops.

@@ -17,6 +17,7 @@ export interface ExternalTranslationRequest {
 
 const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. Output only the translated HTML. Do not use Markdown or add explanations.";
 const EXTERNAL_REQUEST_TIMEOUT_MS = 30_000;
+const OPENCODE_GO_SESSION_ID = "pagelingo";
 
 function trimSlash(value: string): string {
   return value.replace(/\/+$/, "");
@@ -94,12 +95,37 @@ function renderPrompt(config: TranslationEngineConfig, request: ExternalTranslat
     + terminologyPrompt(request.terminology);
 }
 
+function responseErrorDetail(raw: string): string {
+  const compact = raw.replace(/\s+/g, " ").trim();
+  if (!compact) return "";
+  try {
+    const parsed = JSON.parse(compact) as {
+      message?: unknown;
+      error?: unknown;
+    };
+    const nested = parsed?.error;
+    if (nested && typeof nested === "object") {
+      const outer = nested as { message?: unknown; error?: unknown };
+      if (typeof outer.message === "string" && outer.message.trim()) return outer.message.trim().slice(0, 600);
+      if (outer.error && typeof outer.error === "object") {
+        const inner = outer.error as { message?: unknown };
+        if (typeof inner.message === "string" && inner.message.trim()) return inner.message.trim().slice(0, 600);
+      }
+    }
+    if (typeof parsed?.message === "string" && parsed.message.trim()) return parsed.message.trim().slice(0, 600);
+  } catch {}
+  return compact.slice(0, 600);
+}
+
 async function jsonRequest(url: string, init: RequestInit): Promise<unknown> {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), EXTERNAL_REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
-    if (!response.ok) throw new Error(`翻译服务请求失败：HTTP ${response.status}`);
+    if (!response.ok) {
+      const detail = responseErrorDetail(await response.text());
+      throw new Error(`翻译服务请求失败：HTTP ${response.status}${detail ? ` · ${detail}` : ""}`);
+    }
     try {
       return await response.json();
     } catch {
@@ -221,13 +247,29 @@ async function translateLibre(config: TranslationEngineConfig, request: External
   return result.translatedText;
 }
 
+function isOpenCodeGoUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.hostname.toLowerCase() === "opencode.ai" && /^\/zen\/go\/v1(?:\/|$)/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 async function translateOpenAiCompatible(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
-  const fallback = config.type === "openrouter" ? "https://openrouter.ai/api/v1" : "";
+  const fallback = config.type === "openrouter"
+    ? "https://openrouter.ai/api/v1"
+    : config.type === "opencode-go"
+      ? "https://opencode.ai/zen/go/v1"
+      : config.type === "deepseek"
+        ? "https://api.deepseek.com"
+        : "";
   const base = requireBaseUrl(config, fallback);
   const endpoint = base.endsWith("/chat/completions") ? base : `${base}/chat/completions`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
   if (config.type === "openrouter") headers["X-OpenRouter-Title"] = "PageLingo";
+  if (isOpenCodeGoUrl(base)) headers["x-opencode-session"] = OPENCODE_GO_SESSION_ID;
   const result = await jsonRequest(endpoint, {
     method: "POST",
     headers,
@@ -336,6 +378,77 @@ async function translateCustomRest(config: TranslationEngineConfig, request: Ext
   return html;
 }
 
+
+export interface ExternalModelInfo {
+  id: string;
+  name?: string | undefined;
+  ownedBy?: string | undefined;
+  contextWindow?: number | undefined;
+  maxOutputTokens?: number | undefined;
+}
+
+function modelListEndpoint(base: string): string {
+  const trimmed = trimSlash(base);
+  if (trimmed.endsWith("/models")) return trimmed;
+  if (trimmed.endsWith("/chat/completions")) return `${trimmed.slice(0, -"/chat/completions".length)}/models`;
+  return `${trimmed}/models`;
+}
+
+export async function listExternalTranslationModels(config: TranslationEngineConfig): Promise<ExternalModelInfo[]> {
+  if (!["openrouter", "opencode-go", "deepseek", "openai-compatible"].includes(config.type)) {
+    throw new Error("当前翻译引擎不支持自动获取模型");
+  }
+  const fallback = config.type === "openrouter"
+    ? "https://openrouter.ai/api/v1"
+    : config.type === "opencode-go"
+      ? "https://opencode.ai/zen/go/v1"
+      : config.type === "deepseek"
+        ? "https://api.deepseek.com"
+        : "";
+  const base = requireBaseUrl(config, fallback);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+  if (config.type === "opencode-go" || isOpenCodeGoUrl(base)) headers["x-opencode-session"] = OPENCODE_GO_SESSION_ID;
+  if (config.type === "openrouter") headers["X-OpenRouter-Title"] = "PageLingo";
+  const result = await jsonRequest(modelListEndpoint(base), { method: "GET", headers }) as {
+    data?: Array<{
+      id?: unknown;
+      name?: unknown;
+      owned_by?: unknown;
+      ownedBy?: unknown;
+      context_window?: unknown;
+      contextWindow?: unknown;
+      max_output_tokens?: unknown;
+      maxOutputTokens?: unknown;
+    }>;
+  };
+  const models = Array.isArray(result.data)
+    ? result.data
+        .map((item) => ({
+          id: typeof item?.id === "string" ? item.id.trim() : "",
+          name: typeof item?.name === "string" ? item.name.trim() : undefined,
+          ownedBy: typeof item?.owned_by === "string"
+            ? item.owned_by
+            : typeof item?.ownedBy === "string"
+              ? item.ownedBy
+              : undefined,
+          contextWindow: typeof item?.context_window === "number"
+            ? item.context_window
+            : typeof item?.contextWindow === "number"
+              ? item.contextWindow
+              : undefined,
+          maxOutputTokens: typeof item?.max_output_tokens === "number"
+            ? item.max_output_tokens
+            : typeof item?.maxOutputTokens === "number"
+              ? item.maxOutputTokens
+              : undefined,
+        }))
+        .filter((item) => item.id)
+    : [];
+  if (!models.length) throw new Error("模型列表为空或返回格式不兼容");
+  return models.sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export async function translateWithExternalEngine(
   config: TranslationEngineConfig,
   request: ExternalTranslationRequest,
@@ -348,6 +461,8 @@ export async function translateWithExternalEngine(
     case "libretranslate": translated = await translateLibre(config, request); break;
     case "gemini": translated = await translateGemini(config, request); break;
     case "openrouter":
+    case "opencode-go":
+    case "deepseek":
     case "openai-compatible": translated = await translateOpenAiCompatible(config, request); break;
     case "custom-rest": translated = await translateCustomRest(config, request); break;
   }
