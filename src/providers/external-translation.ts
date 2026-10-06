@@ -381,7 +381,10 @@ async function translateCustomRest(config: TranslationEngineConfig, request: Ext
 
 export interface ExternalModelInfo {
   id: string;
+  name?: string;
   ownedBy?: string;
+  contextWindow?: number;
+  maxOutputTokens?: number;
 }
 
 function modelListEndpoint(base: string): string {
@@ -408,16 +411,36 @@ export async function listExternalTranslationModels(config: TranslationEngineCon
   if (config.type === "opencode-go" || isOpenCodeGoUrl(base)) headers["x-opencode-session"] = OPENCODE_GO_SESSION_ID;
   if (config.type === "openrouter") headers["X-OpenRouter-Title"] = "PageLingo";
   const result = await jsonRequest(modelListEndpoint(base), { method: "GET", headers }) as {
-    data?: Array<{ id?: unknown; owned_by?: unknown; ownedBy?: unknown }>;
+    data?: Array<{
+      id?: unknown;
+      name?: unknown;
+      owned_by?: unknown;
+      ownedBy?: unknown;
+      context_window?: unknown;
+      contextWindow?: unknown;
+      max_output_tokens?: unknown;
+      maxOutputTokens?: unknown;
+    }>;
   };
   const models = Array.isArray(result.data)
     ? result.data
         .map((item) => ({
           id: typeof item?.id === "string" ? item.id.trim() : "",
+          name: typeof item?.name === "string" ? item.name.trim() : undefined,
           ownedBy: typeof item?.owned_by === "string"
             ? item.owned_by
             : typeof item?.ownedBy === "string"
               ? item.ownedBy
+              : undefined,
+          contextWindow: typeof item?.context_window === "number"
+            ? item.context_window
+            : typeof item?.contextWindow === "number"
+              ? item.contextWindow
+              : undefined,
+          maxOutputTokens: typeof item?.max_output_tokens === "number"
+            ? item.max_output_tokens
+            : typeof item?.maxOutputTokens === "number"
+              ? item.maxOutputTokens
               : undefined,
         }))
         .filter((item) => item.id)
