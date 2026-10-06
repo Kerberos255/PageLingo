@@ -114,6 +114,7 @@ let engineState: EngineUiState = { activeEngineId: LOCAL_TRANSLATION_ENGINE_ID, 
 let modelPickerModels: ModelInfo[] = [];
 let selectedPickerModel = "";
 let modelPickerLoading = false;
+let modelPickerError = "";
 
 function notify(message: string, timeout = 2200): void {
   if (!saveStatus) return;
@@ -327,9 +328,11 @@ function renderModelPicker(): void {
 
   modelPickerCount.textContent = modelPickerLoading
     ? "正在获取模型…"
-    : query
-      ? `已加载 ${modelPickerModels.length} 个 · 显示 ${filtered.length} 个`
-      : `已加载 ${modelPickerModels.length} 个`;
+    : modelPickerError
+      ? "获取失败"
+      : query
+        ? `已加载 ${modelPickerModels.length} 个 · 显示 ${filtered.length} 个`
+        : `已加载 ${modelPickerModels.length} 个`;
   modelPickerList.replaceChildren();
 
   for (const model of filtered) {
@@ -371,7 +374,7 @@ function renderModelPicker(): void {
 
   modelPickerEmpty.hidden = modelPickerLoading || filtered.length > 0;
   if (!modelPickerLoading && filtered.length === 0) {
-    modelPickerEmpty.textContent = query ? "没有匹配的模型" : "没有可用模型";
+    modelPickerEmpty.textContent = modelPickerError || (query ? "没有匹配的模型" : "没有可用模型");
   }
   selectModelPickerButton.disabled = !selectedPickerModel;
   if (refreshModelPickerButton) refreshModelPickerButton.disabled = modelPickerLoading;
@@ -380,6 +383,7 @@ function renderModelPicker(): void {
 async function loadModelPickerModels(): Promise<void> {
   if (!modelPickerDialog) return;
   modelPickerLoading = true;
+  modelPickerError = "";
   modelPickerModels = [];
   selectedPickerModel = modelInput?.value.trim() ?? "";
   if (modelPickerSearch) modelPickerSearch.value = "";
@@ -397,11 +401,7 @@ async function loadModelPickerModels(): Promise<void> {
     if (!modelPickerModels.some((model) => model.id === selectedPickerModel)) selectedPickerModel = "";
   } catch (error) {
     modelPickerModels = [];
-    if (modelPickerEmpty) {
-      modelPickerEmpty.textContent = error instanceof Error ? error.message : String(error);
-      modelPickerEmpty.hidden = false;
-    }
-    if (modelPickerCount) modelPickerCount.textContent = "获取失败";
+    modelPickerError = error instanceof Error ? error.message : String(error);
   } finally {
     modelPickerLoading = false;
     renderModelPicker();
