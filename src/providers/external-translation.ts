@@ -381,10 +381,10 @@ async function translateCustomRest(config: TranslationEngineConfig, request: Ext
 
 export interface ExternalModelInfo {
   id: string;
-  name?: string;
-  ownedBy?: string;
-  contextWindow?: number;
-  maxOutputTokens?: number;
+  name?: string | undefined;
+  ownedBy?: string | undefined;
+  contextWindow?: number | undefined;
+  maxOutputTokens?: number | undefined;
 }
 
 function modelListEndpoint(base: string): string {
