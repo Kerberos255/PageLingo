@@ -104,8 +104,10 @@ describe("external translation HTML safety", () => {
       expect(String(url)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
       const headers = init?.headers as Record<string, string>;
       expect(headers.Authorization).toBe("Bearer test-key");
-      expect(headers["x-opencode-session"]).toMatch(/^[0-9a-f-]{36}$/i);
-      sessions.push(headers["x-opencode-session"]);
+      const session = headers["x-opencode-session"];
+      expect(session).toMatch(/^[0-9a-f-]{36}$/i);
+      if (!session) throw new Error("missing x-opencode-session");
+      sessions.push(session);
       return new Response(JSON.stringify({
         choices: [{ message: { content: "你好" } }],
       }), {
