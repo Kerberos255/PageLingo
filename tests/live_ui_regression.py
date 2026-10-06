@@ -209,15 +209,28 @@ def translate_tab(driver: webdriver.Firefox, extension_handle: str, url_prefix: 
         """
         const prefix = arguments[0];
         const done = arguments[arguments.length - 1];
-        browser.tabs.query({}).then((tabs) => {
+        const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
+        browser.tabs.query({}).then(async (tabs) => {
           const candidates = tabs.filter((item) => item.url && item.url.startsWith(prefix));
           const tab = candidates[candidates.length - 1];
           if (!tab || tab.id === undefined) throw new Error('Target tab not found: ' + prefix);
-          return browser.tabs.sendMessage(tab.id, {
-            type: 'translate-page',
-            sourceLanguage: 'en',
-            targetLanguage: 'zh-Hans'
-          });
+          let lastError = null;
+          for (let attempt=0; attempt<30; attempt+=1) {
+            try {
+              const pong = await browser.tabs.sendMessage(tab.id, {type:'ping'});
+              if (pong?.ok === true) {
+                return browser.tabs.sendMessage(tab.id, {
+                  type: 'translate-page',
+                  sourceLanguage: 'en',
+                  targetLanguage: 'zh-Hans'
+                });
+              }
+            } catch (error) {
+              lastError = error;
+            }
+            await sleep(100);
+          }
+          throw lastError || new Error('PageLingo content script did not become ready');
         }).then((value) => done({ok:true,value}))
           .catch((error) => done({ok:false,error:String(error)}));
         """,
