@@ -17,6 +17,7 @@ export interface ExternalTranslationRequest {
 
 const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. Output only the translated HTML. Do not use Markdown or add explanations.";
 const EXTERNAL_REQUEST_TIMEOUT_MS = 30_000;
+const OPENCODE_GO_SESSION_ID = crypto.randomUUID();
 
 function trimSlash(value: string): string {
   return value.replace(/\/+$/, "");
@@ -94,12 +95,37 @@ function renderPrompt(config: TranslationEngineConfig, request: ExternalTranslat
     + terminologyPrompt(request.terminology);
 }
 
+function responseErrorDetail(raw: string): string {
+  const compact = raw.replace(/\s+/g, " ").trim();
+  if (!compact) return "";
+  try {
+    const parsed = JSON.parse(compact) as {
+      message?: unknown;
+      error?: unknown;
+    };
+    const nested = parsed?.error;
+    if (nested && typeof nested === "object") {
+      const outer = nested as { message?: unknown; error?: unknown };
+      if (typeof outer.message === "string" && outer.message.trim()) return outer.message.trim().slice(0, 600);
+      if (outer.error && typeof outer.error === "object") {
+        const inner = outer.error as { message?: unknown };
+        if (typeof inner.message === "string" && inner.message.trim()) return inner.message.trim().slice(0, 600);
+      }
+    }
+    if (typeof parsed?.message === "string" && parsed.message.trim()) return parsed.message.trim().slice(0, 600);
+  } catch {}
+  return compact.slice(0, 600);
+}
+
 async function jsonRequest(url: string, init: RequestInit): Promise<unknown> {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), EXTERNAL_REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
-    if (!response.ok) throw new Error(`翻译服务请求失败：HTTP ${response.status}`);
+    if (!response.ok) {
+      const detail = responseErrorDetail(await response.text());
+      throw new Error(`翻译服务请求失败：HTTP ${response.status}${detail ? ` · ${detail}` : ""}`);
+    }
     try {
       return await response.json();
     } catch {
@@ -221,6 +247,15 @@ async function translateLibre(config: TranslationEngineConfig, request: External
   return result.translatedText;
 }
 
+function isOpenCodeGoUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.hostname.toLowerCase() === "opencode.ai" && /^\/zen\/go\/v1(?:\/|$)/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 async function translateOpenAiCompatible(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
   const fallback = config.type === "openrouter" ? "https://openrouter.ai/api/v1" : "";
   const base = requireBaseUrl(config, fallback);
@@ -228,6 +263,7 @@ async function translateOpenAiCompatible(config: TranslationEngineConfig, reques
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
   if (config.type === "openrouter") headers["X-OpenRouter-Title"] = "PageLingo";
+  if (isOpenCodeGoUrl(base)) headers["x-opencode-session"] = OPENCODE_GO_SESSION_ID;
   const result = await jsonRequest(endpoint, {
     method: "POST",
     headers,
