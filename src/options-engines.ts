@@ -28,7 +28,10 @@ interface EngineUiState {
 
 interface ModelInfo {
   id: string;
+  name?: string;
   ownedBy?: string;
+  contextWindow?: number;
+  maxOutputTokens?: number;
 }
 
 interface EngineResponse {
@@ -340,10 +343,18 @@ function renderModelPicker(): void {
     const copy = document.createElement("span");
     copy.className = "model-picker-item-copy";
     const title = document.createElement("strong");
-    title.textContent = model.id;
-    const meta = document.createElement("small");
-    meta.textContent = model.ownedBy ? `提供方：${model.ownedBy}` : "可用模型";
-    copy.append(title, meta);
+    title.textContent = model.name || model.id;
+    const idLine = document.createElement("small");
+    idLine.textContent = model.name && model.name !== model.id ? model.id : (model.ownedBy ? `提供方：${model.ownedBy}` : "可用模型");
+    copy.append(title, idLine);
+    if (model.contextWindow || model.maxOutputTokens) {
+      const details = document.createElement("small");
+      const parts: string[] = [];
+      if (model.contextWindow) parts.push(`上下文 ${model.contextWindow.toLocaleString()}`);
+      if (model.maxOutputTokens) parts.push(`最大输出 ${model.maxOutputTokens.toLocaleString()}`);
+      details.textContent = parts.join(" · ");
+      copy.append(details);
+    }
     row.append(radio, copy);
     if (model.id === modelInput?.value.trim()) {
       const current = document.createElement("span");
