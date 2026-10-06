@@ -9,6 +9,8 @@ export type ExternalTranslationEngineType =
   | "deepl"
   | "gemini"
   | "openrouter"
+  | "opencode-go"
+  | "deepseek"
   | "openai-compatible"
   | "libretranslate"
   | "custom-rest";
@@ -39,6 +41,8 @@ const ENGINE_TYPES = new Set<ExternalTranslationEngineType>([
   "deepl",
   "gemini",
   "openrouter",
+  "opencode-go",
+  "deepseek",
   "openai-compatible",
   "libretranslate",
   "custom-rest",
