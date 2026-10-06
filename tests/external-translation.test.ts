@@ -97,6 +97,74 @@ describe("external translation HTML safety", () => {
     expect(html).toBe("你好 <strong>世界</strong>");
   });
 
+
+  it("adds a stable x-opencode-session header for OpenCode Go", async () => {
+    const sessions: string[] = [];
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer test-key");
+      expect(headers["x-opencode-session"]).toMatch(/^[0-9a-f-]{36}$/i);
+      sessions.push(headers["x-opencode-session"]);
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "你好" } }],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const engine = config({
+      type: "openai-compatible",
+      baseUrl: "https://opencode.ai/zen/go/v1",
+      model: "deepseek-v4.1-flash",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    });
+
+    await translateWithExternalEngine(engine, {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    await translateWithExternalEngine(engine, {
+      html: "World",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0]).toBe(sessions[1]);
+  });
+
+  it("surfaces the provider error message for HTTP failures", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      type: "error",
+      error: {
+        type: "MissingSessionID",
+        message: "Request is missing x-opencode-session and cannot be routed efficiently.",
+      },
+    }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    })));
+
+    await expect(translateWithExternalEngine(config({
+      type: "openai-compatible",
+      baseUrl: "https://example.invalid/v1",
+      model: "test-model",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    })).rejects.toThrow(/HTTP 400.*missing x-opencode-session/i);
+  });
+
   it("sends Microsoft Translator HTML requests with key and optional region", async () => {
     const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       const endpoint = new URL(String(url));
