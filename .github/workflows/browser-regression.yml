@@ -77,6 +77,7 @@ jobs:
           name: pagelingo-browser-regression
           path: |
             artifacts/pagelingo-browser-regression.xpi
+            artifacts/model-picker.png
             artifacts/dynamic-ui-after.png
             artifacts/complex-splitter-after.png
             artifacts/openclaw-before.png
