@@ -28,10 +28,10 @@ interface EngineUiState {
 
 interface ModelInfo {
   id: string;
-  name?: string;
-  ownedBy?: string;
-  contextWindow?: number;
-  maxOutputTokens?: number;
+  name?: string | undefined;
+  ownedBy?: string | undefined;
+  contextWindow?: number | undefined;
+  maxOutputTokens?: number | undefined;
 }
 
 interface EngineResponse {
