@@ -29,7 +29,7 @@ import { handleImageRuntimeMessage, initializeImageTranslation } from "./image-t
 import { languageLabel, loadSettings, normalizeDetectedLanguage } from "./shared/settings";
 import { hasExternalTranslationConsent } from "./shared/data-consent";
 import { isLoopbackTranslationEndpoint } from "./shared/network-endpoint";
-import { translateWithExternalEngine } from "./providers/external-translation";
+import { listExternalTranslationModels, translateWithExternalEngine } from "./providers/external-translation";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
   PAGELINGO_MT_ENGINE_ID,
@@ -584,6 +584,13 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       await setActiveTranslationEngine(message.id);
       await refreshTranslationEngineState();
       return { ok: true, state: await translationEngineStateForUi() };
+    }
+
+    if (message.type === "list-translation-models") {
+      const config = normalizeTranslationEngineConfig(message.config);
+      if (!config) throw new Error("翻译引擎配置无效");
+      const models = await listExternalTranslationModels(config);
+      return { ok: true, models };
     }
 
     if (message.type === "test-translation-engine") {
