@@ -378,6 +378,54 @@ async function translateCustomRest(config: TranslationEngineConfig, request: Ext
   return html;
 }
 
+
+export interface ExternalModelInfo {
+  id: string;
+  ownedBy?: string;
+}
+
+function modelListEndpoint(base: string): string {
+  const trimmed = trimSlash(base);
+  if (trimmed.endsWith("/models")) return trimmed;
+  if (trimmed.endsWith("/chat/completions")) return `${trimmed.slice(0, -"/chat/completions".length)}/models`;
+  return `${trimmed}/models`;
+}
+
+export async function listExternalTranslationModels(config: TranslationEngineConfig): Promise<ExternalModelInfo[]> {
+  if (!["openrouter", "opencode-go", "deepseek", "openai-compatible"].includes(config.type)) {
+    throw new Error("当前翻译引擎不支持自动获取模型");
+  }
+  const fallback = config.type === "openrouter"
+    ? "https://openrouter.ai/api/v1"
+    : config.type === "opencode-go"
+      ? "https://opencode.ai/zen/go/v1"
+      : config.type === "deepseek"
+        ? "https://api.deepseek.com"
+        : "";
+  const base = requireBaseUrl(config, fallback);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+  if (config.type === "opencode-go" || isOpenCodeGoUrl(base)) headers["x-opencode-session"] = OPENCODE_GO_SESSION_ID;
+  if (config.type === "openrouter") headers["X-OpenRouter-Title"] = "PageLingo";
+  const result = await jsonRequest(modelListEndpoint(base), { method: "GET", headers }) as {
+    data?: Array<{ id?: unknown; owned_by?: unknown; ownedBy?: unknown }>;
+  };
+  const models = Array.isArray(result.data)
+    ? result.data
+        .map((item) => ({
+          id: typeof item?.id === "string" ? item.id.trim() : "",
+          ownedBy: typeof item?.owned_by === "string"
+            ? item.owned_by
+            : typeof item?.ownedBy === "string"
+              ? item.ownedBy
+              : undefined,
+        }))
+        .filter((item) => item.id)
+    : [];
+  if (!models.length) throw new Error("模型列表为空或返回格式不兼容");
+  return models.sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export async function translateWithExternalEngine(
   config: TranslationEngineConfig,
   request: ExternalTranslationRequest,
