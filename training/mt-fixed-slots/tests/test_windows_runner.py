@@ -26,6 +26,7 @@ class WindowsRunnerContract(unittest.TestCase):
         (self.kit / "data/manifest.json").write_text(json.dumps(data))
         # No ML imports: observe whether the launcher requests optimization in check mode.
         (self.kit / "train.py").write_text("import pathlib,sys\np=pathlib.Path(sys.argv[sys.argv.index('--output')+1]);p.mkdir();(p/'observed.json').write_text(__import__('json').dumps(sys.argv))\n")
+        shutil.copyfile(self.kit / "train.py", self.kit / "evaluate_gpu.py")
         manifest = {"source_commit": "test", "files": {}}
         for file in self.kit.rglob("*"):
             if file.is_file():
@@ -57,6 +58,13 @@ class WindowsRunnerContract(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires reviewed data", result.stderr)
 
+    def test_evaluation_plan_does_not_request_training(self):
+        result = self.run_kit("--kind", "eval", "--plan")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertTrue(plan["evaluation_requested"])
+        self.assertFalse(plan["training_requested"])
+
     @unittest.skipIf(sys.platform == "win32", "This isolated process test uses a disposable POSIX root; real Windows cache checks remain active")
     def test_check_never_requests_training_and_each_run_has_its_own_log(self):
         model = self.root / "models/hy-mt2-1.8b/model.safetensors"
@@ -70,6 +78,20 @@ class WindowsRunnerContract(unittest.TestCase):
             args = json.loads((run / "training/observed.json").read_text())
             self.assertNotIn("--train", args)
             self.assertTrue((run / "console.log").is_file())
+
+    @unittest.skipIf(sys.platform == "win32", "Uses a disposable POSIX root")
+    def test_evaluation_dispatches_to_generator_and_never_marks_training_complete(self):
+        model = self.root / "models/hy-mt2-1.8b/model.safetensors"
+        model.parent.mkdir(parents=True); model.write_bytes(b"not loaded")
+        result = self.run_kit("--kind", "eval")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run = next((self.root / "outputs").iterdir())
+        args = json.loads((run / "comparison/observed.json").read_text())
+        self.assertTrue(args[0].endswith("evaluate_gpu.py"))
+        self.assertNotIn("--train", args)
+        state = json.loads((run / "exit.json").read_text())
+        self.assertTrue(state["evaluation_completed"])
+        self.assertFalse(state["training_completed"])
 
 
 if __name__ == "__main__":

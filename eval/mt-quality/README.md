@@ -28,6 +28,8 @@
 - [来源、转换问题与环境](results/2026-10-22-provenance.json)
 - [GPU 接入后的训练步骤](../../training/mt-fixed-slots/README.md)
 
+主力机 12-step 流程探针已完成。随后进行的[三组 BF16 原始生成对照](../../training/mt-fixed-slots/windows/README.md#三组真实生成对照)使用无 grammar 的独立条件，并回放生产结构检查；该结果与本页旧 Q5/grammar 基线分开记录。
+
 ## 数据范围
 
 `cases.json` 包含 20 条新编留出样本、6 条此前真实网页摘录的失败诊断样本。保留原网页结构片段和来源 URL，本次在 JSDOM 中运行真实生产编码、解码与 PageTranslator 写回逻辑；本次没有重新运行 Firefox，也不是整站截图或排版测试。

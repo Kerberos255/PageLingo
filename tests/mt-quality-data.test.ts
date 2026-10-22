@@ -1,6 +1,6 @@
 import {readFileSync} from "node:fs";
 import {afterEach, describe, expect, it} from "vitest";
-import {canonicalSource, checkContentProbes, prepareQualityCase} from "../eval/mt-quality/protocol";
+import {canonicalSource, checkContentProbes, prepareQualityCase, qualityCallPlan, replayQualityCase} from "../eval/mt-quality/protocol";
 import type {QualityCase} from "../eval/mt-quality/protocol";
 import {PageTranslator} from "../src/core/page-translator";
 
@@ -69,5 +69,33 @@ describe("MT quality and training data contract", () => {
     const sample = evaluation.find(c => c.id === "h-guide-scope")!;
     expect(() => prepareQualityCase({...sample, reference_slots: ["整句译文"]})).toThrow(/one-to-one/);
     expect(() => prepareQualityCase({...sample, reference_slots: ["", "指南", "继续"]})).toThrow(/invalid text-slot/);
+  });
+
+  it("replays captured output through the production decoder, mapper and restore path", async () => {
+    const sample = evaluation.find(c => c.id === "h-client-only")!;
+    const p = prepareQualityCase(sample), target = p.target;
+    expect(qualityCallPlan(p.request)).toHaveLength(1); p.scope.remove();
+    const result = await replayQualityCase(sample, [{text: target, finish_reason: "stop"}]);
+    expect(result.displayed).toBe(true);
+    expect(result.original_structure_unchanged && result.code_unchanged && result.restored_exact).toBe(true);
+    expect(result.label_issues).toEqual([]);
+  });
+
+  it("retains a complete paragraph when recorded generation hit its limit", async () => {
+    const sample = evaluation.find(c => c.id === "h-client-only")!;
+    const p = prepareQualityCase(sample), target = p.target; p.scope.remove();
+    const result = await replayQualityCase(sample, [{text: target, finish_reason: "length"}]);
+    expect(result.displayed).toBe(false);
+    expect(result.translated_text).toContain("Only the client");
+    expect(result.restored_exact).toBe(true);
+  });
+
+  it("reports punctuation-only link text even when the current production decoder accepts the frame", async () => {
+    const sample = evaluation.find(c => c.id === "d-html-headings-05")!;
+    const p = prepareQualityCase(sample);
+    const target = p.target.replace(/⟦2⟧[^⟦]*⟦\/2⟧/u, "⟦2⟧。⟦/2⟧"); p.scope.remove();
+    const result = await replayQualityCase(sample, [{text: target, finish_reason: "stop"}]);
+    expect(result.displayed).toBe(true);
+    expect(result.label_issues.some(x => x.tag === "A" && x.translated === "。")).toBe(true);
   });
 });

@@ -3,6 +3,9 @@ import {collectTranslationRoots} from "../../src/core/dom-policy";
 import {serializeRichSegment, terminologyForText} from "../../src/core/rich-segment";
 import {contextualTerminology, translationContextForUrl} from "../../src/core/translation-context";
 import {decodeFixedMtText, encodeFixedMtText, fixedMtGrammar, fixedMtMaxTokens, fixedMtPrompt} from "../../src/providers/pagelingo-mt/fixed-text";
+import {planMtSentences} from "../../src/providers/pagelingo-mt/sentence-plan";
+import {inferMtHtml} from "../../src/providers/pagelingo-mt/inference";
+import {PageTranslator} from "../../src/core/page-translator";
 
 export interface ContentProbe {
   id: string;
@@ -68,4 +71,57 @@ export function checkContentProbes(sample: QualityCase, html: string) {
 
 export function canonicalSource(sample: QualityCase): string {
   return normalize(new DOMParser().parseFromString(sample.html, "text/html").body.textContent ?? "").toLowerCase();
+}
+
+export function qualityCallPlan(request: TranslationRequest) {
+  return planMtSentences(request).flatMap(html => {
+    const encoded = encodeFixedMtText(html);
+    return encoded.texts.length ? [{messages: [{role: "user", content: fixedMtPrompt(encoded, request)}],
+      grammar: fixedMtGrammar(encoded), max_tokens: fixedMtMaxTokens(encoded)}] : [];
+  });
+}
+
+export interface RecordedQualityCompletion {text: string; finish_reason: string}
+export async function replayQualityCase(sample: QualityCase, completions: RecordedQualityCompletion[]) {
+  const p = prepareQualityCase(sample);
+  const expected = qualityCallPlan(p.request);
+  const before = p.scope.innerHTML;
+  const nodes = [p.root, ...p.root.querySelectorAll("*")].map(node => ({node, children: [...node.childNodes],
+    attrs: JSON.stringify([...node.attributes].map(a => [a.name, a.value]))}));
+  const code = [...p.scope.querySelectorAll("code,kbd,samp,var")].map(node => ({node, html: node.outerHTML}));
+  const labels = [...p.scope.querySelectorAll("a,em,strong,b,i,mark")].map(node => ({node, source: node.textContent ?? ""}));
+  let index = 0, failure: string | undefined, checked: Awaited<ReturnType<typeof inferMtHtml>> | undefined;
+  const events: string[] = [];
+  const warn = console.warn; console.warn = (...args) => {events.push(args.map(String).join(" "));};
+  try {
+    const translator = new PageTranslator(document, {prefersWholeSentenceHtml: async () => true,
+      translateHtml: async (request: TranslationRequest) => {
+        checked = await inferMtHtml(request, async options => {
+          const plan = expected[index], row = completions[index++];
+          if (!plan || !row || JSON.stringify(options.messages) !== JSON.stringify(plan.messages)
+            || options.grammar !== plan.grammar || options.max_tokens !== plan.max_tokens) {
+            failure = "Recorded completion does not match the production call plan";
+            throw new Error(failure);
+          }
+          return {choices: [{finish_reason: row.finish_reason, message: {content: row.text}}]};
+        });
+        if (!checked.accepted) throw new Error(checked.reason);
+        return checked.html;
+      }}, {displayMode: "translation", concurrency: 1, sourceLanguage: "en", targetLanguage: "zh-Hans"});
+    await translator.translateAll(p.scope);
+    if (failure || !checked || (checked.accepted && index !== completions.length)) throw new Error(failure ?? "Incomplete replay");
+    const displayed = translator.translatedCount === 1;
+    const probes = displayed ? checkContentProbes(sample, checked.html) : null;
+    const result = {id: sample.id, split: sample.split, displayed, reason: checked.reason ?? null,
+      translated_text: p.scope.textContent, translated_html: p.scope.innerHTML,
+      original_structure_unchanged: nodes.every(x => x.node.isConnected && x.attrs === JSON.stringify([...x.node.attributes].map(a => [a.name, a.value]))
+        && x.children.length === x.node.childNodes.length && x.children.every((n, i) => n === x.node.childNodes[i])),
+      code_unchanged: code.every(x => x.node.isConnected && x.node.outerHTML === x.html),
+      content_probes: probes, all_content_probes_passed: displayed && probes!.every(x => x.passed),
+      label_issues: displayed ? labels.filter(x => /\p{L}/u.test(x.source) && !/[\p{L}\p{N}]/u.test(x.node.textContent ?? ""))
+        .map(x => ({tag: x.node.tagName, source: x.source, translated: x.node.textContent ?? ""})) : [],
+      consumed_completions: index, events};
+    translator.setDisplayMode("bilingual"); translator.setDisplayMode("translation"); translator.restore();
+    return {...result, restored_exact: p.scope.innerHTML === before};
+  } finally {console.warn = warn; p.scope.remove();}
 }

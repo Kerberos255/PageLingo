@@ -30,7 +30,7 @@ def validate_package(here):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True, type=Path)
-    parser.add_argument("--kind", choices=["check", "probe", "train"], default="probe")
+    parser.add_argument("--kind", choices=["check", "probe", "train", "eval", "eval-check"], default="probe")
     parser.add_argument("--plan", action="store_true", help="Validate staged files and print the launch plan without importing torch or creating outputs")
     args = parser.parse_args()
     root = args.root.resolve()
@@ -65,11 +65,13 @@ def main():
                 value = Path(os.environ[key]).resolve()
                 if not value.is_relative_to(root) or value.drive.upper() == "C:":
                     raise ValueError("Task cache escapes the non-C project root: " + key)
+    evaluation = args.kind in ["eval", "eval-check"]
     plan = {"kind": "pipeline_probe" if args.kind == "probe" else args.kind,
             "base": str(root / "models/hy-mt2-1.8b"), "base_revision": config["base_revision"],
             "source_commit": manifest["source_commit"], "rows": {s: data_manifest["files"][s]["rows"] for s in ["train", "validation"]},
             "max_optimizer_steps": config["probe_max_steps"] if args.kind == "probe" else None,
-            "training_requested": args.kind != "check", "training_executed": False,
+            "training_requested": args.kind in ["probe", "train"], "training_executed": False,
+            "evaluation_requested": evaluation,
             "python": sys.executable, "auto_install": False, "upload": False}
     print(json.dumps(plan, ensure_ascii=True, indent=2), flush=True)
     if args.plan:
@@ -82,12 +84,17 @@ def main():
     plan["run_directory"] = str(output)
     (output / "launch.json").write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     print("RUN_DIRECTORY=" + str(output), flush=True)
-    command = [sys.executable, "-u", str(here / "train.py"), "--data", str(here / "data"),
-               "--base", plan["base"], "--output", str(output / "training")]
-    if args.kind != "check":
-        command.append("--train")
-    if args.kind == "probe":
-        command += ["--probe", "--allow-unreviewed-seed-data"]
+    if evaluation:
+        command = [sys.executable, "-u", str(here / "evaluate_gpu.py"), "--root", str(root), "--output", str(output / "comparison")]
+        if args.kind == "eval-check":
+            command.append("--check-only")
+    else:
+        command = [sys.executable, "-u", str(here / "train.py"), "--data", str(here / "data"),
+                   "--base", plan["base"], "--output", str(output / "training")]
+        if args.kind != "check":
+            command.append("--train")
+        if args.kind == "probe":
+            command += ["--probe", "--allow-unreviewed-seed-data"]
     with (output / "console.log").open("w", encoding="utf-8", buffering=1) as log:
         child = subprocess.Popen(command, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                  text=True, encoding="utf-8", errors="replace", env=os.environ.copy())
@@ -104,7 +111,9 @@ def main():
                 child.kill()
                 child.wait()
             code = 130
-    (output / "exit.json").write_text(json.dumps({"exit_code": code, "training_completed": code == 0 and args.kind != "check"}) + "\n", encoding="utf-8")
+    (output / "exit.json").write_text(json.dumps({"exit_code": code,
+        "training_completed": code == 0 and args.kind in ["probe", "train"],
+        "evaluation_completed": code == 0 and args.kind == "eval"}) + "\n", encoding="utf-8")
     print("RUN_DIRECTORY=" + str(output), flush=True)
     return code
 

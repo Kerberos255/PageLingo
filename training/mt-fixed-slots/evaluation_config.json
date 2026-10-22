@@ -1,0 +1,20 @@
+{
+  "protocol": "BF16-production-prompt-unconstrained-v1",
+  "base_directory": "models/hy-mt2-1.8b",
+  "base_weight_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+  "old_adapter": {
+    "directory": "outputs/pagelingo-hymt-1.8b-v0.2.2-micro-repair/final",
+    "sha256": "28a0bd981feab75390ec045a9b97b02401e8a5ab973118d7e54da7b9e77cf859",
+    "config_sha256": "1e55f31f99fc13ea21a25bc4f4b8c60f1b5a6b3d52ff6497ab778b1f4a4efa10"
+  },
+  "probe_adapter": {
+    "directory": "outputs/pagelingo-fixed-slots-v1-probe-20261023-004309-f314a4/training/adapter",
+    "sha256": "359a3b4204f68c89cab9f86a924ddd345ba78d199586949efb0384be2072b3f3",
+    "config_sha256": "51298125808a941c464471454ce33b822dc15b88c0f69bffa82ebaaf2402cd67"
+  },
+  "seed": 42,
+  "context": 3072,
+  "precision": "bfloat16",
+  "decoding": "greedy",
+  "grammar_applied": false
+}

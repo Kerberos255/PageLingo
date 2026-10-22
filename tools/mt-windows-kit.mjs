@@ -14,6 +14,9 @@ const manifest = {schema_version: 1, source_commit: git(["rev-parse", "HEAD"]),
 const files = new Map([
   ["train.py", "training/mt-fixed-slots/train.py"], ["config.json", "training/mt-fixed-slots/config.json"],
   ["training_options.py", "training/mt-fixed-slots/training_options.py"],
+  ["evaluate_gpu.py", "training/mt-fixed-slots/evaluate_gpu.py"],
+  ["evaluation_config.json", "training/mt-fixed-slots/evaluation_config.json"],
+  ["evaluation-plan.json", "artifacts/mt-quality/gpu-evaluation-plan.json"],
   ["merge_adapter.py", "training/mt-fixed-slots/merge_adapter.py"], ["mt-gguf-metadata.py", "tools/mt-gguf-metadata.py"],
   ["requirements-reference.txt", "training/mt-fixed-slots/requirements.txt"],
   ["run_local.py", "training/mt-fixed-slots/windows/run_local.py"],
@@ -32,4 +35,6 @@ for (const [target, source] of files) {
 await writeFile(path.join(staged, "package-manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 const cmd = (await readFile(path.join(projectRoot, "training/mt-fixed-slots/windows/run-fixed-slots-v1.cmd"), "utf8")).replace(/\r?\n/gu, "\r\n");
 await writeFile(path.join(output, "run-fixed-slots-v1.cmd"), cmd);
+const compareCmd = (await readFile(path.join(projectRoot, "training/mt-fixed-slots/windows/run-fixed-slots-compare-v1.cmd"), "utf8")).replace(/\r?\n/gu, "\r\n");
+await writeFile(path.join(output, "run-fixed-slots-compare-v1.cmd"), compareCmd);
 console.log(JSON.stringify({output, source_commit: manifest.source_commit, source_dirty: manifest.source_dirty, staged_files: files.size + 1}));

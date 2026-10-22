@@ -3,7 +3,7 @@ setlocal EnableExtensions DisableDelayedExpansion
 if /I "%~1"=="--help" goto :help
 set "PLMT_KIND=probe"
 if not "%~1"=="" set "PLMT_KIND=%~1"
-if /I not "%PLMT_KIND%"=="check" if /I not "%PLMT_KIND%"=="probe" if /I not "%PLMT_KIND%"=="train" goto :usage
+if /I not "%PLMT_KIND%"=="check" if /I not "%PLMT_KIND%"=="probe" if /I not "%PLMT_KIND%"=="train" if /I not "%PLMT_KIND%"=="eval" if /I not "%PLMT_KIND%"=="eval-check" goto :usage
 
 rem Run this from the existing PageLingo-MT.cmd environment on the training PC.
 if not defined ROOT goto :environment_missing
@@ -71,10 +71,12 @@ echo Open the existing PageLingo-MT.cmd first, then run:
 echo   .\run-fixed-slots-v1.cmd check   - validate/tokenize only
 echo   .\run-fixed-slots-v1.cmd         - bounded 12-step GPU pipeline probe
 echo   .\run-fixed-slots-v1.cmd train   - reviewed data only
+echo   .\run-fixed-slots-v1.cmd eval-check - validate comparison inputs only
+echo   .\run-fixed-slots-v1.cmd eval    - three-arm BF16 generation, no training
 echo This script does not install packages, download models or upload weights.
 exit /b 0
 :usage
-echo Usage: run-fixed-slots-v1.cmd [check^|probe^|train]
+echo Usage: run-fixed-slots-v1.cmd [check^|probe^|train^|eval-check^|eval]
 exit /b 2
 :environment_missing
 echo First open E:\PageLingo-MT\PageLingo-MT.cmd on the training PC.

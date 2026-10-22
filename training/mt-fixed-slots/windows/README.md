@@ -34,6 +34,38 @@ CMD 在 Python 启动前重定向任务的临时目录、HF、pip、torch、CUDA
 
 新工具不会读取 HF token 或 stored_tokens。实际训练只加载本地 BF16 模型；启动前校验其 SHA256，不依赖网络认证。既有 Linux 测试使用的依赖版本另存为 `requirements-reference.txt`，仅供比对，不应据此替换主力机已有 GPU 环境。
 
+## 三组真实生成对照
+
+12-step GPU 探针已在 RTX 4070 Ti 上成功完成，验证 loss 从 0.688115 降至 0.470292，训练、验证与最终保存耗时 48.7044 秒。adapter 已核对为 6,815,744 个 F32 参数，SHA256 为 `359a3b4204f68c89cab9f86a924ddd345ba78d199586949efb0384be2072b3f3`。这项结果只确认流程成功。
+
+在原 `PageLingo-MT.cmd` 窗口先检查新评测入口：
+
+```powershell
+.\run-fixed-slots-compare-v1.cmd check
+```
+
+成功后运行：
+
+```powershell
+.\run-fixed-slots-compare-v1.cmd
+```
+
+等价于 `run-fixed-slots-v1.cmd eval-check` / `eval`。两条命令均不启动训练。每次创建独立的 `outputs\pagelingo-fixed-slots-v1-eval-*\` 目录；实际生成结果在 `comparison\base.json`、`v022.json`、`probe.json`，总清单为 `comparison\runs.json`，另有无需联网即可打开的 `raw-preview.html`。
+
+三组统一使用原始底座 tokenizer、BF16、greedy、seed 42、生产 prompt 和相同输出预算；每组 26 条固定槽位样本、6 条纯文本诊断，共 96 次生成。固定槽位输入使用生产的分段与编码代码提前导出。脚本核对底座和两个 adapter 的权重、配置哈希，明确选择已验证的探针文件，不按目录时间猜测模型。
+
+**本轮未使用解码 grammar。** 目的是检查原始生成对槽位的遵循能力和语义变化；不能把结果直接与旧的带 grammar 的 Q5/Firefox 测试排名。主力机只需要现有 Python/CUDA 环境，不安装 Node 或其他依赖。脚本没有 optimizer，不合并或替换模型，不上传。
+
+`raw-preview.html` 是原始文本预览，没有生产写回判定。运行结束后，在 PageLingo 源码环境用实际生产解码、PageTranslator 和原文恢复逻辑回放：
+
+```bash
+node tools/mt-gpu-eval-replay.mjs \
+  --results /path/to/comparison \
+  --out artifacts/mt-quality/bf16-comparison
+```
+
+回放会验证三组实际提示/token 输入一致，产出 `comparison.json` 和可筛选的 `comparison.html`，分别记录拒绝/显示、DOM 身份、代码、恢复、标点化链接/强调文字及关键词探针。关键词通过数不当作翻译准确率。完整语义仍需逐条审查；候选后续还需要 Q5 与真实 Firefox 对照。
+
 ## 旧训练内容的处理
 
 已找到：v0.2 训练/验证 1200/200 条，v0.2.1 修复 320/80 条，v0.2.2 微修复 80/40 条，v0.3 product-envelope 192/64 条，以及 smoke 各版本。数量不等于独立样本数，版本之间可能重复。
@@ -52,6 +84,7 @@ CMD 在 Python 启动前重定向任务的临时目录、HF、pip、torch、CUDA
 
 ```bash
 npm run eval:mt-data
+node tools/mt-gpu-eval-plan.mjs
 node tools/mt-windows-kit.mjs --out artifacts/mt-windows-kit
 ```
 
