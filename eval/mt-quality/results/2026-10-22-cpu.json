@@ -1,0 +1,3714 @@
+{
+  "schema_version": 1,
+  "run_started_utc": "2026-10-22T07:37:13.068024+00:00",
+  "run_finished_utc": "2026-10-22T07:43:51.959673+00:00",
+  "evaluated_production_commit": "8386e33a3d2d7c2d3ced6ca42a76ee9ad61c58d0",
+  "scope": "26 paired fixed-slot cases and 6 paired plain diagnostics; native CPU, not a new Firefox run",
+  "limitations": [
+    "Assistant-authored references/probes, no independent human review or semantic accuracy score",
+    "20 holdout examples are disjoint from the new seed; unknown original MT training data may overlap",
+    "Six diagnostics were selected from previous failures and are not an unbiased test set",
+    "Keyword/slot probes can reject acceptable synonyms or harmless movement outside links",
+    "DOM identity checks do not prove that translated link/emphasis text retains its meaning",
+    "Timings include warm filesystem cache and concurrent validation; not a cold-load or browser performance comparison"
+  ],
+  "paired_actual_prompts_grammars_budgets_identical": true,
+  "settings": {
+    "context": 3072,
+    "temperature": 0,
+    "top_k": 1,
+    "seed": 42,
+    "cache_prompt": false
+  },
+  "models": {
+    "base": {
+      "bytes": 1298756064,
+      "sha256": "2f9d1f1e854ecf23821de96402621f81c799a9c69a011a6cf1b60a941bc63940",
+      "ready_wall_s": 0.47926954600188765,
+      "final_process_status": [
+        "VmHWM:\t 1618364 kB",
+        "VmRSS:\t 1618364 kB",
+        "Threads:\t11"
+      ],
+      "server_arguments": [
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "3072",
+        "-b",
+        "512",
+        "-ub",
+        "512",
+        "-ngl",
+        "0",
+        "-np",
+        "1",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "48175",
+        "--no-webui",
+        "--no-warmup",
+        "--no-cache-prompt",
+        "--cache-ram",
+        "0",
+        "--fit",
+        "off",
+        "--flash-attn",
+        "off"
+      ],
+      "summary": {
+        "holdout": {
+          "cases": 20,
+          "displayed": 20,
+          "retained_original": 0,
+          "all_declared_probes_passed": 16
+        },
+        "diagnostic": {
+          "cases": 6,
+          "displayed": 4,
+          "retained_original": 2,
+          "all_declared_probes_passed": 1
+        }
+      },
+      "all_26_dom_code_restore_checks_passed": true,
+      "dom_code_restore_cases_passed": 26,
+      "fixed_ttft_median_s": 1.9211367615,
+      "fixed_generation_median_tokens_s": 14.606016878879268,
+      "fixed_stop_types": {
+        "eos": 25,
+        "limit": 1
+      }
+    },
+    "pagelingo-mt-v0.2.2": {
+      "bytes": 1298755616,
+      "sha256": "8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc",
+      "ready_wall_s": 0.5182968299995991,
+      "final_process_status": [
+        "VmHWM:\t 1620172 kB",
+        "VmRSS:\t 1620172 kB",
+        "Threads:\t11"
+      ],
+      "server_arguments": [
+        "-t",
+        "2",
+        "-tb",
+        "2",
+        "-c",
+        "3072",
+        "-b",
+        "512",
+        "-ub",
+        "512",
+        "-ngl",
+        "0",
+        "-np",
+        "1",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "41331",
+        "--no-webui",
+        "--no-warmup",
+        "--no-cache-prompt",
+        "--cache-ram",
+        "0",
+        "--fit",
+        "off",
+        "--flash-attn",
+        "off"
+      ],
+      "summary": {
+        "holdout": {
+          "cases": 20,
+          "displayed": 20,
+          "retained_original": 0,
+          "all_declared_probes_passed": 15
+        },
+        "diagnostic": {
+          "cases": 6,
+          "displayed": 3,
+          "retained_original": 3,
+          "all_declared_probes_passed": 1
+        }
+      },
+      "all_26_dom_code_restore_checks_passed": true,
+      "dom_code_restore_cases_passed": 26,
+      "fixed_ttft_median_s": 2.118251271000001,
+      "fixed_generation_median_tokens_s": 14.549885346876655,
+      "fixed_stop_types": {
+        "eos": 25,
+        "limit": 1
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "h-http-no-body",
+      "split": "holdout",
+      "category": "negation",
+      "source_html": "<p>The response must not contain a body.</p>",
+      "source_text": "The response must not contain a body.",
+      "reference_slots": [
+        "响应不得包含正文。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "ec417423667462f7135b73238ce6b04ab7aae651cac2078556830ccc39825ce0",
+      "base": {
+        "id": "h-http-no-body",
+        "split": "holdout",
+        "category": "negation",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">响应不得包含正文。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "响应不得包含正文。",
+        "translated_html": "<p>响应不得包含正文。</p>",
+        "content_probes": [
+          {
+            "id": "no-body",
+            "description": "Preserve prohibition of response body",
+            "passed": true,
+            "observed": "响应不得包含正文。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 90,
+            "text": "⟦0⟧响应不得包含正文。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 153,
+              "prompt_ms": 1666.138,
+              "prompt_per_token_ms": 10.889790849673203,
+              "prompt_per_second": 91.82912819946488,
+              "predicted_n": 17,
+              "predicted_ms": 1065.719,
+              "predicted_per_token_ms": 66.6074375,
+              "predicted_per_second": 15.013338412846162
+            },
+            "wall_s": 2.7365452140000004,
+            "ttft_s": 1.739947757
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-http-no-body",
+        "split": "holdout",
+        "category": "negation",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">响应不得包含正文。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "响应不得包含正文。",
+        "translated_html": "<p>响应不得包含正文。</p>",
+        "content_probes": [
+          {
+            "id": "no-body",
+            "description": "Preserve prohibition of response body",
+            "passed": true,
+            "observed": "响应不得包含正文。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 90,
+            "text": "⟦0⟧响应不得包含正文。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 153,
+              "prompt_ms": 1539.385,
+              "prompt_per_token_ms": 10.061339869281046,
+              "prompt_per_second": 99.39034094784606,
+              "predicted_n": 17,
+              "predicted_ms": 1105.096,
+              "predicted_per_token_ms": 69.0685,
+              "predicted_per_second": 14.47838015882783
+            },
+            "wall_s": 2.6490870139999996,
+            "ttft_s": 1.603617071
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-client-only",
+      "split": "holdout",
+      "category": "scope",
+      "source_html": "<p>Only the <a href=\"/client\">client</a> may reuse this cached response.</p>",
+      "source_text": "Only the client may reuse this cached response.",
+      "reference_slots": [
+        "只有",
+        "客户端",
+        "才可以重用此缓存响应。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "b15e58685f2097911d2ba9c5493a391d5bb06bcf9754e5ba7533b05ff00bf9b4",
+      "base": {
+        "id": "h-client-only",
+        "split": "holdout",
+        "category": "scope",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">只有 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">客户端</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> 可以重新使用此缓存响应。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "只有 客户端 可以重新使用此缓存响应。",
+        "translated_html": "<p>只有 <a href=\"/client\">客户端</a> 可以重新使用此缓存响应。</p>",
+        "content_probes": [
+          {
+            "id": "client-label",
+            "description": "Only client is inside the link",
+            "slot": 1,
+            "passed": true,
+            "observed": "客户端"
+          },
+          {
+            "id": "exclusive",
+            "description": "Preserve exclusivity",
+            "slot": 0,
+            "passed": true,
+            "observed": "只有"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 125,
+            "text": "⟦0⟧只有 ⟦/0⟧⟦1⟧客户端⟦/1⟧⟦2⟧可以重新使用此缓存响应。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 176,
+              "prompt_ms": 1831.87,
+              "prompt_per_token_ms": 10.408352272727273,
+              "prompt_per_second": 96.07668666444673,
+              "predicted_n": 43,
+              "predicted_ms": 2517.736,
+              "predicted_per_token_ms": 59.94609523809523,
+              "predicted_per_second": 16.681653676159854
+            },
+            "wall_s": 4.353585272,
+            "ttft_s": 1.910878659
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-client-only",
+        "split": "holdout",
+        "category": "scope",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">只有 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">客户端</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> 可以重新使用此缓存的响应。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "只有 客户端 可以重新使用此缓存的响应。",
+        "translated_html": "<p>只有 <a href=\"/client\">客户端</a> 可以重新使用此缓存的响应。</p>",
+        "content_probes": [
+          {
+            "id": "client-label",
+            "description": "Only client is inside the link",
+            "slot": 1,
+            "passed": true,
+            "observed": "客户端"
+          },
+          {
+            "id": "exclusive",
+            "description": "Preserve exclusivity",
+            "slot": 0,
+            "passed": true,
+            "observed": "只有"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 125,
+            "text": "⟦0⟧只有⟦/0⟧⟦1⟧客户端⟦/1⟧⟦2⟧可以重新使用此缓存的响应。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 176,
+              "prompt_ms": 1798.647,
+              "prompt_per_token_ms": 10.219585227272727,
+              "prompt_per_second": 97.85132936034697,
+              "predicted_n": 44,
+              "predicted_ms": 3140.724,
+              "predicted_per_token_ms": 73.04009302325582,
+              "predicted_per_second": 13.69111071205238
+            },
+            "wall_s": 4.951036051000001,
+            "ttft_s": 1.8853331940000002
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-cache-until",
+      "split": "holdout",
+      "category": "condition",
+      "source_html": "<p>The <a href=\"/cache\">cache</a> must not be used until validation succeeds.</p>",
+      "source_text": "The cache must not be used until validation succeeds.",
+      "reference_slots": [
+        "",
+        "缓存",
+        "在验证成功前不得使用。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "fcc31ca77593ef2e7eb9ef5431611995b1dcb1260d7bd8de65fecc3cce72c362",
+      "base": {
+        "id": "h-cache-until",
+        "split": "holdout",
+        "category": "condition",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\"> </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">缓存</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> 在验证成功之前不得被使用。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": " 缓存 在验证成功之前不得被使用。",
+        "translated_html": "<p> <a href=\"/cache\">缓存</a> 在验证成功之前不得被使用。</p>",
+        "content_probes": [
+          {
+            "id": "cache-label",
+            "description": "Keep cache as the linked noun",
+            "slot": 1,
+            "passed": true,
+            "observed": "缓存"
+          },
+          {
+            "id": "not-until",
+            "description": "Preserve prohibition before validation succeeds",
+            "slot": 2,
+            "passed": true,
+            "observed": "在验证成功之前不得被使用。"
+          },
+          {
+            "id": "validation",
+            "description": "Preserve validation condition",
+            "slot": 2,
+            "passed": true,
+            "observed": "在验证成功之前不得被使用。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 134,
+            "text": "⟦0⟧⟦/0⟧⟦1⟧缓存⟦/1⟧⟦2⟧在验证成功之前不得被使用。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 177,
+              "prompt_ms": 1995.198,
+              "prompt_per_token_ms": 11.272305084745764,
+              "prompt_per_second": 88.71299991279061,
+              "predicted_n": 43,
+              "predicted_ms": 3019.971,
+              "predicted_per_token_ms": 71.90407142857143,
+              "predicted_per_second": 13.907418316268599
+            },
+            "wall_s": 5.018995789000001,
+            "ttft_s": 2.055831499
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-cache-until",
+        "split": "holdout",
+        "category": "condition",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\"> </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">缓存</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> 在验证成功之前不得使用。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": " 缓存 在验证成功之前不得使用。",
+        "translated_html": "<p> <a href=\"/cache\">缓存</a> 在验证成功之前不得使用。</p>",
+        "content_probes": [
+          {
+            "id": "cache-label",
+            "description": "Keep cache as the linked noun",
+            "slot": 1,
+            "passed": true,
+            "observed": "缓存"
+          },
+          {
+            "id": "not-until",
+            "description": "Preserve prohibition before validation succeeds",
+            "slot": 2,
+            "passed": true,
+            "observed": "在验证成功之前不得使用。"
+          },
+          {
+            "id": "validation",
+            "description": "Preserve validation condition",
+            "slot": 2,
+            "passed": true,
+            "observed": "在验证成功之前不得使用。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 134,
+            "text": "⟦0⟧⟦/0⟧⟦1⟧缓存⟦/1⟧⟦2⟧在验证成功之前不得使用。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 177,
+              "prompt_ms": 1931.65,
+              "prompt_per_token_ms": 10.913276836158193,
+              "prompt_per_second": 91.63150674293998,
+              "predicted_n": 42,
+              "predicted_ms": 2679.883,
+              "predicted_per_token_ms": 65.363,
+              "predicted_per_second": 15.29917537444732
+            },
+            "wall_s": 4.615232429000001,
+            "ttft_s": 2.0174655749999992
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-uncommitted",
+      "split": "holdout",
+      "category": "negation",
+      "source_html": "<p>A transaction cannot observe another transaction's uncommitted changes.</p>",
+      "source_text": "A transaction cannot observe another transaction's uncommitted changes.",
+      "reference_slots": [
+        "事务不能观察到其他事务尚未提交的更改。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "e2f745085e685b5b31d5ad972813c58d478e1b3589aced1ea14ea804bbb55520",
+      "base": {
+        "id": "h-uncommitted",
+        "split": "holdout",
+        "category": "negation",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">交易无法观察到其他交易的未提交更改。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "交易无法观察到其他交易的未提交更改。",
+        "translated_html": "<p>交易无法观察到其他交易的未提交更改。</p>",
+        "content_probes": [
+          {
+            "id": "uncommitted",
+            "description": "Preserve uncommitted qualification",
+            "passed": true,
+            "observed": "交易无法观察到其他交易的未提交更改。"
+          },
+          {
+            "id": "cannot",
+            "description": "Preserve inability to observe",
+            "passed": true,
+            "observed": "交易无法观察到其他交易的未提交更改。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 141,
+            "text": "⟦0⟧交易无法观察到其他交易的未提交更改。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 157,
+              "prompt_ms": 1727.913,
+              "prompt_per_token_ms": 11.005815286624204,
+              "prompt_per_second": 90.86105608326345,
+              "predicted_n": 21,
+              "predicted_ms": 1374.223,
+              "predicted_per_token_ms": 68.71115,
+              "predicted_per_second": 14.55367869698004
+            },
+            "wall_s": 3.106334488999999,
+            "ttft_s": 1.7878803640000005
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-uncommitted",
+        "split": "holdout",
+        "category": "negation",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">交易无法观察其他交易的未提交更改。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "交易无法观察其他交易的未提交更改。",
+        "translated_html": "<p>交易无法观察其他交易的未提交更改。</p>",
+        "content_probes": [
+          {
+            "id": "uncommitted",
+            "description": "Preserve uncommitted qualification",
+            "passed": true,
+            "observed": "交易无法观察其他交易的未提交更改。"
+          },
+          {
+            "id": "cannot",
+            "description": "Preserve inability to observe",
+            "passed": true,
+            "observed": "交易无法观察其他交易的未提交更改。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 141,
+            "text": "⟦0⟧交易无法观察其他交易的未提交更改。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 157,
+              "prompt_ms": 1519.383,
+              "prompt_per_token_ms": 9.67759872611465,
+              "prompt_per_second": 103.33141808220837,
+              "predicted_n": 21,
+              "predicted_ms": 2256.978,
+              "predicted_per_token_ms": 112.8489,
+              "predicted_per_second": 8.861406712870041
+            },
+            "wall_s": 3.7816302699999995,
+            "ttft_s": 1.5763139229999996
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-parent-worker",
+      "split": "holdout",
+      "category": "roles",
+      "source_html": "<p>The parent cancels the <strong>worker</strong>; the worker does not cancel the parent.</p>",
+      "source_text": "The parent cancels the worker; the worker does not cancel the parent.",
+      "reference_slots": [
+        "父进程取消",
+        "工作进程",
+        "；工作进程不会取消父进程。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "3ed426d24b92d32178a88388fc64a91bddbac7e50f438be005314554a78f220f",
+      "base": {
+        "id": "h-parent-worker",
+        "split": "holdout",
+        "category": "roles",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">父节点会取消 </span><strong><span data-flt-text-id=\"1\">工作者</span></strong><span data-flt-text-id=\"2\">；但工作者不会取消父节点。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "父节点会取消 工作者；但工作者不会取消父节点。",
+        "translated_html": "<p>父节点会取消 <strong>工作者</strong>；但工作者不会取消父节点。</p>",
+        "content_probes": [
+          {
+            "id": "worker",
+            "description": "Keep worker inside emphasis",
+            "slot": 1,
+            "passed": false,
+            "observed": "工作者"
+          },
+          {
+            "id": "reverse-prohibited",
+            "description": "Preserve asymmetry",
+            "slot": 2,
+            "passed": true,
+            "observed": "；但工作者不会取消父节点。"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 158,
+            "text": "⟦0⟧父节点会取消 ⟦/0⟧⟦1⟧工作者⟦/1⟧⟦2⟧；但工作者不会取消父节点。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 181,
+              "prompt_ms": 1843.429,
+              "prompt_per_token_ms": 10.184690607734806,
+              "prompt_per_second": 98.18658597646017,
+              "predicted_n": 47,
+              "predicted_ms": 3126.48,
+              "predicted_per_token_ms": 67.96695652173914,
+              "predicted_per_second": 14.71303190808833
+            },
+            "wall_s": 4.9739217039999986,
+            "ttft_s": 1.9313948639999998
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-parent-worker",
+        "split": "holdout",
+        "category": "roles",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">父级会取消 </span><strong><span data-flt-text-id=\"1\">工作者</span></strong><span data-flt-text-id=\"2\">；工作者不会取消父级。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "父级会取消 工作者；工作者不会取消父级。",
+        "translated_html": "<p>父级会取消 <strong>工作者</strong>；工作者不会取消父级。</p>",
+        "content_probes": [
+          {
+            "id": "worker",
+            "description": "Keep worker inside emphasis",
+            "slot": 1,
+            "passed": false,
+            "observed": "工作者"
+          },
+          {
+            "id": "reverse-prohibited",
+            "description": "Preserve asymmetry",
+            "slot": 2,
+            "passed": true,
+            "observed": "；工作者不会取消父级。"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 158,
+            "text": "⟦0⟧父级会取消⟦/0⟧⟦1⟧工作者⟦/1⟧⟦2⟧；工作者不会取消父级。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 181,
+              "prompt_ms": 4678.685,
+              "prompt_per_token_ms": 25.84908839779006,
+              "prompt_per_second": 38.68608380346187,
+              "predicted_n": 46,
+              "predicted_ms": 7172.689,
+              "predicted_per_token_ms": 159.39308888888888,
+              "predicted_per_second": 6.273797734712881
+            },
+            "wall_s": 11.856545216999999,
+            "ttft_s": 4.877250088
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-guide-scope",
+      "split": "holdout",
+      "category": "link_scope",
+      "source_html": "<p>Read the <a href=\"/migration\">migration guide</a> before restarting the service.</p>",
+      "source_text": "Read the migration guide before restarting the service.",
+      "reference_slots": [
+        "请先阅读",
+        "迁移指南",
+        "，然后再重启服务。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "09cca41220e708e2a850c4cb0f5e5c55c8e45a0e020b18f17571f501762b9046",
+      "base": {
+        "id": "h-guide-scope",
+        "split": "holdout",
+        "category": "link_scope",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">在重启服务之前，请阅读 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">迁移指南</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> 。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "在重启服务之前，请阅读 迁移指南 。",
+        "translated_html": "<p>在重启服务之前，请阅读 <a href=\"/migration\">迁移指南</a> 。</p>",
+        "content_probes": [
+          {
+            "id": "guide-label",
+            "description": "Link only names the migration guide",
+            "slot": 1,
+            "passed": true,
+            "observed": "迁移指南"
+          },
+          {
+            "id": "restart",
+            "description": "Do not omit restarting the service",
+            "slot": 2,
+            "passed": false,
+            "observed": "。"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 137,
+            "text": "⟦0⟧在重启服务之前，请阅读⟦/0⟧⟦1⟧迁移指南⟦/1⟧⟦2⟧。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 178,
+              "prompt_ms": 1832.693,
+              "prompt_per_token_ms": 10.29602808988764,
+              "prompt_per_second": 97.1248321459186,
+              "predicted_n": 44,
+              "predicted_ms": 2944.723,
+              "predicted_per_token_ms": 68.48193023255814,
+              "predicted_per_second": 14.602392143505519
+            },
+            "wall_s": 4.783820609000002,
+            "ttft_s": 1.8949361360000003
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-guide-scope",
+        "split": "holdout",
+        "category": "link_scope",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">重启服务之前，请阅读 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">迁移指南</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> 。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "重启服务之前，请阅读 迁移指南 。",
+        "translated_html": "<p>重启服务之前，请阅读 <a href=\"/migration\">迁移指南</a> 。</p>",
+        "content_probes": [
+          {
+            "id": "guide-label",
+            "description": "Link only names the migration guide",
+            "slot": 1,
+            "passed": true,
+            "observed": "迁移指南"
+          },
+          {
+            "id": "restart",
+            "description": "Do not omit restarting the service",
+            "slot": 2,
+            "passed": false,
+            "observed": "。"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 137,
+            "text": "⟦0⟧重启服务之前，请阅读⟦/0⟧⟦1⟧迁移指南⟦/1⟧⟦2⟧。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 178,
+              "prompt_ms": 3302.602,
+              "prompt_per_token_ms": 18.553943820224717,
+              "prompt_per_second": 53.89689705268756,
+              "predicted_n": 43,
+              "predicted_ms": 4391.879,
+              "predicted_per_token_ms": 104.56854761904762,
+              "predicted_per_second": 9.5631049944682
+            },
+            "wall_s": 7.698499871,
+            "ttft_s": 3.402253797000001
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-not-all",
+      "split": "holdout",
+      "category": "negation_scope",
+      "source_html": "<p>Not all requests can be cached.</p>",
+      "source_text": "Not all requests can be cached.",
+      "reference_slots": [
+        "并非所有请求都可以缓存。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "fe59d429da65f9fd4dca22435f416cd896ae23ccc61645bbe3abe8df89f35216",
+      "base": {
+        "id": "h-not-all",
+        "split": "holdout",
+        "category": "negation_scope",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">并非所有请求都可以被缓存。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "并非所有请求都可以被缓存。",
+        "translated_html": "<p>并非所有请求都可以被缓存。</p>",
+        "content_probes": [
+          {
+            "id": "partial-negation",
+            "description": "Preserve not-all instead of none",
+            "passed": true,
+            "observed": "并非所有请求都可以被缓存。"
+          },
+          {
+            "id": "not-none",
+            "description": "Do not turn partial negation into universal prohibition",
+            "passed": true,
+            "observed": "并非所有请求都可以被缓存。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 82,
+            "text": "⟦0⟧并非所有请求都可以被缓存。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 152,
+              "prompt_ms": 1635.848,
+              "prompt_per_token_ms": 10.762157894736841,
+              "prompt_per_second": 92.91816843618723,
+              "predicted_n": 19,
+              "predicted_ms": 1158.366,
+              "predicted_per_token_ms": 64.35366666666667,
+              "predicted_per_second": 15.53913011949591
+            },
+            "wall_s": 2.797485546,
+            "ttft_s": 1.7074268080000001
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-not-all",
+        "split": "holdout",
+        "category": "negation_scope",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">并非所有请求都可以缓存。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "并非所有请求都可以缓存。",
+        "translated_html": "<p>并非所有请求都可以缓存。</p>",
+        "content_probes": [
+          {
+            "id": "partial-negation",
+            "description": "Preserve not-all instead of none",
+            "passed": true,
+            "observed": "并非所有请求都可以缓存。"
+          },
+          {
+            "id": "not-none",
+            "description": "Do not turn partial negation into universal prohibition",
+            "passed": true,
+            "observed": "并非所有请求都可以缓存。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 82,
+            "text": "⟦0⟧并非所有请求都可以缓存。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 152,
+              "prompt_ms": 2615.879,
+              "prompt_per_token_ms": 17.209730263157894,
+              "prompt_per_second": 58.10666319046103,
+              "predicted_n": 18,
+              "predicted_ms": 1782.803,
+              "predicted_per_token_ms": 104.87076470588237,
+              "predicted_per_second": 9.535545991340603
+            },
+            "wall_s": 4.403062141000002,
+            "ttft_s": 2.7417028819999976
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-not-necessarily",
+      "split": "holdout",
+      "category": "modality",
+      "source_html": "<p>A failed task does not necessarily stop the worker.</p>",
+      "source_text": "A failed task does not necessarily stop the worker.",
+      "reference_slots": [
+        "任务失败不一定会停止工作线程。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "70686d1639dd1acc3a0e51e9cb3ec9769cf497bea9d6bfc8b696c7df7d0fc412",
+      "base": {
+        "id": "h-not-necessarily",
+        "split": "holdout",
+        "category": "modality",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">失败的任务并不一定会停止工作进程。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "失败的任务并不一定会停止工作进程。",
+        "translated_html": "<p>失败的任务并不一定会停止工作进程。</p>",
+        "content_probes": [
+          {
+            "id": "not-necessarily",
+            "description": "Preserve uncertainty",
+            "passed": true,
+            "observed": "失败的任务并不一定会停止工作进程。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 111,
+            "text": "⟦0⟧失败的任务并不一定会停止工作进程。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 155,
+              "prompt_ms": 1435.585,
+              "prompt_per_token_ms": 9.26183870967742,
+              "prompt_per_second": 107.96992166956328,
+              "predicted_n": 20,
+              "predicted_ms": 1392.923,
+              "predicted_per_token_ms": 73.31173684210526,
+              "predicted_per_second": 13.640380695846074
+            },
+            "wall_s": 2.831873499000001,
+            "ttft_s": 1.4942820310000025
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-not-necessarily",
+        "split": "holdout",
+        "category": "modality",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">任务失败并不一定会停止工作器。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "任务失败并不一定会停止工作器。",
+        "translated_html": "<p>任务失败并不一定会停止工作器。</p>",
+        "content_probes": [
+          {
+            "id": "not-necessarily",
+            "description": "Preserve uncertainty",
+            "passed": true,
+            "observed": "任务失败并不一定会停止工作器。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 111,
+            "text": "⟦0⟧任务失败并不一定会停止工作器。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 155,
+              "prompt_ms": 2384.092,
+              "prompt_per_token_ms": 15.38123870967742,
+              "prompt_per_second": 65.01426958355634,
+              "predicted_n": 20,
+              "predicted_ms": 2105.39,
+              "predicted_per_token_ms": 110.80999999999999,
+              "predicted_per_second": 9.02445627650934
+            },
+            "wall_s": 4.4941998049999965,
+            "ttft_s": 2.4981405099999976
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-false-continues",
+      "split": "holdout",
+      "category": "condition",
+      "source_html": "<p>If the handler returns <code>false</code>, processing continues until the timeout expires.</p>",
+      "source_text": "If the handler returns false, processing continues until the timeout expires.",
+      "reference_slots": [
+        "如果处理器返回",
+        "，则继续处理，直到超时期限届满。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "b0e0255e8d9fc6170cf92ee9b8b8c7c96b64a87cedf144ba0b0ad1aac042dcf4",
+      "base": {
+        "id": "h-false-continues",
+        "split": "holdout",
+        "category": "condition",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">如果处理程序返回 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\">，处理将继续直到超时时间到期。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "如果处理程序返回 false，处理将继续直到超时时间到期。",
+        "translated_html": "<p>如果处理程序返回 <code>false</code>，处理将继续直到超时时间到期。</p>",
+        "content_probes": [
+          {
+            "id": "continues",
+            "description": "Preserve continuation rather than cancellation",
+            "slot": 1,
+            "passed": true,
+            "observed": "，处理将继续直到超时时间到期。"
+          },
+          {
+            "id": "timeout",
+            "description": "Preserve timeout endpoint",
+            "slot": 1,
+            "passed": true,
+            "observed": "，处理将继续直到超时时间到期。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 158,
+            "text": "⟦0⟧如果处理程序返回 ⟦/0⟧⟪P0⟫⟦1⟧，处理将继续直到超时时间到期。⟦/1⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 174,
+              "prompt_ms": 1760.492,
+              "prompt_per_token_ms": 10.117770114942529,
+              "prompt_per_second": 98.8360072070762,
+              "predicted_n": 42,
+              "predicted_ms": 2529.418,
+              "predicted_per_token_ms": 61.69312195121952,
+              "predicted_per_second": 16.20926236786486
+            },
+            "wall_s": 4.294034882,
+            "ttft_s": 1.8196424219999972
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-false-continues",
+        "split": "holdout",
+        "category": "condition",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">如果处理器返回 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\">，处理将继续，直到超时时间到期。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "如果处理器返回 false，处理将继续，直到超时时间到期。",
+        "translated_html": "<p>如果处理器返回 <code>false</code>，处理将继续，直到超时时间到期。</p>",
+        "content_probes": [
+          {
+            "id": "continues",
+            "description": "Preserve continuation rather than cancellation",
+            "slot": 1,
+            "passed": true,
+            "observed": "，处理将继续，直到超时时间到期。"
+          },
+          {
+            "id": "timeout",
+            "description": "Preserve timeout endpoint",
+            "slot": 1,
+            "passed": true,
+            "observed": "，处理将继续，直到超时时间到期。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 158,
+            "text": "⟦0⟧如果处理器返回⟦/0⟧⟪P0⟫⟦1⟧，处理将继续，直到超时时间到期。⟦/1⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 174,
+              "prompt_ms": 2802.532,
+              "prompt_per_token_ms": 16.106505747126437,
+              "prompt_per_second": 62.08671301523051,
+              "predicted_n": 42,
+              "predicted_ms": 4558.275,
+              "predicted_per_token_ms": 111.17743902439024,
+              "predicted_per_second": 8.994630644267843
+            },
+            "wall_s": 7.368072215,
+            "ttft_s": 2.9152762220000006
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-both-checks",
+      "split": "holdout",
+      "category": "logic",
+      "source_html": "<p>Proceed only when both checks pass; one successful check is not enough.</p>",
+      "source_text": "Proceed only when both checks pass; one successful check is not enough.",
+      "reference_slots": [
+        "只有两项检查都通过时才能继续；仅一项检查成功还不够。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "0b7cf4ca9bbd366385b0b5d601ef705ede5580072b2d6b6d0fd991e8e90990d1",
+      "base": {
+        "id": "h-both-checks",
+        "split": "holdout",
+        "category": "logic",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">只有当两个检查都通过时才能继续；仅有一个通过的检查是不够的。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "只有当两个检查都通过时才能继续；仅有一个通过的检查是不够的。",
+        "translated_html": "<p>只有当两个检查都通过时才能继续；仅有一个通过的检查是不够的。</p>",
+        "content_probes": [
+          {
+            "id": "both",
+            "description": "Preserve requirement for both checks",
+            "passed": true,
+            "observed": "只有当两个检查都通过时才能继续；仅有一个通过的检查是不够的。"
+          },
+          {
+            "id": "insufficient",
+            "description": "Preserve insufficiency of a single check",
+            "passed": true,
+            "observed": "只有当两个检查都通过时才能继续；仅有一个通过的检查是不够的。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 141,
+            "text": "⟦0⟧只有当两个检查都通过时才能继续；仅有一个通过的检查是不够的。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 160,
+              "prompt_ms": 1471.021,
+              "prompt_per_token_ms": 9.19388125,
+              "prompt_per_second": 108.76799175538622,
+              "predicted_n": 27,
+              "predicted_ms": 1600.68,
+              "predicted_per_token_ms": 61.56461538461539,
+              "predicted_per_second": 16.243096683909336
+            },
+            "wall_s": 3.0748537910000016,
+            "ttft_s": 1.5312257089999985
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-both-checks",
+        "split": "holdout",
+        "category": "logic",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">只有两个检查都通过时才能继续；一个通过的检查是不够的。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "只有两个检查都通过时才能继续；一个通过的检查是不够的。",
+        "translated_html": "<p>只有两个检查都通过时才能继续；一个通过的检查是不够的。</p>",
+        "content_probes": [
+          {
+            "id": "both",
+            "description": "Preserve requirement for both checks",
+            "passed": true,
+            "observed": "只有两个检查都通过时才能继续；一个通过的检查是不够的。"
+          },
+          {
+            "id": "insufficient",
+            "description": "Preserve insufficiency of a single check",
+            "passed": true,
+            "observed": "只有两个检查都通过时才能继续；一个通过的检查是不够的。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 141,
+            "text": "⟦0⟧只有两个检查都通过时才能继续；一个通过的检查是不够的。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 160,
+              "prompt_ms": 2781.109,
+              "prompt_per_token_ms": 17.38193125,
+              "prompt_per_second": 57.53100651574606,
+              "predicted_n": 26,
+              "predicted_ms": 2643.673,
+              "predicted_per_token_ms": 105.74691999999999,
+              "predicted_per_second": 9.456540199941522
+            },
+            "wall_s": 5.430309725000006,
+            "ttft_s": 2.884973875000003
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-header-spelling",
+      "split": "holdout",
+      "category": "protected_code",
+      "source_html": "<p>Keep <code>Content-Length</code> unchanged while translating the header description.</p>",
+      "source_text": "Keep Content-Length unchanged while translating the header description.",
+      "reference_slots": [
+        "保持",
+        "不变，同时翻译标头说明。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "04a334ffd7d58f48e5a7249e1077c595dc48a783eca1c94a8c34011e26c9d002",
+      "base": {
+        "id": "h-header-spelling",
+        "split": "holdout",
+        "category": "protected_code",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">在翻译标头描述时，保持 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> 不变。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "在翻译标头描述时，保持 Content-Length 不变。",
+        "translated_html": "<p>在翻译标头描述时，保持 <code>Content-Length</code> 不变。</p>",
+        "content_probes": [
+          {
+            "id": "unchanged",
+            "description": "Preserve unchanged qualification",
+            "slot": 1,
+            "passed": true,
+            "observed": "不变。"
+          },
+          {
+            "id": "header",
+            "description": "Keep header meaning",
+            "slot": 1,
+            "passed": false,
+            "observed": "不变。"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 136,
+            "text": "⟦0⟧在翻译标头描述时，保持 ⟦/0⟧⟪P0⟫⟦1⟧ 不变。⟦/1⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 188,
+              "prompt_ms": 1772.93,
+              "prompt_per_token_ms": 9.430478723404256,
+              "prompt_per_second": 106.03915552221464,
+              "predicted_n": 40,
+              "predicted_ms": 2673.608,
+              "predicted_per_token_ms": 68.55405128205129,
+              "predicted_per_second": 14.587029961011487
+            },
+            "wall_s": 4.450329398000002,
+            "ttft_s": 1.833963389000004
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-header-spelling",
+        "split": "holdout",
+        "category": "protected_code",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">翻译标头描述时，请保持 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> 不变。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "翻译标头描述时，请保持 Content-Length 不变。",
+        "translated_html": "<p>翻译标头描述时，请保持 <code>Content-Length</code> 不变。</p>",
+        "content_probes": [
+          {
+            "id": "unchanged",
+            "description": "Preserve unchanged qualification",
+            "slot": 1,
+            "passed": true,
+            "observed": "不变。"
+          },
+          {
+            "id": "header",
+            "description": "Keep header meaning",
+            "slot": 1,
+            "passed": false,
+            "observed": "不变。"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 136,
+            "text": "⟦0⟧翻译标头描述时，请保持⟦/0⟧⟪P0⟫⟦1⟧不变。⟦/1⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 188,
+              "prompt_ms": 3087.599,
+              "prompt_per_token_ms": 16.423398936170212,
+              "prompt_per_second": 60.88873587535169,
+              "predicted_n": 39,
+              "predicted_ms": 3018.857,
+              "predicted_per_token_ms": 79.44360526315789,
+              "predicted_per_second": 12.587545551180463
+            },
+            "wall_s": 6.110924654000002,
+            "ttft_s": 3.242101917
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-quantifiers",
+      "split": "holdout",
+      "category": "quantifiers",
+      "source_html": "<p>Allocate at most one writer and at least one reader.</p>",
+      "source_text": "Allocate at most one writer and at least one reader.",
+      "reference_slots": [
+        "最多分配一个写入方，并至少分配一个读取方。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "0ffe5241ec0592b3676301ca436c13b76c2709be25bc819eb468e8f42936c17a",
+      "base": {
+        "id": "h-quantifiers",
+        "split": "holdout",
+        "category": "quantifiers",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">最多分配一名作者，至少分配一名读者。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "最多分配一名作者，至少分配一名读者。",
+        "translated_html": "<p>最多分配一名作者，至少分配一名读者。</p>",
+        "content_probes": [
+          {
+            "id": "at-most",
+            "description": "Preserve upper bound",
+            "passed": true,
+            "observed": "最多分配一名作者，至少分配一名读者。"
+          },
+          {
+            "id": "at-least",
+            "description": "Preserve lower bound",
+            "passed": true,
+            "observed": "最多分配一名作者，至少分配一名读者。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 112,
+            "text": "⟦0⟧最多分配一名作者，至少分配一名读者。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 157,
+              "prompt_ms": 1439.13,
+              "prompt_per_token_ms": 9.166433121019109,
+              "prompt_per_second": 109.09368854794215,
+              "predicted_n": 22,
+              "predicted_ms": 1271.313,
+              "predicted_per_token_ms": 60.53871428571429,
+              "predicted_per_second": 16.518355432533138
+            },
+            "wall_s": 2.7139563730000007,
+            "ttft_s": 1.496509223000001
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-quantifiers",
+        "split": "holdout",
+        "category": "quantifiers",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">最多分配一个写入者，至少分配一个读取器。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "最多分配一个写入者，至少分配一个读取器。",
+        "translated_html": "<p>最多分配一个写入者，至少分配一个读取器。</p>",
+        "content_probes": [
+          {
+            "id": "at-most",
+            "description": "Preserve upper bound",
+            "passed": true,
+            "observed": "最多分配一个写入者，至少分配一个读取器。"
+          },
+          {
+            "id": "at-least",
+            "description": "Preserve lower bound",
+            "passed": true,
+            "observed": "最多分配一个写入者，至少分配一个读取器。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 112,
+            "text": "⟦0⟧最多分配一个写入者，至少分配一个读取器。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 157,
+              "prompt_ms": 1588.137,
+              "prompt_per_token_ms": 10.11552229299363,
+              "prompt_per_second": 98.85797006177678,
+              "predicted_n": 24,
+              "predicted_ms": 1433.993,
+              "predicted_per_token_ms": 62.347521739130435,
+              "predicted_per_second": 16.039129898123633
+            },
+            "wall_s": 3.0253286149999985,
+            "ttft_s": 1.651939959000003
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-nested-negation",
+      "split": "holdout",
+      "category": "emphasis",
+      "source_html": "<p>The <strong>server <em>does not</em></strong> retry failed requests automatically.</p>",
+      "source_text": "The server does not retry failed requests automatically.",
+      "reference_slots": [
+        "",
+        "服务器",
+        "不会",
+        "自动重试失败的请求。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "f5c1a69a709bd8795f5a25d27164e3547182cdee484de5fef910c859bf268bbe",
+      "base": {
+        "id": "h-nested-negation",
+        "split": "holdout",
+        "category": "emphasis",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\"> </span><strong><span data-flt-text-id=\"1\">服务器 </span><em><span data-flt-text-id=\"2\">不会</span></em></strong><span data-flt-text-id=\"3\"> 自动重试失败的请求。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": " 服务器 不会 自动重试失败的请求。",
+        "translated_html": "<p> <strong>服务器 <em>不会</em></strong> 自动重试失败的请求。</p>",
+        "content_probes": [
+          {
+            "id": "emphatic-negation",
+            "description": "Keep negation inside the emphasized slot",
+            "slot": 2,
+            "passed": true,
+            "observed": "不会"
+          },
+          {
+            "id": "retry",
+            "description": "Preserve failed-request retry meaning",
+            "slot": 3,
+            "passed": true,
+            "observed": "自动重试失败的请求。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 148,
+            "text": "⟦0⟧⟦/0⟧⟦1⟧服务器⟦/1⟧⟦2⟧不会⟦/2⟧⟦3⟧自动重试失败的请求。⟦/3⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 187,
+              "prompt_ms": 1896.714,
+              "prompt_per_token_ms": 10.142855614973262,
+              "prompt_per_second": 98.59156414725679,
+              "predicted_n": 52,
+              "predicted_ms": 3507.394,
+              "predicted_per_token_ms": 68.77243137254902,
+              "predicted_per_second": 14.540710282334977
+            },
+            "wall_s": 5.409524573000002,
+            "ttft_s": 1.9607013539999971
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-nested-negation",
+        "split": "holdout",
+        "category": "emphasis",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\"> </span><strong><span data-flt-text-id=\"1\">服务器 </span><em><span data-flt-text-id=\"2\">不会</span></em></strong><span data-flt-text-id=\"3\"> 自动重试失败请求。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": " 服务器 不会 自动重试失败请求。",
+        "translated_html": "<p> <strong>服务器 <em>不会</em></strong> 自动重试失败请求。</p>",
+        "content_probes": [
+          {
+            "id": "emphatic-negation",
+            "description": "Keep negation inside the emphasized slot",
+            "slot": 2,
+            "passed": true,
+            "observed": "不会"
+          },
+          {
+            "id": "retry",
+            "description": "Preserve failed-request retry meaning",
+            "slot": 3,
+            "passed": true,
+            "observed": "自动重试失败请求。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 148,
+            "text": "⟦0⟧⟦/0⟧⟦1⟧服务器⟦/1⟧⟦2⟧不会⟦/2⟧⟦3⟧自动重试失败请求。⟦/3⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 187,
+              "prompt_ms": 1829.445,
+              "prompt_per_token_ms": 9.78312834224599,
+              "prompt_per_second": 102.21679252450879,
+              "predicted_n": 52,
+              "predicted_ms": 3113.869,
+              "predicted_per_token_ms": 61.056254901960784,
+              "predicted_per_second": 16.378338330867486
+            },
+            "wall_s": 4.946499628999998,
+            "ttft_s": 1.887920478999993
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-pending-only",
+      "split": "holdout",
+      "category": "link_scope",
+      "source_html": "<p>Cancel <a href=\"/pending\">only the pending requests</a>; keep completed results.</p>",
+      "source_text": "Cancel only the pending requests; keep completed results.",
+      "reference_slots": [
+        "取消",
+        "仅仍在等待的请求",
+        "；保留已完成的结果。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "d0018e81d1d75ebd8dfefe7d20dc45d4296c0fb90658421e09103f850863d6e1",
+      "base": {
+        "id": "h-pending-only",
+        "split": "holdout",
+        "category": "link_scope",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">取消 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">仅待处理请求</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\">；保留已完成的结果。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "取消 仅待处理请求；保留已完成的结果。",
+        "translated_html": "<p>取消 <a href=\"/pending\">仅待处理请求</a>；保留已完成的结果。</p>",
+        "content_probes": [
+          {
+            "id": "pending-label",
+            "description": "Keep pending meaning inside the link",
+            "slot": 1,
+            "passed": true,
+            "observed": "仅待处理请求"
+          },
+          {
+            "id": "keep-results",
+            "description": "Do not discard completed results",
+            "slot": 2,
+            "passed": true,
+            "observed": "；保留已完成的结果。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 140,
+            "text": "⟦0⟧取消 ⟦/0⟧⟦1⟧仅待处理请求⟦/1⟧⟦2⟧；保留已完成的结果。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 177,
+              "prompt_ms": 1945.963,
+              "prompt_per_token_ms": 10.994141242937854,
+              "prompt_per_second": 90.95753619159255,
+              "predicted_n": 45,
+              "predicted_ms": 2998.434,
+              "predicted_per_token_ms": 68.14622727272727,
+              "predicted_per_second": 14.674326665185893
+            },
+            "wall_s": 4.955155615000003,
+            "ttft_s": 2.028664223
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-pending-only",
+        "split": "holdout",
+        "category": "link_scope",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">取消 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">仅待处理请求</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\">；保留已完成的结果。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "取消 仅待处理请求；保留已完成的结果。",
+        "translated_html": "<p>取消 <a href=\"/pending\">仅待处理请求</a>；保留已完成的结果。</p>",
+        "content_probes": [
+          {
+            "id": "pending-label",
+            "description": "Keep pending meaning inside the link",
+            "slot": 1,
+            "passed": true,
+            "observed": "仅待处理请求"
+          },
+          {
+            "id": "keep-results",
+            "description": "Do not discard completed results",
+            "slot": 2,
+            "passed": true,
+            "observed": "；保留已完成的结果。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 140,
+            "text": "⟦0⟧取消 ⟦/0⟧⟦1⟧仅待处理请求⟦/1⟧⟦2⟧；保留已完成的结果。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 177,
+              "prompt_ms": 1625.448,
+              "prompt_per_token_ms": 9.183322033898305,
+              "prompt_per_second": 108.89305594519172,
+              "predicted_n": 45,
+              "predicted_ms": 2748.123,
+              "predicted_per_token_ms": 62.45734090909091,
+              "predicted_per_second": 16.010928186256585
+            },
+            "wall_s": 4.376828282999996,
+            "ttft_s": 1.6842501979999942
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-should-must",
+      "split": "holdout",
+      "category": "modality",
+      "source_html": "<p>The cache should remain small, but the key must remain unique.</p>",
+      "source_text": "The cache should remain small, but the key must remain unique.",
+      "reference_slots": [
+        "缓存应保持较小，但键必须保持唯一。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "d8ce43c15bacaea4f26a805de31616d6a7caa598f37f4f2df31b80cc8ee6ffb1",
+      "base": {
+        "id": "h-should-must",
+        "split": "holdout",
+        "category": "modality",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">缓存应保持较小，但密钥必须保持唯一。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "缓存应保持较小，但密钥必须保持唯一。",
+        "translated_html": "<p>缓存应保持较小，但密钥必须保持唯一。</p>",
+        "content_probes": [
+          {
+            "id": "must",
+            "description": "Preserve mandatory uniqueness",
+            "passed": true,
+            "observed": "缓存应保持较小，但密钥必须保持唯一。"
+          },
+          {
+            "id": "unique",
+            "description": "Preserve uniqueness",
+            "passed": true,
+            "observed": "缓存应保持较小，但密钥必须保持唯一。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 127,
+            "text": "⟦0⟧缓存应保持较小，但密钥必须保持唯一。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 158,
+              "prompt_ms": 1668.154,
+              "prompt_per_token_ms": 10.55793670886076,
+              "prompt_per_second": 94.71547590929855,
+              "predicted_n": 23,
+              "predicted_ms": 1683.093,
+              "predicted_per_token_ms": 76.50422727272728,
+              "predicted_per_second": 13.071173131847141
+            },
+            "wall_s": 3.3548620779999982,
+            "ttft_s": 1.7297351570000028
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-should-must",
+        "split": "holdout",
+        "category": "modality",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">缓存应保持较小，但键必须保持唯一。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "缓存应保持较小，但键必须保持唯一。",
+        "translated_html": "<p>缓存应保持较小，但键必须保持唯一。</p>",
+        "content_probes": [
+          {
+            "id": "must",
+            "description": "Preserve mandatory uniqueness",
+            "passed": true,
+            "observed": "缓存应保持较小，但键必须保持唯一。"
+          },
+          {
+            "id": "unique",
+            "description": "Preserve uniqueness",
+            "passed": true,
+            "observed": "缓存应保持较小，但键必须保持唯一。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 127,
+            "text": "⟦0⟧缓存应保持较小，但键必须保持唯一。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 158,
+              "prompt_ms": 1316.937,
+              "prompt_per_token_ms": 8.335044303797467,
+              "prompt_per_second": 119.9753670828597,
+              "predicted_n": 23,
+              "predicted_ms": 1280.519,
+              "predicted_per_token_ms": 58.20540909090909,
+              "predicted_per_second": 17.180533830423446
+            },
+            "wall_s": 2.600968120000005,
+            "ttft_s": 1.3736737469999936
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-retry-limit",
+      "split": "holdout",
+      "category": "quantifiers",
+      "source_html": "<p>Retry at most <code>3</code> times; do not retry indefinitely.</p>",
+      "source_text": "Retry at most 3 times; do not retry indefinitely.",
+      "reference_slots": [
+        "最多重试",
+        "次；不要无限重试。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "54704ba76c96d0641211087870e44d52f5328bce872b75cd50f7cc24c22dc264",
+      "base": {
+        "id": "h-retry-limit",
+        "split": "holdout",
+        "category": "quantifiers",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">最多重试 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> 次；不要无限重试。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "最多重试 3 次；不要无限重试。",
+        "translated_html": "<p>最多重试 <code>3</code> 次；不要无限重试。</p>",
+        "content_probes": [
+          {
+            "id": "max-retries",
+            "description": "Preserve finite upper bound",
+            "slot": 0,
+            "passed": true,
+            "observed": "最多重试"
+          },
+          {
+            "id": "not-infinite",
+            "description": "Preserve prohibition of infinite retries",
+            "slot": 1,
+            "passed": true,
+            "observed": "次；不要无限重试。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 122,
+            "text": "⟦0⟧最多重试 ⟦/0⟧⟪P0⟫⟦1⟧次；不要无限重试。⟦/1⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 172,
+              "prompt_ms": 2227.941,
+              "prompt_per_token_ms": 12.953145348837209,
+              "prompt_per_second": 77.20132624696974,
+              "predicted_n": 37,
+              "predicted_ms": 2541.603,
+              "predicted_per_token_ms": 70.60008333333333,
+              "predicted_per_second": 14.164289230064648
+            },
+            "wall_s": 4.773987042000001,
+            "ttft_s": 2.3055678950000003
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-retry-limit",
+        "split": "holdout",
+        "category": "quantifiers",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">最多重试 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> 次；请勿无限重试。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "最多重试 3 次；请勿无限重试。",
+        "translated_html": "<p>最多重试 <code>3</code> 次；请勿无限重试。</p>",
+        "content_probes": [
+          {
+            "id": "max-retries",
+            "description": "Preserve finite upper bound",
+            "slot": 0,
+            "passed": true,
+            "observed": "最多重试"
+          },
+          {
+            "id": "not-infinite",
+            "description": "Preserve prohibition of infinite retries",
+            "slot": 1,
+            "passed": false,
+            "observed": "次；请勿无限重试。"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 122,
+            "text": "⟦0⟧最多重试 ⟦/0⟧⟪P0⟫⟦1⟧ 次；请勿无限重试。⟦/1⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 172,
+              "prompt_ms": 1574.38,
+              "prompt_per_token_ms": 9.153372093023256,
+              "prompt_per_second": 109.24935530176958,
+              "predicted_n": 38,
+              "predicted_ms": 2136.421,
+              "predicted_per_token_ms": 57.7411081081081,
+              "predicted_per_second": 17.31868391108307
+            },
+            "wall_s": 3.7141374710000092,
+            "ttft_s": 1.6392212450000079
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-read-committed",
+      "split": "holdout",
+      "category": "terminology",
+      "source_html": "<p>Under <a href=\"/isolation\">Read Committed</a>, dirty reads are not allowed.</p>",
+      "source_text": "Under Read Committed, dirty reads are not allowed.",
+      "reference_slots": [
+        "在",
+        "读已提交",
+        "隔离级别下，不允许脏读。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "f2ed582f80a6dac0e7f37f5cae0db83d5e590d1bbf9c0995fa730cac4db774dd",
+      "base": {
+        "id": "h-read-committed",
+        "split": "holdout",
+        "category": "terminology",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">在 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">读已提交</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\">中，不允许发生脏读。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "在 读已提交中，不允许发生脏读。",
+        "translated_html": "<p>在 <a href=\"/isolation\">读已提交</a>中，不允许发生脏读。</p>",
+        "content_probes": [
+          {
+            "id": "isolation-label",
+            "description": "Keep the SQL isolation term",
+            "slot": 1,
+            "passed": true,
+            "observed": "读已提交"
+          },
+          {
+            "id": "no-dirty-reads",
+            "description": "Preserve dirty-read prohibition",
+            "slot": 2,
+            "passed": true,
+            "observed": "中，不允许发生脏读。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 129,
+            "text": "⟦0⟧在 ⟦/0⟧⟦1⟧读已提交⟦/1⟧⟦2⟧中，不允许发生脏读。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 207,
+              "prompt_ms": 1868.658,
+              "prompt_per_token_ms": 9.027333333333333,
+              "prompt_per_second": 110.77468429214977,
+              "predicted_n": 45,
+              "predicted_ms": 2650.578,
+              "predicted_per_token_ms": 60.24040909090909,
+              "predicted_per_second": 16.600152872316908
+            },
+            "wall_s": 4.523177002999997,
+            "ttft_s": 1.9335842279999997
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-read-committed",
+        "split": "holdout",
+        "category": "terminology",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">在 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">读已提交</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\">下，不允许脏读。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "在 读已提交下，不允许脏读。",
+        "translated_html": "<p>在 <a href=\"/isolation\">读已提交</a>下，不允许脏读。</p>",
+        "content_probes": [
+          {
+            "id": "isolation-label",
+            "description": "Keep the SQL isolation term",
+            "slot": 1,
+            "passed": true,
+            "observed": "读已提交"
+          },
+          {
+            "id": "no-dirty-reads",
+            "description": "Preserve dirty-read prohibition",
+            "slot": 2,
+            "passed": true,
+            "observed": "下，不允许脏读。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 129,
+            "text": "⟦0⟧在⟦/0⟧⟦1⟧读已提交⟦/1⟧⟦2⟧下，不允许脏读。⟦/2⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 207,
+              "prompt_ms": 2011.08,
+              "prompt_per_token_ms": 9.71536231884058,
+              "prompt_per_second": 102.92976907930068,
+              "predicted_n": 44,
+              "predicted_ms": 2731.118,
+              "predicted_per_token_ms": 63.514372093023255,
+              "predicted_per_second": 15.74446801639475
+            },
+            "wall_s": 4.745534750000006,
+            "ttft_s": 2.076456898000004
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-reader-writer",
+      "split": "holdout",
+      "category": "roles",
+      "source_html": "<p>The <a href=\"/reader\">reader</a> waits for the <a href=\"/writer\">writer</a>, not the other way around.</p>",
+      "source_text": "The reader waits for the writer, not the other way around.",
+      "reference_slots": [
+        "",
+        "读取方",
+        "等待",
+        "写入方",
+        "，而不是反过来。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "d9bc8b856df3236369803fb41043439d691cfc3d508e41c57f7361b72facd302",
+      "base": {
+        "id": "h-reader-writer",
+        "split": "holdout",
+        "category": "roles",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\"> </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">读者</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> 等待 </span><a data-flt-link-id=\"1\" href=\"https://pagelingo.invalid/__link/1\"><code>__FLT_LINK_START_1__</code><span data-flt-text-id=\"3\">作者</span><code>__FLT_LINK_END_1__</code></a><span data-flt-text-id=\"4\">出现，而不是相反。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": " 读者 等待 作者出现，而不是相反。",
+        "translated_html": "<p> <a href=\"/reader\">读者</a> 等待 <a href=\"/writer\">作者</a>出现，而不是相反。</p>",
+        "content_probes": [
+          {
+            "id": "reader",
+            "description": "Keep reader label",
+            "slot": 1,
+            "passed": true,
+            "observed": "读者"
+          },
+          {
+            "id": "writer",
+            "description": "Keep writer label",
+            "slot": 3,
+            "passed": false,
+            "observed": "作者"
+          },
+          {
+            "id": "wait",
+            "description": "Preserve direction of waiting",
+            "slot": 2,
+            "passed": true,
+            "observed": "等待"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 161,
+            "text": "⟦0⟧⟦/0⟧⟦1⟧读者⟦/1⟧⟦2⟧等待⟦/2⟧⟦3⟧作者⟦/3⟧⟦4⟧出现，而不是相反。⟦/4⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 202,
+              "prompt_ms": 1915.259,
+              "prompt_per_token_ms": 9.481480198019803,
+              "prompt_per_second": 105.46876427678973,
+              "predicted_n": 64,
+              "predicted_ms": 4281.456,
+              "predicted_per_token_ms": 67.95961904761904,
+              "predicted_per_second": 14.714620446876017
+            },
+            "wall_s": 6.200225397000002,
+            "ttft_s": 1.9824999170000084
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-reader-writer",
+        "split": "holdout",
+        "category": "roles",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\"> </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">阅读器</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> 等待 </span><a data-flt-link-id=\"1\" href=\"https://pagelingo.invalid/__link/1\"><code>__FLT_LINK_START_1__</code><span data-flt-text-id=\"3\">写入器</span><code>__FLT_LINK_END_1__</code></a><span data-flt-text-id=\"4\">，而不是相反。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": " 阅读器 等待 写入器，而不是相反。",
+        "translated_html": "<p> <a href=\"/reader\">阅读器</a> 等待 <a href=\"/writer\">写入器</a>，而不是相反。</p>",
+        "content_probes": [
+          {
+            "id": "reader",
+            "description": "Keep reader label",
+            "slot": 1,
+            "passed": false,
+            "observed": "阅读器"
+          },
+          {
+            "id": "writer",
+            "description": "Keep writer label",
+            "slot": 3,
+            "passed": true,
+            "observed": "写入器"
+          },
+          {
+            "id": "wait",
+            "description": "Preserve direction of waiting",
+            "slot": 2,
+            "passed": true,
+            "observed": "等待"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 161,
+            "text": "⟦0⟧⟦/0⟧⟦1⟧阅读器⟦/1⟧⟦2⟧等待⟦/2⟧⟦3⟧写入器⟦/3⟧⟦4⟧，而不是相反。⟦/4⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 202,
+              "prompt_ms": 2095.157,
+              "prompt_per_token_ms": 10.372064356435644,
+              "prompt_per_second": 96.41282252356267,
+              "predicted_n": 65,
+              "predicted_ms": 4037.563,
+              "predicted_per_token_ms": 63.086921875,
+              "predicted_per_second": 15.85114585208949
+            },
+            "wall_s": 6.136300792999988,
+            "ttft_s": 2.160045643999998
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-validation-branches",
+      "split": "holdout",
+      "category": "condition",
+      "source_html": "<p>If validation fails, discard the response; otherwise keep it.</p>",
+      "source_text": "If validation fails, discard the response; otherwise keep it.",
+      "reference_slots": [
+        "验证失败时丢弃响应；否则保留响应。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "d2711098903a82b35858bd2bcc195d2a7d78adf79127b86b023f8bde2b425d38",
+      "base": {
+        "id": "h-validation-branches",
+        "split": "holdout",
+        "category": "condition",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">如果验证失败，则丢弃该响应；否则保留它。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "如果验证失败，则丢弃该响应；否则保留它。",
+        "translated_html": "<p>如果验证失败，则丢弃该响应；否则保留它。</p>",
+        "content_probes": [
+          {
+            "id": "fail",
+            "description": "Preserve failure condition",
+            "passed": true,
+            "observed": "如果验证失败，则丢弃该响应；否则保留它。"
+          },
+          {
+            "id": "discard",
+            "description": "Preserve discard branch",
+            "passed": true,
+            "observed": "如果验证失败，则丢弃该响应；否则保留它。"
+          },
+          {
+            "id": "otherwise",
+            "description": "Preserve alternative branch",
+            "passed": true,
+            "observed": "如果验证失败，则丢弃该响应；否则保留它。"
+          },
+          {
+            "id": "keep",
+            "description": "Preserve keep branch",
+            "passed": true,
+            "observed": "如果验证失败，则丢弃该响应；否则保留它。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 126,
+            "text": "⟦0⟧如果验证失败，则丢弃该响应；否则保留它。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 157,
+              "prompt_ms": 1455.981,
+              "prompt_per_token_ms": 9.273764331210192,
+              "prompt_per_second": 107.83107746598341,
+              "predicted_n": 25,
+              "predicted_ms": 1421.114,
+              "predicted_per_token_ms": 59.21308333333334,
+              "predicted_per_second": 16.888159570590396
+            },
+            "wall_s": 2.880358825000003,
+            "ttft_s": 1.516496736999994
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-validation-branches",
+        "split": "holdout",
+        "category": "condition",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">如果验证失败，请丢弃响应；否则请保留它。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "如果验证失败，请丢弃响应；否则请保留它。",
+        "translated_html": "<p>如果验证失败，请丢弃响应；否则请保留它。</p>",
+        "content_probes": [
+          {
+            "id": "fail",
+            "description": "Preserve failure condition",
+            "passed": true,
+            "observed": "如果验证失败，请丢弃响应；否则请保留它。"
+          },
+          {
+            "id": "discard",
+            "description": "Preserve discard branch",
+            "passed": true,
+            "observed": "如果验证失败，请丢弃响应；否则请保留它。"
+          },
+          {
+            "id": "otherwise",
+            "description": "Preserve alternative branch",
+            "passed": true,
+            "observed": "如果验证失败，请丢弃响应；否则请保留它。"
+          },
+          {
+            "id": "keep",
+            "description": "Preserve keep branch",
+            "passed": true,
+            "observed": "如果验证失败，请丢弃响应；否则请保留它。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 126,
+            "text": "⟦0⟧如果验证失败，请丢弃响应；否则请保留它。⟦/0⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 157,
+              "prompt_ms": 1741.99,
+              "prompt_per_token_ms": 11.095477707006369,
+              "prompt_per_second": 90.1268089943111,
+              "predicted_n": 25,
+              "predicted_ms": 1619.931,
+              "predicted_per_token_ms": 67.497125,
+              "predicted_per_second": 14.815445843063687
+            },
+            "wall_s": 3.3654801850000076,
+            "ttft_s": 1.8210674609999988
+          }
+        ]
+      }
+    },
+    {
+      "id": "h-promise-network",
+      "split": "holdout",
+      "category": "contrast",
+      "source_html": "<p>A <code>Promise</code> may be rejected even when the network request succeeds.</p>",
+      "source_text": "A Promise may be rejected even when the network request succeeds.",
+      "reference_slots": [
+        "",
+        "即使网络请求成功，也可能被拒绝。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "authored"
+      },
+      "paired_input_sha256": "83be4dc49c33897757a163530c2f5199cbf2309925f6c3f995633ccc3e8ff3ca",
+      "base": {
+        "id": "h-promise-network",
+        "split": "holdout",
+        "category": "contrast",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">A </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> 即使在网络请求成功的情况下也可能被拒绝。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "A Promise 即使在网络请求成功的情况下也可能被拒绝。",
+        "translated_html": "<p>A <code>Promise</code> 即使在网络请求成功的情况下也可能被拒绝。</p>",
+        "content_probes": [
+          {
+            "id": "network-success",
+            "description": "Preserve successful request condition",
+            "slot": 1,
+            "passed": true,
+            "observed": "即使在网络请求成功的情况下也可能被拒绝。"
+          },
+          {
+            "id": "promise-rejected",
+            "description": "Preserve possible rejection",
+            "slot": 1,
+            "passed": true,
+            "observed": "即使在网络请求成功的情况下也可能被拒绝。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 137,
+            "text": "⟦0⟧A ⟦/0⟧⟪P0⟫⟦1⟧ 即使在网络请求成功的情况下也可能被拒绝。⟦/1⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 189,
+              "prompt_ms": 1701.809,
+              "prompt_per_token_ms": 9.004280423280424,
+              "prompt_per_second": 111.05829150039752,
+              "predicted_n": 40,
+              "predicted_ms": 2669.47,
+              "predicted_per_token_ms": 68.44794871794872,
+              "predicted_per_second": 14.609641614253018
+            },
+            "wall_s": 4.375800436000005,
+            "ttft_s": 1.7641128800000005
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "h-promise-network",
+        "split": "holdout",
+        "category": "contrast",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">A </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> 即使网络请求成功，也可能被拒绝。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "A Promise 即使网络请求成功，也可能被拒绝。",
+        "translated_html": "<p>A <code>Promise</code> 即使网络请求成功，也可能被拒绝。</p>",
+        "content_probes": [
+          {
+            "id": "network-success",
+            "description": "Preserve successful request condition",
+            "slot": 1,
+            "passed": true,
+            "observed": "即使网络请求成功，也可能被拒绝。"
+          },
+          {
+            "id": "promise-rejected",
+            "description": "Preserve possible rejection",
+            "slot": 1,
+            "passed": true,
+            "observed": "即使网络请求成功，也可能被拒绝。"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 137,
+            "text": "⟦0⟧A ⟦/0⟧⟪P0⟫⟦1⟧ 即使网络请求成功，也可能被拒绝。⟦/1⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 189,
+              "prompt_ms": 1805.377,
+              "prompt_per_token_ms": 9.552259259259259,
+              "prompt_per_second": 104.68727584321722,
+              "predicted_n": 40,
+              "predicted_ms": 2238.923,
+              "predicted_per_token_ms": 57.40828205128204,
+              "predicted_per_second": 17.41908944613102
+            },
+            "wall_s": 4.047458073999994,
+            "ttft_s": 1.8635560399999958
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-html-headings-04",
+      "split": "diagnostic",
+      "category": "previous_failure",
+      "source_html": "<p><strong>Note:</strong>\nNesting multiple <code>&lt;h1&gt;</code> elements in nested <a href=\"/en-US/docs/Web/HTML/Reference/Elements#content_sectioning\">sectioning elements</a> was allowed in older versions of the HTML standard. However, this was never considered a best practice and is now non-conforming. Read more in <a href=\"https://adrianroselli.com/2016/08/there-is-no-document-outline-algorithm.html\" class=\"external\" target=\"_blank\" title=\"External link (opens in new tab)\">There Is No Document Outline Algorithm</a>.</p>",
+      "source_text": "Note:\nNesting multiple <h1> elements in nested sectioning elements was allowed in older versions of the HTML standard. However, this was never considered a best practice and is now non-conforming. Read more in There Is No Document Outline Algorithm.",
+      "reference_slots": [
+        "注意：",
+        "将多个",
+        "元素嵌套在嵌套的",
+        "分节元素",
+        "中，在较早版本的 HTML 标准中曾被允许。不过，这从未被视为最佳实践，如今也已不符合标准。更多信息请参阅",
+        "没有文档大纲算法"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/Heading_Elements"
+      },
+      "paired_input_sha256": "338f17156065339a2ed4c010ce235a20ed2d3f31c58c7ca7983429d30bc3f796",
+      "base": {
+        "id": "d-html-headings-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<strong><span data-flt-text-id=\"0\">注意：</span></strong><span data-flt-text-id=\"1\">\n在旧的 HTML 标准中，将多个 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"2\"> 元素嵌套在 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"3\">部分化元素</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"4\"> 中是被允许的。不过，这并不被视为最佳实践，现在属于不符合规范的行为。更多内容请参见 </span><a data-flt-link-id=\"1\" href=\"https://pagelingo.invalid/__link/1\"><code>__FLT_LINK_START_1__</code><span data-flt-text-id=\"5\">《没有文档大纲算法》</span><code>__FLT_LINK_END_1__</code></a><span data-flt-fixed=\"true\">.</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "注意：\n在旧的 HTML 标准中，将多个 <h1> 元素嵌套在 部分化元素 中是被允许的。不过，这并不被视为最佳实践，现在属于不符合规范的行为。更多内容请参见 《没有文档大纲算法》.",
+        "translated_html": "<p><strong>注意：</strong>\n在旧的 HTML 标准中，将多个 <code>&lt;h1&gt;</code> 元素嵌套在 <a href=\"/en-US/docs/Web/HTML/Reference/Elements#content_sectioning\">部分化元素</a> 中是被允许的。不过，这并不被视为最佳实践，现在属于不符合规范的行为。更多内容请参见 <a href=\"https://adrianroselli.com/2016/08/there-is-no-document-outline-algorithm.html\" class=\"external\" target=\"_blank\" title=\"External link (opens in new tab)\">《没有文档大纲算法》</a>.</p>",
+        "content_probes": [
+          {
+            "id": "multiple",
+            "description": "Preserve multiple h1 elements rather than multiple sectioning elements",
+            "slot": 1,
+            "passed": true,
+            "observed": "在旧的 HTML 标准中，将多个"
+          },
+          {
+            "id": "nesting-direction",
+            "description": "Keep h1 as the object being nested",
+            "slot": 2,
+            "passed": true,
+            "observed": "元素嵌套在"
+          },
+          {
+            "id": "read-more",
+            "description": "Retain further-reading instruction",
+            "slot": 4,
+            "passed": true,
+            "observed": "中是被允许的。不过，这并不被视为最佳实践，现在属于不符合规范的行为。更多内容请参见"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 462,
+            "text": "⟦0⟧注意：⟦/0⟧⟦1⟧  \n在旧的 HTML 标准中，将多个 ⟦/1⟧⟪P0⟫⟦2⟧元素嵌套在 ⟦/2⟧⟦3⟧部分化元素⟦/3⟧⟦4⟧中是被允许的。不过，这并不被视为最佳实践，现在属于不符合规范的行为。更多内容请参见 ⟦/4⟧⟦5⟧《没有文档大纲算法》⟦/5⟧⟪P1⟫",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 259,
+              "prompt_ms": 3025.832,
+              "prompt_per_token_ms": 11.682749034749035,
+              "prompt_per_second": 85.59629219335378,
+              "predicted_n": 125,
+              "predicted_ms": 9051.909,
+              "predicted_per_token_ms": 72.99926612903225,
+              "predicted_per_second": 13.698767851068764
+            },
+            "wall_s": 12.091222188,
+            "ttft_s": 3.105767380999998
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-html-headings-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<strong><span data-flt-text-id=\"0\">注意：</span></strong><span data-flt-text-id=\"1\">\n在嵌套 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"2\"> 元素中嵌套多个 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"3\">分段元素</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"4\"> 在 HTML 标准的旧版本中是允许的。然而，这从未被视为最佳实践，现在也不符合规范。阅读 </span><a data-flt-link-id=\"1\" href=\"https://pagelingo.invalid/__link/1\"><code>__FLT_LINK_START_1__</code><span data-flt-text-id=\"5\">没有文档大纲算法</span><code>__FLT_LINK_END_1__</code></a><span data-flt-fixed=\"true\">.</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "注意：\n在嵌套 <h1> 元素中嵌套多个 分段元素 在 HTML 标准的旧版本中是允许的。然而，这从未被视为最佳实践，现在也不符合规范。阅读 没有文档大纲算法.",
+        "translated_html": "<p><strong>注意：</strong>\n在嵌套 <code>&lt;h1&gt;</code> 元素中嵌套多个 <a href=\"/en-US/docs/Web/HTML/Reference/Elements#content_sectioning\">分段元素</a> 在 HTML 标准的旧版本中是允许的。然而，这从未被视为最佳实践，现在也不符合规范。阅读 <a href=\"https://adrianroselli.com/2016/08/there-is-no-document-outline-algorithm.html\" class=\"external\" target=\"_blank\" title=\"External link (opens in new tab)\">没有文档大纲算法</a>.</p>",
+        "content_probes": [
+          {
+            "id": "multiple",
+            "description": "Preserve multiple h1 elements rather than multiple sectioning elements",
+            "slot": 1,
+            "passed": false,
+            "observed": "在嵌套"
+          },
+          {
+            "id": "nesting-direction",
+            "description": "Keep h1 as the object being nested",
+            "slot": 2,
+            "passed": false,
+            "observed": "元素中嵌套多个"
+          },
+          {
+            "id": "read-more",
+            "description": "Retain further-reading instruction",
+            "slot": 4,
+            "passed": false,
+            "observed": "在 HTML 标准的旧版本中是允许的。然而，这从未被视为最佳实践，现在也不符合规范。阅读"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 462,
+            "text": "⟦0⟧注意：⟦/0⟧⟦1⟧\n在嵌套⟦/1⟧⟪P0⟫⟦2⟧元素中嵌套多个⟦/2⟧⟦3⟧分段元素⟦/3⟧⟦4⟧在 HTML 标准的旧版本中是允许的。然而，这从未被视为最佳实践，现在也不符合规范。阅读⟦/4⟧⟦5⟧没有文档大纲算法⟦/5⟧⟪P1⟫",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 259,
+              "prompt_ms": 2947.76,
+              "prompt_per_token_ms": 11.381312741312742,
+              "prompt_per_second": 87.86332672944879,
+              "predicted_n": 116,
+              "predicted_ms": 7865.189,
+              "predicted_per_token_ms": 68.39294782608695,
+              "predicted_per_second": 14.62139053492548
+            },
+            "wall_s": 10.827090953000006,
+            "ttft_s": 3.043088713000005
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-html-headings-05",
+      "split": "diagnostic",
+      "category": "previous_failure",
+      "source_html": "<p>Prefer using only one <code>&lt;h1&gt;</code> per page and <a href=\"#nesting\">nest headings</a> without skipping levels.</p>",
+      "source_text": "Prefer using only one <h1> per page and nest headings without skipping levels.",
+      "reference_slots": [
+        "建议每页只使用一个",
+        "，并且",
+        "嵌套标题",
+        "时不要跳过层级。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/Heading_Elements"
+      },
+      "paired_input_sha256": "69806dd944b83395707ac125141ec0d9b2994fb353fcc8961329efbf1f209b53",
+      "base": {
+        "id": "d-html-headings-05",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">请每页只使用一个 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> ，并且不要跳过层级，将 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"2\">嵌套标题</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"3\"> 放在正确的位置。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "请每页只使用一个 <h1> ，并且不要跳过层级，将 嵌套标题 放在正确的位置。",
+        "translated_html": "<p>请每页只使用一个 <code>&lt;h1&gt;</code> ，并且不要跳过层级，将 <a href=\"#nesting\">嵌套标题</a> 放在正确的位置。</p>",
+        "content_probes": [
+          {
+            "id": "no-skipped-levels",
+            "description": "Retain prohibition of skipped levels",
+            "slot": 3,
+            "passed": false,
+            "observed": "放在正确的位置。"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 181,
+            "text": "⟦0⟧请每页只使用一个 ⟦/0⟧⟪P0⟫⟦1⟧，并且不要跳过层级，将 ⟦/1⟧⟦2⟧嵌套标题⟦/2⟧⟦3⟧放在正确的位置。⟦/3⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 198,
+              "prompt_ms": 3811.944,
+              "prompt_per_token_ms": 19.252242424242425,
+              "prompt_per_second": 51.94200124660803,
+              "predicted_n": 70,
+              "predicted_ms": 7683.818,
+              "predicted_per_token_ms": 111.35968115942029,
+              "predicted_per_second": 8.979910768318563
+            },
+            "wall_s": 11.500652312000005,
+            "ttft_s": 3.943385846000005
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-html-headings-05",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">页面上请只使用一个 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> ，并且不要跳过层级，逐层嵌套标题 </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"2\">。</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"3\"> 。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "页面上请只使用一个 <h1> ，并且不要跳过层级，逐层嵌套标题 。 。",
+        "translated_html": "<p>页面上请只使用一个 <code>&lt;h1&gt;</code> ，并且不要跳过层级，逐层嵌套标题 <a href=\"#nesting\">。</a> 。</p>",
+        "content_probes": [
+          {
+            "id": "no-skipped-levels",
+            "description": "Retain prohibition of skipped levels",
+            "slot": 3,
+            "passed": false,
+            "observed": "。"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 181,
+            "text": "⟦0⟧页面上请只使用一个⟦/0⟧⟪P0⟫⟦1⟧，并且不要跳过层级，逐层嵌套标题⟦/1⟧⟦2⟧。⟦/2⟧⟦3⟧。⟦/3⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 198,
+              "prompt_ms": 1950.458,
+              "prompt_per_token_ms": 9.85079797979798,
+              "prompt_per_second": 101.51461861778105,
+              "predicted_n": 69,
+              "predicted_ms": 4441.024,
+              "predicted_per_token_ms": 65.30917647058824,
+              "predicted_per_second": 15.311783948927093
+            },
+            "wall_s": 6.394850047999993,
+            "ttft_s": 2.014249557999996
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-asyncio-task-04",
+      "split": "diagnostic",
+      "category": "previous_failure",
+      "source_html": "<p>pass the task group instance or bound <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">cancel()</span></code> method to some other task <em>before</em>\nopening the task group, allowing remote cancellation</p>",
+      "source_text": "pass the task group instance or bound cancel() method to some other task before\nopening the task group, allowing remote cancellation",
+      "reference_slots": [
+        "先将任务组实例或绑定的",
+        "方法传递给其他任务，",
+        "然后再",
+        "打开任务组，从而允许远程取消任务"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://docs.python.org/3/library/asyncio-task.html"
+      },
+      "paired_input_sha256": "75c9f2bdc5b1ea6d9075cee901c0b54eed34990faff94b6eb35627481802829f",
+      "base": {
+        "id": "d-asyncio-task-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">将任务组实例或绑定的 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> 方法传递给其他任务 </span><em><span data-flt-text-id=\"2\">，在</span></em><span data-flt-text-id=\"3\">\n之前  \n打开任务组，允许远程取消</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "将任务组实例或绑定的 cancel() 方法传递给其他任务 ，在\n之前  \n打开任务组，允许远程取消",
+        "translated_html": "<p>将任务组实例或绑定的 <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">cancel()</span></code> 方法传递给其他任务 <em>，在</em>\n之前  \n打开任务组，允许远程取消</p>",
+        "content_probes": [
+          {
+            "id": "before",
+            "description": "Preserve the emphasized temporal relation",
+            "slot": 2,
+            "passed": false,
+            "observed": "，在"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 256,
+            "text": "⟦0⟧将任务组实例或绑定的 ⟦/0⟧⟪P0⟫⟦1⟧ 方法传递给其他任务 ⟦/1⟧⟦2⟧，在 ⟦/2⟧⟦3⟧ 之前  \n打开任务组，允许远程取消 ⟦/3⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 224,
+              "prompt_ms": 3653.471,
+              "prompt_per_token_ms": 16.310138392857144,
+              "prompt_per_second": 61.31155824146407,
+              "predicted_n": 75,
+              "predicted_ms": 8512.241,
+              "predicted_per_token_ms": 115.03028378378379,
+              "predicted_per_second": 8.693362887634407
+            },
+            "wall_s": 12.171952571000002,
+            "ttft_s": 3.754461095000006
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-asyncio-task-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [
+          "[PageLingo] Translation root failed Error: Error: MT invalid text-slot content"
+        ],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">pass the task group instance or bound </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> method to some other task </span><em><span data-flt-text-id=\"2\">before</span></em><span data-flt-text-id=\"3\">\nopening the task group, allowing remote cancellation</span>",
+          "accepted": false,
+          "reason": "Error: MT invalid text-slot content"
+        },
+        "displayed": false,
+        "translated_text": "pass the task group instance or bound cancel() method to some other task before\nopening the task group, allowing remote cancellation",
+        "translated_html": "<p>pass the task group instance or bound <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">cancel()</span></code> method to some other task <em>before</em>\nopening the task group, allowing remote cancellation</p>",
+        "content_probes": null,
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 256,
+            "text": "⟦0⟧传递任务组实例或绑定的⟦/0⟧⟪P0⟫⟦1⟧方法到其他任务之前⟦/1⟧⟦2⟧⟦/2⟧⟦3⟧\n打开任务组，允许远程取消⟦/3⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 224,
+              "prompt_ms": 2203.517,
+              "prompt_per_token_ms": 9.837129464285713,
+              "prompt_per_second": 101.65567136536728,
+              "predicted_n": 70,
+              "predicted_ms": 5479.709,
+              "predicted_per_token_ms": 79.41607246376812,
+              "predicted_per_second": 12.591909533882182
+            },
+            "wall_s": 7.688640316999997,
+            "ttft_s": 2.266550669999997
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-mdnpromise-04",
+      "split": "diagnostic",
+      "category": "previous_failure",
+      "source_html": "<p>An <a href=\"/en-US/docs/Web/JavaScript/Reference/Iteration_protocols#the_iterable_protocol\">iterable</a> (such as an <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array\"><code>Array</code></a>) of promises. These values are <a href=\"/en-US/docs/Web/JavaScript/Reference/Operators/await\">awaited</a>, so other <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise#thenables\">thenables</a> are also resolved, while non-thenables are returned as-is.</p>",
+      "source_text": "An iterable (such as an Array) of promises. These values are awaited, so other thenables are also resolved, while non-thenables are returned as-is.",
+      "reference_slots": [
+        "一个",
+        "可迭代对象",
+        "（例如一个",
+        "），其中包含 Promise。这些值会被",
+        "等待",
+        "，因此其他",
+        "thenable 对象",
+        "也会被兑现，而非 thenable 值则原样返回。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all"
+      },
+      "paired_input_sha256": "d58d6b78d3bf55687c7adaf76b9d30e9b771e4aa805133a2b290e83f76314745",
+      "base": {
+        "id": "d-mdnpromise-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [
+          "[PageLingo] Translation root failed Error: Error: MT translation label in text slot"
+        ],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">An </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">iterable</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> (such as an </span><a data-flt-link-id=\"1\" href=\"https://pagelingo.invalid/__link/1\"><code>__FLT_LINK_START_1__</code><code>__FLT_OPAQUE_0__</code><code>__FLT_LINK_END_1__</code></a><span data-flt-text-id=\"3\">) of promises. These values are </span><a data-flt-link-id=\"2\" href=\"https://pagelingo.invalid/__link/2\"><code>__FLT_LINK_START_2__</code><span data-flt-text-id=\"4\">awaited</span><code>__FLT_LINK_END_2__</code></a><span data-flt-text-id=\"5\">, so other </span><a data-flt-link-id=\"3\" href=\"https://pagelingo.invalid/__link/3\"><code>__FLT_LINK_START_3__</code><span data-flt-text-id=\"6\">thenables</span><code>__FLT_LINK_END_3__</code></a><span data-flt-text-id=\"7\"> are also resolved, while non-thenables are returned as-is.</span>",
+          "accepted": false,
+          "reason": "Error: MT translation label in text slot"
+        },
+        "displayed": false,
+        "translated_text": "An iterable (such as an Array) of promises. These values are awaited, so other thenables are also resolved, while non-thenables are returned as-is.",
+        "translated_html": "<p>An <a href=\"/en-US/docs/Web/JavaScript/Reference/Iteration_protocols#the_iterable_protocol\">iterable</a> (such as an <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array\"><code>Array</code></a>) of promises. These values are <a href=\"/en-US/docs/Web/JavaScript/Reference/Operators/await\">awaited</a>, so other <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise#thenables\">thenables</a> are also resolved, while non-thenables are returned as-is.</p>",
+        "content_probes": null,
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 323,
+            "text": "⟦0⟧一个⟦/0⟧⟦1⟧可迭代⟦/1⟧⟦2⟧（如⟦/2⟧⟪P0⟫⟦3⟧）的Promise。这些值属于⟦/3⟧⟦4⟧等待⟦/4⟧⟦5⟧状态，因此其他⟦/5⟧⟦6⟧thenable对象也会被解析，而非 thenable的对象则保持原样返回。⟦/6⟧⟦7⟧\nChinese:\n⟦/7⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 279,
+              "prompt_ms": 5109.625,
+              "prompt_per_token_ms": 18.314068100358423,
+              "prompt_per_second": 54.60283288891064,
+              "predicted_n": 132,
+              "predicted_ms": 9308.631,
+              "predicted_per_token_ms": 71.05825190839694,
+              "predicted_per_second": 14.072960889737708
+            },
+            "wall_s": 14.42453534999999,
+            "ttft_s": 5.210971445999996
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-mdnpromise-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [
+          "[PageLingo] Translation root failed Error: Error: MT invalid text-slot content"
+        ],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">An </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"1\">iterable</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> (such as an </span><a data-flt-link-id=\"1\" href=\"https://pagelingo.invalid/__link/1\"><code>__FLT_LINK_START_1__</code><code>__FLT_OPAQUE_0__</code><code>__FLT_LINK_END_1__</code></a><span data-flt-text-id=\"3\">) of promises. These values are </span><a data-flt-link-id=\"2\" href=\"https://pagelingo.invalid/__link/2\"><code>__FLT_LINK_START_2__</code><span data-flt-text-id=\"4\">awaited</span><code>__FLT_LINK_END_2__</code></a><span data-flt-text-id=\"5\">, so other </span><a data-flt-link-id=\"3\" href=\"https://pagelingo.invalid/__link/3\"><code>__FLT_LINK_START_3__</code><span data-flt-text-id=\"6\">thenables</span><code>__FLT_LINK_END_3__</code></a><span data-flt-text-id=\"7\"> are also resolved, while non-thenables are returned as-is.</span>",
+          "accepted": false,
+          "reason": "Error: MT invalid text-slot content"
+        },
+        "displayed": false,
+        "translated_text": "An iterable (such as an Array) of promises. These values are awaited, so other thenables are also resolved, while non-thenables are returned as-is.",
+        "translated_html": "<p>An <a href=\"/en-US/docs/Web/JavaScript/Reference/Iteration_protocols#the_iterable_protocol\">iterable</a> (such as an <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array\"><code>Array</code></a>) of promises. These values are <a href=\"/en-US/docs/Web/JavaScript/Reference/Operators/await\">awaited</a>, so other <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise#thenables\">thenables</a> are also resolved, while non-thenables are returned as-is.</p>",
+        "content_probes": null,
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 323,
+            "text": "⟦0⟧一个⟦/0⟧⟦1⟧可迭代对象⟦/1⟧⟦2⟧（如⟦/2⟧⟪P0⟫⟦3⟧）的 Promise。这些值都是⟦/3⟧⟦4⟧已等待的⟦/4⟧⟦5⟧，因此其他⟦/5⟧⟦6⟧thenable 也會被解析，而非 thenable 则原样返回。⟦/6⟧\n⟦7⟧\n⟦/7⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 279,
+              "prompt_ms": 4429.928,
+              "prompt_per_token_ms": 15.877878136200717,
+              "prompt_per_second": 62.98070758712105,
+              "predicted_n": 132,
+              "predicted_ms": 10824.366,
+              "predicted_per_token_ms": 82.62874809160306,
+              "predicted_per_second": 12.102325438737013
+            },
+            "wall_s": 15.258570370000001,
+            "ttft_s": 4.5206062289999975
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-pythread-06",
+      "split": "diagnostic",
+      "category": "previous_failure",
+      "source_html": "<p>A typical use case for <code class=\"xref py py-mod docutils literal notranslate\"><span class=\"pre\">threading</span></code> includes managing a pool of worker\nthreads that can process multiple tasks concurrently.  Here’s a basic example of\ncreating and starting threads using <a class=\"reference internal\" href=\"#threading.Thread\" title=\"threading.Thread\"><code class=\"xref py py-class docutils literal notranslate\"><span class=\"pre\">Thread</span></code></a>:</p>",
+      "source_text": "A typical use case for threading includes managing a pool of worker\nthreads that can process multiple tasks concurrently.  Here’s a basic example of\ncreating and starting threads using Thread:",
+      "reference_slots": [
+        "一个典型的用例使用",
+        "来管理可以并发处理多个任务的工作线程池。下面是使用以下类创建和启动线程的基本示例："
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://docs.python.org/3/library/threading.html"
+      },
+      "paired_input_sha256": "3a69d98dda893a6b9f575eb886f9fbc9fe954bc7505cbc61e98414e35084614c",
+      "base": {
+        "id": "d-pythread-06",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [
+          "[PageLingo] Translation root failed Error: MT generation did not finish normally; original paragraph retained"
+        ],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">A typical use case for </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> includes managing a pool of worker\nthreads that can process multiple tasks concurrently.  Here’s a basic example of\ncreating and starting threads using </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><code>__FLT_OPAQUE_1__</code><code>__FLT_LINK_END_0__</code></a><span data-flt-fixed=\"true\">:</span>",
+          "accepted": false,
+          "reason": "MT generation did not finish normally; original paragraph retained"
+        },
+        "displayed": false,
+        "translated_text": "A typical use case for threading includes managing a pool of worker\nthreads that can process multiple tasks concurrently.  Here’s a basic example of\ncreating and starting threads using Thread:",
+        "translated_html": "<p>A typical use case for <code class=\"xref py py-mod docutils literal notranslate\"><span class=\"pre\">threading</span></code> includes managing a pool of worker\nthreads that can process multiple tasks concurrently.  Here’s a basic example of\ncreating and starting threads using <a class=\"reference internal\" href=\"#threading.Thread\" title=\"threading.Thread\"><code class=\"xref py py-class docutils literal notranslate\"><span class=\"pre\">Thread</span></code></a>:</p>",
+        "content_probes": null,
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 326,
+            "text": "⟦0⟧⟦/0⟧⟪P0⟫⟦1⟧的一个典型应用是管理一个可以并发处理多个任务的线程池。以下是一个使用⟦/1⟧⟪P1⟫⟪P2⟫ \t\t\t\t\t\t\t\t\t\t  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n  \n",
+            "stop_type": "limit",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 224,
+              "prompt_ms": 2208.154,
+              "prompt_per_token_ms": 9.857830357142857,
+              "prompt_per_second": 101.44220013640353,
+              "predicted_n": 326,
+              "predicted_ms": 23165.816,
+              "predicted_per_token_ms": 71.27943384615384,
+              "predicted_per_second": 14.02929212594972
+            },
+            "wall_s": 25.377621501999993,
+            "ttft_s": 2.2755397449999872
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-pythread-06",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [
+          "[PageLingo] Translation root failed Error: MT generation did not finish normally; original paragraph retained"
+        ],
+        "checked": {
+          "html": "<span data-flt-text-id=\"0\">A typical use case for </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> includes managing a pool of worker\nthreads that can process multiple tasks concurrently.  Here’s a basic example of\ncreating and starting threads using </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><code>__FLT_OPAQUE_1__</code><code>__FLT_LINK_END_0__</code></a><span data-flt-fixed=\"true\">:</span>",
+          "accepted": false,
+          "reason": "MT generation did not finish normally; original paragraph retained"
+        },
+        "displayed": false,
+        "translated_text": "A typical use case for threading includes managing a pool of worker\nthreads that can process multiple tasks concurrently.  Here’s a basic example of\ncreating and starting threads using Thread:",
+        "translated_html": "<p>A typical use case for <code class=\"xref py py-mod docutils literal notranslate\"><span class=\"pre\">threading</span></code> includes managing a pool of worker\nthreads that can process multiple tasks concurrently.  Here’s a basic example of\ncreating and starting threads using <a class=\"reference internal\" href=\"#threading.Thread\" title=\"threading.Thread\"><code class=\"xref py py-class docutils literal notranslate\"><span class=\"pre\">Thread</span></code></a>:</p>",
+        "content_probes": null,
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 326,
+            "text": "⟦0⟧⟦/0⟧⟪P0⟫⟦1⟧的一个典型用例是管理可以并发处理多个任务的线程池。 这是一个使用⟦/1⟧⟪P1⟫⟪P2⟫ \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n",
+            "stop_type": "limit",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 224,
+              "prompt_ms": 2318.151,
+              "prompt_per_token_ms": 10.348888392857143,
+              "prompt_per_second": 96.62873557417097,
+              "predicted_n": 326,
+              "predicted_ms": 24223.605,
+              "predicted_per_token_ms": 74.53416923076922,
+              "predicted_per_second": 13.416665273397582
+            },
+            "wall_s": 26.545752013999998,
+            "ttft_s": 2.4018320369999855
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-postgres-06",
+      "split": "diagnostic",
+      "category": "previous_failure",
+      "source_html": "<p><code class=\"command\">INSERT</code> with an <code class=\"literal\">ON CONFLICT DO UPDATE</code> clause behaves similarly. In Read Committed mode, each row proposed for insertion will either insert or update. Unless there are unrelated errors, one of those two outcomes is guaranteed. If a conflict originates in another transaction whose effects are not yet visible to the <code class=\"command\">INSERT</code>, the <code class=\"command\">UPDATE</code> clause will affect that row, even though possibly <span class=\"emphasis\"><em>no</em></span> version of that row is conventionally visible to the command.</p>",
+      "source_text": "INSERT with an ON CONFLICT DO UPDATE clause behaves similarly. In Read Committed mode, each row proposed for insertion will either insert or update. Unless there are unrelated errors, one of those two outcomes is guaranteed. If a conflict originates in another transaction whose effects are not yet visible to the INSERT, the UPDATE clause will affect that row, even though possibly no version of that row is conventionally visible to the command.",
+      "reference_slots": [
+        "搭配",
+        "子句时，其行为类似。在读已提交模式下，每个拟插入的行要么被插入，要么被更新。除非发生无关错误，否则可保证出现这两种结果之一。如果冲突来自另一个事务，而该事务的影响尚未对以下命令可见：",
+        "，那么",
+        "子句仍会影响该行，即使可能",
+        "没有任何",
+        "该行版本在通常情况下对该命令可见。"
+      ],
+      "reference_status": "assistant_authored_needs_human_review",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://www.postgresql.org/docs/current/transaction-iso.html"
+      },
+      "paired_input_sha256": "0293b41933f872a143ae81900eb5430b1eb74d641673ffbed7c0149c10ef310d",
+      "base": {
+        "id": "d-postgres-06",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"0\"> 与 </span><code>__FLT_OPAQUE_1__</code><span data-flt-text-id=\"1\"> 条款的行为类似。在读已提交模式下，每行拟插入的数据将进行插入或更新操作。除非存在无关错误，否则这两种结果中的一种必然发生。如果冲突来自其他事务，且该事务的影响尚未对 </span><code>__FLT_OPAQUE_2__</code><span data-flt-text-id=\"2\">可见，则 </span><code>__FLT_OPAQUE_3__</code><span data-flt-text-id=\"3\"> 条款将影响该行，即使通常无法在 </span><span><em><span data-flt-text-id=\"4\">或</span></em></span><span data-flt-text-id=\"5\"> 版本中看到该行的数据。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "INSERT 与 ON CONFLICT DO UPDATE 条款的行为类似。在读已提交模式下，每行拟插入的数据将进行插入或更新操作。除非存在无关错误，否则这两种结果中的一种必然发生。如果冲突来自其他事务，且该事务的影响尚未对 INSERT可见，则 UPDATE 条款将影响该行，即使通常无法在 或 版本中看到该行的数据。",
+        "translated_html": "<p><code class=\"command\">INSERT</code> 与 <code class=\"literal\">ON CONFLICT DO UPDATE</code> 条款的行为类似。在读已提交模式下，每行拟插入的数据将进行插入或更新操作。除非存在无关错误，否则这两种结果中的一种必然发生。如果冲突来自其他事务，且该事务的影响尚未对 <code class=\"command\">INSERT</code>可见，则 <code class=\"command\">UPDATE</code> 条款将影响该行，即使通常无法在 <span class=\"emphasis\"><em>或</em></span> 版本中看到该行的数据。</p>",
+        "content_probes": [
+          {
+            "id": "no-visible-version",
+            "description": "Keep explicit negation in emphasized slot",
+            "slot": 4,
+            "passed": false,
+            "observed": "或"
+          }
+        ],
+        "all_content_probes_passed": false,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 492,
+            "text": "⟪P0⟫⟦0⟧与⟦/0⟧⟪P1⟫⟦1⟧条款的行为类似。在读已提交模式下，每行拟插入的数据将进行插入或更新操作。除非存在无关错误，否则这两种结果中的一种必然发生。如果冲突来自其他事务，且该事务的影响尚未对 ⟦/1⟧⟪P2⟫⟦2⟧可见，则⟦/2⟧⟪P3⟫⟦3⟧条款将影响该行，即使通常无法在 ⟦/3⟧⟦4⟧或⟦/4⟧⟦5⟧版本中看到该行的数据。⟦/5⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 319,
+              "prompt_ms": 3513.071,
+              "prompt_per_token_ms": 11.012761755485894,
+              "prompt_per_second": 90.80374407462872,
+              "predicted_n": 158,
+              "predicted_ms": 10743.07,
+              "predicted_per_token_ms": 68.4271974522293,
+              "predicted_per_second": 14.614072141389753
+            },
+            "wall_s": 14.260729991,
+            "ttft_s": 3.5751678930000055
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-postgres-06",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "checked": {
+          "html": "<code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"0\"> 与 </span><code>__FLT_OPAQUE_1__</code><span data-flt-text-id=\"1\"> 子句的行为类似。在读已提交模式下，每行插入提议将进行插入或更新。除非存在无关错误，否则这两种结果之一是可以保证的。如果冲突来自另一事务，且该事务的影响尚未对 </span><code>__FLT_OPAQUE_2__</code><span data-flt-text-id=\"2\">可见，则 </span><code>__FLT_OPAQUE_3__</code><span data-flt-text-id=\"3\"> 子句将影响该行，尽管可能 </span><span><em><span data-flt-text-id=\"4\">没有</span></em></span><span data-flt-text-id=\"5\"> 该行的版本通常无法被命令看到。</span>",
+          "accepted": true
+        },
+        "displayed": true,
+        "translated_text": "INSERT 与 ON CONFLICT DO UPDATE 子句的行为类似。在读已提交模式下，每行插入提议将进行插入或更新。除非存在无关错误，否则这两种结果之一是可以保证的。如果冲突来自另一事务，且该事务的影响尚未对 INSERT可见，则 UPDATE 子句将影响该行，尽管可能 没有 该行的版本通常无法被命令看到。",
+        "translated_html": "<p><code class=\"command\">INSERT</code> 与 <code class=\"literal\">ON CONFLICT DO UPDATE</code> 子句的行为类似。在读已提交模式下，每行插入提议将进行插入或更新。除非存在无关错误，否则这两种结果之一是可以保证的。如果冲突来自另一事务，且该事务的影响尚未对 <code class=\"command\">INSERT</code>可见，则 <code class=\"command\">UPDATE</code> 子句将影响该行，尽管可能 <span class=\"emphasis\"><em>没有</em></span> 该行的版本通常无法被命令看到。</p>",
+        "content_probes": [
+          {
+            "id": "no-visible-version",
+            "description": "Keep explicit negation in emphasized slot",
+            "slot": 4,
+            "passed": true,
+            "observed": "没有"
+          }
+        ],
+        "all_content_probes_passed": true,
+        "original_structure_unchanged": true,
+        "code_unchanged": true,
+        "restored_exact": true,
+        "completions": [
+          {
+            "budget": 492,
+            "text": "⟪P0⟫⟦0⟧ 与⟦/0⟧⟪P1⟫⟦1⟧ 子句的行为类似。在读已提交模式下，每行插入提议将进行插入或更新。除非存在无关错误，否则这两种结果之一是可以保证的。如果冲突来自另一事务，且该事务的影响尚未对 ⟦/1⟧⟪P2⟫⟦2⟧ 可见，则⟦/2⟧⟪P3⟫⟦3⟧ 子句将影响该行，尽管可能⟦/3⟧⟦4⟧没有⟦/4⟧⟦5⟧ 该行的版本通常无法被命令看到。⟦/5⟧",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 319,
+              "prompt_ms": 3536.094,
+              "prompt_per_token_ms": 11.084934169278997,
+              "prompt_per_second": 90.21253394281939,
+              "predicted_n": 164,
+              "predicted_ms": 10739.013,
+              "predicted_per_token_ms": 65.88351533742332,
+              "predicted_per_second": 15.17830362995184
+            },
+            "wall_s": 14.279279011999984,
+            "ttft_s": 3.6029395220000007
+          }
+        ]
+      }
+    }
+  ],
+  "plain_diagnostics": [
+    {
+      "id": "d-html-headings-04",
+      "source_text": "Note:\nNesting multiple <h1> elements in nested sectioning elements was allowed in older versions of the HTML standard. However, this was never considered a best practice and is now non-conforming. Read more in There Is No Document Outline Algorithm.",
+      "paired_input_sha256": "a13ecc9d03d399247b7976643823ca0140e668c8c4fe700f4c54349138c0a3ee",
+      "base": {
+        "id": "d-html-headings-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "注意：  \n在旧版 HTML 标准中，将多个 <h1> 元素嵌套在嵌套的段落元素中是被允许的。不过，这从来都不被视为最佳实践，现在也不符合规范。更多相关信息请参见“没有文档大纲算法”一文。",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "注意：  \n在旧版 HTML 标准中，将多个 <h1> 元素嵌套在嵌套的段落元素中是被允许的。不过，这从来都不被视为最佳实践，现在也不符合规范。更多相关信息请参见“没有文档大纲算法”一文。",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 69,
+              "prompt_ms": 779.804,
+              "prompt_per_token_ms": 11.301507246376811,
+              "prompt_per_second": 88.48377284548425,
+              "predicted_n": 55,
+              "predicted_ms": 3804.778,
+              "predicted_per_token_ms": 70.45885185185185,
+              "predicted_per_second": 14.192680887032042
+            },
+            "wall_s": 4.589336195,
+            "ttft_s": 0.78497766
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-html-headings-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "在旧版 HTML 标准中，在嵌套的section元素中嵌套多个 <h1> 元素是允许的。然而，这从未被视为最佳实践，现在也不符合规范。请参阅《没有文档大纲算法》。",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "在旧版 HTML 标准中，在嵌套的section元素中嵌套多个 <h1> 元素是允许的。然而，这从未被视为最佳实践，现在也不符合规范。请参阅《没有文档大纲算法》。",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 69,
+              "prompt_ms": 734.862,
+              "prompt_per_token_ms": 10.650173913043478,
+              "prompt_per_second": 93.89518031957022,
+              "predicted_n": 43,
+              "predicted_ms": 2540.098,
+              "predicted_per_token_ms": 60.47852380952381,
+              "predicted_per_second": 16.534795114204254
+            },
+            "wall_s": 3.280796648,
+            "ttft_s": 0.7425417889999999
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-html-headings-05",
+      "source_text": "Prefer using only one <h1> per page and nest headings without skipping levels.",
+      "paired_input_sha256": "a3faee88d01fdbc2246d7ad05eaeb7a74d0bf9d5ad34ee99611e6c957152538d",
+      "base": {
+        "id": "d-html-headings-05",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "建议每页只使用一个 <h1>，并且嵌套标题时不要跳过层级。",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "建议每页只使用一个 <h1>，并且嵌套标题时不要跳过层级。",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 36,
+              "prompt_ms": 536.407,
+              "prompt_per_token_ms": 14.900194444444445,
+              "prompt_per_second": 67.11321813473724,
+              "predicted_n": 19,
+              "predicted_ms": 1084.864,
+              "predicted_per_token_ms": 60.27022222222222,
+              "predicted_per_second": 16.591941478378857
+            },
+            "wall_s": 1.62452628,
+            "ttft_s": 0.5391812630000004
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-html-headings-05",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "每个页面只使用一个 <h1>，并嵌套标题，不要跳过层级。",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "每个页面只使用一个 <h1>，并嵌套标题，不要跳过层级。",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 36,
+              "prompt_ms": 545.026,
+              "prompt_per_token_ms": 15.13961111111111,
+              "prompt_per_second": 66.05189477199254,
+              "predicted_n": 18,
+              "predicted_ms": 945.971,
+              "predicted_per_token_ms": 55.64535294117647,
+              "predicted_per_second": 17.97095259791262
+            },
+            "wall_s": 1.4948220769999998,
+            "ttft_s": 0.5481007239999999
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-asyncio-task-04",
+      "source_text": "pass the task group instance or bound cancel() method to some other task before\nopening the task group, allowing remote cancellation",
+      "paired_input_sha256": "059caf3b55bfb5f63d95d205ec33d856c4a7303a1553c73957243dfc579c4e05",
+      "base": {
+        "id": "d-asyncio-task-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "在打开任务组之前，将任务组实例或绑定的cancel()方法传递给其他任务，以便进行远程取消操作",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "在打开任务组之前，将任务组实例或绑定的cancel()方法传递给其他任务，以便进行远程取消操作",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 42,
+              "prompt_ms": 472.002,
+              "prompt_per_token_ms": 11.238142857142858,
+              "prompt_per_second": 88.98267380222964,
+              "predicted_n": 26,
+              "predicted_ms": 1851.827,
+              "predicted_per_token_ms": 74.07308,
+              "predicted_per_second": 13.500181172431333
+            },
+            "wall_s": 2.3270034240000004,
+            "ttft_s": 0.47450983799999996
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-asyncio-task-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "打开任务组之前，将任务组实例或绑定的cancel() 方法传递给其他任务，以便远程取消",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "打开任务组之前，将任务组实例或绑定的cancel() 方法传递给其他任务，以便远程取消",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 42,
+              "prompt_ms": 482.423,
+              "prompt_per_token_ms": 11.486261904761905,
+              "prompt_per_second": 87.06052572120318,
+              "predicted_n": 24,
+              "predicted_ms": 1476.183,
+              "predicted_per_token_ms": 64.1818695652174,
+              "predicted_per_second": 15.580724070118677
+            },
+            "wall_s": 1.962246289999999,
+            "ttft_s": 0.4856259959999998
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-mdnpromise-04",
+      "source_text": "An iterable (such as an Array) of promises. These values are awaited, so other thenables are also resolved, while non-thenables are returned as-is.",
+      "paired_input_sha256": "fb7bcefe0b0cb7291deb3f6185d4cf0b5cc35d195aba9c54fc4f5c6148f03f8b",
+      "base": {
+        "id": "d-mdnpromise-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "一个由承诺组成的可迭代对象（如数组）。这些承诺会被等待执行，因此其他可迭代对象也会被解析，而非可迭代对象则直接返回原样。",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "一个由承诺组成的可迭代对象（如数组）。这些承诺会被等待执行，因此其他可迭代对象也会被解析，而非可迭代对象则直接返回原样。",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 53,
+              "prompt_ms": 755.126,
+              "prompt_per_token_ms": 14.247660377358491,
+              "prompt_per_second": 70.1869621758488,
+              "predicted_n": 36,
+              "predicted_ms": 2210.948,
+              "predicted_per_token_ms": 63.16994285714285,
+              "predicted_per_second": 15.830313512574698
+            },
+            "wall_s": 2.9693266109999987,
+            "ttft_s": 0.7578135409999995
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-mdnpromise-04",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "一个由承诺组成的可迭代对象（如数组）。这些值会被等待，因此其他可迭代对象也会被解析，而非可迭代对象则原样返回。",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "一个由承诺组成的可迭代对象（如数组）。这些值会被等待，因此其他可迭代对象也会被解析，而非可迭代对象则原样返回。",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 53,
+              "prompt_ms": 648.93,
+              "prompt_per_token_ms": 12.243962264150943,
+              "prompt_per_second": 81.6729077096143,
+              "predicted_n": 34,
+              "predicted_ms": 2087.298,
+              "predicted_per_token_ms": 63.251454545454536,
+              "predicted_per_second": 15.809913102968528
+            },
+            "wall_s": 2.7391671609999992,
+            "ttft_s": 0.6515020179999992
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-pythread-06",
+      "source_text": "A typical use case for threading includes managing a pool of worker\nthreads that can process multiple tasks concurrently.  Here’s a basic example of\ncreating and starting threads using Thread:",
+      "paired_input_sha256": "b9878ff2d3414469ae480bb2a412b5fb542927260ea24b30d45d95aa48291e81",
+      "base": {
+        "id": "d-pythread-06",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "线程的典型应用包括管理一组可以同时处理多个任务的工作线程。以下是一个使用 Thread 创建和启动线程的基本示例。",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "线程的典型应用包括管理一组可以同时处理多个任务的工作线程。以下是一个使用 Thread 创建和启动线程的基本示例。",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 55,
+              "prompt_ms": 697.189,
+              "prompt_per_token_ms": 12.676163636363636,
+              "prompt_per_second": 78.88822112798682,
+              "predicted_n": 28,
+              "predicted_ms": 1642.874,
+              "predicted_per_token_ms": 60.84718518518519,
+              "predicted_per_second": 16.434613975265297
+            },
+            "wall_s": 2.343935735000001,
+            "ttft_s": 0.7005949220000002
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-pythread-06",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "线程的典型应用场景包括管理可以并发处理多个任务的工作线程池。以下是使用 Thread 创建和启动线程的基本示例。",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "线程的典型应用场景包括管理可以并发处理多个任务的工作线程池。以下是使用 Thread 创建和启动线程的基本示例。",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 55,
+              "prompt_ms": 641.979,
+              "prompt_per_token_ms": 11.672345454545455,
+              "prompt_per_second": 85.67258430571715,
+              "predicted_n": 26,
+              "predicted_ms": 1613.841,
+              "predicted_per_token_ms": 64.55364,
+              "predicted_per_second": 15.490993226718123
+            },
+            "wall_s": 2.259282003,
+            "ttft_s": 0.6448383919999997
+          }
+        ]
+      }
+    },
+    {
+      "id": "d-postgres-06",
+      "source_text": "INSERT with an ON CONFLICT DO UPDATE clause behaves similarly. In Read Committed mode, each row proposed for insertion will either insert or update. Unless there are unrelated errors, one of those two outcomes is guaranteed. If a conflict originates in another transaction whose effects are not yet visible to the INSERT, the UPDATE clause will affect that row, even though possibly no version of that row is conventionally visible to the command.",
+      "paired_input_sha256": "1d19e314e5d23a3b64544c8861c52dd3913c291e385e15fe714bb59661cfcf95",
+      "base": {
+        "id": "d-postgres-06",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "使用 ON CONFLICT DO UPDATE 子句的 INSERT操作也遵循类似机制。在 Read Committed 模式下，每一条拟插入的行都会被插入或更新。除非存在无关错误，否则这两种结果中的一种必定会发生。如果冲突来自其他事务，且该事务的影响尚未对 INSERT操作可见，那么 UPDATE子句将影响该行，即使该行的某个版本可能并不以常规方式对命令可见。",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "使用 ON CONFLICT DO UPDATE 子句的 INSERT操作也遵循类似机制。在 Read Committed 模式下，每一条拟插入的行都会被插入或更新。除非存在无关错误，否则这两种结果中的一种必定会发生。如果冲突来自其他事务，且该事务的影响尚未对 INSERT操作可见，那么 UPDATE子句将影响该行，即使该行的某个版本可能并不以常规方式对命令可见。",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 102,
+              "prompt_ms": 1075.149,
+              "prompt_per_token_ms": 10.540676470588235,
+              "prompt_per_second": 94.87057142777421,
+              "predicted_n": 88,
+              "predicted_ms": 5523.228,
+              "predicted_per_token_ms": 63.485379310344825,
+              "predicted_per_second": 15.751658269403327
+            },
+            "wall_s": 6.602212703999999,
+            "ttft_s": 1.0786104510000005
+          }
+        ]
+      },
+      "pagelingo-mt-v0.2.2": {
+        "id": "d-postgres-06",
+        "split": "diagnostic",
+        "category": "previous_failure",
+        "reference_status": "assistant_authored_needs_human_review",
+        "events": [],
+        "raw_plain_text": "使用 ON CONFLICT DO UPDATE 子句的 INSERT 行为也类似。在读取提交模式下，拟插入的每一行都将进行插入或更新操作。除非存在无关错误，否则这两种结果中的一种是肯定的。如果冲突来自另一个事务，且该事务的影响尚未对 INSERT 可见，则 UPDATE 子句将影响该行，尽管通常可能没有该行的版本对命令可见。",
+        "finished_normally": true,
+        "content_probes": null,
+        "completions": [
+          {
+            "budget": 512,
+            "text": "使用 ON CONFLICT DO UPDATE 子句的 INSERT 行为也类似。在读取提交模式下，拟插入的每一行都将进行插入或更新操作。除非存在无关错误，否则这两种结果中的一种是肯定的。如果冲突来自另一个事务，且该事务的影响尚未对 INSERT 可见，则 UPDATE 子句将影响该行，尽管通常可能没有该行的版本对命令可见。",
+            "stop_type": "eos",
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 102,
+              "prompt_ms": 1117.398,
+              "prompt_per_token_ms": 10.954882352941176,
+              "prompt_per_second": 91.28349970198623,
+              "predicted_n": 82,
+              "predicted_ms": 5354.894,
+              "predicted_per_token_ms": 66.1098024691358,
+              "predicted_per_second": 15.12634983997816
+            },
+            "wall_s": 6.475515374,
+            "ttft_s": 1.1203716789999998
+          }
+        ]
+      }
+    }
+  ],
+  "raw_file_sha256": {
+    "runs.json": "8c0ec20c42ed9205b92ee973f45ea76f52632aff2cfc6bf4435f23b6d6cf6a0e",
+    "base-fixed.json": "0bfd3fb1130799ad49ac23a4fcebdcdffe179f07b1fa0e353a05a45723e16083",
+    "base-plain.json": "01f88641f1fbcaf687f13fae1fee9739b2347950d764fb8cf104992ba2da6598",
+    "pagelingo-mt-v0.2.2-fixed.json": "eabb9235d1f4d4bcad3295461b07ee9c9a9de3db9bc90645f9fa55814bc3574a",
+    "pagelingo-mt-v0.2.2-plain.json": "2a32907c5faa5125c87567e28f9c2b0d06b105b5e4cc0d4c259abe7361496936"
+  }
+}

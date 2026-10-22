@@ -49,6 +49,8 @@ MT retains the entire source paragraph when inference or validation fails, witho
 
 These checks preserve DOM structure, not semantic accuracy or identical line wrapping. Translation quality, the meaning of link labels, and bilingual appearance still require review on real sites.
 
+The [fixed-slot quality evaluation](eval/mt-quality/README.md) records a paired CPU comparison of the pinned Hy-MT2 base and PageLingo-MT v0.2.2. The [LoRA training kit](training/mt-fixed-slots/README.md) includes reproducible data export and CPU preflight; GPU training and independent review of the seed references are still pending.
+
 ## Terminology
 
 The built-in terminology list is intentionally limited to proper names such as brands, organizations, products, platforms, and named projects. Built-in protected names use **case-sensitive matching** so a name such as `Signal`, `Matrix`, `Render`, or `Windows` does not freeze the corresponding ordinary lowercase word.

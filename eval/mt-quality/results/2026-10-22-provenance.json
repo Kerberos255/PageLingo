@@ -1,0 +1,182 @@
+{
+  "created_utc": "2026-10-22T10:04:18.507586+00:00",
+  "production_commit": "8386e33a3d2d7c2d3ced6ca42a76ee9ad61c58d0",
+  "base": {
+    "repository": "tencent/Hy-MT2-1.8B",
+    "revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+    "original_safetensors_bytes": 4077072784,
+    "original_safetensors_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5"
+  },
+  "llama_cpp": {
+    "build": 11785,
+    "commit": "8baabd53b77d1c48c6ef8d3b620436292f3f6231",
+    "source_archive_sha256": "2074e150bc426a9ebd6504d444b126b0b61373311b16fc3e5b90bcfc37ff5851",
+    "conversion": "original BF16 safetensors -> BF16 GGUF -> Q5_K_M (default recipe, no imatrix) -> EOS-only metadata correction"
+  },
+  "eos_correction": {
+    "wrong_id": 3,
+    "wrong_token": "$",
+    "required_id": 120020,
+    "changed_byte_offsets": [
+      5068906,
+      5068907,
+      5068908
+    ],
+    "changed_field_offset": 5068906,
+    "entire_files_compared": true,
+    "all_changes_within_eos_integer": true,
+    "input_weights_unchanged": true,
+    "invalid_initial_run_excluded": true
+  },
+  "control": {
+    "same_tensor_schema": true,
+    "tensor_count_per_model": 354,
+    "tokenizer_array_keys": [
+      "tokenizer.ggml.tokens",
+      "tokenizer.ggml.token_type",
+      "tokenizer.ggml.merges"
+    ],
+    "all_tokenizer_arrays_equal": true,
+    "chat_templates_equal": true,
+    "metadata_checks": {
+      "base": {
+        "bos": {
+          "expected_id": 120000,
+          "actual_id": 120000,
+          "actual_text": "<｜hy_begin▁of▁sentence｜>",
+          "passed": true
+        },
+        "eos": {
+          "expected_id": 120020,
+          "actual_id": 120020,
+          "actual_text": "<｜hy_place▁holder▁no▁2｜>",
+          "passed": true
+        },
+        "pad": {
+          "expected_id": 120002,
+          "actual_id": 120002,
+          "actual_text": "<｜hy_▁pad▁｜>",
+          "passed": true
+        },
+        "chat_template": {
+          "passed": true
+        }
+      },
+      "pagelingo-mt-v0.2.2": {
+        "bos": {
+          "expected_id": 120000,
+          "actual_id": 120000,
+          "actual_text": "<｜hy_begin▁of▁sentence｜>",
+          "passed": true
+        },
+        "eos": {
+          "expected_id": 120020,
+          "actual_id": 120020,
+          "actual_text": "<｜hy_place▁holder▁no▁2｜>",
+          "passed": true
+        },
+        "pad": {
+          "expected_id": 120002,
+          "actual_id": 120002,
+          "actual_text": "<｜hy_▁pad▁｜>",
+          "passed": true
+        },
+        "chat_template": {
+          "passed": true
+        }
+      }
+    },
+    "known_metadata_differences": "model identity/language/license metadata; base add_bos/add_eos=false vs unset in MT. Actual applied prompts were identical."
+  },
+  "lineage_limit": "Original v0.2.2 checkpoint-10 training recipe/data and Hub adapter correspondence remain unverified; fresh-base pilot only.",
+  "environment": {
+    "os_release": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.6\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\"\n",
+    "kernel": "6.18.55",
+    "machine": "x86_64",
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+    "affinity_cpus": 3,
+    "cgroup_cpu_max": "200000 100000",
+    "cgroup_memory_limit_bytes": 8589934592,
+    "gpu_used": false,
+    "swap_used_bytes": 0,
+    "filesystem_free_bytes_at_manifest": 9922879488
+  },
+  "training_preflight": {
+    "created_utc": "2026-10-22T10:06:05.959142+00:00",
+    "training_executed": false,
+    "cuda_available": false,
+    "base_model": "tencent/Hy-MT2-1.8B",
+    "base_revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+    "base_path": "/workspace/scratch/pagelingo-cpu-test/optimization/base-config",
+    "config": {
+      "base_model": "tencent/Hy-MT2-1.8B",
+      "base_revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+      "base_weight_file": "model.safetensors",
+      "base_weight_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+      "max_length": 3072,
+      "seed": 42,
+      "epochs": 2,
+      "learning_rate": 5e-05,
+      "batch_size": 1,
+      "gradient_accumulation_steps": 16,
+      "warmup_ratio": 0.05,
+      "weight_decay": 0.01,
+      "lora_r": 16,
+      "lora_alpha": 32,
+      "lora_dropout": 0.05,
+      "target_modules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj"
+      ],
+      "probe_max_steps": 12,
+      "purpose": "Reproducible fresh-base LoRA pilot using the deployed fixed-text protocol. Seed data is not production-grade."
+    },
+    "versions": {
+      "torch": "2.10.0+cpu",
+      "transformers": "5.6.0",
+      "peft": "0.18.1"
+    },
+    "local_weight_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+    "input_manifest_sha256": "34305d36f0aa7382a7230b805f5ee33f860dfe4ebc154b5214f033fae5e6d69c",
+    "splits": {
+      "train": {
+        "rows": 52,
+        "max_tokens": 268,
+        "target_tokens": 2008,
+        "prompt_and_padding_masked": true,
+        "eos_supervised": true,
+        "targets_truncated": false,
+        "sha256": "366a53e512c89e7079537e22f06e2d995aefc67a35834e4e79bf8265a12f5aa2"
+      },
+      "validation": {
+        "rows": 8,
+        "max_tokens": 250,
+        "target_tokens": 318,
+        "prompt_and_padding_masked": true,
+        "eos_supervised": true,
+        "targets_truncated": false,
+        "sha256": "aa80a0cd87d8ccc6640caeabc966490022b50c378a0bc9c25d64e4d8edf69dd2"
+      }
+    },
+    "review_status": "assistant_authored_needs_human_review",
+    "run_kind": "pipeline_probe",
+    "collator_padding_mask_checked": true,
+    "checkpoint_target_check": {
+      "matched_weight_tensors": 128,
+      "lora_weights_from_tensor_shapes": 6815744
+    }
+  },
+  "performance_caveat": "Native CPU measurements only. warm filesystem cache, no model warmup; validation tasks ran concurrently. Server-ready time excludes first prompt evaluation; VmHWM is server RSS high-water, not whole-browser PSS.",
+  "validation": {
+    "vitest_test_files": 19,
+    "vitest_tests_passed": 153,
+    "python_metadata_regressions_passed": 4,
+    "production_audit_vulnerabilities": 0,
+    "addon_lint_errors": 0,
+    "addon_lint_warnings": 1,
+    "warning_note": "Pre-existing innerHTML lint warning; no new production source changes in this branch",
+    "node": "v24.19.0"
+  }
+}

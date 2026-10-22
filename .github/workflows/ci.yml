@@ -26,3 +26,6 @@ jobs:
 
       - name: Verify
         run: npm run verify
+
+      - name: Check MT model-export metadata guard
+        run: python3 -m unittest discover -s training/mt-fixed-slots/tests

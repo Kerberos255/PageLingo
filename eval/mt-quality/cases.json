@@ -1,0 +1,958 @@
+{
+  "schema_version": 1,
+  "reference_provenance": "Assistant-authored references and keyword probes; human review pending. Probe passage is not semantic accuracy.",
+  "cases": [
+    {
+      "id": "h-http-no-body",
+      "split": "holdout",
+      "family": "h-http-no-body",
+      "category": "negation",
+      "html": "<p>The response must not contain a body.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "响应不得包含正文。"
+      ],
+      "probes": [
+        {
+          "id": "no-body",
+          "description": "Preserve prohibition of response body",
+          "any": [
+            "不得包含正文",
+            "不能包含正文",
+            "不应包含正文"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-client-only",
+      "split": "holdout",
+      "family": "h-client-only",
+      "category": "scope",
+      "html": "<p>Only the <a href=\"/client\">client</a> may reuse this cached response.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "只有",
+        "客户端",
+        "才可以重用此缓存响应。"
+      ],
+      "probes": [
+        {
+          "id": "client-label",
+          "description": "Only client is inside the link",
+          "slot": 1,
+          "equals": [
+            "客户端",
+            "客户方"
+          ]
+        },
+        {
+          "id": "exclusive",
+          "description": "Preserve exclusivity",
+          "slot": 0,
+          "any": [
+            "只有",
+            "仅"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-cache-until",
+      "split": "holdout",
+      "family": "h-cache-until",
+      "category": "condition",
+      "html": "<p>The <a href=\"/cache\">cache</a> must not be used until validation succeeds.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "",
+        "缓存",
+        "在验证成功前不得使用。"
+      ],
+      "probes": [
+        {
+          "id": "cache-label",
+          "description": "Keep cache as the linked noun",
+          "slot": 1,
+          "equals": [
+            "缓存"
+          ]
+        },
+        {
+          "id": "not-until",
+          "description": "Preserve prohibition before validation succeeds",
+          "slot": 2,
+          "any": [
+            "不得",
+            "不能",
+            "不可",
+            "不应"
+          ]
+        },
+        {
+          "id": "validation",
+          "description": "Preserve validation condition",
+          "slot": 2,
+          "any": [
+            "验证",
+            "校验"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-uncommitted",
+      "split": "holdout",
+      "family": "h-uncommitted",
+      "category": "negation",
+      "html": "<p>A transaction cannot observe another transaction's uncommitted changes.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "事务不能观察到其他事务尚未提交的更改。"
+      ],
+      "probes": [
+        {
+          "id": "uncommitted",
+          "description": "Preserve uncommitted qualification",
+          "any": [
+            "未提交",
+            "尚未提交"
+          ]
+        },
+        {
+          "id": "cannot",
+          "description": "Preserve inability to observe",
+          "any": [
+            "不能",
+            "无法",
+            "不可"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-parent-worker",
+      "split": "holdout",
+      "family": "h-parent-worker",
+      "category": "roles",
+      "html": "<p>The parent cancels the <strong>worker</strong>; the worker does not cancel the parent.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "父进程取消",
+        "工作进程",
+        "；工作进程不会取消父进程。"
+      ],
+      "probes": [
+        {
+          "id": "worker",
+          "description": "Keep worker inside emphasis",
+          "slot": 1,
+          "equals": [
+            "工作进程",
+            "工作线程"
+          ]
+        },
+        {
+          "id": "reverse-prohibited",
+          "description": "Preserve asymmetry",
+          "slot": 2,
+          "any": [
+            "不会取消父",
+            "不取消父",
+            "不能取消父"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-guide-scope",
+      "split": "holdout",
+      "family": "h-guide-scope",
+      "category": "link_scope",
+      "html": "<p>Read the <a href=\"/migration\">migration guide</a> before restarting the service.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "请先阅读",
+        "迁移指南",
+        "，然后再重启服务。"
+      ],
+      "probes": [
+        {
+          "id": "guide-label",
+          "description": "Link only names the migration guide",
+          "slot": 1,
+          "equals": [
+            "迁移指南"
+          ]
+        },
+        {
+          "id": "restart",
+          "description": "Do not omit restarting the service",
+          "slot": 2,
+          "any": [
+            "重启",
+            "重新启动"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-not-all",
+      "split": "holdout",
+      "family": "h-not-all",
+      "category": "negation_scope",
+      "html": "<p>Not all requests can be cached.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "并非所有请求都可以缓存。"
+      ],
+      "probes": [
+        {
+          "id": "partial-negation",
+          "description": "Preserve not-all instead of none",
+          "any": [
+            "并非所有",
+            "不是所有",
+            "并不是所有"
+          ]
+        },
+        {
+          "id": "not-none",
+          "description": "Do not turn partial negation into universal prohibition",
+          "none": [
+            "所有请求都不能缓存",
+            "所有请求都不可缓存"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-not-necessarily",
+      "split": "holdout",
+      "family": "h-not-necessarily",
+      "category": "modality",
+      "html": "<p>A failed task does not necessarily stop the worker.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "任务失败不一定会停止工作线程。"
+      ],
+      "probes": [
+        {
+          "id": "not-necessarily",
+          "description": "Preserve uncertainty",
+          "any": [
+            "不一定",
+            "未必",
+            "不必然"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-false-continues",
+      "split": "holdout",
+      "family": "h-false-continues",
+      "category": "condition",
+      "html": "<p>If the handler returns <code>false</code>, processing continues until the timeout expires.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "如果处理器返回",
+        "，则继续处理，直到超时期限届满。"
+      ],
+      "probes": [
+        {
+          "id": "continues",
+          "description": "Preserve continuation rather than cancellation",
+          "slot": 1,
+          "any": [
+            "继续"
+          ]
+        },
+        {
+          "id": "timeout",
+          "description": "Preserve timeout endpoint",
+          "slot": 1,
+          "any": [
+            "超时"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-both-checks",
+      "split": "holdout",
+      "family": "h-both-checks",
+      "category": "logic",
+      "html": "<p>Proceed only when both checks pass; one successful check is not enough.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "只有两项检查都通过时才能继续；仅一项检查成功还不够。"
+      ],
+      "probes": [
+        {
+          "id": "both",
+          "description": "Preserve requirement for both checks",
+          "any": [
+            "两项",
+            "两个"
+          ]
+        },
+        {
+          "id": "insufficient",
+          "description": "Preserve insufficiency of a single check",
+          "any": [
+            "不够",
+            "不足",
+            "不充分"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-header-spelling",
+      "split": "holdout",
+      "family": "h-header-spelling",
+      "category": "protected_code",
+      "html": "<p>Keep <code>Content-Length</code> unchanged while translating the header description.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "保持",
+        "不变，同时翻译标头说明。"
+      ],
+      "probes": [
+        {
+          "id": "unchanged",
+          "description": "Preserve unchanged qualification",
+          "slot": 1,
+          "any": [
+            "不变",
+            "原样"
+          ]
+        },
+        {
+          "id": "header",
+          "description": "Keep header meaning",
+          "slot": 1,
+          "any": [
+            "标头",
+            "头部"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-quantifiers",
+      "split": "holdout",
+      "family": "h-quantifiers",
+      "category": "quantifiers",
+      "html": "<p>Allocate at most one writer and at least one reader.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "最多分配一个写入方，并至少分配一个读取方。"
+      ],
+      "probes": [
+        {
+          "id": "at-most",
+          "description": "Preserve upper bound",
+          "any": [
+            "最多",
+            "至多"
+          ]
+        },
+        {
+          "id": "at-least",
+          "description": "Preserve lower bound",
+          "any": [
+            "至少"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-nested-negation",
+      "split": "holdout",
+      "family": "h-nested-negation",
+      "category": "emphasis",
+      "html": "<p>The <strong>server <em>does not</em></strong> retry failed requests automatically.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "",
+        "服务器",
+        "不会",
+        "自动重试失败的请求。"
+      ],
+      "probes": [
+        {
+          "id": "emphatic-negation",
+          "description": "Keep negation inside the emphasized slot",
+          "slot": 2,
+          "equals": [
+            "不会",
+            "不",
+            "并不"
+          ]
+        },
+        {
+          "id": "retry",
+          "description": "Preserve failed-request retry meaning",
+          "slot": 3,
+          "any": [
+            "重试"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-pending-only",
+      "split": "holdout",
+      "family": "h-pending-only",
+      "category": "link_scope",
+      "html": "<p>Cancel <a href=\"/pending\">only the pending requests</a>; keep completed results.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "取消",
+        "仅仍在等待的请求",
+        "；保留已完成的结果。"
+      ],
+      "probes": [
+        {
+          "id": "pending-label",
+          "description": "Keep pending meaning inside the link",
+          "slot": 1,
+          "any": [
+            "等待",
+            "待处理",
+            "未完成"
+          ]
+        },
+        {
+          "id": "keep-results",
+          "description": "Do not discard completed results",
+          "slot": 2,
+          "any": [
+            "保留"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-should-must",
+      "split": "holdout",
+      "family": "h-should-must",
+      "category": "modality",
+      "html": "<p>The cache should remain small, but the key must remain unique.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "缓存应保持较小，但键必须保持唯一。"
+      ],
+      "probes": [
+        {
+          "id": "must",
+          "description": "Preserve mandatory uniqueness",
+          "any": [
+            "必须"
+          ]
+        },
+        {
+          "id": "unique",
+          "description": "Preserve uniqueness",
+          "any": [
+            "唯一"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-retry-limit",
+      "split": "holdout",
+      "family": "h-retry-limit",
+      "category": "quantifiers",
+      "html": "<p>Retry at most <code>3</code> times; do not retry indefinitely.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "最多重试",
+        "次；不要无限重试。"
+      ],
+      "probes": [
+        {
+          "id": "max-retries",
+          "description": "Preserve finite upper bound",
+          "slot": 0,
+          "any": [
+            "最多",
+            "至多"
+          ]
+        },
+        {
+          "id": "not-infinite",
+          "description": "Preserve prohibition of infinite retries",
+          "slot": 1,
+          "any": [
+            "不要无限",
+            "不得无限",
+            "不能无限",
+            "不应无限"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-read-committed",
+      "split": "holdout",
+      "family": "h-read-committed",
+      "category": "terminology",
+      "html": "<p>Under <a href=\"/isolation\">Read Committed</a>, dirty reads are not allowed.</p>",
+      "context_url": "https://www.postgresql.org/docs/current/transaction-iso.html",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "在",
+        "读已提交",
+        "隔离级别下，不允许脏读。"
+      ],
+      "probes": [
+        {
+          "id": "isolation-label",
+          "description": "Keep the SQL isolation term",
+          "slot": 1,
+          "equals": [
+            "读已提交",
+            "已提交读"
+          ]
+        },
+        {
+          "id": "no-dirty-reads",
+          "description": "Preserve dirty-read prohibition",
+          "slot": 2,
+          "any": [
+            "不允许",
+            "禁止",
+            "不能",
+            "不可"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-reader-writer",
+      "split": "holdout",
+      "family": "h-reader-writer",
+      "category": "roles",
+      "html": "<p>The <a href=\"/reader\">reader</a> waits for the <a href=\"/writer\">writer</a>, not the other way around.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "",
+        "读取方",
+        "等待",
+        "写入方",
+        "，而不是反过来。"
+      ],
+      "probes": [
+        {
+          "id": "reader",
+          "description": "Keep reader label",
+          "slot": 1,
+          "equals": [
+            "读取方",
+            "读取器",
+            "读者"
+          ]
+        },
+        {
+          "id": "writer",
+          "description": "Keep writer label",
+          "slot": 3,
+          "equals": [
+            "写入方",
+            "写入器",
+            "写者"
+          ]
+        },
+        {
+          "id": "wait",
+          "description": "Preserve direction of waiting",
+          "slot": 2,
+          "any": [
+            "等待",
+            "等候"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-validation-branches",
+      "split": "holdout",
+      "family": "h-validation-branches",
+      "category": "condition",
+      "html": "<p>If validation fails, discard the response; otherwise keep it.</p>",
+      "context_url": "https://example.com/pagelingo-quality-fixtures",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "验证失败时丢弃响应；否则保留响应。"
+      ],
+      "probes": [
+        {
+          "id": "fail",
+          "description": "Preserve failure condition",
+          "any": [
+            "失败"
+          ]
+        },
+        {
+          "id": "discard",
+          "description": "Preserve discard branch",
+          "any": [
+            "丢弃",
+            "舍弃"
+          ]
+        },
+        {
+          "id": "otherwise",
+          "description": "Preserve alternative branch",
+          "any": [
+            "否则"
+          ]
+        },
+        {
+          "id": "keep",
+          "description": "Preserve keep branch",
+          "any": [
+            "保留"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "h-promise-network",
+      "split": "holdout",
+      "family": "h-promise-network",
+      "category": "contrast",
+      "html": "<p>A <code>Promise</code> may be rejected even when the network request succeeds.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise",
+      "origin": {
+        "kind": "authored"
+      },
+      "reference_slots": [
+        "",
+        "即使网络请求成功，也可能被拒绝。"
+      ],
+      "probes": [
+        {
+          "id": "network-success",
+          "description": "Preserve successful request condition",
+          "slot": 1,
+          "any": [
+            "成功"
+          ]
+        },
+        {
+          "id": "promise-rejected",
+          "description": "Preserve possible rejection",
+          "slot": 1,
+          "any": [
+            "拒绝"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "d-html-headings-04",
+      "split": "diagnostic",
+      "family": "observed-html-headings-04",
+      "category": "previous_failure",
+      "html": "<p><strong>Note:</strong>\nNesting multiple <code>&lt;h1&gt;</code> elements in nested <a href=\"/en-US/docs/Web/HTML/Reference/Elements#content_sectioning\">sectioning elements</a> was allowed in older versions of the HTML standard. However, this was never considered a best practice and is now non-conforming. Read more in <a href=\"https://adrianroselli.com/2016/08/there-is-no-document-outline-algorithm.html\" class=\"external\" target=\"_blank\" title=\"External link (opens in new tab)\">There Is No Document Outline Algorithm</a>.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/Heading_Elements",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/Heading_Elements"
+      },
+      "reference_slots": [
+        "注意：",
+        "将多个",
+        "元素嵌套在嵌套的",
+        "分节元素",
+        "中，在较早版本的 HTML 标准中曾被允许。不过，这从未被视为最佳实践，如今也已不符合标准。更多信息请参阅",
+        "没有文档大纲算法"
+      ],
+      "probes": [
+        {
+          "id": "multiple",
+          "description": "Preserve multiple h1 elements rather than multiple sectioning elements",
+          "slot": 1,
+          "any": [
+            "多个"
+          ]
+        },
+        {
+          "id": "nesting-direction",
+          "description": "Keep h1 as the object being nested",
+          "slot": 2,
+          "any": [
+            "嵌套在",
+            "嵌入",
+            "嵌套于"
+          ]
+        },
+        {
+          "id": "read-more",
+          "description": "Retain further-reading instruction",
+          "slot": 4,
+          "any": [
+            "更多",
+            "参阅"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "d-html-headings-05",
+      "split": "diagnostic",
+      "family": "observed-html-headings-05",
+      "category": "previous_failure",
+      "html": "<p>Prefer using only one <code>&lt;h1&gt;</code> per page and <a href=\"#nesting\">nest headings</a> without skipping levels.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/Heading_Elements",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/Heading_Elements"
+      },
+      "reference_slots": [
+        "建议每页只使用一个",
+        "，并且",
+        "嵌套标题",
+        "时不要跳过层级。"
+      ],
+      "probes": [
+        {
+          "id": "no-skipped-levels",
+          "description": "Retain prohibition of skipped levels",
+          "slot": 3,
+          "any": [
+            "不要跳过",
+            "不跳过",
+            "避免跳过",
+            "不得跳过"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "d-asyncio-task-04",
+      "split": "diagnostic",
+      "family": "observed-asyncio-task-04",
+      "category": "previous_failure",
+      "html": "<p>pass the task group instance or bound <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">cancel()</span></code> method to some other task <em>before</em>\nopening the task group, allowing remote cancellation</p>",
+      "context_url": "https://docs.python.org/3/library/asyncio-task.html",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://docs.python.org/3/library/asyncio-task.html"
+      },
+      "reference_slots": [
+        "先将任务组实例或绑定的",
+        "方法传递给其他任务，",
+        "然后再",
+        "打开任务组，从而允许远程取消任务"
+      ],
+      "probes": [
+        {
+          "id": "before",
+          "description": "Preserve the emphasized temporal relation",
+          "slot": 2,
+          "any": [
+            "之前",
+            "以前",
+            "前",
+            "然后再"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "d-mdnpromise-04",
+      "split": "diagnostic",
+      "family": "observed-mdnpromise-04",
+      "category": "previous_failure",
+      "html": "<p>An <a href=\"/en-US/docs/Web/JavaScript/Reference/Iteration_protocols#the_iterable_protocol\">iterable</a> (such as an <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array\"><code>Array</code></a>) of promises. These values are <a href=\"/en-US/docs/Web/JavaScript/Reference/Operators/await\">awaited</a>, so other <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise#thenables\">thenables</a> are also resolved, while non-thenables are returned as-is.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all"
+      },
+      "reference_slots": [
+        "一个",
+        "可迭代对象",
+        "（例如一个",
+        "），其中包含 Promise。这些值会被",
+        "等待",
+        "，因此其他",
+        "thenable 对象",
+        "也会被兑现，而非 thenable 值则原样返回。"
+      ],
+      "probes": [
+        {
+          "id": "iterable",
+          "description": "Retain the iterable label",
+          "slot": 1,
+          "any": [
+            "可迭代"
+          ]
+        },
+        {
+          "id": "awaited",
+          "description": "Retain awaited label",
+          "slot": 4,
+          "any": [
+            "等待",
+            "await"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "d-pythread-06",
+      "split": "diagnostic",
+      "family": "observed-pythread-06",
+      "category": "previous_failure",
+      "html": "<p>A typical use case for <code class=\"xref py py-mod docutils literal notranslate\"><span class=\"pre\">threading</span></code> includes managing a pool of worker\nthreads that can process multiple tasks concurrently.  Here’s a basic example of\ncreating and starting threads using <a class=\"reference internal\" href=\"#threading.Thread\" title=\"threading.Thread\"><code class=\"xref py py-class docutils literal notranslate\"><span class=\"pre\">Thread</span></code></a>:</p>",
+      "context_url": "https://docs.python.org/3/library/threading.html",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://docs.python.org/3/library/threading.html"
+      },
+      "reference_slots": [
+        "一个典型的用例使用",
+        "来管理可以并发处理多个任务的工作线程池。下面是使用以下类创建和启动线程的基本示例："
+      ],
+      "probes": [
+        {
+          "id": "typical-use",
+          "description": "Do not drop the opening use-case phrase",
+          "slot": 0,
+          "any": [
+            "典型",
+            "常见"
+          ]
+        },
+        {
+          "id": "concurrently",
+          "description": "Retain concurrency",
+          "slot": 1,
+          "any": [
+            "并发",
+            "同时"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    },
+    {
+      "id": "d-postgres-06",
+      "split": "diagnostic",
+      "family": "observed-postgres-06",
+      "category": "previous_failure",
+      "html": "<p><code class=\"command\">INSERT</code> with an <code class=\"literal\">ON CONFLICT DO UPDATE</code> clause behaves similarly. In Read Committed mode, each row proposed for insertion will either insert or update. Unless there are unrelated errors, one of those two outcomes is guaranteed. If a conflict originates in another transaction whose effects are not yet visible to the <code class=\"command\">INSERT</code>, the <code class=\"command\">UPDATE</code> clause will affect that row, even though possibly <span class=\"emphasis\"><em>no</em></span> version of that row is conventionally visible to the command.</p>",
+      "context_url": "https://www.postgresql.org/docs/current/transaction-iso.html",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://www.postgresql.org/docs/current/transaction-iso.html"
+      },
+      "reference_slots": [
+        "搭配",
+        "子句时，其行为类似。在读已提交模式下，每个拟插入的行要么被插入，要么被更新。除非发生无关错误，否则可保证出现这两种结果之一。如果冲突来自另一个事务，而该事务的影响尚未对以下命令可见：",
+        "，那么",
+        "子句仍会影响该行，即使可能",
+        "没有任何",
+        "该行版本在通常情况下对该命令可见。"
+      ],
+      "probes": [
+        {
+          "id": "no-visible-version",
+          "description": "Keep explicit negation in emphasized slot",
+          "slot": 4,
+          "any": [
+            "没有",
+            "无"
+          ]
+        }
+      ],
+      "review_status": "assistant_authored_needs_human_review"
+    }
+  ]
+}
