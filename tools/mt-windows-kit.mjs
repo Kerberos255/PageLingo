@@ -13,6 +13,7 @@ const manifest = {schema_version: 1, source_commit: git(["rev-parse", "HEAD"]),
   purpose: "Non-C-drive Windows launcher; bounded GPU pipeline probe, not a release model", files: {}};
 const files = new Map([
   ["train.py", "training/mt-fixed-slots/train.py"], ["config.json", "training/mt-fixed-slots/config.json"],
+  ["training_options.py", "training/mt-fixed-slots/training_options.py"],
   ["merge_adapter.py", "training/mt-fixed-slots/merge_adapter.py"], ["mt-gguf-metadata.py", "tools/mt-gguf-metadata.py"],
   ["requirements-reference.txt", "training/mt-fixed-slots/requirements.txt"],
   ["run_local.py", "training/mt-fixed-slots/windows/run_local.py"],

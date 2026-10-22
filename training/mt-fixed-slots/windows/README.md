@@ -28,6 +28,8 @@
 
 沿用已有 `.venv`，不自动升级或降级依赖，不自动下载模型，不上传任何产物。共享目录的已安装包目录显示 torch 2.14.0+cu130、transformers 5.17.0、peft 0.21.0、accelerate 1.15.0、tokenizers 0.23.2、safetensors 0.8.0；这只是文件检查，实际 CUDA 可用性由主力机运行时验证。
 
+首轮探针日志已确认 CUDA 可用、原始底座 SHA256 正确、数据预检通过且权重加载完成，但创建训练参数时因 Transformers 5.17 移除了 `warmup_ratio` 而失败；尚未进入 optimizer step。已改用支持比例值的 `warmup_steps=0.05`（12 步探针对应 1 步 warmup）。`check` 模式现在也会在权重加载前构造真实 Trainer 参数，并打印 `training_arguments_checked`，提前发现版本不兼容。
+
 CMD 在 Python 启动前重定向任务的临时目录、HF、pip、torch、CUDA JIT、Triton、Inductor、pycache、uv、matplotlib、numba 等缓存到项目内的 `.tmp` 和 `.cache`，并检查这些路径位于非 C 盘项目目录。必须使用主力机本地 E 盘路径运行，拒绝直接用 UNC 作为训练目录。
 
 新工具不会读取 HF token 或 stored_tokens。实际训练只加载本地 BF16 模型；启动前校验其 SHA256，不依赖网络认证。既有 Linux 测试使用的依赖版本另存为 `requirements-reference.txt`，仅供比对，不应据此替换主力机已有 GPU 环境。

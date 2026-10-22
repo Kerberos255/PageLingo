@@ -32,12 +32,22 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import torch
 import transformers
 import peft
-from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainerCallback, TrainingArguments
+from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainerCallback
 from peft import LoraConfig, get_peft_model
+from training_options import build_training_arguments
 
 random.seed(config["seed"])
 torch.manual_seed(config["seed"])
 torch.set_num_threads(2)
+# This runs in check mode too, before hashing/tokenizing/loading the base.
+# CPU-only preflight checks the same constructor with CPU precision settings.
+arguments = build_training_arguments(config, args.output / "checkpoints", probe=args.probe,
+                                     use_cpu=not torch.cuda.is_available())
+argument_check = {"passed": True, "device": str(arguments.device), "bf16": arguments.bf16,
+                  "warmup_steps_argument": arguments.warmup_steps,
+                  "warmup_steps_for_12_step_probe": arguments.get_warmup_steps(config["probe_max_steps"]),
+                  "model_weights_loaded": False}
+print(json.dumps({"event": "training_arguments_checked", **argument_check}), flush=True)
 base = args.base or config["base_model"]
 local = Path(base).is_dir()
 local_weight_digest = None
@@ -59,6 +69,7 @@ stats = {"created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat()
          "cuda_available": torch.cuda.is_available(), "base_model": config["base_model"], "base_revision": config["base_revision"],
          "base_path": base, "config": config, "versions": {"torch": torch.__version__, "transformers": transformers.__version__, "peft": peft.__version__},
          "local_weight_sha256": local_weight_digest,
+         "training_argument_check": argument_check,
          "input_manifest_sha256": hashlib.sha256((args.data / "manifest.json").read_bytes()).hexdigest(), "splits": {}}
 datasets, families, sources, ids = {}, {}, set(), set()
 unreviewed = False
@@ -141,13 +152,6 @@ model = get_peft_model(model, LoraConfig(task_type="CAUSAL_LM", r=config["lora_r
 model.enable_input_require_grads()
 stats["model_and_adapter_load_wall_s"] = time.perf_counter() - load_started
 stats["parameters"] = {"total": sum(p.numel() for p in model.parameters()), "trainable": sum(p.numel() for p in model.parameters() if p.requires_grad)}
-arguments = TrainingArguments(output_dir=str(args.output / "checkpoints"), num_train_epochs=config["epochs"],
-    max_steps=config["probe_max_steps"] if args.probe else -1, per_device_train_batch_size=config["batch_size"], per_device_eval_batch_size=1,
-    gradient_accumulation_steps=config["gradient_accumulation_steps"], learning_rate=config["learning_rate"], weight_decay=config["weight_decay"],
-    warmup_ratio=config["warmup_ratio"], lr_scheduler_type="cosine", bf16=True, gradient_checkpointing=True,
-    gradient_checkpointing_kwargs={"use_reentrant": False}, optim="adamw_torch", max_grad_norm=1.0,
-    eval_strategy="epoch", save_strategy="epoch", save_total_limit=2, logging_steps=1, report_to=[],
-    seed=config["seed"], data_seed=config["seed"], dataloader_num_workers=0, push_to_hub=False)
 class FiniteMetrics(TrainerCallback):
     def on_log(self, args, state, control, logs=None, **kwargs):
         for key in ["loss", "eval_loss", "grad_norm"]:
