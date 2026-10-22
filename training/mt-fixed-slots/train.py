@@ -3,6 +3,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -31,7 +32,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import torch
 import transformers
 import peft
-from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
+from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainerCallback, TrainingArguments
 from peft import LoraConfig, get_peft_model
 
 random.seed(config["seed"])
@@ -130,11 +131,15 @@ if unreviewed and not args.probe:
 if not torch.cuda.is_bf16_supported():
     raise RuntimeError("This BF16 pilot requires a GPU with BF16 support")
 
+stats["gpu"] = {"name": torch.cuda.get_device_name(0), "total_memory_bytes": torch.cuda.get_device_properties(0).total_memory}
+torch.cuda.reset_peak_memory_stats()
+load_started = time.perf_counter()
 model = AutoModelForCausalLM.from_pretrained(base, dtype=torch.bfloat16, attn_implementation="sdpa", low_cpu_mem_usage=True, **load_options)
 model.config.use_cache = False
 model = get_peft_model(model, LoraConfig(task_type="CAUSAL_LM", r=config["lora_r"], lora_alpha=config["lora_alpha"],
     lora_dropout=config["lora_dropout"], target_modules=config["target_modules"], bias="none"))
 model.enable_input_require_grads()
+stats["model_and_adapter_load_wall_s"] = time.perf_counter() - load_started
 stats["parameters"] = {"total": sum(p.numel() for p in model.parameters()), "trainable": sum(p.numel() for p in model.parameters() if p.requires_grad)}
 arguments = TrainingArguments(output_dir=str(args.output / "checkpoints"), num_train_epochs=config["epochs"],
     max_steps=config["probe_max_steps"] if args.probe else -1, per_device_train_batch_size=config["batch_size"], per_device_eval_batch_size=1,
@@ -143,7 +148,13 @@ arguments = TrainingArguments(output_dir=str(args.output / "checkpoints"), num_t
     gradient_checkpointing_kwargs={"use_reentrant": False}, optim="adamw_torch", max_grad_norm=1.0,
     eval_strategy="epoch", save_strategy="epoch", save_total_limit=2, logging_steps=1, report_to=[],
     seed=config["seed"], data_seed=config["seed"], dataloader_num_workers=0, push_to_hub=False)
-trainer = Trainer(model=model, args=arguments, train_dataset=datasets["train"], eval_dataset=datasets["validation"], data_collator=collate)
+class FiniteMetrics(TrainerCallback):
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        for key in ["loss", "eval_loss", "grad_norm"]:
+            if key in (logs or {}) and not math.isfinite(float(logs[key])):
+                raise FloatingPointError("Non-finite training metric: " + key)
+
+trainer = Trainer(model=model, args=arguments, train_dataset=datasets["train"], eval_dataset=datasets["validation"], data_collator=collate, callbacks=[FiniteMetrics()])
 start = time.perf_counter()
 before = trainer.evaluate()
 training = trainer.train()
@@ -151,6 +162,8 @@ after = trainer.evaluate()
 model.save_pretrained(args.output / "adapter", safe_serialization=True)
 tokenizer.save_pretrained(args.output / "adapter")
 stats.update(training_executed=True, training_wall_s=time.perf_counter() - start, validation_before=before,
-             validation_after=after, train_metrics=training.metrics)
+             validation_after=after, train_metrics=training.metrics,
+             optimizer_steps=trainer.state.global_step, cuda_peak_allocated_bytes=torch.cuda.max_memory_allocated(),
+             cuda_peak_reserved_bytes=torch.cuda.max_memory_reserved())
 (args.output / "training-result.json").write_text(json.dumps(stats, indent=2) + "\n")
 print(json.dumps({"event": "completed", "run_kind": stats["run_kind"], "training_executed": True}), flush=True)
