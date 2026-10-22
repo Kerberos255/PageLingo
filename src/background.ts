@@ -42,6 +42,7 @@ import {
 } from "./shared/translation-engine-settings";
 import { PageLingoMtClient } from "./providers/pagelingo-mt/client";
 import { mtRouteSupported } from "./providers/pagelingo-mt/protocol";
+import { validTranslationContext } from "./core/translation-context";
 import { keepEventPageAlive } from "./shared/event-page-keepalive";
 
 const bergamot = new BergamotClient();
@@ -60,6 +61,7 @@ interface RuntimeMessage {
     sourceLanguage?: unknown;
     targetLanguage?: unknown;
     terminology?: unknown;
+    context?: unknown;
   };
   requests?: Array<{
     html?: unknown;
@@ -133,8 +135,8 @@ async function translationEngineStateForUi() {
   return {
     activeEngineId: state.activeEngineId,
     structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
-      || state.activeEngineId === PAGELINGO_MT_ENGINE_ID
       || Boolean(activeExternal && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
+    prefersWholeSentenceHtml: state.activeEngineId === PAGELINGO_MT_ENGINE_ID,
     mt,
     engines: state.engines.map((engine) => ({
       id: engine.id,
@@ -430,14 +432,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         : [];
       const engineState = await currentTranslationEngineState();
       if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
-        const mtRequest = { html: request.html, sourceLanguage, targetLanguage, terminology };
+        const mtRequest = { html: request.html, sourceLanguage, targetLanguage, terminology, context: validTranslationContext(request.context) };
         const mtResult = await keepEventPageAlive(pagelingoMt.translateHtmlChecked(mtRequest), "mt-translate");
         if (mtResult.accepted) return { ok: true, html: mtResult.html, engine: PAGELINGO_MT_ENGINE_ID };
-        const overrides = await currentOverrides();
-        const route = routeFor(sourceLanguage, targetLanguage, overrides);
-        if (!route) throw new Error(mtResult.reason ?? "PageLingo MT rejected the translation");
-        const html = await bergamot.translateHtml(request.html, route);
-        return { ok: true, html, engine: LOCAL_TRANSLATION_ENGINE_ID, fallbackFrom: PAGELINGO_MT_ENGINE_ID, fallbackReason: mtResult.reason };
+        throw new Error(mtResult.reason ?? "PageLingo MT rejected the translation; original paragraph retained");
       }
       const external = await activeExternalEngine();
       if (external) {

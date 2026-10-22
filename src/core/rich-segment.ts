@@ -1,12 +1,13 @@
 // @ts-nocheck
-import { isElementEffectivelyHidden, isTranslationRootElement } from "./dom-policy";
+import { isElementEffectivelyHidden, isTranslationRootElement, isEligibleTextNode } from "./dom-policy";
+import type { SourceTextSlot } from "./fixed-text-render";
 import { normalizeGlossaryEntry } from "../shared/settings";
 
 export interface LinkStyleSnapshot { color:string; textDecorationLine:string; textDecorationStyle:string; textDecorationColor:string; textDecorationThickness:string; textUnderlineOffset:string }
 export interface LinkSnapshot { href:string|null; target:string|null; rel:string|null; title:string|null; className:string; sourceElement:HTMLAnchorElement; sourceText:string; linkStyle:LinkStyleSnapshot|null }
 export interface OpaqueSnapshot { tagName:string; text:string }
 export interface TerminologyEntry { source:string; target:string; mode:"protect"|"replace"; caseSensitive?:boolean; origin?:"builtin"|"user"; aliases?:string[] }
-export interface RichSegment { html:string; links:LinkSnapshot[]; opaque:OpaqueSnapshot[]; linkGaps:string[]; fingerprint:string }
+export interface RichSegment { html:string; links:LinkSnapshot[]; opaque:OpaqueSnapshot[]; linkGaps:string[]; fingerprint:string; textSlots?:SourceTextSlot[] }
 
 const LINK_TRANSPORT_PREFIX = "https://pagelingo.invalid/__link/";
 var INLINE_TAGS = new Set([
@@ -48,11 +49,18 @@ function snapshotLink(element) {
         } : null,
     };
 }
-function serializeChildren(parent, root, links, opaque) {
+function serializeChildren(parent, root, links, opaque, textSlots) {
     let html = "";
     for (const node of parent.childNodes) {
         if (node.nodeType === Node.TEXT_NODE) {
-            html += escapeHtml(node.textContent ?? "");
+            const text = escapeHtml(node.textContent ?? "");
+            if (textSlots && (node.textContent ?? "").trim()) {
+                if (isEligibleTextNode(node)) {
+                    const id = textSlots.length;
+                    textSlots.push({id, node, parent: node.parentNode, source: node.data});
+                    html += `<span data-flt-text-id="${id}">${text}</span>`;
+                } else html += `<span data-flt-fixed="true">${text}</span>`;
+            } else html += text;
             continue;
         }
         if (node.nodeType !== Node.ELEMENT_NODE)
@@ -68,7 +76,7 @@ function serializeChildren(parent, root, links, opaque) {
             continue;
         const tag = element.tagName;
         if (!INLINE_TAGS.has(tag)) {
-            html += serializeChildren(element, root, links, opaque);
+            html += serializeChildren(element, root, links, opaque, textSlots);
             continue;
         }
         const lower = tag.toLowerCase();
@@ -79,12 +87,9 @@ function serializeChildren(parent, root, links, opaque) {
         if (tag === "A") {
             const linkIndex = links.length;
             links.push(snapshotLink(element));
-            // Keep the label inside the whole-sentence request, but bracket it with
-            // opaque boundary sentinels. When both sentinels survive we can trust the main
-            // translation and still guarantee that surrounding translated words never become
-            // part of the clickable region. If either sentinel is damaged, PageTranslator
-            // falls back to the standalone link/gap recovery path.
-            const labelHtml = serializeChildren(element, root, links, opaque) || escapeHtml(element.textContent ?? "");
+            // Legacy providers use link sentinels for recovery. MT additionally maps
+            // each original text node to a fixed slot; link topology is application-owned.
+            const labelHtml = serializeChildren(element, root, links, opaque, textSlots) || escapeHtml(element.textContent ?? "");
             html += `<a data-flt-link-id="${linkIndex}" href="${LINK_TRANSPORT_PREFIX}${linkIndex}"><code>__FLT_LINK_START_${linkIndex}__</code>${labelHtml}<code>__FLT_LINK_END_${linkIndex}__</code></a>`;
             continue;
         }
@@ -94,17 +99,23 @@ function serializeChildren(parent, root, links, opaque) {
             html += `<${lower}>__FLT_OPAQUE_${index}__</${lower}>`;
             continue;
         }
-        html += `<${lower}>${serializeChildren(element, root, links, opaque)}</${lower}>`;
+        html += `<${lower}>${serializeChildren(element, root, links, opaque, textSlots)}</${lower}>`;
     }
     return html;
 }
-export function sourceFingerprint(root) {
+export function sourceFingerprint(root, {excludeNestedRoots = false} = {}) {
     let text = "";
     const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let current = walker.nextNode();
     while (current) {
         const node = current;
-        if (!node.parentElement?.closest("[data-flt-generated]") && !node.parentElement?.closest("[hidden],[aria-hidden='true'],tool-tip,[role='tooltip'],[inert]")) text += node.data;
+        let nested = false;
+        if (excludeNestedRoots) {
+            for (let parent = node.parentElement; parent && parent !== root; parent = parent.parentElement) {
+                if (isTranslationRootElement(parent)) { nested = true; break; }
+            }
+        }
+        if (!nested && !node.parentElement?.closest("[data-flt-generated]") && !node.parentElement?.closest("[hidden],[aria-hidden='true'],tool-tip,[role='tooltip'],[inert]")) text += node.data;
         current = walker.nextNode();
     }
     return text;
@@ -135,10 +146,11 @@ function snapshotLinkGaps(root) {
     walk(root);
     return gaps;
 }
-export function serializeRichSegment(root) {
+export function serializeRichSegment(root, {fixedTextSlots = false} = {}): RichSegment {
     const links = [];
     const opaque = [];
-    let html = serializeChildren(root, root, links, opaque).trim();
+    const textSlots = fixedTextSlots ? [] : undefined;
+    let html = serializeChildren(root, root, links, opaque, textSlots).trim();
     if (root.tagName === "A") {
         links.unshift(snapshotLink(root));
         const labelHtml = html || escapeHtml(root.textContent ?? "");
@@ -149,7 +161,8 @@ export function serializeRichSegment(root) {
         links,
         opaque,
         linkGaps: links.length > 0 && root.tagName !== "A" ? snapshotLinkGaps(root) : [],
-        fingerprint: sourceFingerprint(root),
+        fingerprint: sourceFingerprint(root, {excludeNestedRoots: fixedTextSlots}),
+        textSlots,
     };
 }
 // PageLingo v21 terminology layer. Protect-only terms may be shielded before

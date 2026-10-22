@@ -13,6 +13,7 @@ interface TranslationEngineStateResponse {
   ok?: boolean;
   state?: {
     structuralSplittingSafe?: boolean;
+    prefersWholeSentenceHtml?: boolean;
   };
 }
 
@@ -25,6 +26,13 @@ interface PendingTranslation {
 export class RuntimeMessageProvider implements TranslationProvider {
   readonly #pending: PendingTranslation[] = [];
   #flushQueued = false;
+
+  async prefersWholeSentenceHtml(): Promise<boolean> {
+    try {
+      const response = await sendRuntimeMessage<TranslationEngineStateResponse>({type: "get-translation-engines"});
+      return response?.ok === true && response.state?.prefersWholeSentenceHtml === true;
+    } catch { return false; }
+  }
 
   async supportsStructuralSplitting(): Promise<boolean> {
     try {

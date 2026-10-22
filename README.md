@@ -39,6 +39,16 @@ The renderer:
 
 Restoring the page removes PageLingo-generated translation nodes and source wrappers without replacing the original application DOM.
 
+### Experimental PageLingo MT
+
+The optional PageLingo MT engine uses wllama on the CPU for English → Simplified Chinese. It translates a paragraph with numbered text slots while PageLingo owns the HTML template. A decoding grammar fixes slot order and protected tokens; independent validation rejects malformed or incomplete output.
+
+In translation-only mode, MT updates existing text nodes without replacing elements, attributes, code, or event listeners. Bilingual mode restores the source text and adds a removable translation layer cloned from the source markup. Ordinary link clicks in that layer forward to the original link.
+
+MT retains the entire source paragraph when inference or validation fails, without retrying isolated words or silently switching engines. Oversized content is split only at complete sentence boundaries that preserve the template; an indivisible sentence or text slot exceeding the context budget stays in English. A standalone English article may be omitted in Chinese, but arbitrary empty text slots are rejected.
+
+These checks preserve DOM structure, not semantic accuracy or identical line wrapping. Translation quality, the meaning of link labels, and bilingual appearance still require review on real sites.
+
 ## Terminology
 
 The built-in terminology list is intentionally limited to proper names such as brands, organizations, products, platforms, and named projects. Built-in protected names use **case-sensitive matching** so a name such as `Signal`, `Matrix`, `Render`, or `Windows` does not freeze the corresponding ordinary lowercase word.

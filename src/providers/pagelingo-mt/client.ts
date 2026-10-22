@@ -5,25 +5,21 @@ import {
   ModelValidationStatus,
   Wllama,
 } from "@wllama/wllama/esm/index.js";
-import { assessTranslationQuality } from "../../core/translation-quality";
 import type {
   CheckedTranslationResult,
   TranslationProvider,
   TranslationRequest,
 } from "../../core/provider";
 import {
-  decodeMtHtml,
-  encodeMtHtml,
-  mtMaxTokens,
-  mtPrompt,
   mtRouteSupported,
-  validateMtOutput,
 } from "./protocol";
 import {
   PageLingoOpfsBackend,
   describeMtError,
   ensureMtStorageCapacity,
 } from "./opfs-backend";
+import {inferMtHtml} from "./inference";
+import {MT_CONTEXT_TOKENS} from "./sentence-plan";
 
 export const PAGELINGO_MT_ENGINE_ID = "pagelingo-mt";
 export const PAGELINGO_MT_MODEL_REPO = "kerberos255/PageLingo-Translate-1.8B";
@@ -52,11 +48,6 @@ export interface PageLingoMtStatus {
   actualThreads: number;
   lastLoadMs: number;
   lastInferenceMs: number;
-}
-
-function plainText(html: string): string {
-  const parsed = new DOMParser().parseFromString(html, "text/html");
-  return (parsed.body.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
 export class PageLingoMtClient implements TranslationProvider {
@@ -169,8 +160,10 @@ export class PageLingoMtClient implements TranslationProvider {
   }
 
   async supportsStructuralSplitting(): Promise<boolean> {
-    return true;
+    return false;
   }
+
+  async prefersWholeSentenceHtml(): Promise<boolean> { return true; }
 
   async translateHtml(request: TranslationRequest): Promise<string> {
     const checked = await this.translateHtmlChecked(request);
@@ -201,51 +194,21 @@ export class PageLingoMtClient implements TranslationProvider {
   }
 
   async #translateSerial(request: TranslationRequest): Promise<CheckedTranslationResult> {
-    const encoded = encodeMtHtml(request.html);
     const engine = await this.#ensureLoaded();
     this.#setRuntimePhase("inference");
     const inferenceStarted = performance.now();
     let response: any;
     try {
-      response = await engine.createCompletion({
-      prompt: mtPrompt(encoded.source),
-      max_tokens: mtMaxTokens(encoded),
-      temperature: 0,
-      top_k: 1,
-        stream: false,
-      });
+      response = await inferMtHtml(request, options => engine.createChatCompletion(options));
       this.#lastInferenceMs = performance.now() - inferenceStarted;
+      this.#lastError = "";
       this.#setRuntimePhase("ready");
     } catch (error) {
       this.#lastError = describeMtError(error);
       this.#setRuntimePhase("error");
       throw error;
     }
-    const raw = String(response?.choices?.[0]?.text ?? "").trim();
-    const validation = validateMtOutput(encoded, raw);
-    if (!validation.ok) {
-      return {
-        html: request.html,
-        accepted: false,
-        reason: validation.errors.join(", ") || "MT protocol validation failed",
-      };
-    }
-
-    const decoded = decodeMtHtml(encoded, raw);
-    const quality = assessTranslationQuality({
-      sourceText: plainText(request.html),
-      translatedText: plainText(decoded),
-      sourceLanguage: request.sourceLanguage,
-      targetLanguage: request.targetLanguage,
-    });
-    if (!quality.accepted) {
-      return {
-        html: request.html,
-        accepted: false,
-        reason: quality.reasons.join(", ") || "MT quality validation failed",
-      };
-    }
-    return { html: decoded, accepted: true };
+    return response;
   }
 
   async #ensureLoaded(): Promise<Wllama> {
@@ -271,7 +234,7 @@ export class PageLingoMtClient implements TranslationProvider {
       this.#requestedThreads = threads;
       const loadStarted = performance.now();
       await engine.loadModel(blobs, {
-        n_ctx: 1536,
+        n_ctx: MT_CONTEXT_TOKENS,
         n_threads: threads,
         n_gpu_layers: 0,
       });

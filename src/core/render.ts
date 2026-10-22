@@ -701,7 +701,7 @@ function copySourceLayout(root, node) {
             node.style.setProperty(property, value, "important");
     }
 }
-export function mountTranslation(root, fragment, targetLanguage) {
+export function mountTranslation(root, fragment, targetLanguage, insideSourceContainer = false) {
     const node = root.ownerDocument.createElement("span");
     node.className = "flt-translation";
     node.dataset.fltGenerated = "translation";
@@ -729,7 +729,10 @@ export function mountTranslation(root, fragment, targetLanguage) {
         // that explicit computed layout instead of letting .flt-translation force block.
         node.style.setProperty("display", sourceDisplay, "important");
     }
-    if (["LI", "TD", "TH"].includes(root.tagName)) {
+    const insideProse = insideSourceContainer
+        && ["P", "BLOCKQUOTE", "FIGCAPTION", "DT", "DD", "H1", "H2", "H3", "H4", "H5", "H6"].includes(root.tagName)
+        && !root.querySelector("p,li,blockquote,table,ul,ol,dl,h1,h2,h3,h4,h5,h6,button,input,select,textarea");
+    if (insideProse || ["LI", "TD", "TH"].includes(root.tagName)) {
         root.append(node);
     }
     else {

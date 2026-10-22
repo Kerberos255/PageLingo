@@ -351,9 +351,25 @@ function wrapDirectAnchorTextNodes(scope) {
     wrapTextNodesInside(anchor, doc);
   }
 }
-export function collectTranslationRoots(scope) {
+export function collectTranslationRoots(scope, { preserveInlineContext = false } = {}) {
   const doc = scope instanceof Document ? scope : scope.ownerDocument;
   if (!doc) return [];
+  if (preserveInlineContext) {
+    // Fixed text rendering needs no source wrappers, including inside toolbars or anchors.
+    const roots = new Set();
+    const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (!isEligibleTextNode(node)) continue;
+      // The fixed renderer keeps controls/icons in place, so an inline fallback
+      // inside a paragraph must not become a second, overlapping translation root.
+      const structural = node.parentElement?.closest(Array.from(ROOT_TAGS, tag => tag.toLowerCase()).join(","));
+      const root = structural && !isInsideCodeWidgetFallback(structural)
+        ? structural : findTranslationRoot(node) ?? node.parentElement?.closest("a,label");
+      if (root) roots.add(root);
+    }
+    return Array.from(roots);
+  }
   wrapDirectAnchorTextNodes(scope);
   wrapDecoratedStructuralTextNodes(scope);
   const roots = /* @__PURE__ */ new Set();

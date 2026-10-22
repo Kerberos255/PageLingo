@@ -4,6 +4,8 @@ import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./navigation-layout";
 import { TooltipController } from "./tooltip-controller";
+import { contextualTerminology, translationContextForUrl } from "./translation-context";
+import {prepareFixedTextRecord, fixedTextRecordUnchanged, clearFixedTextRecord, applyFixedTextRecord} from "./fixed-text-render";
 import {
     richHtmlStructureCompatible,
     richMarkerCandidateCount,
@@ -229,6 +231,15 @@ export class PageTranslator {
     #disposed = false;
     #sourceLinkStyleSnapshots = new Map();
     #sourceHadClassAttribute = new WeakMap();
+    #wholeSentenceContext = false;
+    #fixedRecords = new Map();
+    #contextModePromise = null;
+    async #loadContextMode() {
+        if (!this.#contextModePromise) this.#contextModePromise = Promise.resolve()
+            .then(() => this.#provider.prefersWholeSentenceHtml?.() ?? false)
+            .then(value => this.#wholeSentenceContext = Boolean(value), () => false);
+        return this.#contextModePromise;
+    }
     constructor(doc, provider, options = {}) {
         this.#doc = doc;
         this.#provider = provider;
@@ -240,7 +251,7 @@ export class PageTranslator {
         this.#terminology = Array.isArray(options.terminology) ? options.terminology : [];
     }
     get translatedCount() {
-        return this.#records.size;
+        return this.#records.size + this.#fixedRecords.size;
     }
     setDisplayMode(displayMode) {
         if (this.#disposed || this.#displayMode === displayMode)
@@ -249,11 +260,17 @@ export class PageTranslator {
         for (const [root, record] of this.#records) {
             this.#applyDisplayMode(root, record.translationNode);
         }
+        for (const [root, record] of this.#fixedRecords) {
+            if (!applyFixedTextRecord(root, record, displayMode, this.#targetLanguage)) {
+                this.#fixedRecords.delete(root); this.#queue(root);
+            }
+        }
     }
     async translateAll(scope = this.#doc.body) {
         if (this.#disposed)
-            return this.#records.size;
-        const roots = collectTranslationRoots(scope);
+            return this.translatedCount;
+        await this.#loadContextMode();
+        const roots = collectTranslationRoots(scope, {preserveInlineContext: this.#wholeSentenceContext});
         let cursor = 0;
         const workers = Array.from({ length: Math.min(this.#concurrency, roots.length) }, async () => {
             while (cursor < roots.length) {
@@ -269,7 +286,7 @@ export class PageTranslator {
             }
         });
         await Promise.all(workers);
-        return this.#records.size;
+        return this.translatedCount;
     }
     async translateRoot(root) {
         if (this.#disposed || !root.isConnected || isGeneratedNode(root))
@@ -280,9 +297,14 @@ export class PageTranslator {
         }
         this.#inFlight.add(root);
         try {
+        await this.#loadContextMode();
+        const fixedPrevious = this.#fixedRecords.get(root);
         if (this.#shouldTranslateRoot && !await this.#shouldTranslateRoot(root)) {
             if (this.#disposed)
                 return;
+            if (fixedPrevious) {
+                clearFixedTextRecord(fixedPrevious); this.#fixedRecords.delete(root);
+            }
             const previous = this.#records.get(root);
             if (previous) {
                 this.#clearDisplayMode(root);
@@ -290,6 +312,10 @@ export class PageTranslator {
                 this.#records.delete(root);
             }
             return;
+        }
+        if (fixedPrevious) {
+            if (fixedTextRecordUnchanged(fixedPrevious)) return;
+            clearFixedTextRecord(fixedPrevious); this.#fixedRecords.delete(root);
         }
         const currentFingerprint = sourceFingerprint(root);
         const previous = this.#records.get(root);
@@ -303,10 +329,15 @@ export class PageTranslator {
             previous.translationNode.remove();
             this.#records.delete(root);
         }
-        const segment = serializeRichSegment(root);
+        const segment = serializeRichSegment(root, {fixedTextSlots: this.#wholeSentenceContext});
+        if (this.#wholeSentenceContext && !segment.textSlots.length) return;
         if (!segment.html.trim())
             return;
+        const context = this.#wholeSentenceContext ? translationContextForUrl(this.#doc.URL) : undefined;
         const requestTerminology = terminologyForText(this.#terminology, segment.fingerprint);
+        for (const entry of terminologyForText(contextualTerminology(context), segment.fingerprint)) {
+            if (!requestTerminology.some(existing => existing.source.toLowerCase() === entry.source.toLowerCase())) requestTerminology.push(entry);
+        }
         let translatedHtml;
         const markerCount = richMarkerCandidateCount(segment.html);
         const markerDepth = richMarkerCandidateMaxDepth(segment.html);
@@ -317,7 +348,7 @@ export class PageTranslator {
         // ownership instead of asking the model to reproduce deep marker structure.
         const nestingRiskRoot = markerCount >= 5 && markerCount <= 6 && markerDepth >= 2;
         const structuralFallbackAllowed =
-            (complexRoot || nestingRiskRoot) &&
+            !this.#wholeSentenceContext && (complexRoot || nestingRiskRoot) &&
             await providerAllowsStructuralSplitting(this.#provider);
         if (structuralFallbackAllowed && nestingRiskRoot) {
             translatedHtml = await translateLeafSafeRichHtml(
@@ -340,15 +371,14 @@ export class PageTranslator {
             );
         }
         else {
-            // Keep the common path byte-for-byte equivalent to the existing whole-root
-            // translation behavior. The splitter is deliberately reserved for the tiny
-            // high-complexity tail so normal Firefox/Bergamot output is unaffected.
+            // Keep the complete root and its protected terminology in one provider request.
             const protectedSegment = protectTerminologyHtml(this.#doc, segment.html, this.#terminology);
             translatedHtml = await this.#provider.translateHtml({
                 html: protectedSegment.html,
                 sourceLanguage: this.#sourceLanguage,
                 targetLanguage: this.#targetLanguage,
                 terminology: requestTerminology,
+                context,
             });
             translatedHtml = restoreTerminologyHtml(this.#doc, translatedHtml, protectedSegment.replacements);
         }
@@ -362,7 +392,7 @@ export class PageTranslator {
         // engine's standalone default as an alias, but never inject the preferred target into
         // the source sentence before translation.
         const dynamicAliases = new Map();
-        const userTerms = this.#terminology.filter((entry) => entry.mode === "replace" && entry.origin === "user" && termOccurrenceCount(segment.fingerprint, entry.source, entry.caseSensitive === true) > 0);
+        const userTerms = this.#wholeSentenceContext ? [] : this.#terminology.filter((entry) => entry.mode === "replace" && entry.origin === "user" && termOccurrenceCount(segment.fingerprint, entry.source, entry.caseSensitive === true) > 0);
         await Promise.all(userTerms.map(async (entry) => {
             try {
                 const aliasHtml = await this.#provider.translateHtml({
@@ -385,6 +415,7 @@ export class PageTranslator {
         // and the text gaps around them. Keep the previous standalone path only as a
         // transport-damage fallback.
         const mainLinksComplete = translatedLinkTransportComplete(translatedHtml, segment.links);
+        if (this.#wholeSentenceContext && !mainLinksComplete) throw new Error("MT link transport incomplete; preserving the original paragraph");
         const translatedLinkTexts = mainLinksComplete ? [] : await Promise.all(segment.links.map(async (link) => {
             if (!link.sourceText.trim()) return "";
             const exactTerm = exactTerminologyTarget(link.sourceText, this.#terminology);
@@ -430,8 +461,14 @@ export class PageTranslator {
                 return "";
             }
         }));
-        if (this.#disposed || !root.isConnected || sourceFingerprint(root) !== segment.fingerprint)
+        if (this.#disposed || !root.isConnected || sourceFingerprint(root, {excludeNestedRoots: this.#wholeSentenceContext}) !== segment.fingerprint)
             return;
+        if (this.#wholeSentenceContext) {
+            const record = prepareFixedTextRecord(root, segment.textSlots, translatedHtml);
+            if (!applyFixedTextRecord(root, record, this.#displayMode, this.#targetLanguage)) return;
+            this.#fixedRecords.set(root, record);
+            return;
+        }
         const fragment = createSafeTranslatedFragment(this.#doc, translatedHtml, segment.links, segment.opaque, translatedLinkTexts, translatedGapTexts, []);
         const translationNode = mountTranslation(root, fragment, this.#targetLanguage);
         this.#records.set(root, { translationNode, fingerprint: segment.fingerprint });
@@ -451,7 +488,7 @@ export class PageTranslator {
                 if (mutation.type === "characterData" && mutation.target.nodeType === Node.TEXT_NODE) {
                     const parent = mutation.target.parentElement;
                     if (parent) {
-                        for (const root of collectTranslationRoots(parent))
+                        for (const root of collectTranslationRoots(parent, {preserveInlineContext: this.#wholeSentenceContext}))
                             this.#queue(root);
                     }
                     continue;
@@ -462,14 +499,14 @@ export class PageTranslator {
                     if (added.nodeType === Node.TEXT_NODE) {
                         const parent = added.parentElement;
                         if (parent) {
-                            for (const root of collectTranslationRoots(parent))
+                            for (const root of collectTranslationRoots(parent, {preserveInlineContext: this.#wholeSentenceContext}))
                                 this.#queue(root);
                         }
                     }
                     else if (added.nodeType === Node.ELEMENT_NODE) {
                         if (added.matches?.("[data-flt-source-text-wrapper]"))
                             continue;
-                        for (const root of collectTranslationRoots(added))
+                        for (const root of collectTranslationRoots(added, {preserveInlineContext: this.#wholeSentenceContext}))
                             this.#queue(root);
                     }
                 }
@@ -528,6 +565,8 @@ export class PageTranslator {
         this.#pending.clear();
         this.#rerun.clear();
         this.#inFlight.clear();
+        for (const record of this.#fixedRecords.values()) clearFixedTextRecord(record);
+        this.#fixedRecords.clear();
         for (const [root, { translationNode }] of this.#records) {
             this.#clearDisplayMode(root);
             translationNode.remove();
@@ -624,7 +663,7 @@ export class PageTranslator {
         this.#flushQueued = false;
         const roots = Array.from(this.#pending);
         this.#pending.clear();
-        const guardNavigation = this.#displayMode === "translation" && roots.length > 0;
+        const guardNavigation = !this.#wholeSentenceContext && this.#displayMode === "translation" && roots.length > 0;
         const navigationHold = guardNavigation ? freezeNavigationLayout(false) : null;
         try {
             for (const root of roots) {

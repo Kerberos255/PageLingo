@@ -11,6 +11,12 @@ export interface TranslationQualityAssessment {
   suspiciouslyShort: boolean;
 }
 
+// Chinese can omit a standalone English article. Do not extend this exception
+// to arbitrary words: an empty content-bearing slot must reject the paragraph.
+export function isOptionalEnglishArticle(source: string): boolean {
+  return /^(?:a|an|the)$/iu.test(source.trim());
+}
+
 function normalizeTransportText(value: string): string {
   return String(value || "")
     .replace(/__FLT_(?:OPAQUE_\d+|LINK_(?:START|END)_\d+)__/g, " ")

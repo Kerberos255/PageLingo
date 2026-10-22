@@ -22,8 +22,12 @@ const slotRe = /⟪P(\d{1,2})⟫/g;
 const protectedTags = new Set(["CODE", "KBD", "SAMP", "VAR"]);
 const linkBoundaryRe = /^__FLT_LINK_(?:START|END)_\d+__$/;
 
-export function mtPrompt(source: string): string {
-  return `Translate the following text from English into Simplified Chinese.
+export function mtPrompt(source: string, terminology: TranslationRequest["terminology"] = [], context?: TranslationRequest["context"]): string {
+  const references = terminology.filter(entry => entry.source.trim() && entry.target.trim() && entry.source.length <= 96 && entry.target.length <= 96).slice(0, 16)
+    .map(entry => `${entry.source} translates to ${entry.target}`);
+  const domain = context ? `Domain: ${{http: "HTTP protocol documentation", javascript: "JavaScript programming", sql: "SQL transactions", python: "Python programming"}[context]}.\n` : "";
+  const prefix = domain + (references.length ? `Reference the following translations:\n${references.join("\n")}\n\n` : "");
+  return prefix + `Translate the following text from English into Simplified Chinese.
 Rules:
 1. Keep every ⟦n⟧ and ⟦/n⟧ inline marker exactly once. A marker pair may move as a whole when Chinese word order requires it, but its boundary must not expand, shrink, cross, or change nesting.
 2. Keep every opaque protected slot such as ⟪P0⟫ exactly once and unchanged. Do not translate, split, remove, duplicate, or rewrite a protected slot. Protected slots may move with Chinese word order.
@@ -33,6 +37,7 @@ ${source}
 Chinese:`;
 }
 
+/** @deprecated Legacy movable-markup format; inference uses fixed-text.ts. */
 export function encodeMtHtml(html: string): EncodedMtHtml {
   const parsed = new DOMParser().parseFromString(html, "text/html");
   const elements = new Map<number, { tag: string; attrs: Array<[string, string]> }>();
@@ -106,6 +111,7 @@ function parseMarkers(text: string) {
   return { ids, parents, errors };
 }
 
+/** @deprecated Does not establish text-node ownership; not used for MT inference. */
 export function validateMtOutput(encoded: EncodedMtHtml, output: string): MtValidation {
   const source = parseMarkers(encoded.source);
   const target = parseMarkers(output);
