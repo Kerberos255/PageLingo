@@ -92,6 +92,8 @@ export function decodeFixedMtText(encoded: FixedMtText, output: string): string 
     const end = output.indexOf(closing, cursor);
     if (end < 0) throw new Error("MT unclosed text slot");
     const value = output.slice(cursor, end).trim();
+    const isLabel = Boolean(part.text.node.parentElement?.closest("a,em,strong,b,i,mark"));
+    if (isLabel && !/[\p{L}\p{N}]/u.test(value)) throw new Error("MT link/emphasis text became empty or punctuation-only");
     if ((!value && !isOptionalEnglishArticle(part.text.source)) || reserved.test(value) || /[<>]/u.test(value)) throw new Error("MT invalid text-slot content");
     if (/^(?:中文|译文|翻译|translation|chinese)\s*[:：]/iu.test(value)) throw new Error("MT translation label in text slot");
     values.push(value); cursor = end + closing.length;

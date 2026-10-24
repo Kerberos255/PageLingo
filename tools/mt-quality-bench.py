@@ -20,25 +20,34 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--server", required=True, type=Path)
 parser.add_argument("--base-model", required=True, type=Path)
 parser.add_argument("--mt-model", required=True, type=Path)
+parser.add_argument("--candidate-model", type=Path, help="Optional third Q5 candidate; same inputs and settings")
+parser.add_argument("--project-root", type=Path, help="Use a frozen source checkout for baseline validation")
 parser.add_argument("--source-config", required=True, type=Path, help="Original base config/tokenizer directory for stop-token verification")
 parser.add_argument("--out", type=Path, default=ROOT / "artifacts/mt-quality/results")
 parser.add_argument("--threads", type=int, default=2)
 parser.add_argument("--skip-plain", action="store_true")
 args = parser.parse_args()
+if args.project_root:
+    ROOT = args.project_root.resolve()
+    if not (ROOT / "tools/mt-quality-eval.mjs").is_file():
+        raise ValueError("Project root does not contain the MT evaluator")
 args.out = args.out.resolve()
 args.out.mkdir(parents=True, exist_ok=True)
 http = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # Loopback only.
 spec = importlib.util.spec_from_file_location("mt_metadata_guard", ROOT / "tools/mt-gguf-metadata.py")
 metadata_guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(metadata_guard)
-manifest = {"created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(), "runs": []}
+manifest = {"created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(), "source_root": str(ROOT), "runs": []}
 
 
 def save():
     (args.out / "runs.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
 
-for label, model_path in [("base", args.base_model), ("pagelingo-mt-v0.2.2", args.mt_model)]:
+models = [("base", args.base_model), ("pagelingo-mt-v0.2.2", args.mt_model)]
+if args.candidate_model:
+    models.append(("probe-12step", args.candidate_model))
+for label, model_path in models:
     model_path = model_path.resolve()
     token_check, _ = metadata_guard.verify(model_path, args.source_config)
     if not token_check["passed"]:

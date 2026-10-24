@@ -67,6 +67,25 @@ describe("MT fixed text protocol", () => {
     expect(decodeFixedMtText(encoded, '⟪P0⟫')).toBe('The literal ⟦P2⟫ is reserved.');
   });
 
+  it.each(["a", "em", "strong"])("rejects punctuation replacing a meaningful %s label atomically", tag => {
+    const encoded = encodeFixedMtText(`Read <${tag}>the guide</${tag}> now.`);
+    const before = encoded.body.innerHTML;
+    expect(() => decodeFixedMtText(encoded, "⟦0⟧阅读⟦/0⟧⟦1⟧。⟦/1⟧⟦2⟧现在。⟦/2⟧")).toThrow(/link\/emphasis/);
+    expect(encoded.body.innerHTML).toBe(before);
+  });
+
+  it("keeps an article-only linked node visible instead of omitting its label", () => {
+    const encoded = encodeFixedMtText('Read <a href="/title">The</a> now.');
+    expect(() => decodeFixedMtText(encoded, "⟦0⟧阅读⟦/0⟧⟦1⟧⟦/1⟧⟦2⟧现在。⟦/2⟧")).toThrow(/link\/emphasis/);
+  });
+
+  it("permits numeric labels and punctuation conjunctions outside protected label scopes", () => {
+    const number = encodeFixedMtText('See <a>two</a> examples.');
+    expect(decodeFixedMtText(number, "⟦0⟧查看⟦/0⟧⟦1⟧2⟦/1⟧⟦2⟧个示例。⟦/2⟧")).toContain("<a>2</a>");
+    const list = encodeFixedMtText('Use <a>readers</a> and <a>writers</a>.');
+    expect(decodeFixedMtText(list, "⟦0⟧使用⟦/0⟧⟦1⟧读者⟦/1⟧⟦2⟧、⟦/2⟧⟦3⟧作者⟦/3⟧⟪P0⟫")).toContain("、");
+  });
+
   it("permits omission of a standalone article while retaining its original text node", async () => {
     const encoded = encodeFixedMtText('The <code>&lt;h1&gt;</code> heading.');
     expect(decodeFixedMtText(encoded, '⟦0⟧⟦/0⟧⟪P0⟫⟦1⟧标题。⟦/1⟧')).toBe(' <code>&lt;h1&gt;</code> 标题。');

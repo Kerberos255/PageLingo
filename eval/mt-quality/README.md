@@ -32,6 +32,8 @@
 
 2026-10-24 的 96 次真实生成及生产回放已完成：[实测结论与逐例问题](results/2026-10-24-bf16.md)、[完整机器可读证据](results/2026-10-24-bf16.json)。新探针短句显示 19/20、困难段落 2/6，尚无稳定超越 v0.2.2 的证据；不能仅凭 loss 下降或关键词通过数替换模型。
 
+随后完成独立的 [Q5＋grammar 三组对照与真实 Firefox 复测](results/2026-10-24-q5-deployment.md)，另有[完整证据](results/2026-10-24-q5-deployment.json)。新候选短句显示 20/20、困难段落 4/6，但仍有时序和否定错译，保持实验状态。标点化链接/强调文字的应用保护已通过同输出回放及真实 MDN 验证；这部分结果与上述无 grammar BF16 条件分开记录。
+
 ## 数据范围
 
 `cases.json` 包含 20 条新编留出样本、6 条此前真实网页摘录的失败诊断样本。保留原网页结构片段和来源 URL，本次在 JSDOM 中运行真实生产编码、解码与 PageTranslator 写回逻辑；本次没有重新运行 Firefox，也不是整站截图或排版测试。
@@ -71,6 +73,21 @@ python3 tools/mt-quality-report.py \
 ```
 
 两模型使用相同请求、模型实际 chat template、grammar、输出上限及采样参数；报告器会核对逐条实际输入完全相同。固定槽位测试调用生产 `inferMtHtml` 和 `PageTranslator`，拒绝时保留整段原文。纯文本对照只帮助判断协议负担，没有 DOM 映射，不能直接写回网页。
+
+三组 Q5 对照可增加 `--candidate-model /path/to/probe-Q5_K_M.gguf`。使用 `--project-root /path/to/frozen-checkout` 可冻结修复前生产逻辑；该 checkout 需安装依赖。报告器读取所有模型组并逐一核对实际输入，可用 `--source-commit COMMIT` 明确记录该基线。
+
+比较解码保护前后的行为时，应回放同一批真实输出并核对请求、grammar 和预算，避免重新生成引入差异：
+
+```bash
+node tools/mt-quality-guard-replay.mjs \
+  --before-root /path/to/frozen-checkout \
+  --input /path/to/results/base-fixed.json \
+  --input /path/to/results/pagelingo-mt-v0.2.2-fixed.json \
+  --input /path/to/results/probe-12step-fixed.json \
+  --out artifacts/mt-quality/guard-replay.json
+```
+
+当前保护会拒绝链接及 `em/strong/b/i/mark` 内有意义的文字节点变为空白或纯标点，原子保留整段原文。这是保守检查：合法的符号替代词也可能被保留原文；它不能识别仍由文字组成的错译、否定或时序反转。
 
 本次使用 llama.cpp b11785（`8baabd53b77d1c48c6ef8d3b620436292f3f6231`）、CPU 两线程、context 3072、temperature 0、top_k 1、seed 42、关闭 prompt cache。运行器不下载模型、不修改输入权重、不上传模型。
 

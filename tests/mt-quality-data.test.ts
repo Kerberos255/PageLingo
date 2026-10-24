@@ -90,12 +90,14 @@ describe("MT quality and training data contract", () => {
     expect(result.restored_exact).toBe(true);
   });
 
-  it("reports punctuation-only link text even when the current production decoder accepts the frame", async () => {
+  it("retains the paragraph when an otherwise valid frame erases a meaningful link label", async () => {
     const sample = evaluation.find(c => c.id === "d-html-headings-05")!;
-    const p = prepareQualityCase(sample);
-    const target = p.target.replace(/⟦2⟧[^⟦]*⟦\/2⟧/u, "⟦2⟧。⟦/2⟧"); p.scope.remove();
+    // Actual v0.2.2 Q5/grammar output from the 2026-10-22 CPU run.
+    const target = "⟦0⟧页面上请只使用一个⟦/0⟧⟪P0⟫⟦1⟧，并且不要跳过层级，逐层嵌套标题⟦/1⟧⟦2⟧。⟦/2⟧⟦3⟧。⟦/3⟧";
     const result = await replayQualityCase(sample, [{text: target, finish_reason: "stop"}]);
-    expect(result.displayed).toBe(true);
-    expect(result.label_issues.some(x => x.tag === "A" && x.translated === "。")).toBe(true);
+    expect(result.displayed).toBe(false);
+    expect(result.reason).toContain("link/emphasis text");
+    expect(result.translated_text).toContain("nest headings");
+    expect(result.original_structure_unchanged && result.code_unchanged && result.restored_exact).toBe(true);
   });
 });

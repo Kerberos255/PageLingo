@@ -66,6 +66,8 @@ node tools/mt-gpu-eval-replay.mjs \
 
 回放会验证三组实际提示/token 输入一致，产出 `comparison.json` 和可筛选的 `comparison.html`，分别记录拒绝/显示、DOM 身份、代码、恢复、标点化链接/强调文字及关键词探针。关键词通过数不当作翻译准确率。完整语义仍需逐条审查；候选后续还需要 Q5 与真实 Firefox 对照。
 
+上述历史 BF16 plan 锁定了应用保护修复前的源码哈希。复现该轮报告时使用 `436d0b223593b7c145aed197c61625143e63e486` checkout；新源码拒绝旧哈希不一致是预期检查，不应改写历史 plan 绕过它。后续 [Q5＋grammar 与 Firefox 实测](../../../eval/mt-quality/results/2026-10-24-q5-deployment.md)已完成，并单独回放同一批 Q5 输出比较新保护。当前没有新的主力机训练命令需要执行。
+
 ## 旧训练内容的处理
 
 已找到：v0.2 训练/验证 1200/200 条，v0.2.1 修复 320/80 条，v0.2.2 微修复 80/40 条，v0.3 product-envelope 192/64 条，以及 smoke 各版本。数量不等于独立样本数，版本之间可能重复。
