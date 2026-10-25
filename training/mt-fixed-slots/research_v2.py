@@ -1,8 +1,7 @@
-"""One local GPU run: two bounded candidates, validation selection, BF16/Q5 and Firefox evidence. No uploads."""
+"""GPU-only training/BF16 comparison and a verified adapter handoff. No browser or uploads."""
 import argparse
-import copy
+import hashlib
 import datetime
-import importlib.util
 import json
 import math
 import os
@@ -12,8 +11,9 @@ import shutil
 import subprocess
 import sys
 import uuid
+import zipfile
 
-from evaluate_gpu import sha256, write_json, validate_plan, request_hash
+from evaluate_gpu import sha256, write_json, validate_plan
 from run_local import validate_package, CACHE_KEYS
 
 HERE = Path(__file__).resolve().parent
@@ -30,6 +30,48 @@ def select_candidate(candidates):
             raise ValueError("Unexpected optimizer step count")
         eligible.append({**candidate, "loss": loss, "result": result})
     return min(eligible, key=lambda item: (item["loss"], item["name"]))
+
+
+def create_handoff(out, adapter, here, candidates, source_commit):
+    """Pack selected adapter and evaluation evidence; never base weights or caches."""
+    files = {"adapter/" + name: adapter / name for name in ["adapter_model.safetensors", "adapter_config.json"]}
+    runs = json.loads((out / "bf16/runs.json").read_text(encoding="utf-8"))
+    plan = json.loads((here / "research-plan.json").read_text(encoding="utf-8"))
+    if not runs.get("finished_utc") or runs.get("check_only") or runs["plan_sha256"] != sha256(here / "research-plan.json"):
+        raise ValueError("Completed BF16 evidence required before creating a handoff")
+    files["bf16/runs.json"] = out / "bf16/runs.json"
+    for label in ["base", "v022", "probe"]:
+        record = runs["files"][label]
+        if record["file"] != label + ".json": raise ValueError("Unexpected evaluation filename")
+        file = out / "bf16" / record["file"]
+        if sha256(file) != record["sha256"]: raise ValueError("Evaluation evidence changed")
+        data = json.loads(file.read_text(encoding="utf-8"))
+        if not data.get("finished_utc") or len(data["generations"]) != len(plan["jobs"]):
+            raise ValueError("Incomplete evaluation arm")
+        files["bf16/" + file.name] = file
+    files.update({"research-plan.json": here / "research-plan.json", "evaluation-config.json": out / "evaluation-config.json",
+                  "data-manifest.json": here / "data/manifest.json", "package-manifest.json": here / "package-manifest.json"})
+    for candidate in candidates:
+        files["candidates/" + candidate["name"] + "/training-result.json"] = candidate["output"] / "training-result.json"
+        files["candidates/" + candidate["name"] + "/config.json"] = here / candidate["config"]
+    manifest = {"schema_version": 1, "source_commit": source_commit,
+                "scope": "GPU training and BF16 evidence only; CPU merge, Q5 and Firefox remain on Cloud",
+                "release_approved": False, "upload_executed": False,
+                "files": {name: {"bytes": file.stat().st_size, "sha256": sha256(file)} for name, file in files.items()}}
+    archive = out / "gpu-handoff.zip"
+    if archive.exists(): raise ValueError("Handoff output must be new")
+    temporary = archive.with_suffix(".zip.tmp")
+    with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as bundle:
+        for name, file in files.items(): bundle.write(file, name)
+    with zipfile.ZipFile(temporary) as bundle:
+        for name, record in manifest["files"].items():
+            with bundle.open(name) as stream:
+                if hashlib.file_digest(stream, "sha256").hexdigest() != record["sha256"]:
+                    raise ValueError("Handoff verification failed: " + name)
+    temporary.replace(archive)
+    manifest["bundle"] = {"file": archive.name, "bytes": archive.stat().st_size, "sha256": sha256(archive)}
+    write_json(out / "handoff-manifest.json", manifest)
+    return manifest
 
 
 def main():
@@ -51,18 +93,19 @@ def main():
                 if key not in os.environ or not Path(os.environ[key]).resolve().is_relative_to(root):
                     raise ValueError("Task cache escapes the project or CMD environment is missing: " + key)
     if args.plan:
-        print(json.dumps({"mode": args.mode, "candidates": config["candidates"], "source_commit": package["source_commit"],
+        print(json.dumps({"mode": args.mode, "scope": "GPU training and BF16 only", "candidates": config["candidates"], "source_commit": package["source_commit"],
             "model_upload": False, "release_evaluation_used_for_selection": False,
-            "bf16_generations": len(evaluation_plan["jobs"]) * 3, "cpu_fixed_generations": len([j for j in evaluation_plan["jobs"] if j["mode"]=="fixed"])*2}, indent=2))
+            "bf16_generations": len(evaluation_plan["jobs"]) * 3, "cloud_postprocessing": ["merge", "Q5_K_M", "CPU regression", "Firefox/wllama"]}, indent=2))
         return 0
     import torch
     import psutil
-    from browser_v2 import prepare_assets, find_firefox
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     out = root / "outputs" / ("pagelingo-quality-v2-" + args.mode + "-" + stamp); out.mkdir(parents=True, exist_ok=False)
     print("RUN_DIRECTORY=" + str(out), flush=True)
     log = (out / "console.log").open("w", encoding="utf-8", buffering=1)
     status = {"source_commit": package["source_commit"], "source_dirty": package["source_dirty"], "training_completed": False,
+              "gpu_comparison_completed": False, "cloud_postprocessing_pending": True,
+              "scope": "GPU training and BF16 only; no browser, merge, quantization or uploads on this PC",
               "release_approved": False, "upload_executed": False, "stages": [], "platform": platform.platform(),
               "cpu_count": os.cpu_count(), "host_memory_bytes": psutil.virtual_memory().total,
               "free_disk_bytes_at_start": shutil.disk_usage(root).free}
@@ -95,28 +138,6 @@ def main():
         old = config["old_adapter"]
         for file, key in [("adapter_model.safetensors", "sha256"), ("adapter_config.json", "config_sha256")]:
             if sha256(root / old["directory"] / file) != old[key]: raise ValueError("Old adapter identity changed")
-        old_q5 = root / config["old_q5"]["directory"]
-        if sha256(old_q5) != config["old_q5"]["sha256"]: raise ValueError("Release Q5 identity changed")
-        server, quantizer = root / config["server"], root / config["quantizer"]
-        run("llama-server-version", [server, "--version"])
-        probe = subprocess.run([str(quantizer), "--help"], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
-        if probe.returncode not in [0, 1] or "Q5_K_M" not in probe.stdout + probe.stderr:
-            raise RuntimeError("Quantizer preflight failed before training: " + str(probe.returncode))
-        converter = root / config["converter"]; converter_env = os.environ.copy()
-        converter_env["PYTHONPATH"] = str(converter.parent / "gguf-py") + os.pathsep + converter_env.get("PYTHONPATH", "")
-        run("converter-preflight", [sys.executable, converter, "--help"], env=converter_env)
-        firefox = find_firefox(); assets = prepare_assets(root / ".cache/pagelingo-quality-v2", config["browser_assets"])
-        status["browser_assets"] = assets; status["firefox_binary"] = str(firefox); save()
-        smoke = copy.deepcopy(evaluation_plan)
-        job = next(j for j in smoke["jobs"] if j["mode"] == "fixed")
-        job["request"]["max_tokens"] = 1; job["request_sha256"] = request_hash(job["request"])
-        smoke["jobs"] = [job]; smoke["cases"] = [c for c in smoke["cases"] if c["id"] == job["case_id"]]
-        smoke["purpose"] = "One-token CPU/grammar compatibility check; not a translation quality evaluation"
-        smoke_file = out / "native-preflight-plan.json"; write_json(smoke_file, smoke)
-        smoke_models = out / "native-preflight-models.json"
-        write_json(smoke_models, [{"label": "v022", "path": str(old_q5), "sha256": config["old_q5"]["sha256"]}])
-        run("native-grammar-preflight", [sys.executable, "-u", HERE / "native_v2.py", "--server", server, "--models", smoke_models,
-            "--plan", smoke_file, "--source-config", base, "--output", out / "native-preflight", "--threads", str(config["cpu_threads"])])
         for candidate in config["candidates"]:
             run("preflight-" + candidate["name"], [sys.executable, "-u", HERE / "train.py", "--data", HERE / "data",
                 "--base", base, "--project-root", root, "--output", out / ("preflight-" + candidate["name"]), "--config", HERE / candidate["config"], "--synthetic-candidate"])
@@ -140,31 +161,9 @@ def main():
         eval_file = out / "evaluation-config.json"; write_json(eval_file, evaluation)
         run("bf16-comparison", [sys.executable, "-u", HERE / "evaluate_gpu.py", "--root", root, "--output", out / "bf16",
             "--config", eval_file, "--plan", HERE / "research-plan.json"])
-        merged = out / "exports/merged"; bf16 = out / "exports/candidate-BF16.gguf"; unchecked = out / "exports/candidate-unchecked.gguf"
-        final = out / "exports/PageLingo-Translate-1.8B-v0.3.0-rc1-Q5_K_M.gguf"
-        run("merge", [sys.executable, HERE / "merge_adapter.py", "--base", base, "--adapter", adapter, "--output", merged, "--threads", "2"])
-        converter = root / config["converter"]; env = os.environ.copy()
-        env["PYTHONPATH"] = str(converter.parent / "gguf-py") + os.pathsep + env.get("PYTHONPATH", "")
-        run("convert-bf16", [sys.executable, converter, merged, "--outtype", "bf16", "--outfile", bf16], env=env)
-        run("quantize-q5", [quantizer, bf16, unchecked, "Q5_K_M", str(config["cpu_threads"])])
-        spec = importlib.util.spec_from_file_location("research_metadata", HERE / "mt-gguf-metadata.py")
-        guard = importlib.util.module_from_spec(spec); spec.loader.exec_module(guard)
-        check, _ = guard.verify(unchecked, base)
-        if check["passed"]: unchecked.replace(final)
-        else: run("verify-and-repair-eos-copy", [sys.executable, HERE / "mt-gguf-metadata.py", "--model", unchecked,
-                "--source-config", base, "--repair-eos", "--output", final])
-        check, _ = guard.verify(final, base)
-        if not check["passed"]: raise ValueError("Export metadata remains invalid")
-        status["q5"] = {"path": str(final.relative_to(root)), "bytes": final.stat().st_size, "sha256": sha256(final), "metadata": check,
-                        "converter_sha256": sha256(converter), "quantizer_sha256": sha256(quantizer)}; save()
-        model_file = out / "q5-models.json"; write_json(model_file, [{"label": "v022", "path": str(old_q5), "sha256": config["old_q5"]["sha256"]},
-            {"label": "candidate", "path": str(final), "sha256": status["q5"]["sha256"]}])
-        run("q5-comparison", [sys.executable, "-u", HERE / "native_v2.py", "--server", server, "--models", model_file,
-            "--plan", HERE / "research-plan.json", "--source-config", base, "--output", out / "q5", "--threads", str(config["cpu_threads"])])
-        run("firefox-wllama", [sys.executable, "-u", HERE / "browser_v2.py", "--model", final, "--sha256", status["q5"]["sha256"],
-            "--plan", HERE / "research-plan.json", "--assets", root / ".cache/pagelingo-quality-v2", "--firefox", firefox, "--output", out / "firefox"])
-        status["comparison_completed"] = True; save()
-        print("COMPLETE: evidence ready for review. No model upload or release approval was performed.", flush=True)
+        status["gpu_comparison_completed"] = True; save()
+        status["handoff"] = create_handoff(out, adapter, HERE, candidates, package["source_commit"])["bundle"]; save()
+        print("GPU_COMPLETE: adapter and BF16 evidence packaged in gpu-handoff.zip. Cloud handles Q5 and Firefox; no model upload.", flush=True)
         return 0
     except BaseException as error:
         status["error"] = repr(error); save(); raise

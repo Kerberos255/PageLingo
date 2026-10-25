@@ -19,17 +19,17 @@
 
 默认一次运行以下阶段。可选 `check` 只做预检，不训练。
 
-1. 核对源码包、底座、v0.2.2 adapter 和旧 Q5 的哈希；检查本机 llama.cpp、转换器和 Firefox，再检查训练参数与数据。
+1. 核对源码包、底座和 v0.2.2 adapter 的哈希，再检查训练参数与数据。主力机不检查或调用 Firefox、llama.cpp、转换器。
 2. 分别训练两组最多 44 个 optimizer step 的候选：已核实的 v0.2.2 r32 adapter 用 1e-5 继续训练；原始底座新建 r16 LoRA 用 3e-5 训练。只使用训练/验证数据。
 3. 每组按验证 loss 保留最佳 checkpoint，再按验证 loss 选择两组中的一个。选择过程不读取发布验收输出。
 4. 底座、旧 adapter 和选中候选进行三组 BF16 真实生成，共 240 次，无 grammar。
-5. 选中 adapter 在新目录合并、导出 Q5_K_M，验证 BOS/EOS/PAD/template。已知错误 EOS 只修复到独立新副本。
-6. 旧 Q5 和新 Q5 使用相同生产 prompt、grammar 和预算，各生成 74 条固定槽位结果，共 148 次 CPU 生成。
-7. 新 Q5 在实际 Firefox + wllama 中运行五个冻结的网页片段，使用生产推理函数、PageTranslator 和 CSS，记录节点/链接/代码/样式/恢复、实际延迟与进程树内存，并保存截图。
+5. 生成 `gpu-handoff.zip` 和 `handoff-manifest.json`。只包含选中 adapter、训练统计、冻结计划与 BF16 结果，逐项校验 SHA-256，不包含底座、优化器 checkpoint、缓存或凭证。
 
-浏览器阶段在本地片段测试页运行，使用与扩展相同的静态 worker、JSPI/CPU 补丁和 CSP；模型通过 Blob 加载。它不等同于扩展 OPFS 或整站自动启动测试。浏览器脚本和 geckodriver 从固定公共地址下载，校验完整性后放在项目 `.cache`；不下载模型或安装/升级训练依赖。
+随后从共享目录取回结果，在 Codex 云电脑进行 CPU 合并、Q5_K_M 导出、BOS/EOS/PAD/template 验证、148 次新旧 Q5 对照，以及五条实际 Firefox/wllama 推理。主力机只提供 GPU 训练和 BF16 验证。
 
-沿用现有 GPU venv。所有任务缓存、Firefox 测试 profile 与产物保持在非 C 盘项目内。运行器要求 18 GiB 可用空间作为导出与浏览器缓存预留；这是一项运行策略，不是实测峰值。完整日志和状态在打印的 `RUN_DIRECTORY` 下。
+云端浏览器阶段在冻结片段测试页运行，使用与扩展相同的静态 worker、JSPI/CPU 补丁和 CSP；模型通过 Blob 加载。它不等同于扩展 OPFS 或整站自动启动测试。主力机不下载浏览器，不安装或升级训练依赖。
+
+沿用现有 GPU venv。主力机所有任务缓存和产物保持在非 C 盘项目内。运行器要求 2 GiB 可用空间作为训练结果预留；这是一项运行策略，不是实测峰值。完整日志和状态在打印的 `RUN_DIRECTORY` 下。
 
 ## 冻结的发布检查
 
