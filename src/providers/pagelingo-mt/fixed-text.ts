@@ -22,6 +22,33 @@ const markerLookalike = /[〈〉《》⟬⟭【】〔〕「」\[\](]\s*(?:\/\s*(
 const standaloneNegation = /^(?:no|not|never|none|neither|without|cannot|can't|do not|does not|did not|is not|are not|was not|were not)$/iu;
 const translatedNegation = /[不没無无未非别勿否莫毋零]|\b(?:no|not|never|none|neither|without|cannot|can't|don't|doesn't|didn't|isn't|aren't)\b/iu;
 const isLabelSlot = (slot: TextSlot) => Boolean(slot.node.parentElement?.closest("a,em,strong,b,i,mark"));
+const markerBracketPairs = [["〔", "〕"], ["⟬", "⟭"], ["【", "】"]] as const;
+function balancedPair(text: string, opening: string, closing: string): boolean {
+  let depth = 0;
+  for (const char of text) {
+    if (char === opening) depth++;
+    if (char === closing && --depth < 0) return false;
+  }
+  return depth === 0;
+}
+
+function rejectIntroducedUnbalancedBrackets(encoded: FixedMtText, values: string[]): void {
+  if (!/[〔〕⟬⟭【】]/u.test(values.join(""))) return;
+  const source = encoded.body.textContent ?? "";
+  // Incomplete source excerpts may intentionally contain an open square bracket.
+  if (!balancedPair(source, "[", "]")) return;
+  const replacements = new Map(encoded.texts.map((slot, index) => [slot.node, values[index]!]));
+  const walker = encoded.body.ownerDocument.createTreeWalker(encoded.body, NodeFilter.SHOW_TEXT);
+  let translated = "";
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    translated += replacements.get(node as Text) ?? node.textContent ?? "";
+  }
+  for (const [opening, closing] of markerBracketPairs) {
+    if (balancedPair(source, opening, closing) && !balancedPair(translated, opening, closing)) {
+      throw new Error("MT introduced unbalanced marker-like brackets; original paragraph retained");
+    }
+  }
+}
 
 export function encodeFixedMtText(html: string): FixedMtText {
   const body = new DOMParser().parseFromString(html, "text/html").body;
@@ -81,10 +108,11 @@ export function fixedMtGrammar(encoded: FixedMtText): string {
     const token = JSON.stringify(part.token);
     if (!part.text) return token;
     const rule = isLabelSlot(part.text) ? "label" : isOptionalEnglishArticle(part.text.source) ? "text" : "required";
-    return `${token} ${rule} ${JSON.stringify(`⟦/${part.text.id}⟧`)}`;
+    return `${token} ws ${rule} ws ${JSON.stringify(`⟦/${part.text.id}⟧`)}`;
   });
   const whitespace = String.raw`\t\n\x0b\x0c\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff`;
-  // Values are trimmed by the decoder; source edge whitespace belongs to the DOM.
+  // Permit bounded model whitespace at slot edges; the decoder trims it and
+  // restores the source DOM's original whitespace.
   // Bounded internal gaps and no trailing root whitespace prevent a completed
   // frame from spending its remaining budget on whitespace instead of EOS.
   return `root ::= ws ${parts.join(" ws ")}\nws ::= gap?\n`
@@ -115,6 +143,7 @@ export function decodeFixedMtText(encoded: FixedMtText, output: string): string 
     values.push(value); cursor = end + closing.length;
   }
   if (output.slice(cursor).trim()) throw new Error("MT unassigned text or malformed marker");
+  rejectIntroducedUnbalancedBrackets(encoded, values);
   for (const [index, slot] of encoded.texts.entries()) {
     const leading = slot.source.match(/^\s*/u)?.[0] ?? "";
     const trailing = slot.source.match(/\s*$/u)?.[0] ?? "";

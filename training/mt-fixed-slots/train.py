@@ -137,9 +137,9 @@ assert torch.all(batch["labels"][batch["attention_mask"] == 0] == -100)
 stats["review_status"] = "assistant_audited_synthetic" if args.synthetic_candidate and unreviewed else "assistant_authored_needs_human_review" if unreviewed else "human_reviewed"
 stats["run_kind"] = "synthetic_research_candidate" if args.synthetic_candidate else "pipeline_probe" if unreviewed or args.probe else "fine_tuning_candidate"
 resume_adapter = None
-if config.get("initialization") == "resume_verified_v022":
+if config.get("initialization") in ["resume_verified_v022", "resume_verified_adapter"]:
     if not args.synthetic_candidate or not local:
-        raise ValueError("Resuming the verified old adapter requires the local synthetic-candidate workflow")
+        raise ValueError("Resuming a verified adapter requires the local synthetic-candidate workflow")
     project_root = args.project_root.resolve() if args.project_root else Path(base).resolve().parents[1]
     resume_adapter = (project_root / config["initial_adapter_directory"]).resolve()
     if not resume_adapter.is_relative_to(project_root):

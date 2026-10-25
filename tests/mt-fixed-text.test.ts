@@ -6,6 +6,8 @@ import {MT_WORD_CHAR_RANGES} from "../src/providers/pagelingo-mt/word-ranges";
 import {inferMtHtml} from "../src/providers/pagelingo-mt/inference";
 import type {TranslationRequest} from "../src/core/provider";
 import {collectTranslationTelemetry} from "../src/core/translation-telemetry";
+import plainReorder from "./fixtures/mt-plain-slot-reorder.json";
+import unbalancedBrackets from "./fixtures/mt-unbalanced-marker-brackets.json";
 
 afterEach(() => document.body.replaceChildren());
 
@@ -22,6 +24,31 @@ function provider() {
 }
 
 describe("MT fixed text protocol", () => {
+  it("retains the source atomically for actual candidate marker-bracket leakage", async () => {
+    const encoded = encodeFixedMtText(unbalancedBrackets.html), before = encoded.body.innerHTML;
+    expect(() => decodeFixedMtText(encoded, unbalancedBrackets.text)).toThrow(/unbalanced marker-like brackets/);
+    expect(encoded.body.innerHTML).toBe(before);
+    const result = await inferMtHtml({html: unbalancedBrackets.html, sourceLanguage: "en", targetLanguage: "zh-Hans"},
+      async () => ({choices: [{finish_reason: unbalancedBrackets.finish_reason, message: {content: unbalancedBrackets.text}}]}));
+    expect(result.accepted).toBe(false);
+    expect(result.html).toBe(unbalancedBrackets.html);
+  });
+  it("permits balanced Chinese brackets across unchanged inline nodes and protected code", () => {
+    const encoded = encodeFixedMtText('Read <a href="/guide">the guide</a> with <code>〔x</code>〕 below.');
+    expect(decodeFixedMtText(encoded, '⟦0⟧阅读〔⟦/0⟧⟦1⟧指南⟦/1⟧⟦2⟧〕，使用⟦/2⟧⟪P0⟫⟦3⟧〕，如下所示。⟦/3⟧'))
+      .toBe('阅读〔 <a href="/guide">指南</a> 〕，使用 <code>〔x</code>〕，如下所示。');
+  });
+  it.each([['〔details', '〔详情'], ['[details', '〔详情']])("preserves a source excerpt with an incomplete bracket: %s", (source, target) => {
+    expect(decodeFixedMtText(encodeFixedMtText(source), `⟦0⟧${target}⟦/0⟧`)).toBe(target);
+  });
+  it("permits actual natural Chinese reordering outside an unchanged link", () => {
+    const encoded = encodeFixedMtText(plainReorder.html), anchor = encoded.body.querySelector("a")!;
+    const originalChildren = [...encoded.body.querySelector("p")!.childNodes];
+    expect(decodeFixedMtText(encoded, plainReorder.text)).toBe('<p>重启服务之前，请阅读 <a href="/migration">迁移指南</a> 。</p>');
+    expect(encoded.body.querySelector("a")).toBe(anchor);
+    expect(anchor.getAttribute("href")).toBe("/migration");
+    expect([...encoded.body.querySelector("p")!.childNodes]).toEqual(originalChildren);
+  });
   it("keeps the generated grammar word class aligned with Unicode letters and numbers", () => {
     const ranges = MT_WORD_CHAR_RANGES.replace(/\\U([0-9a-f]{8})/g, (_all, hex) => `\\u{${Number.parseInt(hex, 16).toString(16)}}`);
     const pattern = new RegExp(`^[${ranges}]$`, "u");

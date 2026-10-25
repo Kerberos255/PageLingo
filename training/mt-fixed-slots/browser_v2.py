@@ -149,8 +149,8 @@ def main():
             result["audit"] = current; write_json(args.output / "results.json", result)
             if current.get("done"): break
             phase = current.get("phase"); rows = current.get("cases", []); key = (len(rows), phase)
+            sampler.phase = rows[-1]["id"] + "-" + phase if rows and phase else phase or "loading"
             if rows and phase in ["before", "translated", "bilingual", "restored"] and key not in seen:
-                sampler.phase = rows[-1]["id"] + "-" + phase
                 request("POST", prefix + "/execute/sync", {"script": "window.__candidateTarget.scrollIntoView({block:'center'});", "args": []})
                 screenshot = request("GET", prefix + "/screenshot")
                 (args.output / (rows[-1]["id"] + "-" + phase + ".png")).write_bytes(base64.b64decode(screenshot))

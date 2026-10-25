@@ -78,6 +78,18 @@ class GpuHandoff(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec("transformers"), "Optional real TrainingArguments API")
 class CandidateTrainerApi(unittest.TestCase):
+    def test_complex_slot_revision_keeps_a_bounded_validation_selected_run(self):
+        sys.path.insert(0, str(HERE))
+        from training_options import build_training_arguments
+        for name in ['config-lr1e5-v2b.json', 'config-lr3e5-v2b.json']:
+            config = json.loads((HERE / name).read_text())
+            with tempfile.TemporaryDirectory() as temp:
+                args = build_training_arguments(config, temp, synthetic_candidate=True, use_cpu=True)
+                self.assertEqual(args.max_steps, 120)
+                self.assertEqual(args.get_warmup_steps(120), 6)
+                self.assertTrue(args.load_best_model_at_end)
+                self.assertEqual(args.metric_for_best_model, 'eval_loss')
+
     def test_best_checkpoint_selection_uses_validation_loss_and_a_fixed_limit(self):
         sys.path.insert(0, str(HERE))
         from training_options import build_training_arguments

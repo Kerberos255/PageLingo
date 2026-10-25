@@ -1,19 +1,27 @@
 import {createHash} from "node:crypto";
+import assert from "node:assert/strict";
 import {mkdir, readFile, writeFile} from "node:fs/promises";
 import path from "node:path";
 import {parseArgs} from "node:util";
 import {fixtureDom, projectRoot, qualityRuntime} from "./mt-quality-runtime.mjs";
 
 const {values} = parseArgs({options: {results: {type: "string"}, plan: {type: "string", default: "artifacts/mt-quality/gpu-evaluation-plan.json"},
-  out: {type: "string", default: "artifacts/mt-quality/bf16-comparison"}}});
+  out: {type: "string", default: "artifacts/mt-quality/bf16-comparison"}, "allow-decoder-only": {type: "boolean", default: false}}});
 if (!values.results) throw new Error("Use --results DIR [--plan FILE] [--out DIR]");
 const hash = raw => createHash("sha256").update(raw).digest("hex");
 const planRaw = await readFile(values.plan), plan = JSON.parse(planRaw);
 const manifest = JSON.parse(await readFile(path.join(values.results, "runs.json"), "utf8"));
 if (manifest.protocol !== plan.protocol || manifest.grammar_applied !== false || !manifest.finished_utc
   || manifest.check_only || manifest.plan_sha256 !== hash(planRaw)) throw new Error("Incomplete/mismatched BF16 evaluation");
-for (const [file, sha] of Object.entries(plan.source_hashes))
-  if (hash(await readFile(path.join(projectRoot, file))) !== sha) throw new Error("Production source differs from recorded plan: " + file);
+const sourceChanges = {}, replaySourceHashes = {};
+for (const [file, sha] of Object.entries(plan.source_hashes)) {
+  const actual = hash(await readFile(path.join(projectRoot, file))); replaySourceHashes[file] = actual;
+  if (actual !== sha) {
+    if (!values["allow-decoder-only"] || file !== "src/providers/pagelingo-mt/fixed-text.ts")
+      throw new Error("Production source differs from recorded plan: " + file);
+    sourceChanges[file] = {recorded: sha, replayed: actual};
+  }
+}
 const labels = ["base", "v022", "probe"], models = {}, indexes = {};
 for (const label of labels) {
   const file = manifest.files[label];
@@ -43,12 +51,17 @@ const report = {schema_version: 1, protocol: plan.protocol, grammar_applied: fal
   test_fixture: Boolean(manifest.test_fixture),
   interpretation: "Unconstrained BF16 generation replayed through production validation. Keyword probes are not semantic accuracy. References need human review.",
   source_commit: manifest.package_source_commit, gpu: manifest.gpu, identities: manifest.identities,
+  decoder_only_replay: values["allow-decoder-only"], source_changes: sourceChanges, replay_source_hashes: replaySourceHashes,
   paired_actual_prompt_and_token_hashes_equal: true, summary: {}, cases: [], plain_diagnostics: []};
 for (const sample of plan.cases) {
   const dom = fixtureDom(sample.context_url);
   try {
     const source = new DOMParser().parseFromString(sample.html, "text/html").body.textContent;
     const jobs = plan.jobs.filter(j => j.case_id === sample.id && j.mode === "fixed").sort((a, b) => a.unit - b.unit);
+    const prepared = api.prepareQualityCase(sample), actual = api.qualityCallPlan(prepared.request);
+    assert.deepEqual(actual.map(c => ({messages: c.messages, max_tokens: c.max_tokens, grammar: c.grammar})),
+      jobs.map(j => ({...j.request, grammar: j.production_grammar})), "Production call changed: " + sample.id);
+    prepared.scope.remove();
     const row = {id: sample.id, split: sample.split, source_text: source, reference_status: sample.review_status, models: {}};
     for (const label of labels) {
       const records = jobs.map(job => indexes[label].get(job.key));

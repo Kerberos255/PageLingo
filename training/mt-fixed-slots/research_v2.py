@@ -100,7 +100,10 @@ def main():
     import torch
     import psutil
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
-    out = root / "outputs" / ("pagelingo-quality-v2-" + args.mode + "-" + stamp); out.mkdir(parents=True, exist_ok=False)
+    prefix = config.get("run_prefix", "pagelingo-quality-v2")
+    if prefix not in ["pagelingo-quality-v2", "pagelingo-quality-v2b"]:
+        raise ValueError("Unexpected research output prefix")
+    out = root / "outputs" / (prefix + "-" + args.mode + "-" + stamp); out.mkdir(parents=True, exist_ok=False)
     print("RUN_DIRECTORY=" + str(out), flush=True)
     log = (out / "console.log").open("w", encoding="utf-8", buffering=1)
     status = {"source_commit": package["source_commit"], "source_dirty": package["source_dirty"], "training_completed": False,

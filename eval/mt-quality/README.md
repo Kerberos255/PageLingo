@@ -36,6 +36,10 @@
 
 ## 数据范围
 
+2026-10-25 的[约束生成、最终解码器和 Firefox 复测](results/2026-10-25-quality-v2.md)另行记录 282 次实际 CPU 生成、五条 WASM 片段推理和普通扩展入口的整页测试边界。两组 v2 GPU 候选各完成 44 步训练及三组 240 次 BF16 对照；[定向训练包](../../training/mt-fixed-slots/RESEARCH_V2.md)不自动上传模型。CPU、BF16、WASM 与记录回放的结果分开统计。
+
+随后完成[44 步候选的 CPU 与 Firefox 实测](results/2026-10-25-candidate-v2.md)：增加 320 次原生生成（两轮新旧 Q5 各 148 次、18 次未量化 BF16 诊断和六条 grammar 探索）及十条真实 Firefox 推理。有限槽内边缘空格修复了新候选的一处标记残片，复杂段落时序与动作遗漏仍未解决；正式模型保持不变。当前生成的是下一轮 v2b 训练包，480/64 条、每候选 120 步，尚未运行，不计入这些测量。
+
 `cases.json` 包含 20 条新编留出样本、6 条此前真实网页摘录的失败诊断样本。保留原网页结构片段和来源 URL，本次在 JSDOM 中运行真实生产编码、解码与 PageTranslator 写回逻辑；本次没有重新运行 Firefox，也不是整站截图或排版测试。
 
 新留出集只保证与本次训练种子分离。旧模型完整训练数据未知，不能证明这些句子从未出现在旧训练中。诊断集来自已知失败，不能用作无偏质量分数。
@@ -88,6 +92,21 @@ node tools/mt-quality-guard-replay.mjs \
 ```
 
 当前保护会拒绝链接及 `em/strong/b/i/mark` 内有意义的文字节点变为空白或纯标点，原子保留整段原文。这是保守检查：合法的符号替代词也可能被保留原文；它不能识别仍由文字组成的错译、否定或时序反转。
+
+当前还要求内容槽非空、限制连续空白和帧后空白，并拒绝近似槽位标记及独立强调否定词丢失；冠词槽可为空。这些检查仍不能完整判断句子语义。
+
+### 公开参考回归
+
+新候选的结果先经过哈希锁定的 BF16 或 Q5 生产回放，再对冻结的 32 条 FLORES 参考计算 chrF2：
+
+```bash
+python3 -m pip install sacrebleu==2.5.1
+python3 tools/mt-reference-score.py \
+  --comparison /path/to/verified-comparison.json \
+  --output artifacts/mt-quality/reference-scores.json
+```
+
+报告同时提供全部 32 条的实际显示文本分数（拒绝时包含保留的原文）、各模型显示数，以及所有模型共同显示的同一子集分数。拒绝不应被悄悄丢掉以抬高分数。chrF 是参考字符重合指标，不是语义准确率或发布批准；32 条仅作小样本回归信号。数据来源和独立许可见 [external/README.md](external/README.md)。
 
 本次使用 llama.cpp b11785（`8baabd53b77d1c48c6ef8d3b620436292f3f6231`）、CPU 两线程、context 3072、temperature 0、top_k 1、seed 42、关闭 prompt cache。运行器不下载模型、不修改输入权重、不上传模型。
 

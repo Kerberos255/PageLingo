@@ -1,5 +1,6 @@
 // Authored synthetic examples. These are not independently human-reviewed translations.
 // Keep template families disjoint across splits; changing a noun is not a new family.
+import {hardTrainTemplates, hardValidationTemplates} from "./targeted-v2b.mjs";
 export const trainingEntities = [
   ["report", "reports", "报告"], ["receipt", "receipts", "回执"],
   ["record", "records", "记录"], ["packet", "packets", "数据包"],
@@ -93,3 +94,6 @@ export function targetedCases() {
   }
   return cases;
 }
+
+trainTemplates.push(...hardTrainTemplates);
+validationTemplates.push(...hardValidationTemplates);

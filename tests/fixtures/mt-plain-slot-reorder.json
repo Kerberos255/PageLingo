@@ -1,0 +1,7 @@
+{
+  "source": "2026-10-24 actual v0.2.2 Q5 bounded-grammar output",
+  "case_id": "h-guide-scope",
+  "model_sha256": "8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc",
+  "html": "<p>Read the <a href=\"/migration\">migration guide</a> before restarting the service.</p>",
+  "text": "⟦0⟧重启服务之前，请阅读⟦/0⟧⟦1⟧迁移指南⟦/1⟧⟦2⟧。⟦/2⟧"
+}

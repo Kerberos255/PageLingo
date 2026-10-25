@@ -17,7 +17,7 @@ for (const sample of baseline) {
   try {sources.add(api.canonicalSource(sample)); prompts.add(api.prepareQualityCase(sample).prompt);}
   finally {dom.window.close();}
 }
-const review = ["# Targeted v2 synthetic references", "", "Authored and template-audited by the assistant; no independent human review. Not a semantic accuracy benchmark.",
+const review = ["# Targeted v2b complex-slot synthetic references", "", "Authored and template-audited by the assistant; no independent human review. Not a semantic accuracy benchmark.",
   "Variants within one family are not independent examples. All families are confined to one split. Existing holdout/diagnostic text is excluded.", ""];
 for (const sample of cases) {
   const dom = fixtureDom(sample.context_url);
@@ -40,6 +40,7 @@ for (const sample of cases) {
 }
 await mkdir(directory, {recursive: true});
 const manifest = {schema_version: 1, protocol: "production-fixed-text-v1", corpus: "targeted-synthetic-v2",
+  dataset_revision: "v2b-complex-slots",
   generated_utc: new Date().toISOString(), provenance: "Assistant-authored and template-audited synthetic data; no independent human review. Experimental candidates only.",
   checks: {unique_ids: true, unique_canonical_sources: true, unique_inference_prompts: true, disjoint_template_families: true,
     existing_evaluation_and_seed_overlap: false, production_decoder: true, actual_call_plan: true},
@@ -49,7 +50,7 @@ for (const [split, rows] of output) {
   await writeFile(path.join(directory, file), raw);
   manifest.files[split] = {file, rows: rows.length, sha256: createHash("sha256").update(raw).digest("hex")};
 }
-for (const file of ["training/mt-fixed-slots/targeted-v2.mjs", "eval/mt-quality/protocol.ts", "src/core/translation-quality.ts",
+for (const file of ["training/mt-fixed-slots/targeted-v2.mjs", "training/mt-fixed-slots/targeted-v2b.mjs", "eval/mt-quality/protocol.ts", "src/core/translation-quality.ts",
   "src/providers/pagelingo-mt/fixed-text.ts", "src/providers/pagelingo-mt/word-ranges.ts", "src/providers/pagelingo-mt/sentence-plan.ts", "src/core/rich-segment.ts"])
   manifest.source_hashes[file] = createHash("sha256").update(await readFile(path.join(projectRoot, file))).digest("hex");
 await writeFile(path.join(directory, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
