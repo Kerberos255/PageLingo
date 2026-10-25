@@ -13625,5 +13625,125 @@
     "edge-whitespace/pilot-replay.json": "6c2c76638518749f6e36baa8483185d2db0335902efac4fa1c20688f3e366cdf",
     "edge-whitespace/reference-scores.json": "b2f175ee1ffa6202895042b8a48fbeb15909f4cdb87650572e1eb77830a6ad06",
     "edge-whitespace/browser-runner/runner-provenance.json": "53a9f6e51fe1628239a1429486b9ac9527e015b7202ea1fad88d86bb80592e9e"
+  },
+  "normal_final_build_integration": {
+    "source_commit": "46eefc961beea22332e831b4a3fcc9cde8e82ef8",
+    "model_sha256": "8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc",
+    "scope": "Unmodified production dist, original model identity, normal content scripts and full example.com translation. Only model file transport is redirected from its exact Hub URL to an already verified local copy. Real OPFS and WASM inference; no recorded completions or test content entry.",
+    "actual_url": "https://example.com/",
+    "browser_version": "158.0.1",
+    "tls_verification": true,
+    "whole_page_wall_s": 359.08335246599745,
+    "translation_response": {
+      "done": true,
+      "value": {
+        "count": 6,
+        "ok": true
+      }
+    },
+    "mt_status": {
+      "mt": {
+        "actualThreads": 1,
+        "crossOriginIsolated": false,
+        "downloading": false,
+        "installed": true,
+        "lastInferenceMs": 14101,
+        "lastLoadMs": 7034,
+        "loadedBytes": 1298755616,
+        "modelBytes": 1298755616,
+        "modelFile": "PageLingo-Translate-1.8B-v0.2.2-Q5_K_M.gguf",
+        "modelSha256": "8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc",
+        "requestedThreads": 1,
+        "runtimePhase": "ready",
+        "runtimeSince": 1792948809420,
+        "totalBytes": 1298755616,
+        "valid": true
+      },
+      "ok": true
+    },
+    "memory": {
+      "sample_interval_s": 0.25,
+      "peak_sum_rss_bytes": 3796103168,
+      "peak_sum_pss_bytes": 3279552512,
+      "phase_peaks": {
+        "startup": {
+          "rss_bytes": 1215905792,
+          "pss_bytes": 737266688
+        },
+        "model-download": {
+          "rss_bytes": 1397616640,
+          "pss_bytes": 910690304
+        },
+        "whole-page-inference": {
+          "rss_bytes": 3796103168,
+          "pss_bytes": 3279552512
+        }
+      }
+    },
+    "artifacts": {
+      "LICENSE.md": "6d887a6cc27f6e67bd91c0886b3d55b985d06edb28af7820ec87b7f7462c7b0f",
+      "PRIVACY.md": "c59d86d41961c8e5353e1d78bafcaadc02c857b9f2e8dd0c38ca9b826187cb0d",
+      "THIRD_PARTY_NOTICES.md": "7e67c6bb573078c3e55706f003ca0b8f9034c06e8fe6fa61bfd4f38f0d7ab0a1",
+      "background.js": "d24777fa0af45ee60fe588af0ba9bb8d3621f9e8f51f8f94874a2be54cd725e4",
+      "bergamot-worker.js": "42741cf57fe53d3f1ea5d025887f028849949ec186a448314f7f166eb85d5387",
+      "builtin-glossary.js": "7e5e2b1ecc26c19619b0110c36e8e31925b3baeeaf4e4ac4f842a2b1a6762f4f",
+      "content.js": "0e552c104c15608f946e9c8ff9fa1994fa8c96146c3e160db5055d4e72f9e9b7",
+      "icons/pagelingo.svg": "a007d928d2e481617b5fd87b42b22b23f6fe0fda529451aaf6793cd05971fea8",
+      "image-ocr-worker.js": "36aa8a4e125426e89601b219ec83a8f3f45aefb05b90933fde99546897b38d19",
+      "manifest.json": "1995555b54b014f1313b5fd48cc5099589f557c73aa069821e5eb4e904d0898f",
+      "options.js": "e828bd6855fb1fd19bae896a0d7fc97e8bb5d3779d32f7e74900c9fd0351a6c3",
+      "popup.css": "7321e6a3f0eb81151d2991f7331c099b3dd7f700c1d49215c66497576bac7c1a",
+      "popup.html": "987cefc6504513b23f5197c8e247f1f52da1beb63d42f18984a1430e563256b7",
+      "popup.js": "145ed28cada331d3992f4c9bf91cb682d7669452c31d4becf3caff6e133f7c06",
+      "settings.css": "4c008b938024554848063acfd0f9b28f4d7c5413e2b5aa6661e0024cf386e003",
+      "settings.html": "9280093f660ec780b2b97f7da9da2df056ced1a7f674fbfd074159ab6cd9dc06",
+      "vendor/bergamot/LICENSE": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "vendor/bergamot/bergamot-translator.js": "faff1ef6285b0d26f01787776fd49299dfb756ecb9688aa990c250e66797b47d",
+      "vendor/bergamot/bergamot-translator.wasm": "f38ef807636a7c994afedaab7ff8ffe0d590d21897f05139f747b80fd7bbe926",
+      "vendor/onnxruntime/ort-wasm-simd-threaded.wasm": "3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2",
+      "vendor/wllama/LICENSE": "5866e3bd7e3cbd3f7c8bea6efd8a1e7fa7cc8de68c30f428aff7c6584a0fb720",
+      "vendor/wllama/pagelingo-worker.js": "eab368ce2236b2a2091f0738b899f652c2f341d701ae6df9c091a0434b667472",
+      "vendor/wllama/wllama.wasm": "6ca9fdd1b6c03206cd3a04e359b52c8f539896d6c5fb5d36243dded4a689f0ad"
+    },
+    "completed": true,
+    "selected_targets": 7,
+    "selected_links": 1,
+    "selected_codes": 0,
+    "phase_checks": {
+      "translated": {
+        "originalTopologyAttributesUnchanged": true,
+        "originalLinksUnchanged": true,
+        "originalCodesUnchanged": true,
+        "preUnchanged": true,
+        "sourceStylesUnchanged": true,
+        "neighborStylesUnchanged": true
+      },
+      "bilingual": {
+        "originalTopologyAttributesUnchanged": true,
+        "originalLinksUnchanged": true,
+        "originalCodesUnchanged": true,
+        "preUnchanged": true,
+        "sourceStylesUnchanged": true,
+        "neighborStylesUnchanged": true
+      },
+      "restored": {
+        "originalTopologyAttributesUnchanged": true,
+        "originalLinksUnchanged": true,
+        "originalCodesUnchanged": true,
+        "preUnchanged": true,
+        "sourceStylesUnchanged": true,
+        "neighborStylesUnchanged": true
+      }
+    },
+    "all_selected_html_restored_exact": true,
+    "translation_link_click_forwarded": true,
+    "bilingual_link_click_forwarded": true,
+    "horizontal_overflow": false,
+    "english_example": {
+      "source": "This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it for testing and monitoring purposes.",
+      "translated": "此域名可用于文档示例，无需许可。这不是服务；避免将其用于测试和监控目的。"
+    },
+    "scope_note": "Actual ordinary extension/OPFS/runtime/WASM integration on current multilingual example.com, manually set en→zh-Hans; non-English blocks are not English quality samples. Six translated blocks are separate from the raw-completion counts above. This page has zero code elements; code preservation is verified by the preceding technical fragments.",
+    "raw_sha256": "aaa5b9c8f7021d14a9c41c3306b2e96f923d56f092fe503dd60adf1f49fe418f"
   }
 }
