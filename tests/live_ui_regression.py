@@ -243,14 +243,21 @@ def translate_tab(driver: webdriver.Firefox, extension_handle: str, url_prefix: 
 
 def page_responsive(driver: webdriver.Firefox) -> bool:
     started = time.monotonic()
+    samples = []
     for _ in range(12):
+        probe_started = time.monotonic()
         value = driver.execute_script(
-            "return {ready:document.readyState, now:performance.now(), nodes:document.getElementsByTagName('*').length};"
+            "return {ready:document.readyState, now:performance.now(), nodes:document.getElementsByTagName('*').length, url:location.origin+location.pathname};"
         )
+        samples.append({"wall_s": time.monotonic() - probe_started, "document": value})
         if not value or not value.get("ready"):
+            print("PAGE_RESPONSIVENESS=", {"passed": False, "reason": "missing-document", "samples": samples}, flush=True)
             return False
         time.sleep(0.04)
-    return (time.monotonic() - started) < 5
+    elapsed = time.monotonic() - started
+    passed = elapsed < 5
+    print("PAGE_RESPONSIVENESS=", {"passed": passed, "elapsed_s": elapsed, "samples": samples}, flush=True)
+    return passed
 
 
 def visible_text_snapshot(driver: webdriver.Firefox, needle: str) -> list[dict]:
