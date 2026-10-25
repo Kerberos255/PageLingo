@@ -15,11 +15,19 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--data", type=Path, required=True, help="Directory exported by tools/mt-quality-data.mjs")
 parser.add_argument("--base", default=None, help="Local original base weights or pinned Hub model")
 parser.add_argument("--output", type=Path, required=True)
+parser.add_argument("--config", type=Path, default=HERE / "config.json")
+parser.add_argument("--project-root", type=Path, help="Explicit local project for the verified initial adapter")
 parser.add_argument("--train", action="store_true", help="Requires CUDA; otherwise only validate/tokenize data")
 parser.add_argument("--probe", action="store_true", help="Cap optimization at the configured 12 steps")
 parser.add_argument("--allow-unreviewed-seed-data", action="store_true", help="Label the resulting run as a pipeline probe, not a release candidate")
+parser.add_argument("--synthetic-candidate", action="store_true", help="Explicit bounded research run on the audited v2 synthetic corpus; never marks data as human reviewed")
 args = parser.parse_args()
-config = json.loads((HERE / "config.json").read_text())
+config = json.loads(args.config.read_text())
+if args.synthetic_candidate:
+    if args.probe or args.allow_unreviewed_seed_data:
+        raise ValueError("Synthetic candidate and seed-probe modes must not be mixed")
+    if not isinstance(config.get("candidate_max_steps"), int) or not 1 <= config["candidate_max_steps"] <= 128:
+        raise ValueError("Synthetic candidates require an explicit 1..128 optimizer-step limit")
 args.output = args.output.resolve()
 if args.train and args.output.exists() and any(args.output.iterdir()):
     raise ValueError("Training output must be a new or empty directory")
@@ -27,13 +35,15 @@ args.output.mkdir(parents=True, exist_ok=True)
 manifest = json.loads((args.data / "manifest.json").read_text())
 if manifest.get("protocol") != "production-fixed-text-v1":
     raise ValueError("Training data must be exported with the production fixed-text protocol")
+if args.synthetic_candidate and manifest.get("corpus") != "targeted-synthetic-v2":
+    raise ValueError("Synthetic candidate mode requires the separate v2 corpus, not the old seed or an evaluation set")
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import torch
 import transformers
 import peft
 from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainerCallback
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, PeftModel, get_peft_model
 from training_options import build_training_arguments
 
 random.seed(config["seed"])
@@ -42,11 +52,14 @@ torch.set_num_threads(2)
 # This runs in check mode too, before hashing/tokenizing/loading the base.
 # CPU-only preflight checks the same constructor with CPU precision settings.
 arguments = build_training_arguments(config, args.output / "checkpoints", probe=args.probe,
-                                     use_cpu=not torch.cuda.is_available())
+                                     use_cpu=not torch.cuda.is_available(), synthetic_candidate=args.synthetic_candidate)
 argument_check = {"passed": True, "device": str(arguments.device), "bf16": arguments.bf16,
                   "warmup_steps_argument": arguments.warmup_steps,
                   "warmup_steps_for_12_step_probe": arguments.get_warmup_steps(config["probe_max_steps"]),
                   "model_weights_loaded": False}
+if args.synthetic_candidate:
+    argument_check.update(max_optimizer_steps=arguments.max_steps,
+                          warmup_steps_for_this_run=arguments.get_warmup_steps(arguments.max_steps))
 print(json.dumps({"event": "training_arguments_checked", **argument_check}), flush=True)
 base = args.base or config["base_model"]
 local = Path(base).is_dir()
@@ -69,6 +82,7 @@ stats = {"created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat()
          "cuda_available": torch.cuda.is_available(), "base_model": config["base_model"], "base_revision": config["base_revision"],
          "base_path": base, "config": config, "versions": {"torch": torch.__version__, "transformers": transformers.__version__, "peft": peft.__version__},
          "local_weight_sha256": local_weight_digest,
+         "config_sha256": hashlib.sha256(args.config.read_bytes()).hexdigest(),
          "training_argument_check": argument_check,
          "input_manifest_sha256": hashlib.sha256((args.data / "manifest.json").read_bytes()).hexdigest(), "splits": {}}
 datasets, families, sources, ids = {}, {}, set(), set()
@@ -97,6 +111,8 @@ for split in ["train", "validation"]:  # Evaluation/diagnostic files can never e
             raise ValueError("Duplicate source prompt")
         sources.add(messages[0]["content"])
         unreviewed |= row["review_status"] != "human_reviewed"
+        if args.synthetic_candidate and row["review_status"] not in ["assistant_audited_synthetic", "human_reviewed"]:
+            raise ValueError("Synthetic candidate contains an unaudited or evaluation reference: " + row["id"])
         prompt = tokenizer.apply_chat_template(messages[:1], tokenize=False, add_generation_prompt=True)
         prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
         target_ids = tokenizer(messages[1]["content"], add_special_tokens=False)["input_ids"] + [tokenizer.eos_token_id]
@@ -118,8 +134,25 @@ def collate(rows):
 
 batch = collate([datasets["train"][0], datasets["validation"][0]])
 assert torch.all(batch["labels"][batch["attention_mask"] == 0] == -100)
-stats["review_status"] = "assistant_authored_needs_human_review" if unreviewed else "human_reviewed"
-stats["run_kind"] = "pipeline_probe" if unreviewed or args.probe else "fine_tuning_candidate"
+stats["review_status"] = "assistant_audited_synthetic" if args.synthetic_candidate and unreviewed else "assistant_authored_needs_human_review" if unreviewed else "human_reviewed"
+stats["run_kind"] = "synthetic_research_candidate" if args.synthetic_candidate else "pipeline_probe" if unreviewed or args.probe else "fine_tuning_candidate"
+resume_adapter = None
+if config.get("initialization") == "resume_verified_v022":
+    if not args.synthetic_candidate or not local:
+        raise ValueError("Resuming the verified old adapter requires the local synthetic-candidate workflow")
+    project_root = args.project_root.resolve() if args.project_root else Path(base).resolve().parents[1]
+    resume_adapter = (project_root / config["initial_adapter_directory"]).resolve()
+    if not resume_adapter.is_relative_to(project_root):
+        raise ValueError("Initial adapter escapes the local project")
+    for filename, key in [("adapter_model.safetensors", "initial_adapter_sha256"), ("adapter_config.json", "initial_adapter_config_sha256")]:
+        with (resume_adapter / filename).open("rb") as stream:
+            if hashlib.file_digest(stream, "sha256").hexdigest() != config[key]:
+                raise ValueError("Initial adapter identity changed: " + filename)
+    adapter_config = json.loads((resume_adapter / "adapter_config.json").read_text())
+    if adapter_config["r"] != config["lora_r"] or adapter_config["lora_alpha"] != config["lora_alpha"]:
+        raise ValueError("Initial adapter rank/alpha differs from the candidate config")
+    stats["initial_adapter"] = {"directory": str(resume_adapter), "sha256": config["initial_adapter_sha256"],
+                                "config_sha256": config["initial_adapter_config_sha256"]}
 stats["collator_padding_mask_checked"] = True
 if local and (Path(base) / "model.safetensors").exists():
     with (Path(base) / "model.safetensors").open("rb") as stream:
@@ -135,9 +168,9 @@ if not args.train:
     raise SystemExit(0)
 if not torch.cuda.is_available():
     raise RuntimeError("CUDA GPU required for --train. CPU preflight succeeded; no optimization executed.")
-if unreviewed and not args.allow_unreviewed_seed_data:
+if unreviewed and not args.allow_unreviewed_seed_data and not args.synthetic_candidate:
     raise ValueError("Seed references need human review; use --probe --allow-unreviewed-seed-data only for a pipeline trial")
-if unreviewed and not args.probe:
+if unreviewed and not args.probe and not args.synthetic_candidate:
     raise ValueError("Unreviewed seed data is restricted to the bounded --probe run")
 if not torch.cuda.is_bf16_supported():
     raise RuntimeError("This BF16 pilot requires a GPU with BF16 support")
@@ -147,8 +180,11 @@ torch.cuda.reset_peak_memory_stats()
 load_started = time.perf_counter()
 model = AutoModelForCausalLM.from_pretrained(base, dtype=torch.bfloat16, attn_implementation="sdpa", low_cpu_mem_usage=True, **load_options)
 model.config.use_cache = False
-model = get_peft_model(model, LoraConfig(task_type="CAUSAL_LM", r=config["lora_r"], lora_alpha=config["lora_alpha"],
-    lora_dropout=config["lora_dropout"], target_modules=config["target_modules"], bias="none"))
+if resume_adapter:
+    model = PeftModel.from_pretrained(model, resume_adapter, local_files_only=True, is_trainable=True)
+else:
+    model = get_peft_model(model, LoraConfig(task_type="CAUSAL_LM", r=config["lora_r"], lora_alpha=config["lora_alpha"],
+        lora_dropout=config["lora_dropout"], target_modules=config["target_modules"], bias="none"))
 model.enable_input_require_grads()
 stats["model_and_adapter_load_wall_s"] = time.perf_counter() - load_started
 stats["parameters"] = {"total": sum(p.numel() for p in model.parameters()), "trainable": sum(p.numel() for p in model.parameters() if p.requires_grad)}
@@ -169,5 +205,9 @@ stats.update(training_executed=True, training_wall_s=time.perf_counter() - start
              validation_after=after, train_metrics=training.metrics,
              optimizer_steps=trainer.state.global_step, cuda_peak_allocated_bytes=torch.cuda.max_memory_allocated(),
              cuda_peak_reserved_bytes=torch.cuda.max_memory_reserved())
+if args.synthetic_candidate:
+    stats["selection"] = {"criterion": "validation loss only; release evaluation was not used for checkpoint selection",
+                          "best_checkpoint": trainer.state.best_model_checkpoint, "best_metric": trainer.state.best_metric,
+                          "max_optimizer_steps": config["candidate_max_steps"], "release_approved": False}
 (args.output / "training-result.json").write_text(json.dumps(stats, indent=2) + "\n")
 print(json.dumps({"event": "completed", "run_kind": stats["run_kind"], "training_executed": True}), flush=True)

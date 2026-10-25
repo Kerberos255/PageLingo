@@ -100,4 +100,16 @@ describe("MT quality and training data contract", () => {
     expect(result.translated_text).toContain("nest headings");
     expect(result.original_structure_unchanged && result.code_unchanged && result.restored_exact).toBe(true);
   });
+
+  it("rejects the actual candidate Q5 output that replaces emphasized no with 版本或", async () => {
+    const fixture = JSON.parse(readFileSync("tests/fixtures/mt-negation-loss.json", "utf8"));
+    // Inject the recorded text under this test document's URL; historical model
+    // prompts are not replayed or claimed to match this decoder-only fixture.
+    const sample = {...evaluation.find(c => c.id === fixture.case_id)!, context_url: document.location.href};
+    const result = await replayQualityCase(sample, [{text: fixture.text, finish_reason: "stop"}]);
+    expect(result.displayed).toBe(false);
+    expect(result.reason).toContain("negation was lost");
+    expect(result.translated_text).toContain("no version");
+    expect(result.original_structure_unchanged && result.code_unchanged && result.restored_exact).toBe(true);
+  });
 });

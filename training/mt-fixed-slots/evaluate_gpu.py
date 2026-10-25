@@ -118,12 +118,14 @@ def main():
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--check-only", action="store_true")
+    parser.add_argument("--config", type=Path, default=HERE / "evaluation_config.json")
+    parser.add_argument("--plan", type=Path, default=HERE / "evaluation-plan.json")
     args = parser.parse_args()
     root, out = args.root.resolve(), args.output.resolve()
     if not out.is_relative_to(root) or out.exists():
         raise ValueError("Evaluation requires a new output directory within the project")
-    config = json.loads((HERE / "evaluation_config.json").read_text(encoding="utf-8"))
-    plan = json.loads((HERE / "evaluation-plan.json").read_text(encoding="utf-8"))
+    config = json.loads(args.config.read_text(encoding="utf-8"))
+    plan = json.loads(args.plan.read_text(encoding="utf-8"))
     validate_plan(plan)
     if config["protocol"] != plan["protocol"] or config["grammar_applied"] is not False:
         raise ValueError("Evaluation config/protocol mismatch")
@@ -162,7 +164,7 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     manifest = {"schema_version": 1, "created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "protocol": plan["protocol"], "grammar_applied": False, "training_executed": False,
-        "plan_sha256": sha256(HERE / "evaluation-plan.json"),
+        "plan_sha256": sha256(args.plan),
         "package_source_commit": json.loads((HERE / "package-manifest.json").read_text(encoding="utf-8"))["source_commit"],
         "planned_generations": len(plan["jobs"]) * len(MODELS), "identities": identities,
         "settings": config, "versions": {"torch": torch.__version__, "transformers": transformers.__version__, "peft": peft.__version__},

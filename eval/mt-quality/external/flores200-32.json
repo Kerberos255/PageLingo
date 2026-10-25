@@ -1,0 +1,593 @@
+{
+  "schema_version": 1,
+  "purpose": "Frozen general translation regression; evaluation only, never training. Public benchmark may overlap base-model pretraining.",
+  "source": {
+    "publisher": "Meta/FLORES-200",
+    "url": "https://dl.fbaipublicfiles.com/nllb/flores200_dataset.tar.gz",
+    "archive_sha256": "b8b0b76783024b85797e5cc75064eb83fc5288b41e9654dabc7be6ae944011f6",
+    "license": "CC BY-SA 4.0",
+    "attribution": "FLORES-200 contributors (NLLB Team et al., 2022); text redistributed as a subset under CC BY-SA 4.0.",
+    "sampling": "32 dev line indices sampled before candidate generation, Python Random(20261024).sample(range(997),32)",
+    "readme": "FLORES 200 dataset\n\n1) dev/ and devtest/ contains the sentences in same order for each language. \n2) metadata_dev.tsv and metadata_devtest.tsv contains tab separated metadata for each of the sentences. The sentences are in same order as of dev/<lang>.dev and devtest/<lang>.devtest\n\n\n\n"
+  },
+  "line_indices_1_based": [
+    20,
+    64,
+    77,
+    89,
+    164,
+    179,
+    181,
+    197,
+    316,
+    347,
+    356,
+    409,
+    485,
+    515,
+    516,
+    525,
+    539,
+    573,
+    603,
+    628,
+    665,
+    667,
+    671,
+    744,
+    761,
+    776,
+    787,
+    873,
+    888,
+    899,
+    935,
+    953
+  ],
+  "cases": [
+    {
+      "id": "flores200-dev-0020",
+      "split": "holdout",
+      "family": "flores200-dev-0020",
+      "category": "published_reference",
+      "html": "<p>Born in Hong Kong, Ma studied at New York University and Harvard Law School and once held an American permanent resident \"green card\".</p>",
+      "reference_slots": [
+        "马生于香港，曾就读于纽约大学和哈佛大学法学院，还一度持有美国永久居民身份证“绿卡”。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0064",
+      "split": "holdout",
+      "family": "flores200-dev-0064",
+      "category": "published_reference",
+      "html": "<p>The National Congress of Brazil has debated legalization for 10 years, and such civil marriages are currently only legal in Rio Grande do Sul.</p>",
+      "reference_slots": [
+        "10 年来，巴西国民议会一直就其合法性进行讨论，目前这种民间婚姻只在南里奥格兰德 (Rio Grande do Sul) 是合法的。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0077",
+      "split": "holdout",
+      "family": "flores200-dev-0077",
+      "category": "published_reference",
+      "html": "<p>He did, however, reiterate his earlier statement that Roe v. Wade was the \"settled law of the land\", emphasizing the importance of consistent Supreme Court rulings.</p>",
+      "reference_slots": [
+        "然而，他重申了先前的声明，即罗伊诉韦德案（Roe v. Wade）是“美国的既定法律”，并强调最高法院作出一致性裁决的重要性。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0089",
+      "split": "holdout",
+      "family": "flores200-dev-0089",
+      "category": "published_reference",
+      "html": "<p>Authorities said little officially beyond confirming today's arrest.</p>",
+      "reference_slots": [
+        "除了确认今天的逮捕外，官方几乎没有发布任何其他信息。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0164",
+      "split": "holdout",
+      "family": "flores200-dev-0164",
+      "category": "published_reference",
+      "html": "<p>An Avenger class mine countermeasures ship, the ship was on its way to Puerto Princesa in Palawan.</p>",
+      "reference_slots": [
+        "这是一艘复仇者级别的反水雷舰，正在前往巴拉望的普林塞萨港的途中。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0179",
+      "split": "holdout",
+      "family": "flores200-dev-0179",
+      "category": "published_reference",
+      "html": "<p>Shortly after, The Atlanta Journal-Constitution published a report showing problems with test results.</p>",
+      "reference_slots": [
+        "此后不久，《亚特兰大宪法报》发表了一份报告，指出了检测结果存在的问题。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0181",
+      "split": "holdout",
+      "family": "flores200-dev-0181",
+      "category": "published_reference",
+      "html": "<p>Evidence thereafter indicated test papers were tampered with Hall, along with 34 other education officials, was indicted in 2013.</p>",
+      "reference_slots": [
+        "此后的证据表明试卷被篡改过，霍尔 (Hall) 和其他 34 名教育官员因此在 2013 年被起诉。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0197",
+      "split": "holdout",
+      "family": "flores200-dev-0197",
+      "category": "published_reference",
+      "html": "<p>Arias tested positive for a mild case of the virus, Presidential Minister Rodrigo Arias said.</p>",
+      "reference_slots": [
+        "总统内务大臣罗德里戈·阿里亚斯表示，阿里亚斯的检测结果呈阳性，为轻度病毒感染。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0316",
+      "split": "holdout",
+      "family": "flores200-dev-0316",
+      "category": "published_reference",
+      "html": "<p>Modern Education accused him of printing large advertisements on buses without authorisation and lying by saying that he was the chief English tutor.</p>",
+      "reference_slots": [
+        "现代教育集团指控他未经授权就在公交车上刊登大型广告，并谎称自己是首席英语教师。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0347",
+      "split": "holdout",
+      "family": "flores200-dev-0347",
+      "category": "published_reference",
+      "html": "<p>People were hitting the panes with chairs, but the windows were unbreakable.</p>",
+      "reference_slots": [
+        "人们用椅子敲打玻璃，但窗户却坚不可摧。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0356",
+      "split": "holdout",
+      "family": "flores200-dev-0356",
+      "category": "published_reference",
+      "html": "<p>Because the bottom of the blade is slightly curved, as the blade tilts to one side or the other, the edge which is in contact with the ice also curves.</p>",
+      "reference_slots": [
+        "由于刀片的底部略弯曲，当刀片歪向其中一侧时，与冰接触的刀边弯曲了。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0409",
+      "split": "holdout",
+      "family": "flores200-dev-0409",
+      "category": "published_reference",
+      "html": "<p>However, the discovery of his tomb in 1922 made him a celebrity. While many tombs of the past were robbed, this tomb was left virtually undisturbed.</p>",
+      "reference_slots": [
+        "然而，1922 年发现了他的墓穴，让他成了名人。虽然有许多过去的坟墓被盗，但这座坟墓几乎未遭破坏。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0485",
+      "split": "holdout",
+      "family": "flores200-dev-0485",
+      "category": "published_reference",
+      "html": "<p>Mysticism can be distinguished from other forms of religious belief and worship by its emphasis on the direct personal experience of a unique state of consciousness, particularly those of a peaceful, insightful, blissful, or even ecstatic character.</p>",
+      "reference_slots": [
+        "神秘主义可以与其他形式的宗教信仰和崇拜区分开来，因为它强调对独特意识状态的个人直接体验，特别是那些和平的、有洞察力的、幸福的、甚至是狂喜的意识状态。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0515",
+      "split": "holdout",
+      "family": "flores200-dev-0515",
+      "category": "published_reference",
+      "html": "<p>The approach to obtaining information was different. No longer did pressure reside within individual recall, but the ability to recall text became more of a focus.</p>",
+      "reference_slots": [
+        "获取信息的方法不尽相同。压力不再存在于个人回忆中，但回忆文本的能力变得更加重要。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0516",
+      "split": "holdout",
+      "family": "flores200-dev-0516",
+      "category": "published_reference",
+      "html": "<p>In essence, the Renaissance made a significant change in the approach to learning and the dissemination of knowledge.</p>",
+      "reference_slots": [
+        "文艺复兴从根本上让学习和知识传播的方式产生了重大变化。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0525",
+      "split": "holdout",
+      "family": "flores200-dev-0525",
+      "category": "published_reference",
+      "html": "<p>The effect is dependent on how often your brain attempts to lucidly dream per night.</p>",
+      "reference_slots": [
+        "其效果取决于你的大脑每晚做清醒梦的频率。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0539",
+      "split": "holdout",
+      "family": "flores200-dev-0539",
+      "category": "published_reference",
+      "html": "<p>Tourists may visit different landmarks of a particular country or they may simply opt to focus on just one area.</p>",
+      "reference_slots": [
+        "游客可能会参观特定国家的不同地标，也可能只集中游览一个地区。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0573",
+      "split": "holdout",
+      "family": "flores200-dev-0573",
+      "category": "published_reference",
+      "html": "<p>Army ant colonies march and nest in different phases as well.</p>",
+      "reference_slots": [
+        "行军蚁群的行进和筑巢也分不同的阶段。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0603",
+      "split": "holdout",
+      "family": "flores200-dev-0603",
+      "category": "published_reference",
+      "html": "<p>Water is another example. The compound water is made up of two hydrogen atoms and one oxygen atom.</p>",
+      "reference_slots": [
+        "另一个例子是水。化合物水是由两个氢原子和一个氧原子组成的。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0628",
+      "split": "holdout",
+      "family": "flores200-dev-0628",
+      "category": "published_reference",
+      "html": "<p>This type of thinking is associated with certain science or standard procedures.</p>",
+      "reference_slots": [
+        "这种思维模式与某些科学或标准程序不无关联。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0665",
+      "split": "holdout",
+      "family": "flores200-dev-0665",
+      "category": "published_reference",
+      "html": "<p>Traveling to Walt Disney World represents a major pilgrimage for many American families.</p>",
+      "reference_slots": [
+        "对许多美国家庭来说，去迪斯尼乐园游玩是一场盛大的活动。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0667",
+      "split": "holdout",
+      "family": "flores200-dev-0667",
+      "category": "published_reference",
+      "html": "<p>There are infinite variations possible, but this remains what most people mean when they talk of \"going to Disney World\".</p>",
+      "reference_slots": [
+        "迪士尼的玩法有无数种，但对大多数人来说，“去迪士尼乐园”就是这个意思。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0671",
+      "split": "holdout",
+      "family": "flores200-dev-0671",
+      "category": "published_reference",
+      "html": "<p>Permits are limited to protect the canyon, and become available on the 1st day of the month, four months prior to the start month.</p>",
+      "reference_slots": [
+        "为了保护大峡谷，许可证限量发放。按启程月份算起提前四个月，在该月的第一天开始发放。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0744",
+      "split": "holdout",
+      "family": "flores200-dev-0744",
+      "category": "published_reference",
+      "html": "<p>The Cook Islands do not have any cities but are composed of 15 different islands. The main ones are Rarotonga and Aitutaki.</p>",
+      "reference_slots": [
+        "库克群岛没有城市，而是由 15 个不同的岛屿组成。主要的岛屿有拉罗汤加岛 (Rarotonga) 和艾图塔基岛 (Aitutaki)。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0761",
+      "split": "holdout",
+      "family": "flores200-dev-0761",
+      "category": "published_reference",
+      "html": "<p>Joining such a network usually just requires filling out an online form; although some networks offer or require additional verification.</p>",
+      "reference_slots": [
+        "加入这样的组织，通常只需要填写一张在线表格；尽管有些组织提供或要求额外的验证。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0776",
+      "split": "holdout",
+      "family": "flores200-dev-0776",
+      "category": "published_reference",
+      "html": "<p>Although in theory they can take place annually (so long as they are in different countries), in practice they are not.</p>",
+      "reference_slots": [
+        "虽然理论上世博会可以每年举行一次（只要在不同的国家举办就行），但实际上并非如此。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0787",
+      "split": "holdout",
+      "family": "flores200-dev-0787",
+      "category": "published_reference",
+      "html": "<p>The world has over 5,000 different languages, including more than twenty with 50 million or more speakers.</p>",
+      "reference_slots": [
+        "世界上有超过 5,000 种不同的语言，其中有 20 多种语言的使用者超过了 5,000 万人。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0873",
+      "split": "holdout",
+      "family": "flores200-dev-0873",
+      "category": "published_reference",
+      "html": "<p>When you're on a staycation, you have the time to treat yourself and take a few extra minutes to brew up something special.</p>",
+      "reference_slots": [
+        "宅在家里度假，手头上时间多了，可以稍微多花点时间泡一杯特别的饮品，犒劳犒劳自己。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0888",
+      "split": "holdout",
+      "family": "flores200-dev-0888",
+      "category": "published_reference",
+      "html": "<p>Tourist visits are costly, demand physical fitness, can only take place in summer Nov-Feb, and are largely limited to the Peninsula, Islands and Ross Sea.</p>",
+      "reference_slots": [
+        "旅行费用高昂，对身体素质要求也很高，并且只能在十一月至次年二月的夏季前往，游览地点主要限于半岛、群岛和罗斯海。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0899",
+      "split": "holdout",
+      "family": "flores200-dev-0899",
+      "category": "published_reference",
+      "html": "<p>Heels should be low and wide. Sand, gravel or salt (calcium chloride) is often scattered on roads or paths to improve traction.</p>",
+      "reference_slots": [
+        "鞋跟应该低而宽。道路上经常会撒上细沙、砂石或盐粒（氯化钙），以增加摩擦力。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0935",
+      "split": "holdout",
+      "family": "flores200-dev-0935",
+      "category": "published_reference",
+      "html": "<p>Check with the institution, as well as the immigration department for the country you wish to study in for detailed requirements.</p>",
+      "reference_slots": [
+        "咨询学校及你希望留学的国家的移民局，以了解详细要求。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    },
+    {
+      "id": "flores200-dev-0953",
+      "split": "holdout",
+      "family": "flores200-dev-0953",
+      "category": "published_reference",
+      "html": "<p>Although you may think it is intuitive to join the airline you fly most, you should be aware that privileges offered are often different and frequent flyer points may be more generous under a different airline in the same alliance.</p>",
+      "reference_slots": [
+        "虽然你可能会认为，乘坐哪家航空公司航班的次数最多就加入哪家航空公司的会员是很自然的事，但你应该知道，航空公司提供的权益往往不同，同一联盟下的其他航空公司可能会回馈更多常旅客积分。"
+      ],
+      "context_url": "https://example.com/flores-regression",
+      "origin": {
+        "kind": "web_excerpt",
+        "url": "https://github.com/facebookresearch/flores/tree/main/flores200"
+      },
+      "review_status": "external_published_reference",
+      "probes": []
+    }
+  ]
+}

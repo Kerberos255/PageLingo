@@ -2,6 +2,8 @@
 
 共享目录：`\\192.168.50.72\pagelingo-mt`。旧入口显示主力机本地目录为 `E:\PageLingo-MT`。通过 MCP 检查文件的机器与主力机不同，因此 MCP 端不运行共享目录的 Python venv 或启动训练。
 
+后续定向优化使用[候选 v2](../RESEARCH_V2.md) 的 `run-pagelingo-quality-v2.cmd`，将两组有限训练、验证集选择、BF16/Q5 对照与 Firefox 证据串联。下面保留已完成的 v1 探针和历史 BF16 对照说明。
+
 保留旧 `PageLingo-MT.cmd`、原始数据、adapter、模型和虚拟环境。新增根目录 `run-fixed-slots-v1.cmd`，脚本和数据独立放在 `codex-fixed-slots-v1\`。
 
 ## 用户操作

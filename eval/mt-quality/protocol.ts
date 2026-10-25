@@ -25,7 +25,7 @@ export interface QualityCase {
   origin: {kind: "authored" | "web_excerpt"; url?: string; captured_utc?: string};
   reference_slots: string[];
   probes: ContentProbe[];
-  review_status: "assistant_authored_needs_human_review" | "human_reviewed";
+  review_status: "assistant_authored_needs_human_review" | "assistant_audited_synthetic" | "external_published_reference" | "human_reviewed";
 }
 
 export function prepareQualityCase(sample: QualityCase, doc: Document = document) {
@@ -47,7 +47,7 @@ export function prepareQualityCase(sample: QualityCase, doc: Document = document
     throw new Error(`${sample.id}: reference must map one-to-one to original text slots`);
   }
   const target = encoded.parts.map(part => part.token + (part.text
-    ? sample.reference_slots[part.text.id]! + `⟦/${part.text.id}⟧` : "")).join("");
+    ? sample.reference_slots[part.text.id]!.trim() + `⟦/${part.text.id}⟧` : "")).join("");
   // Validate references with the production decoder before exporting training targets.
   const referenceHtml = decodeFixedMtText(encoded, target);
   return {scope, root, segment, request, source: encodeFixedMtText(request.html).source,
@@ -117,7 +117,7 @@ export async function replayQualityCase(sample: QualityCase, completions: Record
       original_structure_unchanged: nodes.every(x => x.node.isConnected && x.attrs === JSON.stringify([...x.node.attributes].map(a => [a.name, a.value]))
         && x.children.length === x.node.childNodes.length && x.children.every((n, i) => n === x.node.childNodes[i])),
       code_unchanged: code.every(x => x.node.isConnected && x.node.outerHTML === x.html),
-      content_probes: probes, all_content_probes_passed: displayed && probes!.every(x => x.passed),
+      content_probes: probes, all_content_probes_passed: displayed && probes!.length ? probes!.every(x => x.passed) : null,
       label_issues: displayed ? labels.filter(x => /\p{L}/u.test(x.source) && !/[\p{L}\p{N}]/u.test(x.node.textContent ?? ""))
         .map(x => ({tag: x.node.tagName, source: x.source, translated: x.node.textContent ?? ""})) : [],
       consumed_completions: index, events};

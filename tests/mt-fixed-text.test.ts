@@ -2,6 +2,7 @@ import {afterEach, describe, expect, it} from "vitest";
 import {PageTranslator} from "../src/core/page-translator";
 import {serializeRichSegment} from "../src/core/rich-segment";
 import {decodeFixedMtText, encodeFixedMtText} from "../src/providers/pagelingo-mt/fixed-text";
+import {MT_WORD_CHAR_RANGES} from "../src/providers/pagelingo-mt/word-ranges";
 import {inferMtHtml} from "../src/providers/pagelingo-mt/inference";
 import type {TranslationRequest} from "../src/core/provider";
 import {collectTranslationTelemetry} from "../src/core/translation-telemetry";
@@ -21,6 +22,19 @@ function provider() {
 }
 
 describe("MT fixed text protocol", () => {
+  it("keeps the generated grammar word class aligned with Unicode letters and numbers", () => {
+    const ranges = MT_WORD_CHAR_RANGES.replace(/\\U([0-9a-f]{8})/g, (_all, hex) => `\\u{${Number.parseInt(hex, 16).toString(16)}}`);
+    const pattern = new RegExp(`^[${ranges}]$`, "u");
+    const points = new Set([0, 32, 46, 0x3002, 0x200b, 0x1f642, 0x10ffff]);
+    for (const match of MT_WORD_CHAR_RANGES.matchAll(/\\(?:u([0-9a-f]{4})|U([0-9a-f]{8}))/g)) {
+      const point = Number.parseInt(match[1] ?? match[2]!, 16);
+      for (const value of [point - 1, point, point + 1]) if (value >= 0 && value <= 0x10ffff) points.add(value);
+    }
+    for (const point of points) {
+      const value = String.fromCodePoint(point);
+      expect(pattern.test(value), `Unicode U+${point.toString(16)}`).toBe(/^[\p{L}\p{N}]$/u.test(value));
+    }
+  });
   it("owns tags, attributes, code and link boundaries independently of generation", () => {
     const html = 'Read the <a class="custom" href="/guide"><code>__FLT_LINK_START_0__</code>guide<code>__FLT_LINK_END_0__</code></a> with <code>npm run build</code>.';
     const encoded = encodeFixedMtText(html);
@@ -39,6 +53,8 @@ describe("MT fixed text protocol", () => {
     ['reordered pair', '⟦1⟧指南⟦/1⟧⟦0⟧阅读⟦/0⟧⟦2⟧继续。⟦/2⟧'],
     ['malformed protected marker', '⟦0⟧阅读⟦/0⟧⟦1⟧指南⟦/1⟧⟦2⟧继续。⟦/2⟧⟦P2⟫'],
     ['lookalike marker fragment', '⟦0⟧阅读⟦/0⟧⟦1⟧指南⟦/1⟧⟦2⟧ ⟨/2⟦/2⟧'],
+    ['East Asian closing-marker fragment from actual Firefox output', '⟦0⟧阅读⟦/0⟧⟦1⟧指南⟦/1⟧⟦2⟧继续。〈/3 〉。⟦/2⟧'],
+    ['lookalike protected marker', '⟦0⟧阅读⟦/0⟧⟦1⟧指南⟦/1⟧⟦2⟧继续。⟬P0⟬⟦/2⟧'],
     ['words outside pairs', '阅读⟦0⟧请⟦/0⟧⟦1⟧指南⟦/1⟧⟦2⟧继续。⟦/2⟧'],
     ['HTML inside pair', '⟦0⟧<a>阅读</a>⟦/0⟧⟦1⟧指南⟦/1⟧⟦2⟧继续。⟦/2⟧'],
     ['nested unknown pair', '⟦0⟧阅读⟦9⟧注入⟦/9⟧⟦/0⟧⟦1⟧指南⟦/1⟧⟦2⟧继续。⟦/2⟧'],
@@ -67,6 +83,11 @@ describe("MT fixed text protocol", () => {
     expect(decodeFixedMtText(encoded, '⟪P0⟫')).toBe('The literal ⟦P2⟫ is reserved.');
   });
 
+  it("allows Chinese book-title brackets and numeric citations", () => {
+    const encoded = encodeFixedMtText("Read the book and its first footnote.");
+    expect(decodeFixedMtText(encoded, "⟦0⟧阅读《1984》及其脚注[1]。⟦/0⟧")).toBe("阅读《1984》及其脚注[1]。");
+  });
+
   it.each(["a", "em", "strong"])("rejects punctuation replacing a meaningful %s label atomically", tag => {
     const encoded = encodeFixedMtText(`Read <${tag}>the guide</${tag}> now.`);
     const before = encoded.body.innerHTML;
@@ -84,6 +105,23 @@ describe("MT fixed text protocol", () => {
     expect(decodeFixedMtText(number, "⟦0⟧查看⟦/0⟧⟦1⟧2⟦/1⟧⟦2⟧个示例。⟦/2⟧")).toContain("<a>2</a>");
     const list = encodeFixedMtText('Use <a>readers</a> and <a>writers</a>.');
     expect(decodeFixedMtText(list, "⟦0⟧使用⟦/0⟧⟦1⟧读者⟦/1⟧⟦2⟧、⟦/2⟧⟦3⟧作者⟦/3⟧⟪P0⟫")).toContain("、");
+  });
+
+  it.each(["no", "not", "never", "does not"])("rejects losing a standalone emphasized negation: %s", source => {
+    const encoded = encodeFixedMtText(`The worker <em>${source}</em> publishes the record.`);
+    const before = encoded.body.innerHTML;
+    expect(() => decodeFixedMtText(encoded, "⟦0⟧工作线程⟦/0⟧⟦1⟧版本或⟦/1⟧⟦2⟧发布记录。⟦/2⟧")).toThrow(/negation was lost/);
+    expect(encoded.body.innerHTML).toBe(before);
+  });
+
+  it.each(["没有", "并无", "绝不", "从未", "未", "否", "no"])("retains a negative operator translation: %s", value => {
+    const encoded = encodeFixedMtText("There are <strong>no</strong> visible versions.");
+    expect(decodeFixedMtText(encoded, `⟦0⟧此处⟦/0⟧⟦1⟧${value}⟦/1⟧⟦2⟧可见版本。⟦/2⟧`)).toContain(`<strong>${value}</strong>`);
+  });
+
+  it("does not classify a longer phrase containing a negative word as a standalone operator", () => {
+    const encoded = encodeFixedMtText("The result is <em>not only faster</em> but also smaller.");
+    expect(decodeFixedMtText(encoded, "⟦0⟧结果⟦/0⟧⟦1⟧速度更快⟦/1⟧⟦2⟧而且体积更小。⟦/2⟧")).toContain("速度更快");
   });
 
   it("permits omission of a standalone article while retaining its original text node", async () => {
