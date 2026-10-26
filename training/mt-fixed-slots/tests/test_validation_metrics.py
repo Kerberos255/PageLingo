@@ -34,6 +34,8 @@ class ValidationLossComponents(unittest.TestCase):
         with self.assertRaises(ValueError):metrics.aggregate([])
 
     def test_teacher_forcing_uses_the_previous_position_and_excludes_the_prompt(self):
+        if importlib.util.find_spec("torch") is None:
+            self.skipTest("Numeric tensor check needs PyTorch; stdlib-only CI runs the loss/marker guards")
         import torch
         logits=torch.full((1,5,3),-10.)
         logits[0,1,2]=10.;logits[0,2,1]=10.;logits[0,3,0]=10.
