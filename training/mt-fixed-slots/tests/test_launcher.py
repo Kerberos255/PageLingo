@@ -68,6 +68,12 @@ class StableLauncher(unittest.TestCase):
         self.assertFalse((self.root / ".cache").exists())
         self.assertFalse((self.root / ".state").exists())
 
+    def test_completed_evaluation_does_not_claim_training_or_repeat(self):
+        self.record(workflow_completed=True,training_executed=False)
+        self.assertEqual(launcher.dispatch(self.root,"auto",self.child),10)
+        self.assertEqual(self.calls,[])
+        self.assertFalse((self.root/".state").exists())
+
     def test_changed_package_and_escaping_paths_are_rejected_before_launch(self):
         (self.root / "training-packages/test/package-manifest.json").write_text("{}")
         with self.assertRaisesRegex(ValueError, "identity changed"):

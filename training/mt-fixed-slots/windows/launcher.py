@@ -56,6 +56,8 @@ def run_state(status):
         return "new"
     if status.get("error"):
         return "failed"
+    if status.get("workflow_completed"):
+        return "complete"
     if status.get("training_completed") and status.get("gpu_comparison_completed") and status.get("handoff"):
         return "complete"
     return "running"
@@ -73,7 +75,7 @@ def show_status(task, run, status):
         if status.get("error"):
             print("Error: " + status["error"], flush=True)
     if state == "complete":
-        print("GPU results are ready for Cloud evaluation. The same task will not restart automatically.", flush=True)
+        print("Results are ready for Cloud review. The same task will not restart automatically.", flush=True)
     elif state == "running":
         print("Existing run is unfinished. No second training process will be started.", flush=True)
 

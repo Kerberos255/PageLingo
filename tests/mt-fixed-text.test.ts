@@ -8,6 +8,7 @@ import type {TranslationRequest} from "../src/core/provider";
 import {collectTranslationTelemetry} from "../src/core/translation-telemetry";
 import plainReorder from "./fixtures/mt-plain-slot-reorder.json";
 import unbalancedBrackets from "./fixtures/mt-unbalanced-marker-brackets.json";
+import innerTranslationLabel from "./fixtures/mt-inner-translation-label-v2b.json";
 
 afterEach(() => document.body.replaceChildren());
 
@@ -24,6 +25,28 @@ function provider() {
 }
 
 describe("MT fixed text protocol", () => {
+  it("retains the whole source for a translation label introduced mid-slot by the actual v2b Q5", async () => {
+    const encoded = encodeFixedMtText(innerTranslationLabel.html), before = encoded.body.innerHTML;
+    expect(() => decodeFixedMtText(encoded, innerTranslationLabel.text)).toThrow(/introduced translation label/);
+    expect(encoded.body.innerHTML).toBe(before);
+    const result = await inferMtHtml({html: innerTranslationLabel.html, sourceLanguage: "en", targetLanguage: "zh-Hans"},
+      async () => ({choices: [{finish_reason: innerTranslationLabel.finish_reason, message: {content: innerTranslationLabel.text}}]}));
+    expect(result.accepted).toBe(false);
+    expect(result.html).toBe(innerTranslationLabel.html);
+  });
+  it.each([["Chinese: hello", "中文：你好"], ["Translation: hello", "译文：你好"],
+    ["A note.\nChinese: hello", "说明。\n中文：你好"]])("preserves an existing source label: %s", (source, target) => {
+    expect(decodeFixedMtText(encodeFixedMtText(source), `⟦0⟧${target}⟦/0⟧`)).toBe(target);
+  });
+  it("rejects an extra repeated label while allowing prose about translation", () => {
+    expect(() => decodeFixedMtText(encodeFixedMtText("Chinese: hello"), "⟦0⟧中文：你好\n中文：你好⟦/0⟧"))
+      .toThrow(/introduced translation label/);
+    expect(decodeFixedMtText(encodeFixedMtText("Read the Chinese translation."), "⟦0⟧阅读中文译文。⟦/0⟧")).toBe("阅读中文译文。");
+  });
+  it.each(["\n", "\r\n", "\u2028", "\u2029"])("rejects an introduced label after a line break %j", lineBreak => {
+    expect(() => decodeFixedMtText(encodeFixedMtText("Finish now."), `⟦0⟧立即完成。${lineBreak}Translation: 完成⟦/0⟧`))
+      .toThrow(/introduced translation label/);
+  });
   it("retains the source atomically for actual candidate marker-bracket leakage", async () => {
     const encoded = encodeFixedMtText(unbalancedBrackets.html), before = encoded.body.innerHTML;
     expect(() => decodeFixedMtText(encoded, unbalancedBrackets.text)).toThrow(/unbalanced marker-like brackets/);
