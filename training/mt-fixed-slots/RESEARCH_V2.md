@@ -1,6 +1,6 @@
 # PageLingo MT 定向候选 v2 与 v2b
 
-本轮包用于用户授权的定向优化。用户今后只执行根目录 `PageLingo-MT.cmd`；保留熟悉的入口名称，直接配置项目盘缓存与既有 venv，不再要求先打开环境 CMD 后输入第二份脚本。新的冻结包放在 `training-packages/quality-v2b-<commit>/`，当前任务由 `tools/mt-control/current-task.json` 指向。候选只写入全新输出目录，不自动上传模型。
+本轮包用于用户授权的定向优化。根目录保留两个用户 CMD：原来的 `PageLingo-MT.cmd` 继续打开训练环境，固定任务脚本 `x.cmd` 执行当前任务。导出器只生成后者，不覆盖原环境脚本。任务沿用项目盘缓存与既有 venv。新的冻结包放在 `training-packages/quality-v2b-<commit>/`，当前任务由 `tools/mt-control/current-task.json` 指向。候选只写入全新输出目录，不自动上传模型。
 
 原 v2 包（提交 `38d1481fdf571f2cb292b103a8763bf8985e0494`）已完成两组各 44 步 GPU 训练与 240 次 BF16 真实生成。其选中候选仍有复杂段落漏译和时序错误。v2b（冻结提交 `46eefc961beea22332e831b4a3fcc9cde8e82ef8`）随后完成两组各 120 步和 240 次 BF16 生成，选中 fresh r16（验证 loss 0.3783361315727234）；云端质量验收尚待完成。训练参考为 `assistant_audited_synthetic`，不冒充独立人工审核。
 
@@ -12,13 +12,13 @@
 
 ## 主力机运行
 
-在主力机项目目录输入 `p` 后按 Tab 补全（也可输入 `.\p` 再按 Tab），或直接运行：
+先照常打开主力机的 `PageLingo-MT.cmd`，再在它的 PowerShell 窗口输入 `x` 后按 Tab 补全，或直接运行：
 
 ```powershell
-.\PageLingo-MT.cmd
+.\x.cmd
 ```
 
-首次启动执行当前已安装的任务；已有未完成任务时显示状态，已完成同一任务时也不会自动重跑。`PageLingo-MT.cmd status` 只读状态，`PageLingo-MT.cmd check` 仅预检，明确需要重复任务时才用 `PageLingo-MT.cmd retry`。进程锁同时阻止两个新入口并发启动。双击时保留结果提示，便于查看；无需额外的 `x.cmd`。
+首次启动执行当前已安装的任务；已有未完成任务时显示状态，已完成同一任务时也不会自动重跑。`x.cmd status` 只读状态，`x.cmd check` 仅预检，明确需要重复任务时才用 `x.cmd retry`。进程锁同时阻止两个任务入口并发启动。原环境入口保持原功能，后续换任务仍只使用 `x.cmd`。
 
 训练阶段如下：
 
@@ -71,4 +71,4 @@ python artifacts/mt-research-v2/tools/mt-control/launcher.py \
   --root artifacts/mt-research-v2 status
 ```
 
-状态模式不导入 torch、不加载权重、不创建训练输出。导出器只生成一个 `PageLingo-MT.cmd`；重复使用同一输出目录会拒绝覆盖已有包。包内 manifest 锁定每个文件；后续任务以新版本目录部署，再更新当前任务指针，保留正在运行的包。
+状态模式不导入 torch、不加载权重、不创建训练输出。导出器只生成一个任务脚本 `x.cmd`，保留用户既有 `PageLingo-MT.cmd` 环境脚本；重复使用同一输出目录会拒绝覆盖已有包。包内 manifest 锁定每个文件；后续任务以新版本目录部署，再更新当前任务指针，保留正在运行的包。

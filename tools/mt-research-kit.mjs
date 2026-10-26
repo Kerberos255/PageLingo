@@ -54,6 +54,6 @@ await writeFile(path.join(control, "launcher.py"), await readFile(path.join(proj
 await writeFile(path.join(control, "current-task.json"), JSON.stringify({schema_version: 1, description: "v2b GPU training + BF16 + handoff",
   package: relativePackage, run_prefix: workflow.run_prefix, source_commit: sourceCommit,
   manifest_sha256: createHash("sha256").update(packageManifest).digest("hex")}, null, 2) + "\n");
-const cmd = await readFile(path.join(projectRoot, "training/mt-fixed-slots/windows/PageLingo-MT.cmd"), "utf8");
-await writeFile(path.join(output, "PageLingo-MT.cmd"), cmd.replace(/\r?\n/gu, "\r\n"));
-console.log(JSON.stringify({output, package: relativePackage, entry: "PageLingo-MT.cmd", source_commit: manifest.source_commit, source_dirty: manifest.source_dirty, files: Object.keys(manifest.files).length}));
+const cmd = await readFile(path.join(projectRoot, "training/mt-fixed-slots/windows/x.cmd"), "utf8");
+await writeFile(path.join(output, "x.cmd"), cmd.replace(/\r?\n/gu, "\r\n"));
+console.log(JSON.stringify({output, package: relativePackage, entry: "x.cmd", source_commit: manifest.source_commit, source_dirty: manifest.source_dirty, files: Object.keys(manifest.files).length}));

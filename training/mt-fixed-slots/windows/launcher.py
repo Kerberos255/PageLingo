@@ -26,7 +26,7 @@ def read_json(path):
             return json.loads(path.read_text(encoding="utf-8-sig"))
         except json.JSONDecodeError:
             if attempt == 2:
-                raise ValueError("Status is being written; try PageLingo-MT.cmd status again")
+                raise ValueError("Status is being written; try x.cmd status again")
             time.sleep(.05)
 
 
@@ -83,7 +83,7 @@ def validate_training_root(value):
     if path.drive.lower() == "c:":
         raise ValueError("Use the project's non-C drive")
     if str(value).startswith("\\\\"):
-        raise ValueError("Start PageLingo-MT.cmd on the GPU PC using its local drive, not the network share")
+        raise ValueError("Start x.cmd on the GPU PC using its local drive, not the network share")
 
 
 def training_environment(root, inherited):
@@ -126,7 +126,7 @@ def launch_lock(root):
     except OSError as error:
         if acquired:
             raise
-        raise ValueError("Another PageLingo-MT.cmd process owns the GPU launch lock") from error
+        raise ValueError("Another x.cmd process owns the GPU launch lock") from error
     finally:
         if acquired and os.name == "nt":
             stream.seek(0); msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
@@ -167,7 +167,7 @@ def dispatch(root, action, run_child=subprocess.run):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="One stable entry: PageLingo-MT.cmd. Active/completed tasks do not restart automatically.")
+    parser = argparse.ArgumentParser(description="One task entry: x.cmd. Keep PageLingo-MT.cmd as the environment entry; active/completed tasks do not restart automatically.")
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("action", choices=["auto", "status", "check", "retry"], nargs="?", default="auto")
     args = parser.parse_args()

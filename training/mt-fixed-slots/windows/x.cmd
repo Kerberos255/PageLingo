@@ -23,10 +23,10 @@ pause
 exit /b %PLMT_EXIT%
 :help
 echo PageLingo-MT - one entry, current GPU task
-echo   PageLingo-MT.cmd          Start the current task once, or show its status.
-echo   PageLingo-MT.cmd status   Read status without training.
-echo   PageLingo-MT.cmd check    Preflight only, when no task is running.
-echo   PageLingo-MT.cmd retry    Explicitly repeat a completed or failed task.
+echo   x.cmd          Start the current task once, or show its status.
+echo   x.cmd status   Read status without training.
+echo   x.cmd check    Preflight only, when no task is running.
+echo   x.cmd retry    Explicitly repeat a completed or failed task.
 echo All task caches and outputs stay on the project drive.
 exit /b 0
 :system_drive
