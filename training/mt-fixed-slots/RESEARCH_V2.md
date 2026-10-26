@@ -1,8 +1,8 @@
 # PageLingo MT 定向候选 v2 与 v2b
 
-本轮包用于用户授权的定向优化。它保留底座、旧 adapter、已完成的 v2 包和旧启动器，新增 `run-pagelingo-quality-v2b.cmd` 与 `codex-quality-v2b/`；候选只写入全新输出目录。不会自动上传模型。
+本轮包用于用户授权的定向优化。用户今后只执行根目录 `PageLingo-MT.cmd`；保留熟悉的入口名称，直接配置项目盘缓存与既有 venv，不再要求先打开环境 CMD 后输入第二份脚本。新的冻结包放在 `training-packages/quality-v2b-<commit>/`，当前任务由 `tools/mt-control/current-task.json` 指向。候选只写入全新输出目录，不自动上传模型。
 
-原 v2 包（提交 `38d1481fdf571f2cb292b103a8763bf8985e0494`）已完成两组各 44 步 GPU 训练与 240 次 BF16 真实生成。其选中候选仍有复杂段落漏译和时序错误。当前生成的是后续 v2b 包，尚未执行这两组 120 步训练；不能将下面的计划当作已完成数据。训练参考为 `assistant_audited_synthetic`，不冒充独立人工审核。
+原 v2 包（提交 `38d1481fdf571f2cb292b103a8763bf8985e0494`）已完成两组各 44 步 GPU 训练与 240 次 BF16 真实生成。其选中候选仍有复杂段落漏译和时序错误。v2b（冻结提交 `46eefc961beea22332e831b4a3fcc9cde8e82ef8`）随后完成两组各 120 步和 240 次 BF16 生成，选中 fresh r16（验证 loss 0.3783361315727234）；云端质量验收尚待完成。训练参考为 `assistant_audited_synthetic`，不冒充独立人工审核。
 
 - v2b 训练 480 条、60 个模板家族；验证 64 条、16 个不同家族。保留 v2 的 352/32 条，再新增 128/32 条复杂槽位参考。同族名词变体不算独立样本。
 - 新家族针对带代码和换行的 before/after、多个受保护代码之间的完整动作、长段落里的创建/启动、上下界和语义范围；根据已观测失败编写，不是盲测数据。
@@ -12,13 +12,15 @@
 
 ## 主力机运行
 
-先打开原来的 `PageLingo-MT.cmd`，在它的 PowerShell 窗口执行：
+在主力机项目目录输入 `p` 后按 Tab 补全（也可输入 `.\p` 再按 Tab），或直接运行：
 
 ```powershell
-.\run-pagelingo-quality-v2b.cmd
+.\PageLingo-MT.cmd
 ```
 
-默认一次运行以下阶段。可选 `check` 只做预检，不训练。
+首次启动执行当前已安装的任务；已有未完成任务时显示状态，已完成同一任务时也不会自动重跑。`PageLingo-MT.cmd status` 只读状态，`PageLingo-MT.cmd check` 仅预检，明确需要重复任务时才用 `PageLingo-MT.cmd retry`。进程锁同时阻止两个新入口并发启动。双击时保留结果提示，便于查看；无需额外的 `x.cmd`。
+
+训练阶段如下：
 
 1. 核对源码包、底座和主力机历史 adapter 的哈希，再检查训练参数与数据。主力机不检查或调用 Firefox、llama.cpp、转换器。
 2. 分别训练两组最多 120 个 optimizer step 的候选：从已核实的 v2 选中 r32 adapter 用 1e-5 继续训练；原始底座新建 r16 LoRA 用 3e-5 训练。只使用训练/验证数据。历史 44 步配置保留在仓库，复现旧包应使用上述冻结提交。
@@ -42,7 +44,7 @@ v2b 的继续训练种子是另一个明确身份：v2 选中 adapter `36b50ca2f
 python tools/mt-handoff-import.py \
   --archive /path/to/gpu-handoff.zip \
   --manifest /path/to/handoff-manifest.json \
-  --source-commit 38d1481fdf571f2cb292b103a8763bf8985e0494 \
+  --source-commit 46eefc961beea22332e831b4a3fcc9cde8e82ef8 \
   --output /path/to/new-import-directory
 ```
 
@@ -65,8 +67,8 @@ Loss 下降、正常 EOS、grammar 合法或“显示译文”都不能单独批
 ```bash
 npm run eval:mt-targeted
 node tools/mt-research-kit.mjs
-python artifacts/mt-research-v2/codex-quality-v2/research_v2.py \
-  --root artifacts/mt-research-v2 --plan
+python artifacts/mt-research-v2/tools/mt-control/launcher.py \
+  --root artifacts/mt-research-v2 status
 ```
 
-计划模式不导入 torch、不加载权重、不创建训练输出。包内 manifest 锁定每个文件；修改源码或数据后必须重新生成、核对并部署整个包。
+状态模式不导入 torch、不加载权重、不创建训练输出。导出器只生成一个 `PageLingo-MT.cmd`；重复使用同一输出目录会拒绝覆盖已有包。包内 manifest 锁定每个文件；后续任务以新版本目录部署，再更新当前任务指针，保留正在运行的包。

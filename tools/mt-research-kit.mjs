@@ -6,10 +6,13 @@ import path from "node:path";
 import {parseArgs} from "node:util";
 import {projectRoot} from "./mt-quality-runtime.mjs";
 const {values} = parseArgs({options: {out: {type: "string", default: "artifacts/mt-research-v2"}}});
-const output = path.resolve(values.out), staged = path.join(output, "codex-quality-v2b");
-await mkdir(staged, {recursive: true});
 const git = args => execFileSync("git", args, {cwd: projectRoot, encoding: "utf8"}).trim();
-const manifest = {schema_version: 1, source_commit: git(["rev-parse", "HEAD"]), source_dirty: Boolean(git(["status", "--porcelain", "--untracked-files=normal"])),
+const sourceCommit = git(["rev-parse", "HEAD"]);
+const output = path.resolve(values.out), relativePackage = `training-packages/quality-v2b-${sourceCommit.slice(0, 12)}`;
+const staged = path.join(output, relativePackage);
+await mkdir(path.dirname(staged), {recursive: true});
+await mkdir(staged); // A generated kit is immutable; use a fresh output for another export.
+const manifest = {schema_version: 1, source_commit: sourceCommit, source_dirty: Boolean(git(["status", "--porcelain", "--untracked-files=normal"])),
   purpose: "v2b complex-slot curriculum, two bounded synthetic candidates; no independent human review, automatic release or model upload", files: {}};
 const files = new Map([
   ...["train.py", "training_options.py", "evaluate_gpu.py", "merge_adapter.py", "native_v2.py", "research_v2.py", "browser_v2.py", "browser-audit-v2.js", "metrics.py", "config-lr1e5-v2b.json", "config-lr3e5-v2b.json", "evaluation_config.json"]
@@ -44,12 +47,13 @@ await writeFile(path.join(staged, "workflow.json"), JSON.stringify(workflow, nul
 for (const name of ["production-runtime.js", "production.css", "workflow.json"]) {
   const raw = await readFile(path.join(staged, name)); manifest.files[name] = {bytes: raw.length, sha256: createHash("sha256").update(raw).digest("hex")};
 }
-await writeFile(path.join(staged, "package-manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
-let cmd = await readFile(path.join(projectRoot, "training/mt-fixed-slots/windows/run-fixed-slots-v1.cmd"), "utf8");
-cmd = cmd.replace('set "PLMT_KIND=probe"', 'set "PLMT_KIND=run"').replace(/^if \/I not "%PLMT_KIND%"=="check".*goto :usage$/m, 'if /I not "%PLMT_KIND%"=="check" if /I not "%PLMT_KIND%"=="run" goto :usage')
-  .replaceAll("codex-fixed-slots-v1", "codex-quality-v2b").replaceAll("run_local.py", "research_v2.py").replaceAll("--kind", "--mode");
-const start = cmd.indexOf("\n:help\n") + 1, end = cmd.indexOf("\n:environment_missing\n", start) + 1;
-if (start <= 0 || end <= 0) throw new Error("Launcher template changed");
-cmd = cmd.slice(0, start) + ':help\necho Open PageLingo-MT.cmd, then run:\necho   .\\run-pagelingo-quality-v2b.cmd check\necho   .\\run-pagelingo-quality-v2b.cmd\necho GPU training and BF16 only. Q5 and Firefox run on Cloud. No model uploads.\nexit /b 0\n:usage\necho Usage: run-pagelingo-quality-v2b.cmd [check^|run]\nexit /b 2\n' + cmd.slice(end);
-await writeFile(path.join(output, "run-pagelingo-quality-v2b.cmd"), cmd.replace(/\r?\n/gu, "\r\n"));
-console.log(JSON.stringify({output, source_commit: manifest.source_commit, source_dirty: manifest.source_dirty, files: Object.keys(manifest.files).length}));
+const packageManifest = JSON.stringify(manifest, null, 2) + "\n";
+await writeFile(path.join(staged, "package-manifest.json"), packageManifest);
+const control = path.join(output, "tools/mt-control"); await mkdir(control, {recursive: true});
+await writeFile(path.join(control, "launcher.py"), await readFile(path.join(projectRoot, "training/mt-fixed-slots/windows/launcher.py")));
+await writeFile(path.join(control, "current-task.json"), JSON.stringify({schema_version: 1, description: "v2b GPU training + BF16 + handoff",
+  package: relativePackage, run_prefix: workflow.run_prefix, source_commit: sourceCommit,
+  manifest_sha256: createHash("sha256").update(packageManifest).digest("hex")}, null, 2) + "\n");
+const cmd = await readFile(path.join(projectRoot, "training/mt-fixed-slots/windows/PageLingo-MT.cmd"), "utf8");
+await writeFile(path.join(output, "PageLingo-MT.cmd"), cmd.replace(/\r?\n/gu, "\r\n"));
+console.log(JSON.stringify({output, package: relativePackage, entry: "PageLingo-MT.cmd", source_commit: manifest.source_commit, source_dirty: manifest.source_dirty, files: Object.keys(manifest.files).length}));
