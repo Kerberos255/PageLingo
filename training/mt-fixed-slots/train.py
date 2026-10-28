@@ -20,7 +20,7 @@ parser.add_argument("--project-root", type=Path, help="Explicit local project fo
 parser.add_argument("--train", action="store_true", help="Requires CUDA; otherwise only validate/tokenize data")
 parser.add_argument("--probe", action="store_true", help="Cap optimization at the configured 12 steps")
 parser.add_argument("--allow-unreviewed-seed-data", action="store_true", help="Label the resulting run as a pipeline probe, not a release candidate")
-parser.add_argument("--synthetic-candidate", action="store_true", help="Explicit bounded research run on the audited v2 synthetic corpus; never marks data as human reviewed")
+parser.add_argument("--synthetic-candidate", action="store_true", help="Explicit bounded research run on an audited v2/v3 synthetic corpus; never marks data as human reviewed")
 args = parser.parse_args()
 config = json.loads(args.config.read_text())
 if args.synthetic_candidate:
@@ -35,8 +35,10 @@ args.output.mkdir(parents=True, exist_ok=True)
 manifest = json.loads((args.data / "manifest.json").read_text())
 if manifest.get("protocol") != "production-fixed-text-v1":
     raise ValueError("Training data must be exported with the production fixed-text protocol")
-if args.synthetic_candidate and manifest.get("corpus") != "targeted-synthetic-v2":
-    raise ValueError("Synthetic candidate mode requires the separate v2 corpus, not the old seed or an evaluation set")
+if args.synthetic_candidate and manifest.get("corpus") not in ["targeted-synthetic-v2", "targeted-synthetic-v3"]:
+    raise ValueError("Synthetic candidate mode requires a separate audited curriculum, not the old seed or an evaluation set")
+if manifest.get("corpus") == "targeted-synthetic-v3" and config.get("checkpoint_selection") != "final":
+    raise ValueError("v3 compares both fixed final checkpoints; total validation loss must not silently select one")
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import torch
@@ -206,7 +208,7 @@ stats.update(training_executed=True, training_wall_s=time.perf_counter() - start
              optimizer_steps=trainer.state.global_step, cuda_peak_allocated_bytes=torch.cuda.max_memory_allocated(),
              cuda_peak_reserved_bytes=torch.cuda.max_memory_reserved())
 if args.synthetic_candidate:
-    stats["selection"] = {"criterion": "validation loss only; release evaluation was not used for checkpoint selection",
+    stats["selection"] = {"criterion": "fixed final checkpoint; both candidates require semantic review" if config.get("checkpoint_selection") == "final" else "validation loss only; release evaluation was not used for checkpoint selection",
                           "best_checkpoint": trainer.state.best_model_checkpoint, "best_metric": trainer.state.best_metric,
                           "max_optimizer_steps": config["candidate_max_steps"], "release_approved": False}
 (args.output / "training-result.json").write_text(json.dumps(stats, indent=2) + "\n")

@@ -40,6 +40,19 @@ class TrainerApiCompatibility(unittest.TestCase):
         self.assertEqual(args.num_train_epochs, self.config["epochs"])
         self.assertEqual(args.get_warmup_steps(100), 5)
 
+    def test_v3_preserves_final_checkpoint_instead_of_selecting_by_total_loss(self):
+        config = dict(self.config, candidate_max_steps=64, checkpoint_selection="final")
+        args = options.build_training_arguments(config, self.tmp.name, synthetic_candidate=True, use_cpu=True)
+        self.assertEqual(args.max_steps, 64)
+        self.assertFalse(args.load_best_model_at_end)
+        self.assertEqual(args.get_warmup_steps(64), 4)
+
+    def test_legacy_candidate_still_selects_validation_checkpoint(self):
+        config = dict(self.config, candidate_max_steps=120)
+        args = options.build_training_arguments(config, self.tmp.name, synthetic_candidate=True, use_cpu=True)
+        self.assertTrue(args.load_best_model_at_end)
+        self.assertEqual(args.metric_for_best_model, "eval_loss")
+
 
 if __name__ == "__main__":
     unittest.main()

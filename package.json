@@ -7,9 +7,10 @@
     "build": "node tools/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm test && npm run eval:mt-data && npm run eval:mt-targeted && npm run audit:prod && npm run build && npm run lint:addon",
+    "verify": "npm run typecheck && npm test && npm run eval:mt-data && npm run eval:mt-targeted && npm run eval:mt-curriculum && npm run audit:prod && npm run build && npm run lint:addon",
     "eval:mt-data": "node tools/mt-quality-data.mjs",
     "eval:mt-targeted": "node tools/mt-targeted-data.mjs && node tools/mt-research-plan.mjs",
+    "eval:mt-curriculum": "node tools/mt-curriculum-data.mjs",
     "lint:addon": "web-ext lint --source-dir dist",
     "package": "npm run build && web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest",
     "audit:prod": "npm audit --omit=dev --audit-level=high"

@@ -4,6 +4,10 @@
 def build_training_arguments(config, output, *, probe=False, use_cpu=False, synthetic_candidate=False):
     from transformers import TrainingArguments
 
+    selection = config.get("checkpoint_selection", "lowest_validation_loss")
+    if selection not in ["lowest_validation_loss", "final"]:
+        raise ValueError("Unknown checkpoint selection mode")
+    choose_best = synthetic_candidate and selection == "lowest_validation_loss"
     # Both 5.6 and 5.17 accept a fraction here. 5.17 removed warmup_ratio.
     return TrainingArguments(
         output_dir=str(output), num_train_epochs=config["epochs"],
@@ -15,6 +19,6 @@ def build_training_arguments(config, output, *, probe=False, use_cpu=False, synt
         bf16=not use_cpu, use_cpu=use_cpu, gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False}, optim="adamw_torch", max_grad_norm=1.0,
         eval_strategy="epoch", save_strategy="epoch", save_total_limit=2, logging_steps=1, report_to=[],
-        load_best_model_at_end=synthetic_candidate, metric_for_best_model="eval_loss" if synthetic_candidate else None,
-        greater_is_better=False if synthetic_candidate else None,
+        load_best_model_at_end=choose_best, metric_for_best_model="eval_loss" if choose_best else None,
+        greater_is_better=False if choose_best else None,
         seed=config["seed"], data_seed=config["seed"], dataloader_num_workers=0, push_to_hub=False)
