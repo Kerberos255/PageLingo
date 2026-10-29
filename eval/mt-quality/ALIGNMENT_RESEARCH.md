@@ -68,3 +68,5 @@ python3 tools/mt-structure-firefox.py \
 ```
 
 第一项严格核对冻结结果并用真实 `PageTranslator` 回放；不是重新在 wllama 生成。第二项使用确定性 completion，验证动态所有权、网站更新、链接、原始节点恢复及长槽位分句；不是翻译质量测试。两者均只服务本机回环页面，输出完整结果 JSON，失败返回非零。
+
+第二项也由 `.github/workflows/browser-regression.yml` 在 PR 中自动执行，结果与浏览器运行时摘要随工作流 artifact 上传，无需 Hugging Face 访问权限或主力机 GPU。
