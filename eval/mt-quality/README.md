@@ -97,6 +97,16 @@ node tools/mt-quality-guard-replay.mjs \
 
 ### 公开参考回归
 
+v3 四组 GPU 证据解包后，可以回放全部段落并生成可筛选的 HTML 对照：
+
+```bash
+node tools/mt-matrix-replay.mjs \
+  --results /path/to/unpacked-evidence \
+  --out artifacts/mt-quality/matrix-replay
+```
+
+工具核对所有结果文件、冻结源码、逐例实际提示和 token 输入、预算、EOS 与生产调用计划。固定段落执行原始 Text 节点写回、代码与恢复检查；纯文本诊断单独记录，不作为可直接回填网页的译文。
+
 新候选的结果先经过哈希锁定的 BF16 或 Q5 生产回放，再对冻结的 32 条 FLORES 参考计算 chrF2：
 
 ```bash
