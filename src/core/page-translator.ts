@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { collectTranslationRoots, findTranslationRoot, isGeneratedNode } from "./dom-policy";
+import { collectTranslationRoots, findTranslationRoot, isGeneratedNode, isTranslationRootElement } from "./dom-policy";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./navigation-layout";
@@ -233,6 +233,7 @@ export class PageTranslator {
     #sourceHadClassAttribute = new WeakMap();
     #wholeSentenceContext = false;
     #fixedRecords = new Map();
+    #fixedOwners = new WeakMap();
     #contextModePromise = null;
     async #loadContextMode() {
         if (!this.#contextModePromise) this.#contextModePromise = Promise.resolve()
@@ -253,6 +254,25 @@ export class PageTranslator {
     get translatedCount() {
         return this.#records.size + this.#fixedRecords.size;
     }
+    #clearFixedRecord(root, record) {
+        clearFixedTextRecord(record); this.#fixedRecords.delete(root);
+        for (const edit of record.edits) {
+            if (this.#fixedOwners.get(edit.node) === record) this.#fixedOwners.delete(edit.node);
+        }
+    }
+    #restoreDisplacedFixedOwners(root) {
+        if (!this.#fixedRecords.size) return;
+        const seen = new Set();
+        const walker = this.#doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const owner = this.#fixedOwners.get(node);
+            if (!owner || owner.root === root || seen.has(owner) || this.#fixedRecords.get(owner.root) !== owner) continue;
+            seen.add(owner);
+            // Existing nested structural roots own their text independently.
+            if (root.contains(owner.root) && isTranslationRootElement(owner.root)) continue;
+            if (root.contains(owner.root) || !fixedTextRecordUnchanged(owner)) this.#clearFixedRecord(owner.root, owner);
+        }
+    }
     setDisplayMode(displayMode) {
         if (this.#disposed || this.#displayMode === displayMode)
             return;
@@ -262,7 +282,7 @@ export class PageTranslator {
         }
         for (const [root, record] of this.#fixedRecords) {
             if (!applyFixedTextRecord(root, record, displayMode, this.#targetLanguage)) {
-                this.#fixedRecords.delete(root); this.#queue(root);
+                this.#clearFixedRecord(root, record); this.#queue(root);
             }
         }
     }
@@ -299,12 +319,17 @@ export class PageTranslator {
         try {
         await this.#loadContextMode();
         const fixedPrevious = this.#fixedRecords.get(root);
+        if (fixedPrevious) {
+            // A translation-only record writes into the original text nodes.
+            // Unchanged records must bypass source-language checks; changed
+            // records must restore owned source before that predicate reads it.
+            if (fixedTextRecordUnchanged(fixedPrevious)) return;
+            this.#clearFixedRecord(root, fixedPrevious);
+        }
+        this.#restoreDisplacedFixedOwners(root);
         if (this.#shouldTranslateRoot && !await this.#shouldTranslateRoot(root)) {
             if (this.#disposed)
                 return;
-            if (fixedPrevious) {
-                clearFixedTextRecord(fixedPrevious); this.#fixedRecords.delete(root);
-            }
             const previous = this.#records.get(root);
             if (previous) {
                 this.#clearDisplayMode(root);
@@ -312,10 +337,6 @@ export class PageTranslator {
                 this.#records.delete(root);
             }
             return;
-        }
-        if (fixedPrevious) {
-            if (fixedTextRecordUnchanged(fixedPrevious)) return;
-            clearFixedTextRecord(fixedPrevious); this.#fixedRecords.delete(root);
         }
         const currentFingerprint = sourceFingerprint(root);
         const previous = this.#records.get(root);
@@ -467,6 +488,7 @@ export class PageTranslator {
             const record = prepareFixedTextRecord(root, segment.textSlots, translatedHtml);
             if (!applyFixedTextRecord(root, record, this.#displayMode, this.#targetLanguage)) return;
             this.#fixedRecords.set(root, record);
+            for (const edit of record.edits) this.#fixedOwners.set(edit.node, record);
             return;
         }
         const fragment = createSafeTranslatedFragment(this.#doc, translatedHtml, segment.links, segment.opaque, translatedLinkTexts, translatedGapTexts, []);
@@ -565,8 +587,9 @@ export class PageTranslator {
         this.#pending.clear();
         this.#rerun.clear();
         this.#inFlight.clear();
-        for (const record of this.#fixedRecords.values()) clearFixedTextRecord(record);
+        for (const [root, record] of this.#fixedRecords) this.#clearFixedRecord(root, record);
         this.#fixedRecords.clear();
+        this.#fixedOwners = new WeakMap();
         for (const [root, { translationNode }] of this.#records) {
             this.#clearDisplayMode(root);
             translationNode.remove();

@@ -57,7 +57,9 @@ export function fixedTextRecordUnchanged(record: FixedTextRecord): boolean {
 export function clearFixedTextRecord(record: FixedTextRecord): void {
   record.translationNode?.remove(); record.translationNode = null;
   for (const edit of record.edits) {
-    if (record.mode === "translation" && edit.node.parentNode === edit.parent && edit.node.data === edit.translated) edit.node.data = edit.source;
+    // Ownership follows the original Text object when a website reparents it.
+    // Restore only our exact translation; a later website text edit still wins.
+    if (record.mode === "translation" && edit.node.data === edit.translated) edit.node.data = edit.source;
   }
   record.mode = "bilingual";
 }

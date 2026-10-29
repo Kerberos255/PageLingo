@@ -364,8 +364,15 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false }
       // The fixed renderer keeps controls/icons in place, so an inline fallback
       // inside a paragraph must not become a second, overlapping translation root.
       const structural = node.parentElement?.closest(Array.from(ROOT_TAGS, tag => tag.toLowerCase()).join(","));
-      const root = structural && !isInsideCodeWidgetFallback(structural)
+      let root = structural && !isInsideCodeWidgetFallback(structural)
         ? structural : findTranslationRoot(node) ?? node.parentElement?.closest("a,label");
+      if (!structural) {
+        // One inline owner must include both direct text and nested spans.
+        // Otherwise a standalone anchor can race with its descendant fallback.
+        for (let inline = node.parentElement; inline && inline !== doc.body; inline = inline.parentElement) {
+          if (inline.matches("a,label")) root = inline;
+        }
+      }
       if (root) roots.add(root);
     }
     return Array.from(roots);

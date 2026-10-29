@@ -2,7 +2,7 @@ import type {CheckedTranslationResult, TranslationRequest} from "../../core/prov
 import {assessTranslationQuality} from "../../core/translation-quality";
 import {richHtmlStructureCompatible} from "../../core/rich-segment-splitter";
 import {decodeFixedMtText, encodeFixedMtText, fixedMtGrammar, fixedMtMaxTokens, fixedMtPrompt} from "./fixed-text";
-import {planMtSentences} from "./sentence-plan";
+import {assembleMtSentences, planMtSentences} from "./sentence-plan";
 
 export async function inferMtHtml(request: TranslationRequest, complete: (options: any) => Promise<any>): Promise<CheckedTranslationResult> {
   const reject = (reason: string): CheckedTranslationResult => ({html: request.html, accepted: false, reason});
@@ -19,7 +19,9 @@ export async function inferMtHtml(request: TranslationRequest, complete: (option
     try { translations.push(decodeFixedMtText(encoded, raw)); }
     catch (error) { return reject(String(error)); }
   }
-  const joined = translations.join("");
+  let joined: string;
+  try {joined = assembleMtSentences(request.html, units, translations);}
+  catch (error) {return reject(String(error));}
   if (!richHtmlStructureCompatible(request.html, joined)) return reject("MT sentence assembly changed rich structure");
   const plain = (html: string) => new DOMParser().parseFromString(html, "text/html").body.textContent ?? "";
   const quality = assessTranslationQuality({sourceText: plain(request.html), translatedText: plain(joined), sourceLanguage: request.sourceLanguage, targetLanguage: request.targetLanguage});
