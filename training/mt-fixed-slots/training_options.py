@@ -21,4 +21,5 @@ def build_training_arguments(config, output, *, probe=False, use_cpu=False, synt
         eval_strategy="epoch", save_strategy="epoch", save_total_limit=2, logging_steps=1, report_to=[],
         load_best_model_at_end=choose_best, metric_for_best_model="eval_loss" if choose_best else None,
         greater_is_better=False if choose_best else None,
-        seed=config["seed"], data_seed=config["seed"], dataloader_num_workers=0, push_to_hub=False)
+        seed=config["seed"], data_seed=config["seed"], dataloader_num_workers=0, push_to_hub=False,
+        remove_unused_columns=config.get("semantic_marker_weight") is None)

@@ -28,6 +28,8 @@ def main():
     plan = json.loads(args.plan.read_text())
     if plan["protocol"] != "sentence-alignment-research-v1" or not plan["jobs"]:
         raise ValueError("Unsupported or empty diagnostic plan")
+    if plan.get("model_binding_sha256") not in (None, args.sha256):
+        raise ValueError("A chained draft must be compiled by its recorded model identity")
     args.output.mkdir(parents=True)
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))

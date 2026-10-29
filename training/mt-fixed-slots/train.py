@@ -7,6 +7,7 @@ import math
 import os
 from pathlib import Path
 import random
+import re
 import struct
 import time
 
@@ -20,7 +21,8 @@ parser.add_argument("--project-root", type=Path, help="Explicit local project fo
 parser.add_argument("--train", action="store_true", help="Requires CUDA; otherwise only validate/tokenize data")
 parser.add_argument("--probe", action="store_true", help="Cap optimization at the configured 12 steps")
 parser.add_argument("--allow-unreviewed-seed-data", action="store_true", help="Label the resulting run as a pipeline probe, not a release candidate")
-parser.add_argument("--synthetic-candidate", action="store_true", help="Explicit bounded research run on an audited v2/v3 synthetic corpus; never marks data as human reviewed")
+parser.add_argument("--synthetic-candidate", action="store_true", help="Explicit bounded research run on an audited v2/v3/v4 synthetic corpus; never marks data as human reviewed")
+parser.add_argument("--expected-initial-sha256", help="v4 paired-run guard, checked after LoRA creation and before optimization")
 args = parser.parse_args()
 config = json.loads(args.config.read_text())
 if args.synthetic_candidate:
@@ -33,12 +35,22 @@ if args.train and args.output.exists() and any(args.output.iterdir()):
     raise ValueError("Training output must be a new or empty directory")
 args.output.mkdir(parents=True, exist_ok=True)
 manifest = json.loads((args.data / "manifest.json").read_text())
-if manifest.get("protocol") != "production-fixed-text-v1":
+semantic = manifest.get("corpus") == "semantic-rewrite-v4"
+if manifest.get("protocol") != ("semantic-rewrite-multitask-v1" if semantic else "production-fixed-text-v1"):
     raise ValueError("Training data must be exported with the production fixed-text protocol")
-if args.synthetic_candidate and manifest.get("corpus") not in ["targeted-synthetic-v2", "targeted-synthetic-v3"]:
+if args.synthetic_candidate and manifest.get("corpus") not in ["targeted-synthetic-v2", "targeted-synthetic-v3", "semantic-rewrite-v4"]:
     raise ValueError("Synthetic candidate mode requires a separate audited curriculum, not the old seed or an evaluation set")
 if manifest.get("corpus") == "targeted-synthetic-v3" and config.get("checkpoint_selection") != "final":
     raise ValueError("v3 compares both fixed final checkpoints; total validation loss must not silently select one")
+if semantic:
+    if not args.synthetic_candidate or config.get("checkpoint_selection") != "final" or config.get("initialization") != "fresh_base":
+        raise ValueError("v4 requires bounded synthetic mode, fresh base LoRA and fixed final checkpoints")
+    from semantic_loss import token_weights, semantic_trainer_class
+    token_weights("text", [(0, 4)], config.get("semantic_marker_weight"))
+elif config.get("semantic_marker_weight") is not None:
+    raise ValueError("Semantic loss weights are restricted to the explicit v4 corpus")
+if args.expected_initial_sha256 and (not semantic or not re.fullmatch(r"[a-f0-9]{64}", args.expected_initial_sha256)):
+    raise ValueError("Expected initialization digest must identify an explicit v4 pair")
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import torch
@@ -99,6 +111,7 @@ for split in ["train", "validation"]:  # Evaluation/diagnostic files can never e
     if not rows or len(rows) != record["rows"]:
         raise ValueError("Missing rows: " + split)
     encoded, lengths, targets = [], [], []
+    task_counts, kind_counts, weighted_mass = {}, {}, {}
     for row in rows:
         if row["split"] != split or row["id"] in ids:
             raise ValueError("Incorrect split or duplicate ID")
@@ -115,27 +128,51 @@ for split in ["train", "validation"]:  # Evaluation/diagnostic files can never e
         unreviewed |= row["review_status"] != "human_reviewed"
         if args.synthetic_candidate and row["review_status"] not in ["assistant_audited_synthetic", "human_reviewed"]:
             raise ValueError("Synthetic candidate contains an unaudited or evaluation reference: " + row["id"])
+        if semantic and (row.get("task") not in ["natural", "fixed", "rewrite"] or not row.get("pair_id")):
+            raise ValueError("v4 requires an explicit task and paired source identity")
         prompt = tokenizer.apply_chat_template(messages[:1], tokenize=False, add_generation_prompt=True)
         prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
-        target_ids = tokenizer(messages[1]["content"], add_special_tokens=False)["input_ids"] + [tokenizer.eos_token_id]
+        target_tokens = tokenizer(messages[1]["content"], add_special_tokens=False, **({"return_offsets_mapping": True} if semantic else {}))
+        target_ids = target_tokens["input_ids"] + [tokenizer.eos_token_id]
         input_ids = prompt_ids + target_ids
         if len(input_ids) > config["max_length"]:
             raise ValueError(f"Refusing to truncate a supervised target: {row['id']} ({len(input_ids)} tokens)")
         labels = [-100] * len(prompt_ids) + target_ids
         assert labels[:len(prompt_ids)] == [-100] * len(prompt_ids)
         assert labels[len(prompt_ids):] == target_ids and labels[-1] == tokenizer.eos_token_id
-        encoded.append({"input_ids": input_ids, "attention_mask": [1] * len(input_ids), "labels": labels})
+        item = {"input_ids": input_ids, "attention_mask": [1] * len(input_ids), "labels": labels}
+        if semantic:
+            weights, kinds = token_weights(messages[1]["content"], target_tokens["offset_mapping"], config["semantic_marker_weight"])
+            assert len(weights) == len(target_ids)
+            item["loss_weights"] = [0.] * len(prompt_ids) + weights
+            task_counts[row["task"]] = task_counts.get(row["task"], 0) + 1
+            for kind, weight in zip(kinds, weights):
+                kind_counts[kind] = kind_counts.get(kind, 0) + 1
+                weighted_mass[kind] = weighted_mass.get(kind, 0.) + weight
+        encoded.append(item)
         lengths.append(len(input_ids)); targets.append(len(target_ids))
     datasets[split] = encoded
     stats["splits"][split] = {"rows": len(rows), "max_tokens": max(lengths), "target_tokens": sum(targets), "prompt_and_padding_masked": True, "eos_supervised": True, "targets_truncated": False, "sha256": record["sha256"]}
+    if semantic:
+        if task_counts != manifest["task_counts"][split]:
+            raise ValueError("Task counts differ from the frozen manifest")
+        stats["splits"][split].update(task_counts=task_counts, target_kind_tokens=kind_counts, weighted_target_mass=weighted_mass)
 
 def collate(rows):
     size = max(len(row["input_ids"]) for row in rows)
-    return {key: torch.tensor([row[key] + [(-100 if key == "labels" else 0 if key == "attention_mask" else tokenizer.pad_token_id)] * (size - len(row[key])) for row in rows], dtype=torch.long)
-            for key in ["input_ids", "attention_mask", "labels"]}
+    result = {key: torch.tensor([row[key] + [(-100 if key == "labels" else 0 if key == "attention_mask" else tokenizer.pad_token_id)] * (size - len(row[key])) for row in rows], dtype=torch.long)
+              for key in ["input_ids", "attention_mask", "labels"]}
+    if semantic:
+        result["loss_weights"] = torch.tensor([row["loss_weights"] + [0.] * (size - len(row["loss_weights"])) for row in rows], dtype=torch.float32)
+    return result
 
 batch = collate([datasets["train"][0], datasets["validation"][0]])
 assert torch.all(batch["labels"][batch["attention_mask"] == 0] == -100)
+if semantic:
+    assert torch.all(batch["loss_weights"][batch["labels"] == -100] == 0)
+    stats["loss_definition"] = {"kind": "weighted_causal_target_mean", "marker_weight": config["semantic_marker_weight"], "content_weight": 1., "eos_weight": 1.,
+                                "prompt_weight": 0., "padding_weight": 0., "validation_loss_is_weighted": True,
+                                "note": "Unweighted content/marker/EOS NLL and real generations are evaluated separately; weighted losses never choose a winner."}
 stats["review_status"] = "assistant_audited_synthetic" if args.synthetic_candidate and unreviewed else "assistant_authored_needs_human_review" if unreviewed else "human_reviewed"
 stats["run_kind"] = "synthetic_research_candidate" if args.synthetic_candidate else "pipeline_probe" if unreviewed or args.probe else "fine_tuning_candidate"
 resume_adapter = None
@@ -190,13 +227,28 @@ else:
 model.enable_input_require_grads()
 stats["model_and_adapter_load_wall_s"] = time.perf_counter() - load_started
 stats["parameters"] = {"total": sum(p.numel() for p in model.parameters()), "trainable": sum(p.numel() for p in model.parameters() if p.requires_grad)}
+if semantic:
+    if not stats["parameters"]["trainable"] or any(p.requires_grad and "lora_" not in name for name, p in model.named_parameters()):
+        raise RuntimeError("Only LoRA parameters may train in v4")
+    stats["base_weights_frozen"] = True
+    initial = hashlib.sha256()
+    for name, parameter in sorted(model.named_parameters()):
+        if parameter.requires_grad:
+            initial.update(name.encode()); initial.update(str(parameter.dtype).encode()); initial.update(str(tuple(parameter.shape)).encode())
+            initial.update(parameter.detach().cpu().contiguous().view(torch.uint8).numpy().tobytes())
+    stats["initial_trainable_sha256"] = initial.hexdigest()
+    if args.expected_initial_sha256 and args.expected_initial_sha256 != stats["initial_trainable_sha256"]:
+        raise ValueError("Paired LoRA initialization differs; optimization did not start")
+    (args.output / "initialization.json").write_text(json.dumps({"initial_trainable_sha256": stats["initial_trainable_sha256"],
+        "expected_initial_sha256": args.expected_initial_sha256, "base_weights_frozen": True, "optimization_started": False}, indent=2) + "\n")
 class FiniteMetrics(TrainerCallback):
     def on_log(self, args, state, control, logs=None, **kwargs):
         for key in ["loss", "eval_loss", "grad_norm"]:
             if key in (logs or {}) and not math.isfinite(float(logs[key])):
                 raise FloatingPointError("Non-finite training metric: " + key)
 
-trainer = Trainer(model=model, args=arguments, train_dataset=datasets["train"], eval_dataset=datasets["validation"], data_collator=collate, callbacks=[FiniteMetrics()])
+TrainerType = semantic_trainer_class(Trainer) if semantic else Trainer
+trainer = TrainerType(model=model, args=arguments, train_dataset=datasets["train"], eval_dataset=datasets["validation"], data_collator=collate, callbacks=[FiniteMetrics()])
 start = time.perf_counter()
 before = trainer.evaluate()
 training = trainer.train()
