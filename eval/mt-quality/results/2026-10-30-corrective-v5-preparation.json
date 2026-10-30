@@ -1,0 +1,392 @@
+{
+  "schema_version": 1,
+  "scope": "Actual CPU tokenization and Trainer/evaluation preflight. No v5 GPU optimization/generation, quantization or new browser inference. Synthetic reference and mocked workflow tests are not quality measurements.",
+  "base_commit_before_changes": "c33b1e4e4b756cca23ae371228d336e6d90dec0a",
+  "tested_source_hashes": {
+    "training/mt-fixed-slots/train.py": "f8c48479392e6e75cea5b047deedac53c2495612edd7c80bf6ef3a39cfb5be16",
+    "training/mt-fixed-slots/evaluate_semantic.py": "230ac45088afabf1c8613cf9f8c8f1d7bce3d3bc7e2e86d39f4268aefdc59e50",
+    "training/mt-fixed-slots/corrective_contract.py": "9aa3de62411c8a601ee7e8f8d001ac5297b1006c18439dee3dfefa4b875b8499",
+    "training/mt-fixed-slots/corrective_workflow.py": "0434c8126015f83a57b0023b92c00c92922585169adf5386568eb2e8618e487c",
+    "tools/mt-corrective-kit.mjs": "6b0861cef54eed8cd5379f2ea84f0b3907fec5dab903f6fe910eb2b545f0b892",
+    "tools/mt-semantic-matrix-replay.mjs": "b5f1c6388443201bac99404898e390366d003bbf542f2377e1d25e10a5c54080"
+  },
+  "design": {
+    "initialization": "same pinned old r16; not rejected v3/v4 candidates",
+    "steps_each": 32,
+    "training_rows_each": 64,
+    "only_between_candidate_difference": "legacy vs roles/context prompt; same targets/order/optimizer/initial weights",
+    "not_a_full_ablation_of_changes_from_v4": true,
+    "checkpoint_selection": "fixed final, no automatic winner"
+  },
+  "data_manifest": {
+    "schema_version": 1,
+    "corpus": "corrective-fixed-v5",
+    "case_counts": {
+      "train": 64,
+      "validation": 8,
+      "holdout": 8
+    },
+    "families": {
+      "train": 16,
+      "validation": 4,
+      "holdout": 4
+    },
+    "variants": {
+      "legacy": {
+        "file": "legacy/manifest.json",
+        "sha256": "07dc7c030991a8227553232c287e08cb03ac0a04ce286b12dd79e54dfc3021b9"
+      },
+      "roles": {
+        "file": "roles/manifest.json",
+        "sha256": "3c15aa8f3303912d1ce792a5f90ee14c950372a7b5652d96430eca8a06a3b3ea"
+      }
+    },
+    "source_hashes": {
+      "training/mt-fixed-slots/corrective-v5.mjs": "249a3e490f488f89c7cff41a769cfa14f854c04c70e58312d308bf387e9a5bba",
+      "tools/mt-corrective-data.mjs": "41c9c0f02ae3260bda8a084d6de20331b01eca230c0eb7316aa60f4b0d01caf1",
+      "eval/mt-quality/protocol.ts": "51a499f1bcab8a9d7816f9e08933fa28f1b34814fb0bc3d8a5d4e84c135fd8e1",
+      "eval/mt-quality/semantic-rewrite.ts": "3cc1dbb62e9ee1826b2d233e2fb4c167bc02e5e7795a8f344827529e9db7eff3",
+      "src/providers/pagelingo-mt/fixed-text.ts": "279446a3dac8c2151fc77a0fd5e7fb848db9273b33e1eb52742a0b657e760155",
+      "src/core/rich-segment.ts": "27820213063defcd5128214499a569cd4328b39c346c88bba4eb1286f36567e9",
+      "src/core/dom-policy.ts": "15b9ba73687030c985d0508628781fcb73b8b06382406d3aec0385498738c49a",
+      "src/core/fixed-text-render.ts": "29fe64e44325392c03c414e45a988e0a67d1403e917014718e819d7fe996d1a4",
+      "src/core/translation-quality.ts": "3891cb53289fce8ddaf8a5a50dabb612bbc667d2fff87c79f120d7284498c0b4",
+      "training/mt-fixed-slots/semantic-v4.mjs": "50c3ea5b3a32bae033990ea49d398509e4a7268c262ef0d3c22f256ec64ebfbe",
+      "training/mt-fixed-slots/targeted-v3.mjs": "67d3cb728bc8f537e56926e4e8ab14a4159f0ef043dc4433fcf718733e35f5c6",
+      "training/mt-fixed-slots/targeted-v2.mjs": "dc81ccb515acc8aad20efbc9c7225c81591ba7eaab0dcf540b87af94a73f091f",
+      "training/mt-fixed-slots/seed.json": "9396b56d960a803ef0b5b8baca4de81ad36cd04343792bab73aa51614a55e84a",
+      "eval/mt-quality/cases.json": "8ce29b25cfb4afb3615947feb8590424ddb974907cc79e5f04e86df0412de5f9",
+      "eval/mt-quality/release-v2.mjs": "b2aa757698e374277ff7bbdb8d688389561557c14297fccb9f2618fda13e9c1b",
+      "eval/mt-quality/external/flores200-32.json": "971338e1f8fd27ed51a38fc358915954d03c8e077a2df06cd2259fb928633309"
+    },
+    "checks": {
+      "old_corpora_and_v4_holdout_excluded": true,
+      "delexicalized_wire_unique": true,
+      "disjoint_families": true,
+      "production_reference_decoder": true,
+      "annotated_actions_and_ranges": true,
+      "natural_reference_code_identity": true,
+      "identical_paired_sources_targets_order": true,
+      "draft_tasks_in_optimizer": false,
+      "semantic_equivalence_automatically_proven": false
+    },
+    "review_status": "assistant_audited_synthetic",
+    "independently_human_reviewed": false,
+    "evaluation_cases": {
+      "file": "evaluation-cases.json",
+      "rows": 80,
+      "sha256": "c3a16982610f6e9a30b637a6efa6b78e521b8b03f93901188ef2409b91e52153",
+      "optimizer_input": false
+    },
+    "evaluation_validation": {
+      "file": "evaluation-validation.jsonl",
+      "rows": 16,
+      "sha256": "d0ecfd5dbad2489517e981457ca5b2264e81dfeb9e6058c475d494845ddc65ac",
+      "optimizer_input": false
+    }
+  },
+  "preflight_workflow": {
+    "source_commit": "c33b1e4e4b756cca23ae371228d336e6d90dec0a",
+    "started_utc": "2026-10-30T20:58:32.961382+00:00",
+    "workflow_completed": false,
+    "training_completed": false,
+    "gpu_comparison_completed": false,
+    "cloud_postprocessing_pending": true,
+    "release_approved": false,
+    "upload_executed": false,
+    "stages": [
+      {
+        "name": "preflight-legacy_v5",
+        "started_utc": "2026-10-30T20:58:32.961632+00:00",
+        "exit_code": 0,
+        "wall_s": 7.604461504000028
+      },
+      {
+        "name": "preflight-roles_v5",
+        "started_utc": "2026-10-30T20:58:40.566459+00:00",
+        "exit_code": 0,
+        "wall_s": 7.032046535999143
+      },
+      {
+        "name": "evaluation-preflight",
+        "started_utc": "2026-10-30T20:58:47.599197+00:00",
+        "exit_code": 0,
+        "wall_s": 7.190848172999722
+      }
+    ],
+    "check_completed": true
+  },
+  "preflight": {
+    "legacy_v5": {
+      "created_utc": "2026-10-30T20:58:39.707515+00:00",
+      "training_executed": false,
+      "cuda_available": false,
+      "base_model": "tencent/Hy-MT2-1.8B",
+      "base_revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+      "base_path": "/workspace/scratch/pagelingo-cpu-test/optimization/base-config",
+      "config": {
+        "base_model": "tencent/Hy-MT2-1.8B",
+        "base_revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+        "base_weight_file": "model.safetensors",
+        "base_weight_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+        "max_length": 3072,
+        "seed": 42,
+        "epochs": 4,
+        "learning_rate": 1e-05,
+        "batch_size": 1,
+        "gradient_accumulation_steps": 8,
+        "warmup_ratio": 0.05,
+        "weight_decay": 0.01,
+        "lora_r": 16,
+        "lora_alpha": 32,
+        "lora_dropout": 0.05,
+        "target_modules": [
+          "q_proj",
+          "k_proj",
+          "v_proj",
+          "o_proj"
+        ],
+        "probe_max_steps": 12,
+        "candidate_max_steps": 32,
+        "initialization": "resume_verified_adapter",
+        "initial_adapter_directory": "quality-v2b/imported/adapter",
+        "initial_adapter_sha256": "85546101dce5baae57f472b92e8b722f68c4c26550b396187e0b0e5d3e844b02",
+        "initial_adapter_config_sha256": "5af5e26dc0354cff9ebdd9b2d3534fa66542aa751db866dd99db0d23bedc2663",
+        "checkpoint_selection": "final",
+        "purpose": "v5 fixed-only corrective pilot from the pinned old r16; ordinary causal CE, paired legacy-vs-roles prompts, same 64 targets/order and two 32-step final candidates; no automatic winner or upload",
+        "corrective_prompt_variant": "legacy"
+      },
+      "versions": {
+        "torch": "2.10.0+cpu",
+        "transformers": "5.6.0",
+        "peft": "0.18.1"
+      },
+      "local_weight_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+      "config_sha256": "044c97807f4f65c5c6c2868b2cccca3b92b6d4875b07466409101070b0f6029e",
+      "training_argument_check": {
+        "passed": true,
+        "device": "cpu",
+        "bf16": false,
+        "warmup_steps_argument": 0.05,
+        "warmup_steps_for_12_step_probe": 1,
+        "model_weights_loaded": false,
+        "max_optimizer_steps": 32,
+        "warmup_steps_for_this_run": 2
+      },
+      "input_manifest_sha256": "07dc7c030991a8227553232c287e08cb03ac0a04ce286b12dd79e54dfc3021b9",
+      "splits": {
+        "train": {
+          "rows": 64,
+          "max_tokens": 308,
+          "target_tokens": 4412,
+          "prompt_and_padding_masked": true,
+          "eos_supervised": true,
+          "targets_truncated": false,
+          "sha256": "eefe9c0c4dbf81f1ad11ffb597086d499264e893e717fee4a7b27f8a92511422",
+          "task_counts": {
+            "fixed": 64
+          },
+          "target_kind_tokens": {
+            "marker": 3120,
+            "content": 1228,
+            "eos": 64
+          },
+          "weighted_target_mass": {
+            "marker": 3120.0,
+            "content": 1228.0,
+            "eos": 64.0
+          }
+        },
+        "validation": {
+          "rows": 8,
+          "max_tokens": 299,
+          "target_tokens": 546,
+          "prompt_and_padding_masked": true,
+          "eos_supervised": true,
+          "targets_truncated": false,
+          "sha256": "245f0b98da1a4b571733de5b31c7739c245bf72ecf5d4452441aa44c2dfbbf14",
+          "task_counts": {
+            "fixed": 8
+          },
+          "target_kind_tokens": {
+            "marker": 390,
+            "content": 148,
+            "eos": 8
+          },
+          "weighted_target_mass": {
+            "marker": 390.0,
+            "content": 148.0,
+            "eos": 8.0
+          }
+        }
+      },
+      "loss_definition": {
+        "kind": "trainer_default_causal_cross_entropy",
+        "content_weight": 1.0,
+        "marker_weight": 1.0,
+        "eos_weight": 1.0,
+        "prompt_and_padding_masked": true,
+        "validation_loss_is_weighted": false
+      },
+      "review_status": "assistant_audited_synthetic",
+      "run_kind": "synthetic_research_candidate",
+      "initial_adapter": {
+        "directory": "/workspace/scratch/pagelingo-cpu-test/quality-v2b/imported/adapter",
+        "sha256": "85546101dce5baae57f472b92e8b722f68c4c26550b396187e0b0e5d3e844b02",
+        "config_sha256": "5af5e26dc0354cff9ebdd9b2d3534fa66542aa751db866dd99db0d23bedc2663"
+      },
+      "collator_padding_mask_checked": true,
+      "checkpoint_target_check": {
+        "matched_weight_tensors": 128,
+        "lora_weights_from_tensor_shapes": 6815744
+      }
+    },
+    "roles_v5": {
+      "created_utc": "2026-10-30T20:58:46.733163+00:00",
+      "training_executed": false,
+      "cuda_available": false,
+      "base_model": "tencent/Hy-MT2-1.8B",
+      "base_revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+      "base_path": "/workspace/scratch/pagelingo-cpu-test/optimization/base-config",
+      "config": {
+        "base_model": "tencent/Hy-MT2-1.8B",
+        "base_revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+        "base_weight_file": "model.safetensors",
+        "base_weight_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+        "max_length": 3072,
+        "seed": 42,
+        "epochs": 4,
+        "learning_rate": 1e-05,
+        "batch_size": 1,
+        "gradient_accumulation_steps": 8,
+        "warmup_ratio": 0.05,
+        "weight_decay": 0.01,
+        "lora_r": 16,
+        "lora_alpha": 32,
+        "lora_dropout": 0.05,
+        "target_modules": [
+          "q_proj",
+          "k_proj",
+          "v_proj",
+          "o_proj"
+        ],
+        "probe_max_steps": 12,
+        "candidate_max_steps": 32,
+        "initialization": "resume_verified_adapter",
+        "initial_adapter_directory": "quality-v2b/imported/adapter",
+        "initial_adapter_sha256": "85546101dce5baae57f472b92e8b722f68c4c26550b396187e0b0e5d3e844b02",
+        "initial_adapter_config_sha256": "5af5e26dc0354cff9ebdd9b2d3534fa66542aa751db866dd99db0d23bedc2663",
+        "checkpoint_selection": "final",
+        "purpose": "v5 fixed-only corrective pilot from the pinned old r16; ordinary causal CE, paired legacy-vs-roles prompts, same 64 targets/order and two 32-step final candidates; no automatic winner or upload",
+        "corrective_prompt_variant": "roles"
+      },
+      "versions": {
+        "torch": "2.10.0+cpu",
+        "transformers": "5.6.0",
+        "peft": "0.18.1"
+      },
+      "local_weight_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+      "config_sha256": "3c8579cb43ffc8492b1f32726040add52c22387701f54e0f4995ec22dc9044be",
+      "training_argument_check": {
+        "passed": true,
+        "device": "cpu",
+        "bf16": false,
+        "warmup_steps_argument": 0.05,
+        "warmup_steps_for_12_step_probe": 1,
+        "model_weights_loaded": false,
+        "max_optimizer_steps": 32,
+        "warmup_steps_for_this_run": 2
+      },
+      "input_manifest_sha256": "3c15aa8f3303912d1ce792a5f90ee14c950372a7b5652d96430eca8a06a3b3ea",
+      "splits": {
+        "train": {
+          "rows": 64,
+          "max_tokens": 508,
+          "target_tokens": 4412,
+          "prompt_and_padding_masked": true,
+          "eos_supervised": true,
+          "targets_truncated": false,
+          "sha256": "e9c6d293005b7b2961f8911aea9a760ef86ed2ec7b9341eb386940b478cda001",
+          "task_counts": {
+            "fixed": 64
+          },
+          "target_kind_tokens": {
+            "marker": 3120,
+            "content": 1228,
+            "eos": 64
+          },
+          "weighted_target_mass": {
+            "marker": 3120.0,
+            "content": 1228.0,
+            "eos": 64.0
+          }
+        },
+        "validation": {
+          "rows": 8,
+          "max_tokens": 506,
+          "target_tokens": 546,
+          "prompt_and_padding_masked": true,
+          "eos_supervised": true,
+          "targets_truncated": false,
+          "sha256": "e17058073c7fd63d2b8e2fbe15d73d2bccd01c6f5db4e60c404b73c213350ad2",
+          "task_counts": {
+            "fixed": 8
+          },
+          "target_kind_tokens": {
+            "marker": 390,
+            "content": 148,
+            "eos": 8
+          },
+          "weighted_target_mass": {
+            "marker": 390.0,
+            "content": 148.0,
+            "eos": 8.0
+          }
+        }
+      },
+      "loss_definition": {
+        "kind": "trainer_default_causal_cross_entropy",
+        "content_weight": 1.0,
+        "marker_weight": 1.0,
+        "eos_weight": 1.0,
+        "prompt_and_padding_masked": true,
+        "validation_loss_is_weighted": false
+      },
+      "review_status": "assistant_audited_synthetic",
+      "run_kind": "synthetic_research_candidate",
+      "initial_adapter": {
+        "directory": "/workspace/scratch/pagelingo-cpu-test/quality-v2b/imported/adapter",
+        "sha256": "85546101dce5baae57f472b92e8b722f68c4c26550b396187e0b0e5d3e844b02",
+        "config_sha256": "5af5e26dc0354cff9ebdd9b2d3534fa66542aa751db866dd99db0d23bedc2663"
+      },
+      "collator_padding_mask_checked": true,
+      "checkpoint_target_check": {
+        "matched_weight_tensors": 128,
+        "lora_weights_from_tensor_shapes": 6815744
+      }
+    }
+  },
+  "evaluation_plan_counts": {
+    "cases": 96,
+    "jobs_per_arm": 146,
+    "maximum_generations": 584,
+    "validation_task_records": 16,
+    "natural_diagnostics_per_arm": 25,
+    "rewrite_jobs": 0
+  },
+  "checks": {
+    "npm_verify": true,
+    "js_tests_passed": 254,
+    "python_ml_tests_passed": 59,
+    "python_light_tests_run": 59,
+    "python_light_tests_skipped": 11,
+    "historical_v4_generation_records_verified": 524,
+    "historical_v4_rendering_replays_verified": 456
+  },
+  "actual_v5_training_executed": false,
+  "actual_v5_generations": 0,
+  "release_approved": false,
+  "upload_executed": false,
+  "main_package_installed": false,
+  "main_sync_blocker": "Current connected MCP allowedRoots do not include the project; opening local project returned Path is outside allowed roots. No attempt to bypass the boundary."
+}

@@ -11,8 +11,10 @@ if (!values.results || !values.out) throw new Error("Use --results unpacked-evid
 const root = path.resolve(values.results), output = path.resolve(values.out), hash = value => createHash("sha256").update(value).digest("hex");
 const planRaw = await readFile(path.join(root, "evaluation-plan.json")), plan = JSON.parse(planRaw);
 const runs = JSON.parse(await readFile(path.join(root, "comparison/runs.json"), "utf8"));
-assert.equal(plan.protocol, "BF16-semantic-multitask-v4"); assert.equal(runs.plan_sha256, hash(planRaw)); assert.equal(runs.grammar_applied, false);
-assert.ok(runs.finished_utc); assert.deepEqual(Object.keys(runs.files), ["base", "old_r16", "ce_v4", "marker025_v4"]);
+const profiles = {"BF16-semantic-multitask-v4": ["ce_v4", "marker025_v4"], "BF16-corrective-fixed-v5": ["legacy_v5", "roles_v5"]};
+const candidates = profiles[plan.protocol]; assert.ok(candidates, "Unknown paired evaluation profile");
+assert.equal(runs.plan_sha256, hash(planRaw)); assert.equal(runs.grammar_applied, false);
+assert.ok(runs.finished_utc); assert.deepEqual(Object.keys(runs.files), ["base", "old_r16", ...candidates]);
 for (const [name, digest] of Object.entries(plan.source_hashes)) assert.equal(hash(await readFile(path.join(projectRoot, name))), digest, "Frozen source changed: " + name);
 const outfile = path.join(projectRoot, "artifacts/mt-quality/semantic-replay-runtime.mjs"); await mkdir(path.dirname(outfile), {recursive: true});
 const entries = ["eval/mt-quality/protocol.ts", "eval/mt-quality/semantic-rewrite.ts", "eval/mt-quality/semantic-evidence.ts", "src/core/page-translator.ts"];
@@ -29,9 +31,13 @@ for (const [index, job] of plan.jobs.entries()) if (job.mode !== "rewrite") {
   for (const data of Object.values(models)) for (const key of ["actual_request_sha256", "prompt_sha256", "input_ids_sha256", "prompt_tokens", "max_tokens"])
     assert.equal(data.generations[index][key], first[key], "Paired static inputs changed: " + job.key);
 }
-const trainResults = await Promise.all(["ce_v4", "marker025_v4"].map(async label => JSON.parse(await readFile(path.join(root, "training", label + ".json"), "utf8"))));
+const trainResults = await Promise.all(candidates.map(async label => JSON.parse(await readFile(path.join(root, "training", label + ".json"), "utf8"))));
 assert.equal(trainResults[0].initial_trainable_sha256, trainResults[1].initial_trainable_sha256);
 for (const trained of trainResults) {assert.equal(trained.optimizer_steps, 32); assert.equal(trained.selection.best_checkpoint, null); assert.equal(trained.run_kind, "synthetic_research_candidate");}
+if (plan.protocol === "BF16-corrective-fixed-v5") for (const trained of trainResults) {
+  assert.equal(trained.base_weights_frozen, true); assert.deepEqual(trained.initial_adapter.sha256, runs.identities.adapters.old_r16.sha256);
+  assert.equal(trained.loss_definition.kind, "trainer_default_causal_cross_entropy");
+}
 const rows = [], natural = [], referenceCases = {};
 for (const [label, data] of Object.entries(models)) for (const sample of plan.cases) {
   const actual = data.generations.filter(row => row.case_id === sample.id), legacy = actual.filter(row => row.mode === "legacy");
@@ -90,8 +96,10 @@ for (const [label, data] of Object.entries(models)) for (const sample of plan.ca
 }
 const result = {schema_version: 1, scope: "Actual GPU BF16 captures, no grammar; original-node rendering replay, not new inference. Display counts are not semantic accuracy.",
   plan_sha256: hash(planRaw), actual_generations: Object.values(models).reduce((sum, data) => sum + data.generations.filter(row => row.executed).length, 0),
-  validation_loss_by_task: Object.fromEntries(Object.entries(models).map(([label, data]) => [label, data.loss_by_task])), reference_cases: referenceCases, cases: rows, natural};
+  validation_loss_by_task: Object.fromEntries(Object.entries(models).map(([label, data]) => [label, data.loss_by_task])),
+  validation_loss_by_prompt_variant: Object.fromEntries(Object.entries(models).map(([label, data]) => [label, data.loss_by_prompt_variant ?? null])),
+  reference_cases: referenceCases, cases: rows, natural};
 await mkdir(output, {recursive: true}); await writeFile(path.join(output, "replay.json"), JSON.stringify(result, null, 2) + "\n");
 const escape = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-await writeFile(path.join(output, "comparison.html"), '<!doctype html><meta charset="utf-8"><title>PageLingo v4</title><style>body{font:15px system-ui;margin:24px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:8px;vertical-align:top}pre{white-space:pre-wrap}</style><h1>Actual v4 recorded output replay</h1><p>BF16 without grammar; not a semantic accuracy score. Reference review status is explicit.</p><table><tr><th>Case / model / mode</th><th>English / reference</th><th>Displayed or retained</th><th>Reason</th></tr>' + rows.map(row => `<tr><td>${escape(row.id)}<br>${escape(row.model)} / ${escape(row.mode)}</td><td><pre>${escape(referenceCases[row.id].english)}</pre><pre>${escape(referenceCases[row.id].reference)}</pre><small>${escape(referenceCases[row.id].review_status)}</small></td><td><pre>${escape(row.translated_text)}</pre></td><td>${escape(row.reason)}</td></tr>`).join("") + "</table>");
+await writeFile(path.join(output, "comparison.html"), '<!doctype html><meta charset="utf-8"><title>PageLingo MT comparison</title><style>body{font:15px system-ui;margin:24px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:8px;vertical-align:top}pre{white-space:pre-wrap}</style><h1>Actual paired recorded output replay</h1><p>BF16 without grammar; not a semantic accuracy score. Reference review status is explicit.</p><table><tr><th>Case / model / mode</th><th>English / reference</th><th>Displayed or retained</th><th>Reason</th></tr>' + rows.map(row => `<tr><td>${escape(row.id)}<br>${escape(row.model)} / ${escape(row.mode)}</td><td><pre>${escape(referenceCases[row.id].english)}</pre><pre>${escape(referenceCases[row.id].reference)}</pre><small>${escape(referenceCases[row.id].review_status)}</small></td><td><pre>${escape(row.translated_text)}</pre></td><td>${escape(row.reason)}</td></tr>`).join("") + "</table>");
 console.log(JSON.stringify({actual_generations: result.actual_generations, replayed_paragraphs: rows.length, report: output}));

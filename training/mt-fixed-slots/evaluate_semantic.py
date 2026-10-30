@@ -11,11 +11,15 @@ from evaluate_matrix import pinned
 from validation_metrics import aggregate, loss_summary, target_kinds, target_losses
 
 HERE = Path(__file__).resolve().parent
+PLAN_LABELS = {
+    "BF16-semantic-multitask-v4": ["base", "old_r16", "ce_v4", "marker025_v4"],
+    "BF16-corrective-fixed-v5": ["base", "old_r16", "legacy_v5", "roles_v5"],
+}
 
 
 def validate_plan(plan):
-    if plan.get("protocol") != "BF16-semantic-multitask-v4" or plan.get("grammar_applied") is not False:
-        raise ValueError("Expected explicit unconstrained semantic v4 plan")
+    if plan.get("protocol") not in PLAN_LABELS or plan.get("grammar_applied") is not False:
+        raise ValueError("Expected an explicit unconstrained paired plan")
     cases = {row["id"]: row for row in plan["cases"]}
     if len(cases) != len(plan["cases"]) or any(row["split"] not in ["validation", "holdout", "diagnostic"] for row in cases.values()):
         raise ValueError("Only unique non-training evaluation cases allowed")
@@ -25,6 +29,8 @@ def validate_plan(plan):
             raise ValueError("Duplicate job or split/source mismatch")
         if job["mode"] not in ["legacy", "natural", "direct", "rewrite"]:
             raise ValueError("Unknown evaluation task")
+        if plan["protocol"] == "BF16-corrective-fixed-v5" and job["mode"] == "rewrite":
+            raise ValueError("v5 deliberately excludes draft-rewrite inference")
         request = job.get("request") if job["mode"] != "rewrite" else job.get("request_template")
         if not request or request_hash(request) != job["request_sha256"] or not 1 <= request["max_tokens"] <= 768:
             raise ValueError("Evaluation request identity or budget changed")
@@ -96,9 +102,10 @@ def main():
     identities = json.loads(args.models.read_text(encoding="utf-8"))
     base = pinned(root, identities["base"], "model.safetensors")
     folders = {label: pinned(root, record, "adapter_model.safetensors") for label, record in identities["adapters"].items()}
-    expected = {"old_r16"} if args.check_only else {"old_r16", "ce_v4", "marker025_v4"}
+    labels = PLAN_LABELS[plan["protocol"]]
+    expected = {"old_r16"} if args.check_only else set(labels[1:])
     if set(folders) != expected:
-        raise ValueError("Expected the old r16 baseline and both fixed-final v4 candidates")
+        raise ValueError("Expected the pinned baseline and both candidates for this plan profile")
     import torch
     import transformers
     import peft
@@ -132,7 +139,7 @@ def main():
     generation = GenerationConfig(do_sample=False, num_beams=1, use_cache=True, repetition_penalty=1.,
         bos_token_id=tokenizer.bos_token_id, eos_token_id=tokenizer.eos_token_id, pad_token_id=tokenizer.pad_token_id)
     try:
-        for index, label in enumerate(["base", "old_r16", "ce_v4", "marker025_v4"]):
+        for index, label in enumerate(labels):
             if label != "base":
                 if index == 1:
                     model = PeftModel.from_pretrained(model, folders[label], adapter_name=label, is_trainable=False)
@@ -151,10 +158,12 @@ def main():
                     logits = model(input_ids=tokens, attention_mask=torch.ones_like(tokens), use_cache=False).logits
                     losses = target_losses(logits, encoded["input_ids"].shape[1], ids).cpu().tolist()
                 del logits, tokens
-                result["validation_losses"].append({"id": row["id"], "task": row["task"], "guide_is_reference_only": row["task"] == "rewrite",
+                result["validation_losses"].append({"id": row["id"], "task": row["task"], "prompt_variant": row.get("prompt_variant"), "guide_is_reference_only": row["task"] == "rewrite",
                     **hashes, "loss": loss_summary(losses, kinds)})
             result["loss_components"] = aggregate([row["loss"] for row in result["validation_losses"]])
-            result["loss_by_task"] = {task: aggregate([row["loss"] for row in result["validation_losses"] if row["task"] == task]) for task in ["natural", "fixed", "rewrite"]}
+            result["loss_by_task"] = {task: aggregate([row["loss"] for row in result["validation_losses"] if row["task"] == task]) for task in ["natural", "fixed", "rewrite"] if any(row["task"] == task for row in result["validation_losses"])}
+            if plan["protocol"] == "BF16-corrective-fixed-v5":
+                result["loss_by_prompt_variant"] = {variant: aggregate([row["loss"] for row in result["validation_losses"] if row["prompt_variant"] == variant]) for variant in ["legacy", "roles"]}
             prior = {}
             for job in plan["jobs"]:
                 recorded = {"key": job["key"], "case_id": job["case_id"], "mode": job["mode"], "planned_request_sha256": job["request_sha256"],
