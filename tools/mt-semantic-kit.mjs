@@ -5,7 +5,7 @@ import {mkdir, readFile, writeFile} from "node:fs/promises";
 import path from "node:path";
 import {parseArgs} from "node:util";
 import {projectRoot} from "./mt-quality-runtime.mjs";
-const {values} = parseArgs({options: {out: {type: "string", default: "artifacts/mt-semantic-v4-kit"}, "allow-dirty": {type: "boolean", default: false}, "runtime-models": {type: "string"}}});
+const {values} = parseArgs({options: {out: {type: "string", default: "artifacts/mt-semantic-v4-kit"}, "allow-dirty": {type: "boolean", default: false}, "runtime-models": {type: "string"}, "reuse-ce": {type: "string"}}});
 const hash = raw => createHash("sha256").update(raw).digest("hex");
 const git = args => execFileSync("git", args, {cwd: projectRoot, encoding: "utf8"}).trim();
 const sourceCommit = git(["rev-parse", "HEAD"]), dirty = Boolean(git(["status", "--porcelain", "--untracked-files=normal"]));
@@ -42,14 +42,25 @@ await put("research_v2.py", "from semantic_workflow import main\nif __name__ == 
 await put("README.md", await readFile(path.join(projectRoot, "training/mt-fixed-slots/SEMANTIC_V4.md")));
 const workflow = {run_prefix: "pagelingo-quality-v4", base: models.base, old_r16: models.adapters.old_r16,
   candidates: ["ce_v4", "marker025_v4"], maximum_generations: plan.jobs.length * 4, automatic_selection: false, automatic_upload: false};
+if (values["reuse-ce"]) {
+  const record = JSON.parse(await readFile(values["reuse-ce"], "utf8"));
+  for (const directory of [record.directory, record.package.directory]) {
+    assert.ok(typeof directory === "string" && !path.posix.isAbsolute(directory) && !path.win32.isAbsolute(directory) && !directory.includes("\\") && !directory.split("/").includes(".."), "Recovery paths must be project-relative");
+  }
+  assert.match(record.package.source_commit, /^[a-f0-9]{40}$/u); assert.match(record.package.manifest_sha256, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(Object.keys(record.files).sort(), ["training-result.json", "initialization.json", "adapter/adapter_model.safetensors", "adapter/adapter_config.json"].sort());
+  for (const identity of Object.values(record.files)) {assert.match(identity.sha256, /^[a-f0-9]{64}$/u); assert.ok(Number.isSafeInteger(identity.bytes) && identity.bytes > 0);}
+  workflow.run_prefix = "pagelingo-quality-v4-recovery";
+  workflow.reuse_candidates = {ce_v4: record};
+}
 await put("workflow.json", JSON.stringify(workflow, null, 2) + "\n");
 const rawManifest = JSON.stringify(manifest, null, 2) + "\n";
 await writeFile(path.join(folder, "package-manifest.json"), rawManifest);
 const control = path.join(output, "tools/mt-control"); await mkdir(control, {recursive: true});
 await writeFile(path.join(control, "launcher.py"), await readFile(path.join(projectRoot, "training/mt-fixed-slots/windows/launcher.py")));
-await writeFile(path.join(control, "current-task.json"), JSON.stringify({schema_version: 1, description: "v4 paired natural/fixed/rewrite pilot: fresh LoRA, two 32-step loss controls, four-arm BF16 evidence",
+await writeFile(path.join(control, "current-task.json"), JSON.stringify({schema_version: 1, description: values["reuse-ce"] ? "v4 recovery: verify and reuse completed CE control; train marker025 for 32 steps; four-arm BF16 evidence" : "v4 paired natural/fixed/rewrite pilot: fresh LoRA, two 32-step loss controls, four-arm BF16 evidence",
   package: relativePackage, run_prefix: workflow.run_prefix, source_commit: sourceCommit, manifest_sha256: hash(rawManifest)}, null, 2) + "\n");
 await writeFile(path.join(output, "x.cmd"), (await readFile(path.join(projectRoot, "training/mt-fixed-slots/windows/x.cmd"), "utf8")).replace(/\r?\n/gu, "\r\n"));
 console.log(JSON.stringify({output, package: relativePackage, source_commit: sourceCommit, source_dirty: manifest.source_dirty,
-  manifest_sha256: hash(rawManifest), runtime_files: Object.keys(manifest.files).length, steps_each: 32, cases: plan.cases.length,
+  manifest_sha256: hash(rawManifest), runtime_files: Object.keys(manifest.files).length, steps_each: 32, reuse_candidates: Object.keys(workflow.reuse_candidates ?? {}), cases: plan.cases.length,
   maximum_generations: plan.jobs.length * 4, automatic_selection: false}));

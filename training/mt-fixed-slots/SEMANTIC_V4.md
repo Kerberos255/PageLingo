@@ -47,3 +47,11 @@ node tools/mt-semantic-kit.mjs --out /path/to/new-kit
 角色和代码含义来自应用原有的 DOM/opaque 快照，属于可获得的输入，未使用目标译文作运行时提示。若候选通过，还需在本地 MT 请求链路中接入并验证相同只读元数据，不能直接把权重替换到旧提示中宣称完成部署。
 
 GPU 结果解包后，云端运行 `node tools/mt-semantic-matrix-replay.mjs --results <unpacked-evidence> --out <new-report>`。工具核对冻结输入、实际草稿来源、四组静态 token 输入、EOS 与原生产调用，并生成逐例 JSON/HTML 对照。
+
+## 已完成候选的故障恢复
+
+v4 新建 LoRA 的初始化凭据是 `initial_trainable_sha256`，不需要 v3 续训流程的 `initial_adapter_sha256`。工作流分别校验 v4 的训练数据、底座、配置、32 步末尾 checkpoint、冻结底座及训练前张量摘要。
+
+如果第一组已经保存完成，云端可用 `--reuse-ce <pinned-recovery-record.json>` 导出独立恢复任务。恢复记录必须固定原始包、训练结果、初始化记录及适配器文件的字节数/SHA；训练代码、数据与 CE 配置须与原始包相同。恢复时不写入原输出目录，不重复 CE 的优化步骤；只将已校验的训练报告复制到新结果目录，保留适配器原位置，并记录每组结果的来源。第二组仍在优化开始前核对相同初始 LoRA 摘要。
+
+恢复任务使用单独的 `pagelingo-quality-v4-recovery` 标识，继续由原 `x.cmd` 启动。证据包额外包含两组初始化记录、工作流与候选来源；复用不代表质量评测已经通过。
