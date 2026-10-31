@@ -387,6 +387,65 @@
   "actual_v5_generations": 0,
   "release_approved": false,
   "upload_executed": false,
-  "main_package_installed": false,
-  "main_sync_blocker": "Current connected MCP allowedRoots do not include the project; opening local project returned Path is outside allowed roots. No attempt to bypass the boundary."
+  "main_package_installed": true,
+  "main_sync_blocker": null,
+  "installation_verified_20261031": {
+    "date_utc": "2026-10-31",
+    "shared_workspace_opened": true,
+    "shared_root": "\\\\192.168.50.72\\pagelingo-mt",
+    "diagnosis_correction": "The shared path is accessible. A rejection of the connected MCP computer's local E: path did not establish that the remote share was unauthorized.",
+    "installed": {
+      "package": "training-packages/quality-v5-89d74857d6ce",
+      "verified_files": 26,
+      "runtime_files": 25,
+      "source_commit": "89d74857d6ce6d9373f67c1e386d4d3eb480db42",
+      "manifest_sha256": "f2cda015efb7400f3cc7c9f128f51f5b2a1f95d3c14be9fce4f5abde43be5685",
+      "base_weight_bytes": 4077072784,
+      "old_r16": {
+        "bytes": 27297224,
+        "sha256": "85546101dce5baae57f472b92e8b722f68c4c26550b396187e0b0e5d3e844b02",
+        "config_sha256": "5af5e26dc0354cff9ebdd9b2d3534fa66542aa751db866dd99db0d23bedc2663"
+      }
+    },
+    "plan_check": {
+      "result": "exit_code: 0\ntimed_out: false\nstdout:\n{\"source_commit\": \"89d74857d6ce6d9373f67c1e386d4d3eb480db42\", \"candidates\": [\"legacy_v5\", \"roles_v5\"], \"steps_each\": 32, \"maximum_generations\": 584, \"browser_required\": false, \"cpu_conversion_required\": false, \"upload_executed\": false}\r\n",
+      "stdout": "{\"source_commit\": \"89d74857d6ce6d9373f67c1e386d4d3eb480db42\", \"candidates\": [\"legacy_v5\", \"roles_v5\"], \"steps_each\": 32, \"maximum_generations\": 584, \"browser_required\": false, \"cpu_conversion_required\": false, \"upload_executed\": false}\r\n",
+      "stderr": "",
+      "exitCode": 0,
+      "timedOut": false
+    },
+    "status": {
+      "result": "exit_code: 0\ntimed_out: false\nstdout:\nPageLingo-MT: NEW\r\nTask: v5 fixed-only correction: same old r16 and 64 targets, legacy vs roles prompts, two 32-step runs plus four-arm BF16 evidence\r\n",
+      "stdout": "PageLingo-MT: NEW\r\nTask: v5 fixed-only correction: same old r16 and 64 targets, legacy vs roles prompts, two 32-step runs plus four-arm BF16 evidence\r\n",
+      "stderr": "",
+      "exitCode": 0,
+      "timedOut": false
+    },
+    "after": {
+      "task": {
+        "schema_version": 1,
+        "description": "v5 fixed-only correction: same old r16 and 64 targets, legacy vs roles prompts, two 32-step runs plus four-arm BF16 evidence",
+        "package": "training-packages/quality-v5-89d74857d6ce",
+        "run_prefix": "pagelingo-quality-v5",
+        "source_commit": "89d74857d6ce6d9373f67c1e386d4d3eb480db42",
+        "manifest_sha256": "f2cda015efb7400f3cc7c9f128f51f5b2a1f95d3c14be9fce4f5abde43be5685"
+      },
+      "entries": {
+        "PageLingo-MT.cmd": "67eb84b5b579fed74b354ad03655a63b044dfe4c352100bf51ef2330e5f27d5a",
+        "x.cmd": "0d987fd01c5248d1168cf646dd19f7e4a5128dac851f3e234caeea86b5597f8d",
+        "tools/mt-control/launcher.py": "21fbe60167d26247c4e053104a684dce910db8448c9df1bf0f150dd8d0b148c0"
+      },
+      "backup": {
+        "schema_version": 1,
+        "description": "v4 recovery: verify and reuse completed CE control; train marker025 for 32 steps; four-arm BF16 evidence",
+        "package": "training-packages/quality-v4-6211d07df678",
+        "run_prefix": "pagelingo-quality-v4-recovery",
+        "source_commit": "6211d07df678e4ba1bfac709eca620e9a988ba4a",
+        "manifest_sha256": "53a86ad03095046830ddc762c4214b2c269c8968de69aff664f1b4417bcfaec7"
+      },
+      "v5_runs": []
+    },
+    "task_backup": "reports/task-v4-before-v5-89d74857.json",
+    "gpu_training_executed": false
+  }
 }
