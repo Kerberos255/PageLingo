@@ -11,7 +11,7 @@ const sample: QualityCase = {id: "browser-alignment-test", split: "diagnostic", 
 describe("browser replay driver", () => {
   it("checks all browser structure scenarios with the same source driver", async () => {
     const result = await runBrowserStructureRegressions();
-    expect(result.rows).toHaveLength(8); expect(result.rows.every(row => row.passed)).toBe(true);
+    expect(result.rows).toHaveLength(12); expect(result.rows.every(row => row.passed)).toBe(true);
   });
   it("exercises independent phrases through real rendering, click listeners and exact restoration", async () => {
     const row = await replayAlignmentInBrowser(sample, [

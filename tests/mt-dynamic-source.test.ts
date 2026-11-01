@@ -108,4 +108,22 @@ describe("MT dynamic source ownership", () => {
     expect(fake.requests[1]!.html).not.toContain("译文"); expect(translator.translatedCount).toBe(1);
     translator.restore(); expect(anchor.textContent).toBe("Read more");
   });
+  it.each(["translation", "bilingual"])("coalesces nested fallback spans into the selected outer owner: %s", async displayMode => {
+    document.body.innerHTML = '<div><span id="owner"><span>Read</span> more</span><span id="next">Next page</span></div>';
+    const owner = document.querySelector("#owner")!, next = document.querySelector("#next")!, before = document.body.innerHTML;
+    expect(collectTranslationRoots(document.body, {preserveInlineContext: true})).toEqual([owner, next]);
+    const fake = provider(), translator = new PageTranslator(document, fake, {displayMode, concurrency: 2});
+    await translator.translateAll(); expect(fake.requests).toHaveLength(2); expect(translator.translatedCount).toBe(2);
+    expect(fake.requests[0]!.html).toContain("Read"); expect(fake.requests[0]!.html).toContain(" more");
+    translator.restore(); expect(document.body.innerHTML).toBe(before);
+  });
+  it.each(["translation", "bilingual"])("coalesces deeper spans without removing an independent paragraph: %s", async displayMode => {
+    document.body.innerHTML = '<div><span id="owner"><strong><span>Read</span> the</strong> guide</span><p>Independent paragraph.</p></div>';
+    const owner = document.querySelector("#owner")!, paragraph = document.querySelector("p")!, before = document.body.innerHTML;
+    expect(collectTranslationRoots(document.body, {preserveInlineContext: true})).toEqual([owner, paragraph]);
+    const fake = provider(), translator = new PageTranslator(document, fake, {displayMode, concurrency: 2});
+    await translator.translateAll(); expect(fake.requests).toHaveLength(2); expect(translator.translatedCount).toBe(2);
+    expect(fake.requests[0]!.html).toContain("Read"); expect(fake.requests[0]!.html).toContain(" guide");
+    translator.restore(); expect(document.body.innerHTML).toBe(before);
+  });
 });

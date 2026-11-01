@@ -1,0 +1,68 @@
+{
+  "rows": [
+    {
+      "calls": 1,
+      "id": "observed-language-eligibility",
+      "passed": true
+    },
+    {
+      "calls": 2,
+      "id": "move-text-to-new-root",
+      "passed": true
+    },
+    {
+      "calls": 2,
+      "id": "move-subtree-to-new-root",
+      "passed": true
+    },
+    {
+      "calls": 1,
+      "id": "moved-website-edit-wins",
+      "passed": true
+    },
+    {
+      "calls": 1,
+      "id": "standalone-link-translation",
+      "passed": true
+    },
+    {
+      "calls": 1,
+      "id": "standalone-link-bilingual",
+      "passed": true
+    },
+    {
+      "calls": 2,
+      "id": "fallback-span-simple-translation",
+      "passed": true
+    },
+    {
+      "calls": 2,
+      "id": "fallback-span-simple-bilingual",
+      "passed": true
+    },
+    {
+      "calls": 2,
+      "id": "fallback-span-deep-translation",
+      "passed": true
+    },
+    {
+      "calls": 2,
+      "id": "fallback-span-deep-bilingual",
+      "passed": true
+    },
+    {
+      "calls": 2,
+      "id": "long-slot-plain",
+      "passed": true
+    },
+    {
+      "calls": 2,
+      "id": "long-slot-nested-link-code",
+      "passed": true
+    }
+  ],
+  "scope": "Deterministic production rendering and sentence-assembly regression checks. Model completion is stubbed; no new translation-quality or wllama inference measurement.",
+  "browser_version": "158.0.1",
+  "timestamp_utc": "2026-11-01T16:46:29.859039+00:00",
+  "runtime_sha256": "c666dc0071f15eabf7fd081c209e5391e14d5197defee18c0f8cdc75b0530397"
+}

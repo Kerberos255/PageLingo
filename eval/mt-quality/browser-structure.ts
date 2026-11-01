@@ -54,6 +54,20 @@ export async function runBrowserStructureRegressions() {
     } finally {translator.restore();}
     check(document.body.innerHTML === before, "Standalone link restore mismatch");
   }
+  for (const deep of [false, true]) for (const displayMode of ["translation", "bilingual"]) {
+    fixture(`<div><span id="owner">${deep ? '<strong><span>Read</span> the</strong> guide' : '<span>Read</span> more'}</span><p>Independent paragraph.</p></div>`);
+    const before = document.body.innerHTML, owner = document.querySelector("#owner")!;
+    const original = [owner, ...owner.querySelectorAll("*")].map(node => ({node, children: [...node.childNodes], attrs: JSON.stringify([...node.attributes].map(a => [a.name, a.value]))}));
+    const fake = provider(), translator = new PageTranslator(document, fake, {displayMode, concurrency: 2});
+    try {
+      await translator.translateAll(); check(fake.requests.length === 2 && translator.translatedCount === 2, "Overlapping nested fallback span roots");
+      check(fake.requests[0]!.html.includes("Read") && fake.requests[0]!.html.includes(deep ? " guide" : " more"), "Outer span lost part of its source");
+      check(original.every(item => item.node.isConnected && item.attrs === JSON.stringify([...item.node.attributes].map(a => [a.name, a.value]))
+        && item.children.length === item.node.childNodes.length && item.children.every((child, index) => child === item.node.childNodes[index])), "Nested span original DOM changed");
+      rows.push({id: `fallback-span-${deep ? "deep" : "simple"}-${displayMode}`, passed: true, calls: fake.requests.length});
+    } finally {translator.restore();}
+    check(document.body.innerHTML === before, "Nested span exact restore mismatch");
+  }
   const sentences = Array.from({length: 24}, (_, index) => `Sentence ${index} describes translating a long paragraph while keeping the original text node and inline formatting intact. `).join("");
   for (const nested of [false, true]) {
     fixture(`<p>${nested ? `<a id="guide" href="/guide"><em>${sentences}</em></a><code>keep()</code>` : sentences}</p>`);

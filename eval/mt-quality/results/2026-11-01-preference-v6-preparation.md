@@ -25,7 +25,7 @@
 ## 已实际完成的验证
 
 - 两个目标各 128 条，合计 **256 次参考输出的生产 Node/DOM 回放**：正负译文全部能显示，原节点、属性、代码及精确恢复检查通过。它验证“错义负例也会通过结构检查”，不是模型生成或 Firefox 推理。
-- `npm run verify` 通过，包含 **258 项 JavaScript 测试**、TypeScript、全部数据导出、构建和 addon lint。生产依赖审计 0 漏洞；addon lint 有 1 条既有 innerHTML 静态扫描警告，0 errors。
+- `npm run verify` 通过，包含初始 **258 项 JavaScript 测试**、TypeScript、全部数据导出、构建和 addon lint。随后追加的[嵌套 span 结构修复](2026-11-01-nested-fallback.md)带来 4 项回归用例，最终共 262 项。生产依赖审计 0 漏洞；addon lint 有 1 条既有 innerHTML 静态扫描警告，0 errors。
 - 完整 ML 环境 **67 项 Python 测试全部通过**；轻量环境同一组测试通过，15 项可选 ML 测试跳过。
 - 用随机初始化的极小 Llama+LoRA 实际执行自定义 Trainer 的 2 个 optimizer steps、梯度累计 2，确认仅 LoRA 更新、底座不变、损失有限；另外核对 causal shift、prompt/padding 梯度屏蔽、偏好项方向、对照及回放不惩罚负目标、固定参考与数据/分词/初始张量摘要校验。这不是 Hy-MT 质量或性能测量。
 - 实际 Hy-MT 原 tokenizer 的两组 check 流程通过：训练 192 条（96 对比 + 96 回放），最多 **696 token**；验证 32 条，最多 **444 token**。两个目标合计 token 数分别为训练 **19,544**、验证 **3,620**，含回放重复的第二路前向。prompt/padding 屏蔽、EOS 监督、无截断。check 只读取权重文件核对 SHA，不加载 Hy-MT 权重或执行优化。

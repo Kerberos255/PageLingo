@@ -375,6 +375,15 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false }
       }
       if (root) roots.add(root);
     }
+    // A fallback span may own both direct text and a nested fallback span.
+    // Keep the selected outer owner so concurrent translations cannot invalidate
+    // each other's source. Structural roots retain their independent ownership.
+    for (const root of roots) {
+      if (isTranslationRootElement(root)) continue;
+      for (let ancestor = root.parentElement; ancestor; ancestor = ancestor.parentElement) {
+        if (roots.has(ancestor)) {roots.delete(root); break;}
+      }
+    }
     return Array.from(roots);
   }
   wrapDirectAnchorTextNodes(scope);
