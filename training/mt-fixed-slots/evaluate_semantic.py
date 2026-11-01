@@ -14,6 +14,7 @@ HERE = Path(__file__).resolve().parent
 PLAN_LABELS = {
     "BF16-semantic-multitask-v4": ["base", "old_r16", "ce_v4", "marker025_v4"],
     "BF16-corrective-fixed-v5": ["base", "old_r16", "legacy_v5", "roles_v5"],
+    "BF16-semantic-preference-v6": ["base", "old_r16", "sft_v6", "dpo_v6"],
 }
 
 
@@ -29,8 +30,8 @@ def validate_plan(plan):
             raise ValueError("Duplicate job or split/source mismatch")
         if job["mode"] not in ["legacy", "natural", "direct", "rewrite"]:
             raise ValueError("Unknown evaluation task")
-        if plan["protocol"] == "BF16-corrective-fixed-v5" and job["mode"] == "rewrite":
-            raise ValueError("v5 deliberately excludes draft-rewrite inference")
+        if plan["protocol"] in ["BF16-corrective-fixed-v5", "BF16-semantic-preference-v6"] and job["mode"] == "rewrite":
+            raise ValueError("This fixed-only profile deliberately excludes draft-rewrite inference")
         request = job.get("request") if job["mode"] != "rewrite" else job.get("request_template")
         if not request or request_hash(request) != job["request_sha256"] or not 1 <= request["max_tokens"] <= 768:
             raise ValueError("Evaluation request identity or budget changed")
@@ -162,8 +163,9 @@ def main():
                     **hashes, "loss": loss_summary(losses, kinds)})
             result["loss_components"] = aggregate([row["loss"] for row in result["validation_losses"]])
             result["loss_by_task"] = {task: aggregate([row["loss"] for row in result["validation_losses"] if row["task"] == task]) for task in ["natural", "fixed", "rewrite"] if any(row["task"] == task for row in result["validation_losses"])}
-            if plan["protocol"] == "BF16-corrective-fixed-v5":
-                result["loss_by_prompt_variant"] = {variant: aggregate([row["loss"] for row in result["validation_losses"] if row["prompt_variant"] == variant]) for variant in ["legacy", "roles"]}
+            if plan["protocol"] in ["BF16-corrective-fixed-v5", "BF16-semantic-preference-v6"]:
+                result["loss_by_prompt_variant"] = {variant: aggregate([row["loss"] for row in result["validation_losses"] if row["prompt_variant"] == variant])
+                    for variant in ["legacy", "roles"] if any(row["prompt_variant"] == variant for row in result["validation_losses"])}
             prior = {}
             for job in plan["jobs"]:
                 recorded = {"key": job["key"], "case_id": job["case_id"], "mode": job["mode"], "planned_request_sha256": job["request_sha256"],

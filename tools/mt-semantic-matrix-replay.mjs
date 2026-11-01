@@ -11,7 +11,8 @@ if (!values.results || !values.out) throw new Error("Use --results unpacked-evid
 const root = path.resolve(values.results), output = path.resolve(values.out), hash = value => createHash("sha256").update(value).digest("hex");
 const planRaw = await readFile(path.join(root, "evaluation-plan.json")), plan = JSON.parse(planRaw);
 const runs = JSON.parse(await readFile(path.join(root, "comparison/runs.json"), "utf8"));
-const profiles = {"BF16-semantic-multitask-v4": ["ce_v4", "marker025_v4"], "BF16-corrective-fixed-v5": ["legacy_v5", "roles_v5"]};
+const profiles = {"BF16-semantic-multitask-v4": ["ce_v4", "marker025_v4"], "BF16-corrective-fixed-v5": ["legacy_v5", "roles_v5"],
+  "BF16-semantic-preference-v6": ["sft_v6", "dpo_v6"]};
 const candidates = profiles[plan.protocol]; assert.ok(candidates, "Unknown paired evaluation profile");
 assert.equal(runs.plan_sha256, hash(planRaw)); assert.equal(runs.grammar_applied, false);
 assert.ok(runs.finished_utc); assert.deepEqual(Object.keys(runs.files), ["base", "old_r16", ...candidates]);
@@ -33,10 +34,20 @@ for (const [index, job] of plan.jobs.entries()) if (job.mode !== "rewrite") {
 }
 const trainResults = await Promise.all(candidates.map(async label => JSON.parse(await readFile(path.join(root, "training", label + ".json"), "utf8"))));
 assert.equal(trainResults[0].initial_trainable_sha256, trainResults[1].initial_trainable_sha256);
-for (const trained of trainResults) {assert.equal(trained.optimizer_steps, 32); assert.equal(trained.selection.best_checkpoint, null); assert.equal(trained.run_kind, "synthetic_research_candidate");}
+for (const trained of trainResults) {assert.equal(trained.optimizer_steps, plan.protocol === "BF16-semantic-preference-v6" ? 48 : 32); assert.equal(trained.selection.best_checkpoint, null); assert.equal(trained.run_kind, "synthetic_research_candidate");}
 if (plan.protocol === "BF16-corrective-fixed-v5") for (const trained of trainResults) {
   assert.equal(trained.base_weights_frozen, true); assert.deepEqual(trained.initial_adapter.sha256, runs.identities.adapters.old_r16.sha256);
   assert.equal(trained.loss_definition.kind, "trainer_default_causal_cross_entropy");
+}
+if (plan.protocol === "BF16-semantic-preference-v6") {
+  assert.equal(trainResults[0].reference_cache_sha256, trainResults[1].reference_cache_sha256);
+  assert.equal(trainResults[0].input_manifest_sha256, trainResults[1].input_manifest_sha256);
+  for (const [index, trained] of trainResults.entries()) {
+    assert.equal(trained.base_weights_frozen, true); assert.equal(trained.dropout_disabled, true);
+    assert.equal(trained.initial_adapter.sha256, runs.identities.adapters.old_r16.sha256);
+    assert.equal(trained.loss_definition.kind, "chosen_ce_plus_reference_relative_dpo");
+    assert.equal(trained.loss_definition.preference_weight, index ? 0.25 : 0);
+  }
 }
 const rows = [], natural = [], referenceCases = {};
 for (const [label, data] of Object.entries(models)) for (const sample of plan.cases) {

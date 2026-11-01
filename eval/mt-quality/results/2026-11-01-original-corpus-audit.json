@@ -1,0 +1,511 @@
+{
+  "schema_version": 1,
+  "audited_utc": "2026-11-01",
+  "source": "Read-only Node audit through the authorized main-PC share; no original dataset content published.",
+  "datasets": [
+    {
+      "file": "data\\train\\hymt-v0.2.1-repair.jsonl",
+      "counts": {
+        "rows": 320,
+        "source_outside_words": 320,
+        "target_outside_words": 320,
+        "source_protected_in_pair": 210,
+        "target_protected_in_pair": 210,
+        "source_target_same_marker_skeleton": 250
+      },
+      "unique_wire_sources": 320,
+      "families": 38,
+      "case_types": {
+        "v021_nested_replay": 32,
+        "v021_slot_boundary_replay": 16,
+        "v021_v02_replay": 80,
+        "v021_sibling_reorder_repair": 120,
+        "v021_marker6_slot_replay": 48,
+        "v021_long_marker_replay": 24
+      },
+      "overlap_with_any_train_source": null
+    },
+    {
+      "file": "data\\train\\hymt-v0.2.2-micro-repair.jsonl",
+      "counts": {
+        "rows": 80,
+        "source_outside_words": 80,
+        "target_outside_words": 80,
+        "source_protected_in_pair": 24,
+        "target_protected_in_pair": 24,
+        "source_target_same_marker_skeleton": 40
+      },
+      "unique_wire_sources": 80,
+      "families": 18,
+      "case_types": {
+        "v022_marker6_natural_replay": 24,
+        "v022_sibling_micro_repair": 16,
+        "v022_v02_replay": 24,
+        "v022_nested_replay": 8,
+        "v022_slot_replay": 8
+      },
+      "overlap_with_any_train_source": null
+    },
+    {
+      "file": "data\\train\\hymt-v0.2.jsonl",
+      "counts": {
+        "rows": 1200,
+        "source_outside_words": 1200,
+        "target_outside_words": 1200,
+        "source_protected_in_pair": 569,
+        "target_protected_in_pair": 569,
+        "source_target_same_marker_skeleton": 1071
+      },
+      "unique_wire_sources": 1200,
+      "families": 37,
+      "case_types": {
+        "v02_slot_exact_many": 180,
+        "v02_marker_list_tail_closing": 300,
+        "v02_marker_boundary": 150,
+        "v02_replay": 300,
+        "v02_nested_reorder": 150,
+        "v02_long_marker_menu": 120
+      },
+      "overlap_with_any_train_source": null
+    },
+    {
+      "file": "data\\train\\hymt-v0.3-product-envelope.jsonl",
+      "counts": {
+        "rows": 192,
+        "source_outside_words": 192,
+        "target_outside_words": 192,
+        "source_protected_in_pair": 24,
+        "target_protected_in_pair": 24,
+        "source_target_same_marker_skeleton": 115
+      },
+      "unique_wire_sources": 192,
+      "families": 31,
+      "case_types": {
+        "v03_flat_4to6": 36,
+        "v03_slot_4to6": 24,
+        "v03_sibling_reorder": 16,
+        "v03_reorder_4to6": 36,
+        "v03_nested_4to6": 32,
+        "v03_product_replay": 24,
+        "v03_game_ui_4to6": 24
+      },
+      "overlap_with_any_train_source": null
+    },
+    {
+      "file": "data\\train\\smoke-v1.1.jsonl",
+      "counts": {
+        "rows": 480,
+        "source_outside_words": 480,
+        "target_outside_words": 480,
+        "source_protected_in_pair": 20,
+        "target_protected_in_pair": 20,
+        "source_target_same_marker_skeleton": 460
+      },
+      "unique_wire_sources": 480,
+      "families": 12,
+      "case_types": {
+        "plain": 101,
+        "single_inline": 101,
+        "single_inline_reorder": 102,
+        "protected_product_in_marker": 10,
+        "protected_product": 96,
+        "protected_command": 10,
+        "protected_url": 10,
+        "protected_path": 10,
+        "protected_version": 10,
+        "protected_shortcut": 10,
+        "two_protected": 10,
+        "nested_with_protected": 10
+      },
+      "overlap_with_any_train_source": null
+    },
+    {
+      "file": "data\\train\\smoke-v1.2.1.jsonl",
+      "counts": {
+        "rows": 400,
+        "source_outside_words": 400,
+        "target_outside_words": 400,
+        "source_protected_in_pair": 243,
+        "target_protected_in_pair": 243,
+        "source_target_same_marker_skeleton": 163
+      },
+      "unique_wire_sources": 400,
+      "families": 14,
+      "case_types": {
+        "v121_troubleshooting_sibling": 127,
+        "v12_hard_sibling_reorder": 81,
+        "v121_troubleshooting_nested": 33,
+        "v12_hard_dual_protected": 38,
+        "plain": 18,
+        "v12_hard_product_command": 41,
+        "single_inline_reorder": 25,
+        "single_inline": 14,
+        "protected_path": 3,
+        "protected_product": 12,
+        "protected_url": 2,
+        "protected_shortcut": 3,
+        "nested_with_protected": 2,
+        "two_protected": 1
+      },
+      "overlap_with_any_train_source": null
+    },
+    {
+      "file": "data\\train\\smoke-v1.2.jsonl",
+      "counts": {
+        "rows": 720,
+        "source_outside_words": 720,
+        "target_outside_words": 720,
+        "source_protected_in_pair": 249,
+        "target_protected_in_pair": 249,
+        "source_target_same_marker_skeleton": 393
+      },
+      "unique_wire_sources": 720,
+      "families": 15,
+      "case_types": {
+        "v12_hard_sibling_reorder": 240,
+        "protected_product": 47,
+        "protected_product_in_marker": 6,
+        "v12_hard_dual_protected": 120,
+        "v12_hard_product_command": 120,
+        "single_inline_reorder": 54,
+        "single_inline": 45,
+        "plain": 61,
+        "protected_shortcut": 4,
+        "protected_path": 6,
+        "protected_url": 5,
+        "protected_command": 5,
+        "two_protected": 2,
+        "protected_version": 2,
+        "nested_with_protected": 3
+      },
+      "overlap_with_any_train_source": null
+    },
+    {
+      "file": "data\\train\\smoke-v1.jsonl",
+      "counts": {
+        "rows": 800,
+        "source_outside_words": 800,
+        "target_outside_words": 800,
+        "source_protected_in_pair": 0,
+        "target_protected_in_pair": 0,
+        "source_target_same_marker_skeleton": 711
+      },
+      "unique_wire_sources": 800,
+      "families": 9,
+      "case_types": {
+        "plain": 89,
+        "single": 89,
+        "single_reorder": 89,
+        "multi": 89,
+        "sibling_reorder": 89,
+        "nested": 89,
+        "protected_command": 89,
+        "protected_url": 89,
+        "protected_version": 88
+      },
+      "overlap_with_any_train_source": null
+    },
+    {
+      "file": "data\\validation\\hymt-v0.2.1-repair.jsonl",
+      "counts": {
+        "rows": 80,
+        "source_outside_words": 80,
+        "target_outside_words": 80,
+        "source_protected_in_pair": 55,
+        "target_protected_in_pair": 55,
+        "source_target_same_marker_skeleton": 62
+      },
+      "unique_wire_sources": 80,
+      "families": 24,
+      "case_types": {
+        "v021_v02_replay": 20,
+        "v021_sibling_reorder_repair": 30,
+        "v021_long_marker_replay": 6,
+        "v021_marker6_slot_replay": 12,
+        "v021_nested_replay": 8,
+        "v021_slot_boundary_replay": 4
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\validation\\hymt-v0.2.2-micro-repair.jsonl",
+      "counts": {
+        "rows": 40,
+        "source_outside_words": 40,
+        "target_outside_words": 40,
+        "source_protected_in_pair": 12,
+        "target_protected_in_pair": 12,
+        "source_target_same_marker_skeleton": 20
+      },
+      "unique_wire_sources": 40,
+      "families": 16,
+      "case_types": {
+        "v022_sibling_micro_repair": 8,
+        "v022_nested_replay": 4,
+        "v022_slot_replay": 4,
+        "v022_v02_replay": 12,
+        "v022_marker6_natural_replay": 12
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\validation\\hymt-v0.2.jsonl",
+      "counts": {
+        "rows": 200,
+        "source_outside_words": 200,
+        "target_outside_words": 200,
+        "source_protected_in_pair": 112,
+        "target_protected_in_pair": 112,
+        "source_target_same_marker_skeleton": 162
+      },
+      "unique_wire_sources": 200,
+      "families": 27,
+      "case_types": {
+        "v02_replay": 50,
+        "v02_slot_exact_many": 30,
+        "v02_marker_boundary": 25,
+        "v02_long_marker_menu": 20,
+        "v02_marker_list_tail_closing": 50,
+        "v02_nested_reorder": 25
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\validation\\hymt-v0.3-product-envelope.jsonl",
+      "counts": {
+        "rows": 64,
+        "source_outside_words": 64,
+        "target_outside_words": 64,
+        "source_protected_in_pair": 10,
+        "target_protected_in_pair": 10,
+        "source_target_same_marker_skeleton": 39
+      },
+      "unique_wire_sources": 64,
+      "families": 21,
+      "case_types": {
+        "v03_flat_4to6": 12,
+        "v03_reorder_4to6": 12,
+        "v03_slot_4to6": 8,
+        "v03_game_ui_4to6": 8,
+        "v03_nested_4to6": 10,
+        "v03_sibling_reorder": 6,
+        "v03_product_replay": 8
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\validation\\smoke-v1.1.jsonl",
+      "counts": {
+        "rows": 60,
+        "source_outside_words": 60,
+        "target_outside_words": 60,
+        "source_protected_in_pair": 0,
+        "target_protected_in_pair": 0,
+        "source_target_same_marker_skeleton": 60
+      },
+      "unique_wire_sources": 60,
+      "families": 4,
+      "case_types": {
+        "single_inline_reorder": 13,
+        "single_inline": 13,
+        "protected_product": 19,
+        "plain": 15
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\validation\\smoke-v1.2.1.jsonl",
+      "counts": {
+        "rows": 80,
+        "source_outside_words": 80,
+        "target_outside_words": 80,
+        "source_protected_in_pair": 80,
+        "target_protected_in_pair": 80,
+        "source_target_same_marker_skeleton": 18
+      },
+      "unique_wire_sources": 80,
+      "families": 2,
+      "case_types": {
+        "v121_troubleshooting_nested": 18,
+        "v121_troubleshooting_sibling": 62
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\validation\\smoke-v1.2.jsonl",
+      "counts": {
+        "rows": 120,
+        "source_outside_words": 120,
+        "target_outside_words": 120,
+        "source_protected_in_pair": 60,
+        "target_protected_in_pair": 60,
+        "source_target_same_marker_skeleton": 39
+      },
+      "unique_wire_sources": 120,
+      "families": 3,
+      "case_types": {
+        "v12_hard_sibling_reorder": 60,
+        "v12_hard_dual_protected": 30,
+        "v12_hard_product_command": 30
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\validation\\smoke-v1.jsonl",
+      "counts": {
+        "rows": 120,
+        "source_outside_words": 120,
+        "target_outside_words": 120,
+        "source_protected_in_pair": 0,
+        "target_protected_in_pair": 0,
+        "source_target_same_marker_skeleton": 107
+      },
+      "unique_wire_sources": 120,
+      "families": 9,
+      "case_types": {
+        "plain": 14,
+        "single": 14,
+        "single_reorder": 14,
+        "multi": 13,
+        "sibling_reorder": 13,
+        "nested": 13,
+        "protected_command": 13,
+        "protected_url": 13,
+        "protected_version": 13
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\holdout\\final-v1.2.jsonl",
+      "counts": {
+        "rows": 300,
+        "source_outside_words": 300,
+        "target_outside_words": 300,
+        "source_protected_in_pair": 150,
+        "target_protected_in_pair": 150,
+        "source_target_same_marker_skeleton": 186
+      },
+      "unique_wire_sources": 300,
+      "families": 4,
+      "case_types": {
+        "final_nested_version": 75,
+        "final_verify_before_config": 75,
+        "final_product_command": 75,
+        "final_download_save": 75
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\holdout\\model-race-v1.3.jsonl",
+      "counts": {
+        "rows": 256,
+        "source_outside_words": 256,
+        "target_outside_words": 256,
+        "source_protected_in_pair": 128,
+        "target_protected_in_pair": 128,
+        "source_target_same_marker_skeleton": 103
+      },
+      "unique_wire_sources": 256,
+      "families": 4,
+      "case_types": {
+        "race13_sibling_reorder": 64,
+        "race13_nested_multi_slot": 64,
+        "race13_ui_slot": 64,
+        "race13_url_command": 64
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\holdout\\smoke-v1.1.jsonl",
+      "counts": {
+        "rows": 240,
+        "source_outside_words": 240,
+        "target_outside_words": 240,
+        "source_protected_in_pair": 200,
+        "target_protected_in_pair": 200,
+        "source_target_same_marker_skeleton": 60
+      },
+      "unique_wire_sources": 240,
+      "families": 5,
+      "case_types": {
+        "holdout_condition": 20,
+        "holdout_command": 20,
+        "holdout_url_path": 20,
+        "holdout_sibling_reorder": 160,
+        "holdout_nested": 20
+      },
+      "overlap_with_any_train_source": 26
+    },
+    {
+      "file": "data\\holdout\\smoke-v1.jsonl",
+      "counts": {
+        "rows": 240,
+        "source_outside_words": 240,
+        "target_outside_words": 240,
+        "source_protected_in_pair": 0,
+        "target_protected_in_pair": 0,
+        "source_target_same_marker_skeleton": 240
+      },
+      "unique_wire_sources": 240,
+      "families": 5,
+      "case_types": {
+        "hold_condition": 48,
+        "hold_multi": 48,
+        "hold_boundary": 48,
+        "hold_command": 48,
+        "hold_nested": 48
+      },
+      "overlap_with_any_train_source": 0
+    },
+    {
+      "file": "data\\realweb\\openclaw-real-v1.jsonl",
+      "counts": {
+        "rows": 30,
+        "source_outside_words": 30,
+        "target_outside_words": 30,
+        "source_protected_in_pair": 23,
+        "target_protected_in_pair": 23,
+        "source_target_same_marker_skeleton": 30
+      },
+      "unique_wire_sources": 30,
+      "families": 6,
+      "case_types": {
+        "real_web": 30
+      },
+      "overlap_with_any_train_source": 0
+    }
+  ],
+  "old_fixed_r16_training": {
+    "initialization": "fresh_base",
+    "base_model": "tencent/Hy-MT2-1.8B",
+    "splits": {
+      "train": {
+        "rows": 480,
+        "max_tokens": 697,
+        "target_tokens": 31051,
+        "prompt_and_padding_masked": true,
+        "eos_supervised": true,
+        "targets_truncated": false,
+        "sha256": "883f8496501c31d74ae7336defdc16ab53416321c7aa5ab740d3d2d11cb9f725"
+      },
+      "validation": {
+        "rows": 64,
+        "max_tokens": 445,
+        "target_tokens": 4343,
+        "prompt_and_padding_masked": true,
+        "eos_supervised": true,
+        "targets_truncated": false,
+        "sha256": "149401c637f721a54caaf6a5609cdaac1c237ba66e466ed2a997d9440549fc6d"
+      }
+    },
+    "input_manifest_sha256": "67d8a27ef9af810d41af39526dfa7133f76cf86ac593f827def84991768772ff"
+  },
+  "findings": {
+    "old_inline_rows_not_compatible_with_current_fixed_text_protocol": true,
+    "original_holdout_smoke_v11_sources_overlapping_any_train": 26,
+    "independent_human_review_of_new_references": false,
+    "original_reserved_data_used_in_training": false,
+    "new_model_training_executed": false,
+    "model_release_approved": false
+  }
+}
