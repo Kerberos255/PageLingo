@@ -1,0 +1,4008 @@
+{
+  "schema_version": 1,
+  "source_model": "Pinned old r16 Q5 mining, then original base plus the same old r16 BF16 likelihood on cloud CPU",
+  "training_executed": false,
+  "model_release_approved": false,
+  "new_gpu_task_installed": false,
+  "independently_human_reviewed": false,
+  "mining": {
+    "protocol": "fixed-training-error-mining-v1",
+    "plan_sha256": "51200e700f375edf3deb006bc88115ab207b76110e3f5e4efd8a2caef1a0c590",
+    "model": {
+      "path": "/workspace/scratch/pagelingo-cpu-test/quality-v2b/exports/candidate-v2b-Q5_K_M.gguf",
+      "sha256": "748c66dee23ec95583d0c84bd49bd3e516b0d2c1d242fbf4e152ff710e0f62bb",
+      "bytes": 1298755552
+    },
+    "started_utc": "2026-11-04T18:58:44.198722+00:00",
+    "command": [
+      "/workspace/scratch/pagelingo-cpu-test/tools/llama-b11785/llama-server",
+      "-m",
+      "/workspace/scratch/pagelingo-cpu-test/quality-v2b/exports/candidate-v2b-Q5_K_M.gguf",
+      "-t",
+      "2",
+      "-tb",
+      "2",
+      "-c",
+      "3072",
+      "-ngl",
+      "0",
+      "-np",
+      "1",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "37463",
+      "--no-webui",
+      "--no-warmup"
+    ],
+    "server_sha256": "0a610f6180e5fc33c67cd7322fa0289a115f17027b6479357fda9f94aa79ca4c",
+    "generations": [
+      {
+        "case_id": "v6-train-temporal-snapshot-before-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧先⟦/0⟧⟦1⟧加密快照⟦/1⟧⟦2⟧再将其发送给镜像。⟦/2⟧",
+        "request_sha256": "df18a5048a87be08a2c1b92d3ced5019c99197a7b9f2c32f2afb05d9fc3daf5c",
+        "actual_prompt_sha256": "1151a7c07e427b1f107424a23bbb83ee26dbcc1de779a2c0af13240c2acf5db1",
+        "input_tokens": 177,
+        "input_token_ids_sha256": "5ddb7a0339180e07507a17624080fc024c8f928dc1ff513ee2a4f89065913b61",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.0614182330000403,
+        "wall_s": 5.155880417999924,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 177,
+          "prompt_ms": 1960.346,
+          "prompt_per_token_ms": 11.075401129943502,
+          "prompt_per_second": 90.29018346761235,
+          "predicted_n": 42,
+          "predicted_ms": 3193.022,
+          "predicted_per_token_ms": 77.87858536585365,
+          "predicted_per_second": 12.840500316001581
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-snapshot-before-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧对快照进行加密，⟦/1⟧⟦2⟧再⟦/2⟧⟦3⟧将其发送给镜像。⟦/3⟧",
+        "request_sha256": "e825d6483c67aef57588a5ed00b55730f08889d174572994a884d1b3381eaa59",
+        "actual_prompt_sha256": "18194948d16e0fb67979136cfb96260b95ac045dffb3023b78afff0907edce32",
+        "input_tokens": 196,
+        "input_token_ids_sha256": "c8e4bf375fc1ef3b8ccda68812259b9e889957f8d7e066747383c25184d6d64e",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.03511248399991,
+        "wall_s": 6.669776899999988,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 196,
+          "prompt_ms": 1940.384,
+          "prompt_per_token_ms": 9.899918367346938,
+          "prompt_per_second": 101.01093391823474,
+          "predicted_n": 62,
+          "predicted_ms": 4726.965,
+          "predicted_per_token_ms": 77.49122950819672,
+          "predicted_per_second": 12.904686199284319
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-snapshot-after-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧先⟦/0⟧⟦1⟧加密快照，⟦/1⟧⟦2⟧再将其发送给镜像。⟦/2⟧",
+        "request_sha256": "110206958fb65c9ebac611e164683bb3a36c120a0274b786896aa31ad1cfcdb9",
+        "actual_prompt_sha256": "64eb3d220a4824d83366c2cf2742657c4d88c952fe8dd7fc095b6c27220f6a8f",
+        "input_tokens": 177,
+        "input_token_ids_sha256": "2af59c923fb92df996ad88588103c0162c9c1eea4e3e776944436970c99b36c9",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.844143823999957,
+        "wall_s": 4.681110046999947,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 177,
+          "prompt_ms": 1779.495,
+          "prompt_per_token_ms": 10.05364406779661,
+          "prompt_per_second": 99.46642165333422,
+          "predicted_n": 43,
+          "predicted_ms": 2898.699,
+          "predicted_per_token_ms": 69.01664285714286,
+          "predicted_per_second": 14.489258801965985
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-snapshot-after-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧对快照进行加密，⟦/1⟧⟦2⟧随后⟦/2⟧⟦3⟧将其发送给镜像。⟦/3⟧",
+        "request_sha256": "faa6adeb5c980722a31051d3253f67d19abc39b31e3e402cbb9e1c2a229a4b7c",
+        "actual_prompt_sha256": "8d7d91d599774b26f621df4244df0efadc4c5a79ad616576c443d1351d47d84d",
+        "input_tokens": 196,
+        "input_token_ids_sha256": "7c295cdd1eae534b3bb99c3d35012e73b8889c6ca58fc22715f6c00b49a1b038",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.9570637249998981,
+        "wall_s": 6.069824379000011,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 196,
+          "prompt_ms": 1872.231,
+          "prompt_per_token_ms": 9.552198979591836,
+          "prompt_per_second": 104.68793647792393,
+          "predicted_n": 62,
+          "predicted_ms": 4194.553,
+          "predicted_per_token_ms": 68.76316393442623,
+          "predicted_per_second": 14.542669981759678
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-receipt-before-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧先⟦/0⟧⟦1⟧向买家通知，再⟦/1⟧⟦2⟧归档回执。⟦/2⟧",
+        "request_sha256": "2d42883cadaa2dbdd929983f6249693a70e7180afca7c003c8cc9c79e598f0f3",
+        "actual_prompt_sha256": "af2560454e868bdba1fff0d70bdd1664f5cd991ce82fe8011093e82c119660da",
+        "input_tokens": 176,
+        "input_token_ids_sha256": "215c562f13632a81bc9462c87a0b26559467cd03739be360e7b1ed7c8ef66a08",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.5468348759998207,
+        "wall_s": 4.6511811269999725,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 176,
+          "prompt_ms": 1478.499,
+          "prompt_per_token_ms": 8.4005625,
+          "prompt_per_second": 119.03964764264298,
+          "predicted_n": 44,
+          "predicted_ms": 3169.054,
+          "predicted_per_token_ms": 73.69893023255814,
+          "predicted_per_second": 13.568717983347712
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-receipt-before-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧先⟦/1⟧⟦2⟧存档回执⟦/2⟧⟦3⟧再通知买家。⟦/3⟧",
+        "request_sha256": "0223fe6c743e3b73fdad4d7adb5047484c6e34fe87220a09ed6eb02aff987007",
+        "actual_prompt_sha256": "ea7de92934fc243004ce76b7b7b47fddbd8b090f9b36c2a67bd0921cbf259ea0",
+        "input_tokens": 195,
+        "input_token_ids_sha256": "42a0bc381ee58190c825f2e38d804a1b1f0a207208a70062dbb7cfb8c38d0b74",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.996078462000014,
+        "wall_s": 6.101404608999928,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 195,
+          "prompt_ms": 1914.279,
+          "prompt_per_token_ms": 9.816815384615385,
+          "prompt_per_second": 101.86602893308655,
+          "predicted_n": 60,
+          "predicted_ms": 4183.422,
+          "predicted_per_token_ms": 70.90545762711864,
+          "predicted_per_second": 14.103286735117807
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-receipt-after-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将回执存档⟦/0⟧⟦1⟧后⟦/1⟧⟦2⟧通知买家。⟦/2⟧",
+        "request_sha256": "111cba28b1d0d33aa2cf16049864898616e7f3cd04751bd2f3fe7f61d0d79b6c",
+        "actual_prompt_sha256": "0a9a918f1f7bfcb23247a5dde9e0ca4441456316c46bf4b2cc1fc75cb6bb0c72",
+        "input_tokens": 176,
+        "input_token_ids_sha256": "08a11cbb949edd1e7afad2eedaaa92894779d2267b4ec07fefa60bfa02be7ca7",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.8268139560000236,
+        "wall_s": 4.889788051999858,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 176,
+          "prompt_ms": 1742.564,
+          "prompt_per_token_ms": 9.900931818181819,
+          "prompt_per_second": 101.00059452622686,
+          "predicted_n": 42,
+          "predicted_ms": 3144.48,
+          "predicted_per_token_ms": 76.69463414634146,
+          "predicted_per_second": 13.038721823640158
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-receipt-after-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧保存回执，⟦/1⟧⟦2⟧随后⟦/2⟧⟦3⟧通知买家。⟦/3⟧",
+        "request_sha256": "346dfdd87c91955b56c668bb8f0b5e5f448ab4e41d503a4c57323e13868639fe",
+        "actual_prompt_sha256": "2c62fa79840f4730e2ca8d5fb89d7f5e49c5cfba0aac7972a610e2e8476d88d2",
+        "input_tokens": 195,
+        "input_token_ids_sha256": "e54e21c2554c306d7e58ccc502d44d0328ef06c0fab1d415200f8f782735d5e0",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.0113234130001274,
+        "wall_s": 5.867508812000096,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 195,
+          "prompt_ms": 1951.464,
+          "prompt_per_token_ms": 10.007507692307692,
+          "prompt_per_second": 99.92497940008117,
+          "predicted_n": 60,
+          "predicted_ms": 3913.226,
+          "predicted_per_token_ms": 66.32586440677966,
+          "predicted_per_second": 15.077074516013129
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-partition-before-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧先密封分区⟦/0⟧⟦1⟧再⟦/1⟧⟦2⟧计算其摘要。⟦/2⟧",
+        "request_sha256": "add8d16efe023dfc0d35218dc951f6528f8c037ba08fbd699479433dab39fff7",
+        "actual_prompt_sha256": "997155a0f8959cf7625071715514559157d36d25b9eafea1df439842e1c19edc",
+        "input_tokens": 176,
+        "input_token_ids_sha256": "dce79306f2abb751e67bc9673a31cea48de89fbf39f97e3b6c2928c4865012eb",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.929017414999862,
+        "wall_s": 4.880317887999809,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 176,
+          "prompt_ms": 1873.823,
+          "prompt_per_token_ms": 10.646721590909092,
+          "prompt_per_second": 93.92562691353453,
+          "predicted_n": 42,
+          "predicted_ms": 3003.597,
+          "predicted_per_token_ms": 73.25846341463415,
+          "predicted_per_second": 13.650299957018202
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-partition-before-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧对分区进行密封，⟦/1⟧⟦2⟧再⟦/2⟧⟦3⟧计算其摘要。⟦/3⟧",
+        "request_sha256": "585cbc17b0942bbb56f2482e66a5b4c111fc3a60bbe1bf3b0eefe063dd608009",
+        "actual_prompt_sha256": "85a57c7fc58f2b323320159d9aaecb0d1e870ec967fccac58124a02888d064f1",
+        "input_tokens": 194,
+        "input_token_ids_sha256": "6312915dc932ca6b731a296a404b070bf2265574c05d94a47dc1b23dfa8aa14a",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.9994254620000902,
+        "wall_s": 6.480988291000131,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 194,
+          "prompt_ms": 1916.561,
+          "prompt_per_token_ms": 9.879180412371134,
+          "prompt_per_second": 101.22297177079153,
+          "predicted_n": 62,
+          "predicted_ms": 4561.505,
+          "predicted_per_token_ms": 74.77877049180329,
+          "predicted_per_second": 13.372779378735746
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-partition-after-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧先⟦/0⟧⟦1⟧计算其摘要，再⟦/1⟧⟦2⟧密封分区。⟦/2⟧",
+        "request_sha256": "454316402b2cfdeafa277162a400b7f3b6ddc001421308922f2aeba8a6be9be4",
+        "actual_prompt_sha256": "89722e3565b02bc0b9bd4e39e45744709510b279b3c89d2bb2e3d90103d42a32",
+        "input_tokens": 176,
+        "input_token_ids_sha256": "613dc63574adafc6b89f1b825fac250e9d3fe2d2129103c45389d67bd65404af",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.5627239729999474,
+        "wall_s": 4.402171696999858,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 176,
+          "prompt_ms": 1503.725,
+          "prompt_per_token_ms": 8.543892045454545,
+          "prompt_per_second": 117.04267735124442,
+          "predicted_n": 43,
+          "predicted_ms": 2894.556,
+          "predicted_per_token_ms": 68.918,
+          "predicted_per_second": 14.509997388200471
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-partition-after-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧来密封分区⟦/1⟧⟦2⟧，随后⟦/2⟧⟦3⟧计算其摘要。⟦/3⟧",
+        "request_sha256": "2f1e78a3fb46da4030f7d9dcc38431e27a68c96594da7442a2b9f3686a781e41",
+        "actual_prompt_sha256": "57eb133d2658a21afbefa4f70b0a56402fd4cf513b24066cd18d9b6a72e44108",
+        "input_tokens": 194,
+        "input_token_ids_sha256": "39753cb192bef5a8b51c3f4bb4f244df231e8655978259ece6e3a56c2ca57698",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.9542994119999548,
+        "wall_s": 6.052716551999993,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 194,
+          "prompt_ms": 1870.156,
+          "prompt_per_token_ms": 9.639979381443299,
+          "prompt_per_second": 103.73466170736559,
+          "predicted_n": 61,
+          "predicted_ms": 4179.31,
+          "predicted_per_token_ms": 69.65516666666667,
+          "predicted_per_second": 14.356436828088846
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-catalog-before-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧先⟦/0⟧⟦1⟧刷新目录⟦/1⟧⟦2⟧再⟦/2⟧",
+        "request_sha256": "34d18f6003447736fb3e09329a8f603cce542aa47f0e88bbe81550a1169bad81",
+        "actual_prompt_sha256": "8e6a23872309837472c9db5eda07e992156b5ac9f716177e05fc843942d52a3f",
+        "input_tokens": 177,
+        "input_token_ids_sha256": "41cf6c46a04cb2f261bb6871ffa5c16dd2ba81de12fb50a5c45f3de59518fe6c",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.9841509400000632,
+        "wall_s": 4.329566553000177,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 177,
+          "prompt_ms": 1902.126,
+          "prompt_per_token_ms": 10.746474576271186,
+          "prompt_per_second": 93.05377246302295,
+          "predicted_n": 38,
+          "predicted_ms": 2424.453,
+          "predicted_per_token_ms": 65.52575675675675,
+          "predicted_per_second": 15.261174376240744
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-catalog-before-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧在⟦/0⟧⟪P0⟫⟦1⟧重新启动搜索服务之前，先使用⟦/1⟧⟦2⟧和⟦/2⟧⟦3⟧刷新目录。⟦/3⟧",
+        "request_sha256": "69fa69c8c726456e5245cc7ece5bbe81b96f1fa2e48062a8d998249e274906a4",
+        "actual_prompt_sha256": "d667d5adc54b0ef6ad17e00b305871905054dc665202e9d2187c1f93128efd73",
+        "input_tokens": 196,
+        "input_token_ids_sha256": "29bea5a32d2a93ef650f64af6fa90246067653199010b7c7bd51efa311d45adc",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.0508346749998054,
+        "wall_s": 6.562025615999801,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 196,
+          "prompt_ms": 1993.564,
+          "prompt_per_token_ms": 10.171244897959184,
+          "prompt_per_second": 98.31638211765461,
+          "predicted_n": 64,
+          "predicted_ms": 4565.167,
+          "predicted_per_token_ms": 72.46296825396826,
+          "predicted_per_second": 13.800152327395688
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-catalog-after-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧刷新目录⟦/0⟧⟦1⟧后⟦/1⟧⟦2⟧重启搜索服务。⟦/2⟧",
+        "request_sha256": "670b6eadd75edaba2e4076f684379d9f93d002a37cc6cbfaa6b8660be92aede1",
+        "actual_prompt_sha256": "b1212cf2270b27c30796098c6b9438f9f580a8c79f3422021ebb6e5a058d2944",
+        "input_tokens": 177,
+        "input_token_ids_sha256": "d4161e8f9e6c4321f6899b86899de0bdceece5b9abebdcfe943427bf8b62e9a0",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.8122263550001207,
+        "wall_s": 4.45895176199997,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 177,
+          "prompt_ms": 1752.493,
+          "prompt_per_token_ms": 9.901090395480226,
+          "prompt_per_second": 100.99897688607031,
+          "predicted_n": 41,
+          "predicted_ms": 2703.514,
+          "predicted_per_token_ms": 67.58785,
+          "predicted_per_second": 14.795558669198678
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-catalog-after-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧来刷新目录，⟦/1⟧⟦2⟧然后再⟦/2⟧⟦3⟧重启搜索服务。⟦/3⟧",
+        "request_sha256": "c8b0cb0bb339c376d0bffeb2a8b76ca516809895cd4477a158f9330232bba1c1",
+        "actual_prompt_sha256": "74415c3b1c1f6a1a28246b00efa3d8d034eec983995c368f81ccb327c8844241",
+        "input_tokens": 196,
+        "input_token_ids_sha256": "ba31ab9f422e7afd6dc0e9d8ef3e2ca83d909ab471fd2617f386dea2f67777d3",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.9082712580000134,
+        "wall_s": 6.594188479999957,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 196,
+          "prompt_ms": 1823.266,
+          "prompt_per_token_ms": 9.302377551020408,
+          "prompt_per_second": 107.49939942937563,
+          "predicted_n": 61,
+          "predicted_ms": 4767.951,
+          "predicted_per_token_ms": 79.46585,
+          "predicted_per_second": 12.584021941500657
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-certificate-before-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧先⟦/0⟧⟦1⟧重新加载代理，再⟦/1⟧⟦2⟧更新证书。⟦/2⟧",
+        "request_sha256": "16152aa79d1c24ab988a8a088983c032e47ef338fd35a71acb67852431db0507",
+        "actual_prompt_sha256": "b49aeef1bd1087f2bba15d1c521b9026c34a8740a96743252e0495f4f6bd8398",
+        "input_tokens": 177,
+        "input_token_ids_sha256": "d2dd505d401d26e549bad88390ce74e712577a8179e04bfe7273c0f33167ba29",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.1873502549999557,
+        "wall_s": 5.636068782999928,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 177,
+          "prompt_ms": 2108.48,
+          "prompt_per_token_ms": 11.91231638418079,
+          "prompt_per_second": 83.94672939748065,
+          "predicted_n": 43,
+          "predicted_ms": 3524.008,
+          "predicted_per_token_ms": 83.90495238095238,
+          "predicted_per_second": 11.918247631673935
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-certificate-before-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧更新证书，⟦/1⟧⟦2⟧再重新加载代理。⟦/2⟧⟦3⟧。⟦/3⟧",
+        "request_sha256": "036f8ef81189c7a0dec53ab0db18c9ff15c7007d47956cb1d8786ced69c3eca2",
+        "actual_prompt_sha256": "dc9bf4ec2c3ca3530e9ef80897d1449f16d5b3d3d4ab65d7598bcd80fe4adee3",
+        "input_tokens": 195,
+        "input_token_ids_sha256": "e84aac07234edf1405d818773d66360f406b7ba235077ddb2f2b9b6fb35c97ef",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.577194223999868,
+        "wall_s": 7.639764054999887,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 195,
+          "prompt_ms": 2493.366,
+          "prompt_per_token_ms": 12.786492307692308,
+          "prompt_per_second": 78.20753150560327,
+          "predicted_n": 61,
+          "predicted_ms": 5143.346,
+          "predicted_per_token_ms": 85.72243333333333,
+          "predicted_per_second": 11.665557790590018
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-certificate-after-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧重新加载代理后⟦/0⟧⟦1⟧再⟦/1⟧⟦2⟧更新证书。⟦/2⟧",
+        "request_sha256": "af9bfe8b488e06a9ea913a2f4f5c3180cae58402025e3fd39b2a4f325bad6ccd",
+        "actual_prompt_sha256": "f210adb16743618a21db48c3cdbb32d165651741822a4792206fff7155729283",
+        "input_tokens": 177,
+        "input_token_ids_sha256": "e29b558022ca99b31ccdf744cbcfa53dafe1c73a956da19e8ab37f801661fb2c",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.0174759440001253,
+        "wall_s": 5.079674459999978,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 177,
+          "prompt_ms": 1923.131,
+          "prompt_per_token_ms": 10.865146892655368,
+          "prompt_per_second": 92.03741190797714,
+          "predicted_n": 42,
+          "predicted_ms": 3153.612,
+          "predicted_per_token_ms": 76.91736585365854,
+          "predicted_per_second": 13.000965242395068
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-certificate-after-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧来续期证书，⟦/1⟧⟦2⟧之后⟦/2⟧⟦3⟧重新加载代理。⟦/3⟧",
+        "request_sha256": "132cdb2f5e1f300477f3d641ad85b4ee8eff657c5c005083beaa2dac00994867",
+        "actual_prompt_sha256": "189982b96fce93a5c341a61284f6733d8f53136d025e87c29d50513fc37536c9",
+        "input_tokens": 195,
+        "input_token_ids_sha256": "30d7d322e767c6ebd909a773485ce0b35317596a70fa238234dcb9acec76b75e",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.154609100000016,
+        "wall_s": 6.337445528999979,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 195,
+          "prompt_ms": 2081.4,
+          "prompt_per_token_ms": 10.673846153846155,
+          "prompt_per_second": 93.68694148169502,
+          "predicted_n": 62,
+          "predicted_ms": 4252.956,
+          "predicted_per_token_ms": 69.72059016393443,
+          "predicted_per_second": 14.342965222306555
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-sample-before-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧先对传感器进行校准⟦/0⟧⟦1⟧再⟦/1⟧⟦2⟧记录下一个样本。⟦/2⟧",
+        "request_sha256": "454eee3c0a4eb64b338046ed75974f8d9ab52d2165cc5081a6274c58aa2763dc",
+        "actual_prompt_sha256": "0ba4b0341721613c9eb9437ce878c3d13af92994a7e8929bdf8b882fd48fcf8d",
+        "input_tokens": 178,
+        "input_token_ids_sha256": "7cbe49719f39dd58392a88127a942a39b2f288e5cb7f2d0dc6a117e143840b79",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.8058574409999437,
+        "wall_s": 4.790381859999798,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 178,
+          "prompt_ms": 1736.391,
+          "prompt_per_token_ms": 9.75500561797753,
+          "prompt_per_second": 102.51147351028656,
+          "predicted_n": 44,
+          "predicted_ms": 3051.035,
+          "predicted_per_token_ms": 70.9543023255814,
+          "predicted_per_second": 14.093578080880752
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-sample-before-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧对传感器进行校准，⟦/1⟧⟦2⟧再⟦/2⟧⟦3⟧记录下一个样本。⟦/3⟧",
+        "request_sha256": "ae4d34be4e51ce5a0df4f207a716d8045ee5865137c086b4573f70f20bccfd79",
+        "actual_prompt_sha256": "4f247a7ec3170f569cc7eae909fd741b4fa418b877e2aa078dfdd5604d74b9f1",
+        "input_tokens": 195,
+        "input_token_ids_sha256": "4d1a4cc3c8740ec5f4027f9bb669fc6bdec95ffd48c98f5d28c2a702523e4ac6",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.8661292489998687,
+        "wall_s": 6.380980929999851,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 195,
+          "prompt_ms": 1781.253,
+          "prompt_per_token_ms": 9.13463076923077,
+          "prompt_per_second": 109.47349983410555,
+          "predicted_n": 62,
+          "predicted_ms": 4597.021,
+          "predicted_per_token_ms": 75.36099999999999,
+          "predicted_per_second": 13.269462984833005
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-sample-after-text",
+        "variant": "production-grammar",
+        "text": "⟦0⟧校准传感器⟦/0⟧⟦1⟧后⟦/1⟧⟦2⟧记录下一个样本。⟦/2⟧",
+        "request_sha256": "7246b704df8d7495d7985f0964c94717174d34a7bd4e365232d93ed1c4e30652",
+        "actual_prompt_sha256": "950c8caaaaac984d6199ac4aa9e79e2349e5e9837f4205c2a82d122a6c06cff1",
+        "input_tokens": 178,
+        "input_token_ids_sha256": "f37d2167acdd9e84f8457af52aa0332bce43ed8d69e67f7a6a2afae69c3ccd7c",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.109751458000119,
+        "wall_s": 5.079945462000069,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 178,
+          "prompt_ms": 2025.865,
+          "prompt_per_token_ms": 11.381264044943821,
+          "prompt_per_second": 87.86370266528125,
+          "predicted_n": 41,
+          "predicted_ms": 3051.308,
+          "predicted_per_token_ms": 76.2827,
+          "predicted_per_second": 13.109132214774778
+        }
+      },
+      {
+        "case_id": "v6-train-temporal-sample-after-code",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧对传感器进行校准，⟦/1⟧⟦2⟧随后⟦/2⟧⟦3⟧记录下一个样本。⟦/3⟧",
+        "request_sha256": "a75be6b53b35af0bd730da993dd8d782e9ee04fd793cba2a1346dbd6ebc74400",
+        "actual_prompt_sha256": "12a2f2626b189a869e594cbfcb9a7a54f92e61c9f9a09a9071872b6b7913e06f",
+        "input_tokens": 195,
+        "input_token_ids_sha256": "f49e5bfa96cd6fe445c8f138aaf5fb1e2efca3d0c50b77165696a5ea919963d9",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.8974706100000276,
+        "wall_s": 6.607960623000054,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 195,
+          "prompt_ms": 1813.309,
+          "prompt_per_token_ms": 9.299020512820512,
+          "prompt_per_second": 107.53820777374402,
+          "predicted_n": 62,
+          "predicted_ms": 4791.762,
+          "predicted_per_token_ms": 78.55347540983607,
+          "predicted_per_second": 12.730181507345316
+        }
+      },
+      {
+        "case_id": "v6-train-roles-crawler-pass-bound",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将爬虫及其已绑定的⟦/0⟧⟪P0⟫⟦1⟧方法交给看门狗工作线程。⟦/1⟧",
+        "request_sha256": "962ca11be3c1762baf9d5996b020344d3c6652f9561794a6d5ad3c5121d82133",
+        "actual_prompt_sha256": "b678e1f825ffcafd5ecd481227ec75f912743e1f248aed1fdf36609b7119c8b9",
+        "input_tokens": 175,
+        "input_token_ids_sha256": "46d877a0fdc6c6782f3903e314f6329b019040dc08c0f5811e5945c5ec5b9433",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.8885670009999558,
+        "wall_s": 4.94991237399995,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 175,
+          "prompt_ms": 1804.222,
+          "prompt_per_token_ms": 10.30984,
+          "prompt_per_second": 96.99471572788714,
+          "predicted_n": 43,
+          "predicted_ms": 3142.231,
+          "predicted_per_token_ms": 74.81502380952381,
+          "predicted_per_second": 13.36629929499136
+        }
+      },
+      {
+        "case_id": "v6-train-roles-crawler-bind",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将爬取器的⟦/0⟧⟪P0⟫⟦1⟧方法绑定到监视器工作线程。⟦/1⟧",
+        "request_sha256": "1f2a71771026f73e46f209f33b83d21e7188053e2ae2a5cfc267ab22f224d8e6",
+        "actual_prompt_sha256": "640cef1497536e6456bf73215250e4b846d7f0cadc8603e10230e6074d65fa6e",
+        "input_tokens": 172,
+        "input_token_ids_sha256": "e33fa53b96e868104fcd0095cb0cc23f72b3cb5b3e0adeea9ececf9048dc18ca",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 3.4930281580000155,
+        "wall_s": 8.144951172999981,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 172,
+          "prompt_ms": 3367.759,
+          "prompt_per_token_ms": 19.579994186046513,
+          "prompt_per_second": 51.07253814777126,
+          "predicted_n": 41,
+          "predicted_ms": 4774.321,
+          "predicted_per_token_ms": 119.358025,
+          "predicted_per_second": 8.378154715612963
+        }
+      },
+      {
+        "case_id": "v6-train-roles-crawler-recipient-waits",
+        "variant": "production-grammar",
+        "text": "⟦0⟧关闭期间，⟦/0⟧⟦1⟧看门狗工作线程⟦/1⟧⟦2⟧会等待⟦/2⟧⟦3⟧爬虫线程⟦/3⟧⟦4⟧停止。⟦/4⟧",
+        "request_sha256": "89df79e4d61e8ac4b27574fac1718af6ca2a4e1e3198c0098658c17eb881314c",
+        "actual_prompt_sha256": "cbfafa36d6e62c32a2b501bb5b51780cef1d4fabc6442e6046bf2902e5be2e58",
+        "input_tokens": 204,
+        "input_token_ids_sha256": "fc135788224dc1890e831903a85c831e57a6866b0ba183d0a9b0249206778209",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.069452817999945,
+        "wall_s": 6.849433901999873,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 204,
+          "prompt_ms": 2003.987,
+          "prompt_per_token_ms": 9.82346568627451,
+          "prompt_per_second": 101.79706754584734,
+          "predicted_n": 70,
+          "predicted_ms": 4842.109,
+          "predicted_per_token_ms": 70.17549275362319,
+          "predicted_per_second": 14.249989002725878
+        }
+      },
+      {
+        "case_id": "v6-train-roles-crawler-owner-waits",
+        "variant": "production-grammar",
+        "text": "⟦0⟧关闭期间，⟦/0⟧⟦1⟧爬虫⟦/1⟧⟦2⟧等待⟦/2⟧⟦3⟧看门狗工作线程⟦/3⟧⟦4⟧停止。⟦/4⟧",
+        "request_sha256": "9c7b2db9063306ae386e6d47f8b68b91b9589c29ea606fa08f668a53f5115e0e",
+        "actual_prompt_sha256": "8f159b2d1e7f4341d033bc6675197bed5505dc9e38891fd438e3f6bbe24aa403",
+        "input_tokens": 204,
+        "input_token_ids_sha256": "5314ba146334bef13f3fed4766b45f7b937967204e4760e9d7ed2243daf8acbc",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.3928424059999998,
+        "wall_s": 7.270017435999989,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 204,
+          "prompt_ms": 2301.921,
+          "prompt_per_token_ms": 11.283926470588234,
+          "prompt_per_second": 88.62163384408066,
+          "predicted_n": 68,
+          "predicted_ms": 4965.483,
+          "predicted_per_token_ms": 74.11168656716418,
+          "predicted_per_second": 13.493148602059458
+        }
+      },
+      {
+        "case_id": "v6-train-roles-parser-pass-bound",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将语法解析器及其已绑定的⟦/0⟧⟪P0⟫⟦1⟧方法传递给截止时间监视器。⟦/1⟧",
+        "request_sha256": "2fb4a979012078a2843c34c9af9ab8350870472857e72160efaefb48c71b955c",
+        "actual_prompt_sha256": "40273a694116d0abd10a1a199d78ff99960f7b2bdb5d8f86ab43c146d78750e3",
+        "input_tokens": 176,
+        "input_token_ids_sha256": "b998fa3673e6adfcbd0ea73260265bdc925c3f2f773939a4525651fb10345c9a",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.5204048870000406,
+        "wall_s": 4.392803064999953,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 176,
+          "prompt_ms": 1445.811,
+          "prompt_per_token_ms": 8.214835227272728,
+          "prompt_per_second": 121.73098696855953,
+          "predicted_n": 44,
+          "predicted_ms": 2938.02,
+          "predicted_per_token_ms": 68.32604651162791,
+          "predicted_per_second": 14.63570704079618
+        }
+      },
+      {
+        "case_id": "v6-train-roles-parser-bind",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将语法分析器的⟦/0⟧⟪P0⟫⟦1⟧方法绑定到截止时间监视器。⟦/1⟧",
+        "request_sha256": "b79dde7d3415b0e4690edf449d72835e97611d087c9d75d05a3130ddd2a542ab",
+        "actual_prompt_sha256": "4f8cb20fa4bf71a18e97eb5ea205e8b2e335b833fe283be353e6d512689572a8",
+        "input_tokens": 173,
+        "input_token_ids_sha256": "27287c40837eed960bb54e89c2a9ec61f1d6dd0b5af031473dd92f29a2878931",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.6710814110001593,
+        "wall_s": 4.4574470600000495,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 173,
+          "prompt_ms": 1613.314,
+          "prompt_per_token_ms": 9.325514450867052,
+          "prompt_per_second": 107.23268997851626,
+          "predicted_n": 41,
+          "predicted_ms": 2841.295,
+          "predicted_per_token_ms": 71.032375,
+          "predicted_per_second": 14.07808763257599
+        }
+      },
+      {
+        "case_id": "v6-train-roles-parser-recipient-waits",
+        "variant": "production-grammar",
+        "text": "⟦0⟧关闭期间，⟦/0⟧⟦1⟧超时监视器⟦/1⟧⟦2⟧会等待⟦/2⟧⟦3⟧语法解析器⟦/3⟧⟦4⟧停止。⟦/4⟧",
+        "request_sha256": "cba50be3e2b95cad0ed4cf15c0cf5fa44cb2ec95993e8b20dab37d1d2c5e91b8",
+        "actual_prompt_sha256": "e35af8cb589c9d771319b38f3417be3d689787eca28007a1296e72bdb61755c5",
+        "input_tokens": 204,
+        "input_token_ids_sha256": "bc29827c50719a638ef4294c0a59a68fa4ef75306ad35ce00f2ef607837c500b",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.098236826999937,
+        "wall_s": 6.683887471999924,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 204,
+          "prompt_ms": 2010.784,
+          "prompt_per_token_ms": 9.856784313725491,
+          "prompt_per_second": 101.45296560943393,
+          "predicted_n": 69,
+          "predicted_ms": 4669.785,
+          "predicted_per_token_ms": 68.67330882352941,
+          "predicted_per_second": 14.561698236642586
+        }
+      },
+      {
+        "case_id": "v6-train-roles-parser-owner-waits",
+        "variant": "production-grammar",
+        "text": "⟦0⟧关闭期间，⟦/0⟧⟦1⟧语法解析器⟦/1⟧⟦2⟧必须等待⟦/2⟧⟦3⟧截止时间监视器⟦/3⟧⟦4⟧停止。⟦/4⟧",
+        "request_sha256": "116a0ebce8e2e32d3fd75d7b6ccbf0de49d04266929e8dce73c2177bd77b4fa3",
+        "actual_prompt_sha256": "11fa17e8963ae3e6c3eb9b9a423491e4ab02e96dd0d81f7c89faf70e314357c3",
+        "input_tokens": 204,
+        "input_token_ids_sha256": "47c35f0a564094f9c13b137530fa6f4c46001b0f5d1c8a86dad012ae0e98aa42",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.6562110780000694,
+        "wall_s": 7.761798569999883,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 204,
+          "prompt_ms": 2570.568,
+          "prompt_per_token_ms": 12.600823529411766,
+          "prompt_per_second": 79.35989244400459,
+          "predicted_n": 70,
+          "predicted_ms": 5188.465,
+          "predicted_per_token_ms": 75.19514492753623,
+          "predicted_per_second": 13.298730934871873
+        }
+      },
+      {
+        "case_id": "v6-train-tool-report-tool",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "b1f81827c71cb7ef314b649aa48ee05c8ef0c581ba277b3b6a7e89bd6ce6eccc",
+        "actual_prompt_sha256": "4f261ded2a709cf01a7906d6dd875de2d509d8375f3ae844574ddea717173436",
+        "input_tokens": 161,
+        "input_token_ids_sha256": "e345037f42686fdfe0bddfcc0644d7101d80826097acc4d4e1f3babf9584abe8",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.168967094999971,
+        "wall_s": 3.992564725999955,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 161,
+          "prompt_ms": 2081.725,
+          "prompt_per_token_ms": 12.929968944099379,
+          "prompt_per_second": 77.33970625322749,
+          "predicted_n": 25,
+          "predicted_ms": 1902.233,
+          "predicted_per_token_ms": 79.25970833333334,
+          "predicted_per_second": 12.61675094481065
+        }
+      },
+      {
+        "case_id": "v6-train-tool-report-object",
+        "variant": "production-grammar",
+        "text": "⟦0⟧读取报告标识符⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "1f9088ab2af752014366726195b74c7af62c183bdd0062626b904e1779a23b84",
+        "actual_prompt_sha256": "9d12fcd95ea37f5039855429b1e926c07b117d5175387ee96be3f5bb7f2b507b",
+        "input_tokens": 161,
+        "input_token_ids_sha256": "9835cfaf9aaa28e3e977e3c670f1ee015c2196516f1f9c8893142e487f7772a3",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.653121295000119,
+        "wall_s": 3.499840167000002,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 161,
+          "prompt_ms": 1588.018,
+          "prompt_per_token_ms": 9.863465838509317,
+          "prompt_per_second": 101.38424123656029,
+          "predicted_n": 27,
+          "predicted_ms": 1906.781,
+          "predicted_per_token_ms": 73.33773076923077,
+          "predicted_per_second": 13.635545980372157
+        }
+      },
+      {
+        "case_id": "v6-train-tool-report-create-and-start",
+        "variant": "production-grammar",
+        "text": "⟦0⟧该示例先创建记录器，然后开始收集读数，⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "2492bfd683b2a8b7f2628e5bcbda2b24963b2cfcfddeb53c1aad46b93ea9e464",
+        "actual_prompt_sha256": "e6a719d20b8510fbaf31cfd6d57f1a9ea734f6d21fdd06c45b84ba222eca6454",
+        "input_tokens": 167,
+        "input_token_ids_sha256": "813f72d093f1721e2287501082812f5a2bc2802d0013d09d917ba74ef7e22344",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.9235683870001594,
+        "wall_s": 4.168888961999983,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 167,
+          "prompt_ms": 1844.098,
+          "prompt_per_token_ms": 11.042502994011976,
+          "prompt_per_second": 90.55917852521938,
+          "predicted_n": 36,
+          "predicted_ms": 2322.044,
+          "predicted_per_token_ms": 66.34411428571428,
+          "predicted_per_second": 15.072927127995854
+        }
+      },
+      {
+        "case_id": "v6-train-tool-report-create-without-start",
+        "variant": "production-grammar",
+        "text": "⟦0⟧该示例创建了记录器，但尚未开始收集读数，⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "b7617d22b7c7c1eb2be0c5a881e57037667dad384a68eb41548f5f1633e24b1a",
+        "actual_prompt_sha256": "91b433db0ee8ace6b37169995841c18dd20828be95a3e5415b70c6f827b605df",
+        "input_tokens": 169,
+        "input_token_ids_sha256": "cdc186a557f5b0ad16de1f3b3adce3552cc7fba6785b2d32fde82c376cc4bb99",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.7195317150001301,
+        "wall_s": 3.892157879000024,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 169,
+          "prompt_ms": 1662.994,
+          "prompt_per_token_ms": 9.840201183431953,
+          "prompt_per_second": 101.62393851090263,
+          "predicted_n": 36,
+          "predicted_ms": 2225.942,
+          "predicted_per_token_ms": 63.59834285714286,
+          "predicted_per_second": 15.723680131827335
+        }
+      },
+      {
+        "case_id": "v6-train-tool-packet-tool",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "e7a32528afea6e8b56508c56a3d706a67cb20c9c754a6f30f190e63133a4c3b6",
+        "actual_prompt_sha256": "a35997e0830d9ed23ddb2d35d043e759c0192b33241078531001d6344ba52aba",
+        "input_tokens": 162,
+        "input_token_ids_sha256": "f78b52de610c7a2483c32b4a370ec0cfb41827a8cac50f39e494e3e27c235f9c",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.518014600000015,
+        "wall_s": 3.1227537019999545,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 162,
+          "prompt_ms": 1454.34,
+          "prompt_per_token_ms": 8.977407407407407,
+          "prompt_per_second": 111.39073394116919,
+          "predicted_n": 25,
+          "predicted_ms": 1665.82,
+          "predicted_per_token_ms": 69.40916666666666,
+          "predicted_per_second": 14.40731891801035
+        }
+      },
+      {
+        "case_id": "v6-train-tool-packet-object",
+        "variant": "production-grammar",
+        "text": "⟦0⟧读取数据包标识符⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "1d03a54938716f3b6a90935bb9d341da482583ff5d259aa2848440d296a44e6f",
+        "actual_prompt_sha256": "74b18e6bc4a6d14b6c8ec4a7ee529927f0abfb6906df9d040ada14b3a9834c04",
+        "input_tokens": 161,
+        "input_token_ids_sha256": "054f04a69a5fa1fc72735c2a822510005dc22254b5908ff8c1476b11e06cab56",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.7435306790000595,
+        "wall_s": 3.424366396000096,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 161,
+          "prompt_ms": 1673.703,
+          "prompt_per_token_ms": 10.395670807453415,
+          "prompt_per_second": 96.1938886409357,
+          "predicted_n": 27,
+          "predicted_ms": 1747.782,
+          "predicted_per_token_ms": 67.22238461538461,
+          "predicted_per_second": 14.875997120922406
+        }
+      },
+      {
+        "case_id": "v6-train-tool-packet-create-and-start",
+        "variant": "production-grammar",
+        "text": "⟦0⟧该示例创建了一个监听器，并开始接收数据包，其⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "a00ce2c4859dfee2258687a0e86c3d8329147e74b9e31e1902bca63335c2250b",
+        "actual_prompt_sha256": "86ecd5ac27dbebed9c41f27f10f21b75b839cb1b854e1a693f7e9b1ac6a8243e",
+        "input_tokens": 167,
+        "input_token_ids_sha256": "c2a9369430d65d5f7e2a784004d453b4b579ae1b08b4e976bc5afcb260522e75",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.6781200959999296,
+        "wall_s": 3.7671209759998874,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 167,
+          "prompt_ms": 1623.634,
+          "prompt_per_token_ms": 9.722359281437125,
+          "prompt_per_second": 102.85569284703325,
+          "predicted_n": 34,
+          "predicted_ms": 2140.32,
+          "predicted_per_token_ms": 64.85818181818182,
+          "predicted_per_second": 15.41825521417358
+        }
+      },
+      {
+        "case_id": "v6-train-tool-packet-create-without-start",
+        "variant": "production-grammar",
+        "text": "⟦0⟧该示例创建了一个监听器，但并未开始接收数据包，⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "b8ac1c1141aafa1d6965fa96087461a18b3a097ba0173fec05c7ffc069773a39",
+        "actual_prompt_sha256": "9950bde54735a7a3d093a29c98ef674ff3dece5a6a0835f11edc074d161d41fc",
+        "input_tokens": 169,
+        "input_token_ids_sha256": "14edf8b7a5261b8e81c0870a5636a7a53a0b42f2400c7ce63f977a782d71f02b",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.5689551749999282,
+        "wall_s": 4.036032723000062,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 169,
+          "prompt_ms": 1505.706,
+          "prompt_per_token_ms": 8.909502958579882,
+          "prompt_per_second": 112.2397068219161,
+          "predicted_n": 36,
+          "predicted_ms": 2527.507,
+          "predicted_per_token_ms": 72.21448571428571,
+          "predicted_per_second": 13.847637217226302
+        }
+      },
+      {
+        "case_id": "v6-train-polarity-gateway-require",
+        "variant": "production-grammar",
+        "text": "⟦0⟧⟦/0⟧⟦1⟧网关控制器⟦/1⟧⟦2⟧必须接受未签名请求。⟦/2⟧",
+        "request_sha256": "2932b5098d0f1448c4ecfd9f54e4c9e0881320b0e3377963fc8c230b86a4c738",
+        "actual_prompt_sha256": "8bbb7e07d8104a71e919877e9f6f55352c23715c546cce0b5907578855a7e723",
+        "input_tokens": 176,
+        "input_token_ids_sha256": "b4639c5e92657c2a265a312f378d06e9a146b2fa0514ed4dbc506fcc1250fffd",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.9009390339999754,
+        "wall_s": 4.589523173000089,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 176,
+          "prompt_ms": 1830.333,
+          "prompt_per_token_ms": 10.399619318181818,
+          "prompt_per_second": 96.15736590008484,
+          "predicted_n": 42,
+          "predicted_ms": 2756.24,
+          "predicted_per_token_ms": 67.22536585365853,
+          "predicted_per_second": 14.875337416190174
+        }
+      },
+      {
+        "case_id": "v6-train-polarity-gateway-forbid",
+        "variant": "production-grammar",
+        "text": "⟦0⟧⟦/0⟧⟦1⟧网关控制器⟦/1⟧⟦2⟧不得接受未签名请求。⟦/2⟧",
+        "request_sha256": "fbd2d8f0885c98eb3e4cd630d41a7b673db33ab794190799b4f21339f667e3ac",
+        "actual_prompt_sha256": "71c36763110c0335934f9042e713d7ce9bbf0e2b5ecb08eda228d18e52e55ae1",
+        "input_tokens": 177,
+        "input_token_ids_sha256": "e0de8c7e580ca8b1556c6c98664727a5f9378be6e534a5a17afb633f26640017",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.5486018629999307,
+        "wall_s": 4.441305537999824,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 177,
+          "prompt_ms": 1491.687,
+          "prompt_per_token_ms": 8.427610169491524,
+          "prompt_per_second": 118.65760042153616,
+          "predicted_n": 42,
+          "predicted_ms": 2946.68,
+          "predicted_per_token_ms": 71.87024390243901,
+          "predicted_per_second": 13.913964190207285
+        }
+      },
+      {
+        "case_id": "v6-train-polarity-gateway-failure",
+        "variant": "production-grammar",
+        "text": "⟦0⟧如果检查失败，请禁用⟦/0⟧⟦1⟧网关控制器⟦/1⟧⟦2⟧。⟦/2⟧",
+        "request_sha256": "ff4b650b6ffe427fe9745668cd3edfaec4143fc3c4d0aa7a033916c48a4a889b",
+        "actual_prompt_sha256": "3299032c16e767823cfc5f68c2ebff46152ea9ec5019b486dd29a19e17e609b4",
+        "input_tokens": 179,
+        "input_token_ids_sha256": "a4d364323e1f86903c8312b6ab20fda059f50beeda7afbd1474c25537049f52a",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.927189435999935,
+        "wall_s": 5.758640012000114,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 179,
+          "prompt_ms": 1835.057,
+          "prompt_per_token_ms": 10.251715083798883,
+          "prompt_per_second": 97.54465392628131,
+          "predicted_n": 43,
+          "predicted_ms": 3917.999,
+          "predicted_per_token_ms": 93.28569047619047,
+          "predicted_per_second": 10.7197577130571
+        }
+      },
+      {
+        "case_id": "v6-train-polarity-gateway-success",
+        "variant": "production-grammar",
+        "text": "⟦0⟧如果检查成功，请保持⟦/0⟧⟦1⟧网关控制器⟦/1⟧⟦2⟧启用。⟦/2⟧",
+        "request_sha256": "cb95d4318f0cfeaede2ed576eaf327f655941e1807fd5980435255b931586262",
+        "actual_prompt_sha256": "1e129289aa5b9149a876b862865e8eec51ab139903f68bc86352b4db260b9109",
+        "input_tokens": 179,
+        "input_token_ids_sha256": "e06a8c0cb88fab93d855a7c77e380b3ee796d4d8d73e9df24b2d77c71ae117f3",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.449050054000054,
+        "wall_s": 5.929007339999998,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 179,
+          "prompt_ms": 2362.863,
+          "prompt_per_token_ms": 13.200351955307262,
+          "prompt_per_second": 75.75555586591351,
+          "predicted_n": 44,
+          "predicted_ms": 3561.241,
+          "predicted_per_token_ms": 82.81955813953488,
+          "predicted_per_second": 12.0744425889739
+        }
+      },
+      {
+        "case_id": "v5-train-batch-descriptors-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧批处理初始化器解析行，验证其模式，并构建⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "67b5333699f09d972239084f96e4c4304277b7dfffe42779c2cbc7b667f50b78",
+        "actual_prompt_sha256": "2a4e119347ba485bde0156b5a8d64d72af99e3f241cd69a00499d1f4e175fd6f",
+        "input_tokens": 170,
+        "input_token_ids_sha256": "7e9802e2666227e3c7dc4270f9e84c030da61a11aadf1d9682d91bfca9806954",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.1465104060000613,
+        "wall_s": 5.1015135250002,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 170,
+          "prompt_ms": 2062.233,
+          "prompt_per_token_ms": 12.130782352941177,
+          "prompt_per_second": 82.43491399856369,
+          "predicted_n": 37,
+          "predicted_ms": 3035.26,
+          "predicted_per_token_ms": 84.31277777777778,
+          "predicted_per_second": 11.860598433083162
+        }
+      },
+      {
+        "case_id": "v5-train-batch-descriptors-1",
+        "variant": "production-grammar",
+        "text": "⟦0⟧导入例程先解码表头，再检查版本，最后注册⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "7652f01c58de3b97a2a293e13af6bb7c5fe653bd6c84d3525fcf48401fba5497",
+        "actual_prompt_sha256": "4a94ee91a024576bbb53b2ad6969fa4f94f92a0691353826b0fe70475743987d",
+        "input_tokens": 171,
+        "input_token_ids_sha256": "f9a3b132247790f6b2f75250d7e2cd0d40225ad161bd8b8cd55e792b79bf04ef",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.12438707299998,
+        "wall_s": 5.146634181999843,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 171,
+          "prompt_ms": 2039.196,
+          "prompt_per_token_ms": 11.925122807017543,
+          "prompt_per_second": 83.85657876927965,
+          "predicted_n": 38,
+          "predicted_ms": 3101.232,
+          "predicted_per_token_ms": 83.81708108108108,
+          "predicted_per_second": 11.930742363035078
+        }
+      },
+      {
+        "case_id": "v5-train-transport-builders-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧该传输示例先保留端口，再设置超时时间，最后实例化⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "429ad3e1fc413bca91c32544411c9e43414e5cd9e0b53f9c05e5f354d795bbe2",
+        "actual_prompt_sha256": "3ba1bca14214ecadab5ab13e488f245b81286848375a9a90858d0d192a92fd17",
+        "input_tokens": 171,
+        "input_token_ids_sha256": "f8b3cf50779bfb78e1d330a48441fbc75d4981999720c524710036a9abdc4df6",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.9336592249999285,
+        "wall_s": 4.515686735999907,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 171,
+          "prompt_ms": 1846.766,
+          "prompt_per_token_ms": 10.799801169590644,
+          "prompt_per_second": 92.59429727426215,
+          "predicted_n": 38,
+          "predicted_ms": 2663.834,
+          "predicted_per_token_ms": 71.99551351351352,
+          "predicted_per_second": 13.88975439160248
+        }
+      },
+      {
+        "case_id": "v5-train-transport-builders-1",
+        "variant": "production-grammar",
+        "text": "⟦0⟧连接引导程序会检查路由，加载凭证，并构建⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "acd656432edad7781546546e42818588c07be67dbd4e8d13a3592a83a321b055",
+        "actual_prompt_sha256": "cd37b65ba5afbf1284059daf45a12847c357af3b02da02f6a1178e5abe4501df",
+        "input_tokens": 170,
+        "input_token_ids_sha256": "6b9804f6e46bff32729b5325a4c0a3f38bc5f80790b1a0630bf1aed1fceb37e9",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.8983192870000494,
+        "wall_s": 4.844605537000007,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 170,
+          "prompt_ms": 1828.779,
+          "prompt_per_token_ms": 10.757523529411765,
+          "prompt_per_second": 92.95819779207875,
+          "predicted_n": 36,
+          "predicted_ms": 3012.626,
+          "predicted_per_token_ms": 86.07502857142858,
+          "predicted_per_second": 11.617771339688364
+        }
+      },
+      {
+        "case_id": "v5-train-document-indexers-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧文档加载器读取各节，提取标题，并初始化⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "6fe9597d693d418d7424394d566e79acfc22c95545aa5c8d7a471a56bb6f7396",
+        "actual_prompt_sha256": "d23688c91254394ee5613056b549fa990422fd9ee02ee0ce456495cbe698885f",
+        "input_tokens": 170,
+        "input_token_ids_sha256": "a5ab006cbde6e05b5b72fee4e17d0b4e2fbdb0696751986cc0448e099a11ae87",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.062300956000172,
+        "wall_s": 4.425614944000017,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 170,
+          "prompt_ms": 1977.967,
+          "prompt_per_token_ms": 11.635100000000001,
+          "prompt_per_second": 85.94683328892746,
+          "predicted_n": 36,
+          "predicted_ms": 2444.717,
+          "predicted_per_token_ms": 69.84905714285715,
+          "predicted_per_second": 14.31658551889646
+        }
+      },
+      {
+        "case_id": "v5-train-document-indexers-1",
+        "variant": "production-grammar",
+        "text": "⟦0⟧搜索示例会规范化标记，删除重复词条，并构建⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "76062f133df4abb45ed97ff29d6e0fffbe7bc3969f346d7b9b3946b187d86f35",
+        "actual_prompt_sha256": "2a6bcc472aaaa08dc481804f93988f6a6a368e31e9a0c8ff071d066da58a5ecc",
+        "input_tokens": 171,
+        "input_token_ids_sha256": "f5f6e96a2d8bd27f54e5b9345437ecfbad5776e528dd707e4b98d15e7d473b32",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.5969362629998614,
+        "wall_s": 3.990132006999829,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 171,
+          "prompt_ms": 1518.748,
+          "prompt_per_token_ms": 8.88156725146199,
+          "prompt_per_second": 112.59274086286862,
+          "predicted_n": 36,
+          "predicted_ms": 2468.195,
+          "predicted_per_token_ms": 70.51985714285715,
+          "predicted_per_second": 14.180403088086637
+        }
+      },
+      {
+        "case_id": "v5-train-telemetry-assemblers-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧遥测采集器读取计数器，转换其单位，并创建⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "24a43e2548de09365bd3ff6c6b08790433bb0e336949d42ecdbce57a7cc7e6c8",
+        "actual_prompt_sha256": "68c36f0ec77c5f62f21d81a269528dae043cda1108cd42ac028be4983ef52fa5",
+        "input_tokens": 170,
+        "input_token_ids_sha256": "d3cff3f35b0339710ae839db63140deeb476c4d8d618ae29f85078876f5172a5",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.75784062799994,
+        "wall_s": 4.815976654999986,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 170,
+          "prompt_ms": 1682.849,
+          "prompt_per_token_ms": 9.899111764705882,
+          "prompt_per_second": 101.01916452397096,
+          "predicted_n": 37,
+          "predicted_ms": 3130.311,
+          "predicted_per_token_ms": 86.95308333333334,
+          "predicted_per_second": 11.500454747148126
+        }
+      },
+      {
+        "case_id": "v5-train-telemetry-assemblers-1",
+        "variant": "production-grammar",
+        "text": "⟦0⟧追踪采样器对span进行分组，附加时间戳，并构建⟦/0⟧⟪P0⟫⟪P1⟫",
+        "request_sha256": "468b384ab59536c555445a0758f09872b70766b80bfd56769183c3a1b4f969b7",
+        "actual_prompt_sha256": "10d30e45918c0ec14b6a31a76be61ef7ecf2393a8995b8b4b7c4554ae3f8f4fd",
+        "input_tokens": 169,
+        "input_token_ids_sha256": "6f39aa7f9b1324c04bd4c828562ad42b7cf244cbd0999125df360c55bd151bf9",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.0905360460001248,
+        "wall_s": 5.244866002000208,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 169,
+          "prompt_ms": 2003.26,
+          "prompt_per_token_ms": 11.853609467455621,
+          "prompt_per_second": 84.3624891426974,
+          "predicted_n": 37,
+          "predicted_ms": 3238.188,
+          "predicted_per_token_ms": 89.94966666666667,
+          "predicted_per_second": 11.117328580057736
+        }
+      },
+      {
+        "case_id": "v5-train-certificate-attestations-0-before",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧来持久化证明，⟦/1⟧⟦2⟧然后⟦/2⟧⟦3⟧才接受证书。仅 issuer 名称本身并不构成证明。⟦/3⟧",
+        "request_sha256": "499ad908cddbf1f82a60276dbfa74b594212c71bf52012619773ff0a7934e788",
+        "actual_prompt_sha256": "68a38f84e6acb72d89bd155472d28291b393be466037c74bdd1cecb6ad1b3b88",
+        "input_tokens": 205,
+        "input_token_ids_sha256": "089f5fff1983deec5cd0f8247586831a4ca038e619dd15c210ff7af8ec6ea7fb",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.6360851460001413,
+        "wall_s": 8.595015575000161,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 205,
+          "prompt_ms": 2540.776,
+          "prompt_per_token_ms": 12.394029268292682,
+          "prompt_per_second": 80.68401149884917,
+          "predicted_n": 71,
+          "predicted_ms": 6050.857,
+          "predicted_per_token_ms": 86.44081428571428,
+          "predicted_per_second": 11.568609206927217
+        }
+      },
+      {
+        "case_id": "v5-train-certificate-attestations-0-after",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧来持久化验证，⟦/1⟧⟦2⟧之后⟦/2⟧⟦3⟧接受证书。仅 issuer name 本身并不构成验证。⟦/3⟧",
+        "request_sha256": "a04344e2805d937cb3ef26ac0a4102278bd605728095766e7435aa9eae8c544d",
+        "actual_prompt_sha256": "f5bb51ec9f5add09533072f59968af85ba408d13d2844d17a523abc72529f765",
+        "input_tokens": 205,
+        "input_token_ids_sha256": "b0fa3704277005ca020b13fae671b0baac0390720f8ef338657a71e2d60cc35a",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.617260664000014,
+        "wall_s": 8.099561910000148,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 205,
+          "prompt_ms": 2530.396,
+          "prompt_per_token_ms": 12.34339512195122,
+          "prompt_per_second": 81.01498737746977,
+          "predicted_n": 70,
+          "predicted_ms": 5565.424,
+          "predicted_per_token_ms": 80.65831884057971,
+          "predicted_per_second": 12.39797722509552
+        }
+      },
+      {
+        "case_id": "v5-train-replica-notifications-0-before",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧来密封快照⟦/1⟧⟦2⟧，然后⟦/2⟧⟦3⟧通知副本。通知并非持久快照。⟦/3⟧",
+        "request_sha256": "f9fe9296d7b0e9be3db85ae84c903ae9a3d857a4621ad8996e8ae03662b7e73b",
+        "actual_prompt_sha256": "0df91b2402b77fe25d79aac396df11bc9b720878782922eecd9b24e7d24117dd",
+        "input_tokens": 203,
+        "input_token_ids_sha256": "9b295eb850858e1c9639f72c5878b2fabc7656d2943c8f480e438c671f652352",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.9387684040000295,
+        "wall_s": 8.703553330999966,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 203,
+          "prompt_ms": 1880.824,
+          "prompt_per_token_ms": 9.265142857142857,
+          "prompt_per_second": 107.93141729369681,
+          "predicted_n": 65,
+          "predicted_ms": 6819.63,
+          "predicted_per_token_ms": 106.55671875,
+          "predicted_per_second": 9.384673362044568
+        }
+      },
+      {
+        "case_id": "v5-train-replica-notifications-0-after",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧来密封快照⟦/1⟧⟦2⟧，随后⟦/2⟧⟦3⟧通知副本。通知并非持久快照。⟦/3⟧",
+        "request_sha256": "9112ee2277b4f7bb226942a3cd6a2eeb15927deb04db59802fc2365f3b84f16c",
+        "actual_prompt_sha256": "1cf967399a8f78e0bb2f3cb4f25d9bd668b2f56d80b0bdaf85f3f4ddd56c59cc",
+        "input_tokens": 203,
+        "input_token_ids_sha256": "b95b1a4d1fc72dc98fffd887ade08a565a55073ec6d56c961f7d9493e64b7b3b",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.4528339440000764,
+        "wall_s": 7.652129323000054,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 203,
+          "prompt_ms": 2363.865,
+          "prompt_per_token_ms": 11.644655172413792,
+          "prompt_per_second": 85.87630850323518,
+          "predicted_n": 65,
+          "predicted_ms": 5285.37,
+          "predicted_per_token_ms": 82.58390625,
+          "predicted_per_second": 12.108896822738995
+        }
+      },
+      {
+        "case_id": "v5-train-dispatcher-ownership-0-before",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧分离回调⟦/1⟧⟦2⟧，再⟦/2⟧⟦3⟧替换调度器。替换调度器不会转移所有权。⟦/3⟧",
+        "request_sha256": "0175d6960260014bb617be05765a33c646865b8e65b43c8426f1bcba2176f2f5",
+        "actual_prompt_sha256": "3199ceb7c0a5479498c3207c762a90a5edc2c19be7f67f3269b0c624e3507062",
+        "input_tokens": 203,
+        "input_token_ids_sha256": "fae92823c9ce5969ea5496c14f25d66b1c5a875dfeebbc9642d3a4add39f4385",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.2793761059999724,
+        "wall_s": 7.41471055199986,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 203,
+          "prompt_ms": 2191.923,
+          "prompt_per_token_ms": 10.797650246305418,
+          "prompt_per_second": 92.61274232717118,
+          "predicted_n": 67,
+          "predicted_ms": 5219.732,
+          "predicted_per_token_ms": 79.08684848484849,
+          "predicted_per_second": 12.644327333280714
+        }
+      },
+      {
+        "case_id": "v5-train-dispatcher-ownership-0-after",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧分离回调⟦/1⟧⟦2⟧，随后⟦/2⟧⟦3⟧替换调度器。替换调度器不会转移所有权。⟦/3⟧",
+        "request_sha256": "4dacbe867de2268497a216191725d5709528f68d7ce762228ba8c377989326d0",
+        "actual_prompt_sha256": "f4ade66bb26af48faf932cdb049bc978c1712348ec00f788fa95bd2386cbd1a2",
+        "input_tokens": 203,
+        "input_token_ids_sha256": "1c836f57d8b31117534d8a35db139d5981cd24410126cb77fd575d2621b8fb8a",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.2048869319999085,
+        "wall_s": 7.235913462000099,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 203,
+          "prompt_ms": 2123.958,
+          "prompt_per_token_ms": 10.462847290640395,
+          "prompt_per_second": 95.57627787366793,
+          "predicted_n": 67,
+          "predicted_ms": 5108.676,
+          "predicted_per_token_ms": 77.40418181818183,
+          "predicted_per_second": 12.919198633853467
+        }
+      },
+      {
+        "case_id": "v5-train-debit-journals-0-before",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧来刷新扣款日志⟦/1⟧⟦2⟧，然后⟦/2⟧⟦3⟧再确认转账。确认操作无法修复未刷新的日志。⟦/3⟧",
+        "request_sha256": "f0495de2df3b53413eea902e57ea93ecf3ecad6bc281b472116dc23beb2d32a9",
+        "actual_prompt_sha256": "c85932fc95651b5e4cca7eafa8edacd8fcb0e0d761551f577cb4aa6e5d965fe8",
+        "input_tokens": 207,
+        "input_token_ids_sha256": "0ffe234570bff0403b5df766943fb1a5d16886053b188ba638789ffd73cf838e",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.3479408729999705,
+        "wall_s": 7.885403426000039,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 207,
+          "prompt_ms": 2262.311,
+          "prompt_per_token_ms": 10.929038647342995,
+          "prompt_per_second": 91.4993561893126,
+          "predicted_n": 72,
+          "predicted_ms": 5619.605,
+          "predicted_per_token_ms": 79.1493661971831,
+          "predicted_per_second": 12.634339958057552
+        }
+      },
+      {
+        "case_id": "v5-train-debit-journals-0-after",
+        "variant": "production-grammar",
+        "text": "⟦0⟧使用⟦/0⟧⟪P0⟫⟦1⟧来刷新扣款日志⟦/1⟧⟦2⟧，随后⟦/2⟧⟦3⟧确认转账。确认操作无法修复未刷新的日志。⟦/3⟧",
+        "request_sha256": "bcea6acffe145adedf3d06fc082cc479553f034e56d409ae80a929121532ac3b",
+        "actual_prompt_sha256": "4b6a6cb73080c71cbdb4b065a38bcbed6a72715552dc5a5086e5a6b29f5ac990",
+        "input_tokens": 207,
+        "input_token_ids_sha256": "c9dca3034b3d29506d6636867ce5e77cd3ba73cc76cbae320b7d5bda77b6fa68",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.493100108999897,
+        "wall_s": 11.029926897999985,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 207,
+          "prompt_ms": 2402.867,
+          "prompt_per_token_ms": 11.608053140096619,
+          "prompt_per_second": 86.14709012192517,
+          "predicted_n": 71,
+          "predicted_ms": 8624.373,
+          "predicted_per_token_ms": 123.20532857142857,
+          "predicted_per_second": 8.116532065577404
+        }
+      },
+      {
+        "case_id": "v5-train-transfer-retries-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧如果传输错误可重试，⟦/0⟧⟦1⟧就重新排队待处理的传输，⟦/1⟧⟦2⟧并⟦/2⟧⟦3⟧保留尝试计数器，⟦/3⟧⟦4⟧。可重试的错误并非已完成的传输。⟦/4⟧",
+        "request_sha256": "4bd12c652513e7bd975a484f78e18488153b00d4274cf08d1065f76db2d392fd",
+        "actual_prompt_sha256": "db3426fc2ff68ed44e0bdbfa409767dc0f02f7e6373c5cf9f4ab9eb027356b5d",
+        "input_tokens": 221,
+        "input_token_ids_sha256": "f3aaa7953fee5f2c597e521424a478e2c7c058965bcc2c6a0451139a37d3f081",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.760260444999858,
+        "wall_s": 7.441090846999941,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 221,
+          "prompt_ms": 1689.348,
+          "prompt_per_token_ms": 7.644108597285068,
+          "prompt_per_second": 130.8197008550044,
+          "predicted_n": 83,
+          "predicted_ms": 5743.617,
+          "predicted_per_token_ms": 70.04410975609757,
+          "predicted_per_second": 14.276717963610736
+        }
+      },
+      {
+        "case_id": "v5-train-transfer-retries-1",
+        "variant": "production-grammar",
+        "text": "⟦0⟧如果传输错误是永久性的，⟦/0⟧⟦1⟧就拒绝待处理的传输，⟦/1⟧⟦2⟧并⟦/2⟧⟦3⟧停止重试计时器，⟦/3⟧⟦4⟧。永久性错误不得触发另一次自动尝试。⟦/4⟧",
+        "request_sha256": "5a84e6b919d4f0ae76656f931d01e65d82fccc64d4611beecd908ae8aaca64f5",
+        "actual_prompt_sha256": "492b83d6d2570d1e19166fc24916f382e3c33e0c7f39fd71632a1326f61336cf",
+        "input_tokens": 217,
+        "input_token_ids_sha256": "49ac8b906b8aa46891b0388c3964f6749bf88b1533f3c22e8679d3017b1edc73",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.1151950329999636,
+        "wall_s": 8.236947181000005,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 217,
+          "prompt_ms": 2051.426,
+          "prompt_per_token_ms": 9.453576036866359,
+          "prompt_per_second": 105.78007688310474,
+          "predicted_n": 85,
+          "predicted_ms": 6176.44,
+          "predicted_per_token_ms": 73.52904761904762,
+          "predicted_per_second": 13.60006735271451
+        }
+      },
+      {
+        "case_id": "v5-train-permission-prompts-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧如果所有者同意，⟦/0⟧⟦1⟧启用只读视图⟦/1⟧⟦2⟧并⟦/2⟧⟦3⟧禁用编辑⟦/3⟧⟦4⟧。读取权限并不包含写入权限。⟦/4⟧",
+        "request_sha256": "ac623ccd68da7f40e605f9619db4cc6e4f7e71f5d6b7c32c62b304f32bb29b76",
+        "actual_prompt_sha256": "cebe93d2758087852ae7c35d03cde56d9dab4208f2a2cdc4b237e9ff28d42ba7",
+        "input_tokens": 213,
+        "input_token_ids_sha256": "4cda8bd854d493b2419c9b85f566e4ef48d9031957e825bfbbcb24b4f0616958",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.8366251850000026,
+        "wall_s": 6.632919776000108,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 213,
+          "prompt_ms": 1757.995,
+          "prompt_per_token_ms": 8.253497652582158,
+          "prompt_per_second": 121.16075415459089,
+          "predicted_n": 74,
+          "predicted_ms": 4866.499,
+          "predicted_per_token_ms": 66.66436986301369,
+          "predicted_per_second": 15.000516798626693
+        }
+      },
+      {
+        "case_id": "v5-train-permission-prompts-1",
+        "variant": "production-grammar",
+        "text": "⟦0⟧如果所有者拒绝同意，⟦/0⟧⟦1⟧隐藏私有视图⟦/1⟧⟦2⟧并⟦/2⟧⟦3⟧移除临时授权⟦/3⟧⟦4⟧。拒绝并不构成授权。⟦/4⟧",
+        "request_sha256": "0f229462c116e416afaa593b10042eaabb23b1a319804a37556bf716de8bb7e7",
+        "actual_prompt_sha256": "16582d1b6ba07b101ad01aab0e2af1c60d576575000b1514686ee225bf65a11c",
+        "input_tokens": 212,
+        "input_token_ids_sha256": "409b2c174d74b79e1b3eac1854135a791afd755d775400626815cb199f40df08",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.8962083199999142,
+        "wall_s": 7.360226943999805,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 212,
+          "prompt_ms": 1805.37,
+          "prompt_per_token_ms": 8.515896226415094,
+          "prompt_per_second": 117.42745254435381,
+          "predicted_n": 74,
+          "predicted_ms": 5545.557,
+          "predicted_per_token_ms": 75.96653424657534,
+          "predicted_per_second": 13.163691221639235
+        }
+      },
+      {
+        "case_id": "v5-train-nonce-lifetimes-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧挑战被回答后，⟦/0⟧⟦1⟧丢弃已使用的非对称密钥⟦/1⟧⟦2⟧，然后⟦/2⟧⟦3⟧生成新的非对称密钥⟦/3⟧⟦4⟧。非对称密钥是一种一次性随机值，不是非对称密钥。⟦/4⟧",
+        "request_sha256": "1a62422e99f40b17e3830faacbcaf38d5173b767ceecc8f367f7d47f27604c16",
+        "actual_prompt_sha256": "5dd2a18be8d56bffa82320f8607e286daff97fa5a48ba047eaa7a9020e71e2dd",
+        "input_tokens": 220,
+        "input_token_ids_sha256": "6dca1dd6b9bb9f7a8e33733a367e8dcc2978d6608c054aca5a68e11b73f4b0b3",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.0668139489998794,
+        "wall_s": 8.453344650999952,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 220,
+          "prompt_ms": 1976.426,
+          "prompt_per_token_ms": 8.983754545454545,
+          "prompt_per_second": 111.31203495602668,
+          "predicted_n": 88,
+          "predicted_ms": 6468.558,
+          "predicted_per_token_ms": 74.35124137931034,
+          "predicted_per_second": 13.449674564253735
+        }
+      },
+      {
+        "case_id": "v5-train-nonce-lifetimes-1",
+        "variant": "production-grammar",
+        "text": "⟦0⟧尽管该挑战尚未得到解答，⟦/0⟧⟦1⟧请保留待处理的 nonce⟦/1⟧⟦2⟧，⟦/2⟧⟦3⟧不得再将其用于其他挑战⟦/3⟧⟦4⟧。未解答的挑战不能使 nonce 成为加密密钥。⟦/4⟧",
+        "request_sha256": "d1dd12e9213e905628cd1608c3c127305591398d0b1f10f969248d3435465b2e",
+        "actual_prompt_sha256": "038cdcdbfb8d234b1c5b85c34e44a8413ac2de9b3dbbb43efaba36546d975f6b",
+        "input_tokens": 220,
+        "input_token_ids_sha256": "babd79d42016ee13eaa4f9ac803309b72960899f3072e5766a50af56c62f3ad6",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.5739258849998805,
+        "wall_s": 9.619501531999958,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 220,
+          "prompt_ms": 2477.732,
+          "prompt_per_token_ms": 11.262418181818182,
+          "prompt_per_second": 88.79087810949692,
+          "predicted_n": 87,
+          "predicted_ms": 7133.345,
+          "predicted_per_token_ms": 82.94587209302325,
+          "predicted_per_second": 12.056055048508098
+        }
+      },
+      {
+        "case_id": "v5-train-routing-identities-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧如果存在源标头，⟦/0⟧⟦1⟧请验证所声称的源⟦/1⟧⟦2⟧，⟦/2⟧⟦3⟧并单独保留对端地址⟦/3⟧⟦4⟧。所声称的源并非经过验证的对端地址。⟦/4⟧",
+        "request_sha256": "b42889b63fa8c24911f8141e59339d3929ef63c19d5f4c7e0fea004bc631194a",
+        "actual_prompt_sha256": "4f009407707e73385c6972454b6a86ddfd796fee2807f304cb8e1980a3b5140c",
+        "input_tokens": 217,
+        "input_token_ids_sha256": "9a839d39ad6d5a9bee7f2a47d67f7c83bcd1ef84781d899ba73f3fa8623347c2",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.0234249520001413,
+        "wall_s": 8.434280568000077,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 217,
+          "prompt_ms": 1956.532,
+          "prompt_per_token_ms": 9.016276497695852,
+          "prompt_per_second": 110.91052944700112,
+          "predicted_n": 87,
+          "predicted_ms": 6465.956,
+          "predicted_per_token_ms": 75.18553488372093,
+          "predicted_per_second": 13.300430748368841
+        }
+      },
+      {
+        "case_id": "v5-train-routing-identities-1",
+        "variant": "production-grammar",
+        "text": "⟦0⟧如果来源标头缺失，⟦/0⟧⟦1⟧拒绝依赖来源的请求⟦/1⟧⟦2⟧并⟦/2⟧⟦3⟧记录缺失标头的原因⟦/3⟧⟦4⟧。缺失的标头不得被猜测的身份所替换。⟦/4⟧",
+        "request_sha256": "b25d4dfb956fbdf16e65871d80dd45fdd05ce08a3a997d834ffe4e77951fd8b5",
+        "actual_prompt_sha256": "887d466e3aca430d3ccacfa3b37f1e914082b8c59f4668b4ed0df600f19681cd",
+        "input_tokens": 221,
+        "input_token_ids_sha256": "eb1b5df9bd200654feb6a1c347cd4bb0316ab80f3d3d2b2a4929a8a19fe202ba",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.3686259959999916,
+        "wall_s": 8.499119712000038,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 221,
+          "prompt_ms": 2277.267,
+          "prompt_per_token_ms": 10.30437556561086,
+          "prompt_per_second": 97.04615225180008,
+          "predicted_n": 84,
+          "predicted_ms": 6212.924,
+          "predicted_per_token_ms": 74.85450602409638,
+          "predicted_per_second": 13.359249203756557
+        }
+      },
+      {
+        "case_id": "v5-train-parser-handoff-bound-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将已绑定的⟦/0⟧⟪P0⟫⟦1⟧方法传递给⟦/1⟧⟦2⟧帧解码器⟦/2⟧⟦3⟧；不得⟦/3⟧⟦4⟧再次绑定⟦/4⟧⟪P1⟫",
+        "request_sha256": "8fec68df5b93f8709e46654e183e0efe551ec297297e394ce1cf7901aa13976b",
+        "actual_prompt_sha256": "303c0e48f7ea8e8d6c22c6668437db1caf877d3fe6df29d5b645ce1d45f5f071",
+        "input_tokens": 216,
+        "input_token_ids_sha256": "0e6c36af039525e4289bf625d4c0215e83ef3c1512489a6539cce9b01f61da8d",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 2.2142944770000668,
+        "wall_s": 7.728121996000027,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 216,
+          "prompt_ms": 2096.709,
+          "prompt_per_token_ms": 9.70698611111111,
+          "prompt_per_second": 103.01858770101146,
+          "predicted_n": 81,
+          "predicted_ms": 5623.091,
+          "predicted_per_token_ms": 70.28863750000001,
+          "predicted_per_second": 14.227050567027993
+        }
+      },
+      {
+        "case_id": "v5-train-parser-handoff-reference-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将现有的⟦/0⟧⟪P0⟫⟦1⟧函数引用传递给⟦/1⟧⟦2⟧帧解码器⟦/2⟧⟦3⟧；不得⟦/3⟧⟦4⟧在传输期间调用它⟦/4⟧⟪P1⟫",
+        "request_sha256": "66ab93dcc033d8553f9b1a704283e3b01d9f616e96255b2c2e25cac3d72b50c6",
+        "actual_prompt_sha256": "4b42fa66647a213d4920dc17acbda9cddc1cdac33913dfc4b8d812b20ea92417",
+        "input_tokens": 217,
+        "input_token_ids_sha256": "fc9df1f7739e7fce307b4ed62660dc84aa7dba8290703fb499d0d7d46d4a174a",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 1.9080653610001264,
+        "wall_s": 8.469322146000195,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 217,
+          "prompt_ms": 1844.351,
+          "prompt_per_token_ms": 8.4993133640553,
+          "prompt_per_second": 117.65656320299118,
+          "predicted_n": 83,
+          "predicted_ms": 6615.804,
+          "predicted_per_token_ms": 80.68053658536586,
+          "predicted_per_second": 12.39456307955919
+        }
+      },
+      {
+        "case_id": "v5-train-cache-notifiers-bound-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将已绑定的⟦/0⟧⟪P0⟫⟦1⟧方法传递给⟦/1⟧⟦2⟧驱逐监视器⟦/2⟧⟦3⟧；不得⟦/3⟧⟦4⟧再次绑定⟦/4⟧⟪P1⟫",
+        "request_sha256": "650c4456bddca3ad2772977848ddd681c48d98ef31c006fc3ba5d75b6f9f2476",
+        "actual_prompt_sha256": "a0e84d99ff047269cd208d9527b4c3617eb851983e7f3f2e501bb8f839e49aa5",
+        "input_tokens": 217,
+        "input_token_ids_sha256": "cb84ff2dd0c5e0570d327b7c9b52aa12bfc71c1aaaa52cf06c21aaf31b2f25ea",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 6.761163807000003,
+        "wall_s": 21.48494986500009,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 217,
+          "prompt_ms": 6484.083,
+          "prompt_per_token_ms": 29.880566820276496,
+          "prompt_per_second": 33.46656728484198,
+          "predicted_n": 81,
+          "predicted_ms": 14984.487,
+          "predicted_per_token_ms": 187.3060875,
+          "predicted_per_second": 5.3388547769436485
+        }
+      },
+      {
+        "case_id": "v5-train-cache-notifiers-reference-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将现有的⟦/0⟧⟪P0⟫⟦1⟧函数引用传递给⟦/1⟧⟦2⟧驱逐监视器⟦/2⟧⟦3⟧；不得⟦/3⟧⟦4⟧在传输期间调用它⟦/4⟧⟪P1⟫",
+        "request_sha256": "480625b4b3f0f74f77462b363bfdc57d6d3c1000ac9a9fa8ce7b6d6c065bea18",
+        "actual_prompt_sha256": "92977207472f8e4da4f3984c6bc5499d3a882d9a7e7afc4c7929a161448194c2",
+        "input_tokens": 218,
+        "input_token_ids_sha256": "9bd7d529cf5b1e5b1348111d137d2860e398083164a189a0c54a8196180ed320",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 3.4155625509999936,
+        "wall_s": 13.416855669999904,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 218,
+          "prompt_ms": 3295.181,
+          "prompt_per_token_ms": 15.115509174311926,
+          "prompt_per_second": 66.15721564308608,
+          "predicted_n": 83,
+          "predicted_ms": 10108.332,
+          "predicted_per_token_ms": 123.27234146341463,
+          "predicted_per_second": 8.112119783956443
+        }
+      },
+      {
+        "case_id": "v5-train-timer-subscribers-bound-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将已绑定的⟦/0⟧⟪P0⟫⟦1⟧方法传递给⟦/1⟧⟦2⟧截止时间监视器⟦/2⟧⟦3⟧；不得⟦/3⟧⟦4⟧再次绑定⟦/4⟧⟪P1⟫",
+        "request_sha256": "64e5ff821ed21bbeb62ae009bd135083d0b1f58823ebe06de20f0d6af7000e4c",
+        "actual_prompt_sha256": "c0be53ff54ea86bac38b01d4a950ae3345f8bccd3f5601e3ce16fad7750b1f51",
+        "input_tokens": 216,
+        "input_token_ids_sha256": "88455ece8fea57ee2fcade36fc3f1bfd5742556a2e18d749bec52444aa61c5b6",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 3.7624132539999664,
+        "wall_s": 12.939844586999925,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 216,
+          "prompt_ms": 3633.461,
+          "prompt_per_token_ms": 16.821578703703704,
+          "prompt_per_second": 59.447452442726096,
+          "predicted_n": 82,
+          "predicted_ms": 9299.038,
+          "predicted_per_token_ms": 114.80293827160494,
+          "predicted_per_second": 8.71057844908258
+        }
+      },
+      {
+        "case_id": "v5-train-timer-subscribers-reference-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将现有的⟦/0⟧⟪P0⟫⟦1⟧函数引用传递给⟦/1⟧⟦2⟧截止时间监视器⟦/2⟧⟦3⟧；不得⟦/3⟧⟦4⟧在传输期间调用它⟦/4⟧⟪P1⟫",
+        "request_sha256": "a2952ea9e4a5ba85da8a96e55b9696425943507c6035a53fa328666eb373766a",
+        "actual_prompt_sha256": "55393991b9f4a3d720af3c979727a69de3e51aa39c6f6a8bce1ab1e88846c2fa",
+        "input_tokens": 217,
+        "input_token_ids_sha256": "c9051c799d789ab823eb896b50a92d94f8bcd9d7d45ff1fd2aa659d2e3019c2e",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 3.9259487290000834,
+        "wall_s": 14.054280896000137,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 217,
+          "prompt_ms": 3797.653,
+          "prompt_per_token_ms": 17.50070506912442,
+          "prompt_per_second": 57.140554969082224,
+          "predicted_n": 84,
+          "predicted_ms": 10248.052,
+          "predicted_per_token_ms": 123.47050602409638,
+          "predicted_per_second": 8.099100199725763
+        }
+      },
+      {
+        "case_id": "v5-train-writer-delegates-bound-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将已绑定的⟦/0⟧⟪P0⟫⟦1⟧方法传递给⟦/1⟧⟦2⟧补丁写入器⟦/2⟧⟦3⟧；不得⟦/3⟧⟦4⟧再次绑定⟦/4⟧⟪P1⟫",
+        "request_sha256": "46d20b35764e1c38afef715f097b7eeb1312d02fd2d6f3cb78c85807f9b2abd7",
+        "actual_prompt_sha256": "860715b6323bd50d013b62a649b5bfdf4584c1fb233a62a69e2a486f0641d6b5",
+        "input_tokens": 216,
+        "input_token_ids_sha256": "36772f36be7fa0fd89febf6a4f9d5539a21732a09952e2627bf53b1d4e7922f5",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 3.8161422480000056,
+        "wall_s": 13.413463142000182,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 216,
+          "prompt_ms": 3622.931,
+          "prompt_per_token_ms": 16.772828703703706,
+          "prompt_per_second": 59.620235660022225,
+          "predicted_n": 82,
+          "predicted_ms": 9775.753,
+          "predicted_per_token_ms": 120.68830864197531,
+          "predicted_per_second": 8.285806730182319
+        }
+      },
+      {
+        "case_id": "v5-train-writer-delegates-reference-0",
+        "variant": "production-grammar",
+        "text": "⟦0⟧将现有的⟦/0⟧⟪P0⟫⟦1⟧函数引用发送给⟦/1⟧⟦2⟧补丁写入器⟦/2⟧⟦3⟧；不得⟦/3⟧⟦4⟧在传输期间调用它⟦/4⟧⟪P1⟫",
+        "request_sha256": "57996786257ac62b45a83aa947f3a74025ef0232b2d1a703f93dc669a7b09888",
+        "actual_prompt_sha256": "6065ed322ac15da6f0d6178a048ce21167c5212f4ea1a45c2a05a41772055780",
+        "input_tokens": 217,
+        "input_token_ids_sha256": "48acca4971a56f8bfc5b233b986b5a6c7fe3b8eaeb6e041215a5b2db40e7e782",
+        "stop_type": "eos",
+        "finish_reason": "stop",
+        "first_token_s": 3.23825885999986,
+        "wall_s": 12.796158375000005,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 217,
+          "prompt_ms": 3112.61,
+          "prompt_per_token_ms": 14.343824884792628,
+          "prompt_per_second": 69.71641162882597,
+          "predicted_n": 84,
+          "predicted_ms": 9677.111,
+          "predicted_per_token_ms": 116.59169879518073,
+          "predicted_per_second": 8.576939956563482
+        }
+      }
+    ],
+    "ready_wall_s": 1.0902921499998683,
+    "proc_status": [
+      "VmHWM:\t 1831392 kB",
+      "VmRSS:\t 1831392 kB"
+    ],
+    "finished_utc": "2026-11-04T19:07:15.925162+00:00"
+  },
+  "assistant_audit": {
+    "schema_version": 1,
+    "reviewer": "assistant",
+    "independently_human_reviewed": false,
+    "plan_sha256": "51200e700f375edf3deb006bc88115ab207b76110e3f5e4efd8a2caef1a0c590",
+    "run_sha256": "e61b37bbf6a1e2532938c4420ee9f2d02ece51d3988b85cc674f280cfe9ffd5f",
+    "replay_sha256": "16b7eabe8ea4960bd8354725fb35b51ce0088fbe9d86f918df79046cbc3a7cbe",
+    "notes": "Training-source candidate curation only. 76 inspected outputs, not a heldout accuracy estimate. Uncertain positives and reasonable alternatives are excluded.",
+    "rows": [
+      {
+        "id": "v6-train-temporal-snapshot-before-text",
+        "actual_output_sha256": "9e0d90aedb3da3f2f5c2d642b992be12925bb43fb321ba7214b19d1f5f241478",
+        "verdict": "scope_error",
+        "reason": "整句次序基本正确，但原来只强调 before 的节点变成强调“加密快照”。",
+        "source_fact": "Encrypt the snapshot before sending it to the mirror",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-snapshot-before-code",
+        "actual_output_sha256": "d716fb4f5a7cf2f32af13ffbfe0295e99a18fcfb0fc039f56e1584b0eab258f1",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Encrypt the snapshot before sending it to the mirror",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-temporal-snapshot-after-text",
+        "actual_output_sha256": "f8ffba48114312695c36426f032484c6c2775d0c66d7071339e7ec5bc706f583",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Encrypt the snapshot after sending it to the mirror",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-snapshot-after-code",
+        "actual_output_sha256": "553e795eebcf165ebeea701a27b5cbe71acfcfb8c5ed088070adb1a8b1748da4",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Encrypt the snapshot after sending it to the mirror",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-receipt-before-text",
+        "actual_output_sha256": "c79a0c89eeea95d3a638dde11a974e6dceb682cd072194f07007aad83efd31dd",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Archive the receipt before notifying the buyer",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-receipt-before-code",
+        "actual_output_sha256": "aefe43486bd259e57832f758b875ee9a8c35522ba1cb68b5ca506bed3f2eb2b0",
+        "verdict": "scope_error",
+        "reason": "整句先归档再通知基本正确，但 before 的强调节点被替换为“存档回执”动作。",
+        "source_fact": "Archive the receipt before notifying the buyer",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-receipt-after-text",
+        "actual_output_sha256": "4a8162e8357e3c0c48469483818c4eec622640200451ea4187461de6efda8a6f",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Archive the receipt after notifying the buyer",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-receipt-after-code",
+        "actual_output_sha256": "efea1ce722668a8581773747f555403c9557103a42c85fa094d22601053b2719",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Archive the receipt after notifying the buyer",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-partition-before-text",
+        "actual_output_sha256": "dffe0592a26670ade1c1f92057bec97adce66d76a31a25b28825528647ea457e",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Seal the partition before calculating its digest",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-temporal-partition-before-code",
+        "actual_output_sha256": "10d0d8b32316e4e1fe58017e4c6874b9cfc2e46bca447335b4293e2213dc4098",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Seal the partition before calculating its digest",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-temporal-partition-after-text",
+        "actual_output_sha256": "2c5617ffc52a1ad5a2185ae233ef9c68b19b18863aff1aea0666276d56e70733",
+        "verdict": "scope_error",
+        "reason": "整句先算摘要再封闭分区基本正确，但 after 的强调节点扩大为“计算其摘要，再”整段动作。",
+        "source_fact": "Seal the partition after calculating its digest",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-partition-after-code",
+        "actual_output_sha256": "862058fbbcd1adc721870ef72b24f46b8866ac8c994a8af32acb936cf96092fc",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Seal the partition after calculating its digest",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-catalog-before-text",
+        "actual_output_sha256": "1309229746d2a732c32100473b6568d07aef8a9b9d5273a9b71360f7703ddc9b",
+        "verdict": "semantic_error",
+        "reason": "译文只剩“先刷新目录再”，漏掉必须随后重启搜索服务这一完整动作和对象。",
+        "source_fact": "Refresh the catalog before restarting the search service",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-catalog-before-code",
+        "actual_output_sha256": "58fa317f9d86308d80a2b6e29973ee8b81456f41c1bdc3897ce7671808334937",
+        "verdict": "scope_error",
+        "reason": "源句强调时间关系 before；译文强调“和”，失去该范围的时间含义，其他部分也生硬。",
+        "source_fact": "Refresh the catalog before restarting the search service",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-catalog-after-text",
+        "actual_output_sha256": "52632858a5dff9361f75a7e8e6ba4177f93e3d366894e437a6f3accda2248ef7",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Refresh the catalog after restarting the search service",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-catalog-after-code",
+        "actual_output_sha256": "9dfc708e8c42b24441c3bdd26c55eb7259997b002e618276a73fb123a648d748",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Refresh the catalog after restarting the search service",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-certificate-before-text",
+        "actual_output_sha256": "1bc8a36553acf71e6822124185779f050cd167f9dc940ea8295f8e31f542611f",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Renew the certificate before reloading the proxy",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-certificate-before-code",
+        "actual_output_sha256": "6b5d6fb2cc152bfa10275fdda904d2e9772d74a91cf9bbcc27564564b613dc93",
+        "verdict": "scope_error",
+        "reason": "整句顺序基本正确，但 before 的强调节点扩大为“再重新加载代理”，改变原文强调范围。",
+        "source_fact": "Renew the certificate before reloading the proxy",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-certificate-after-text",
+        "actual_output_sha256": "0ad840e597961b076103a611686c8479789049db59b87c736806af9a946623cf",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Renew the certificate after reloading the proxy",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-temporal-certificate-after-code",
+        "actual_output_sha256": "d4c6169977f28d69158e2f7b9b03e09dd3c631b303f6ec625e2e4f5e39cae0f6",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Renew the certificate after reloading the proxy",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-sample-before-text",
+        "actual_output_sha256": "4daf661435783b8b3105e20d48af3cf6d2fd899dddd1f38d3e1f347844245c81",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Calibrate the sensor before recording the next sample",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-temporal-sample-before-code",
+        "actual_output_sha256": "ccfa05d298b243955417e5c01ffd4a98113dcfc58f128af9209cc2e1f7f8fc87",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Calibrate the sensor before recording the next sample",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-temporal-sample-after-text",
+        "actual_output_sha256": "9453b801c498748c988ee3ace7af12d249349537e41c29153a6f6e6a622f7a9e",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Calibrate the sensor after recording the next sample",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-temporal-sample-after-code",
+        "actual_output_sha256": "5eeb4c62c58616e4a1a0d68d015256ffd317195b2690cd0c7f9638f9c68ec717",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "Calibrate the sensor after recording the next sample",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-roles-crawler-pass-bound",
+        "actual_output_sha256": "dc6a33b8d4b7a506660919d2ca1e68b359ea8ea533fbe60b60df81fece50fec0",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Pass the owner's already-bound method to the recipient; do not rebind it",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-roles-crawler-bind",
+        "actual_output_sha256": "feb6f4c350512670cea38e0205788b838e2fc83a061ccbfb4022a8e23ff18ef0",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Bind the method to the recipient",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-roles-crawler-recipient-waits",
+        "actual_output_sha256": "050c789cd47018a34e743cab24aab5b699c7ca991aeb617dbc167d671aedd3b3",
+        "verdict": "uncertain",
+        "reason": "把 crawler 窄化为爬虫线程；源句未指定线程。存在额外实现假设，暂不作为明确负例。",
+        "source_fact": "watchdog worker waits for crawler, not conversely",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-roles-crawler-owner-waits",
+        "actual_output_sha256": "ffbf206d866f7e28d55398491a0ee765c9b23fceb1bfdc973cac97c7e35f8843",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "crawler waits for watchdog worker, not conversely",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-roles-parser-pass-bound",
+        "actual_output_sha256": "dba9a1b106e95dbc1540284241e7ecd65528c6ea17d70738fe2bbbbcc1ec7415",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Pass the owner's already-bound method to the recipient; do not rebind it",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-roles-parser-bind",
+        "actual_output_sha256": "70fa56d4b394db3912d7de97d4198a95d732d2724cedd32f290f436428bc6e01",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Bind the method to the recipient",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-roles-parser-recipient-waits",
+        "actual_output_sha256": "996a735c9c995c2f7a93866d74f02d7196c36bead6d23fb546922786b6ac8e0f",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "deadline monitor waits for syntax parser, not conversely",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-roles-parser-owner-waits",
+        "actual_output_sha256": "c2b9a2b5a115421042cc98bc9131cb2412cb492f3c70fa6a26b4e809f6fe36a5",
+        "verdict": "uncertain",
+        "reason": "原句 waits 被强化为必须等待；方向未错，不用此语气差异制造负例。",
+        "source_fact": "syntax parser waits for deadline monitor, not conversely",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-tool-report-tool",
+        "actual_output_sha256": "5ca30535c20e3288127d46fd8e523ad4581b60ee34a50f217fb62523b45d7502",
+        "verdict": "semantic_error",
+        "reason": "译文只剩“使用 encode_report()”，漏掉编码报告的动作与对象。",
+        "source_fact": "encode_report() is the tool used to encode the report",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-tool-report-object",
+        "actual_output_sha256": "b3242d5b89d8dd61c4fe57165a33e663178808d5eabd960aa02682b7a248cadf",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "report_id is the identifier to read",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-tool-report-create-and-start",
+        "actual_output_sha256": "f06093b8793e14b409e4aa3e8e5cf14b612ab2015ee9b5a71369eb2e27f5ab63",
+        "verdict": "uncertain",
+        "reason": "动作与对象保留，但末尾函数的工具关系表达省略；作为明确错义负例证据不足。",
+        "source_fact": "Create a recorder; start collecting readings",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-tool-report-create-without-start",
+        "actual_output_sha256": "d6c89f51cf67d1e71f5de2bf7148771a0f51cb17514b63e51f1e1fb679dab80d",
+        "verdict": "uncertain",
+        "reason": "尚未开始与不开始的语气、末尾函数关系均需独立审核，不强行判错。",
+        "source_fact": "Create a recorder; do not start collecting readings",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-tool-packet-tool",
+        "actual_output_sha256": "5ca30535c20e3288127d46fd8e523ad4581b60ee34a50f217fb62523b45d7502",
+        "verdict": "semantic_error",
+        "reason": "译文只剩“使用 inspect_packet()”，漏掉检查数据包的动作与对象。",
+        "source_fact": "inspect_packet() is the tool used to inspect the packet",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v6-train-tool-packet-object",
+        "actual_output_sha256": "d20f2ecec2491926a32160c897d4d7b8470f6e6641d0d147c40c341b367f46c3",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "packet_id is the identifier to read",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-tool-packet-create-and-start",
+        "actual_output_sha256": "ad3d790a161c22b84703943da4f1860b99c3327b0ed0b589d5325297c2da83eb",
+        "verdict": "uncertain",
+        "reason": "主要动作保留，末尾“其”悬空，但是否足以认定工具/对象错义需独立审核。",
+        "source_fact": "Create a listener; start receiving packets",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-tool-packet-create-without-start",
+        "actual_output_sha256": "f35288ed7b8602d25133851146efc9030dd4d0c94fbf9dde5fd31d7d980f4f15",
+        "verdict": "uncertain",
+        "reason": "创建与不启动的主要含义保留；末尾函数关系较含糊，暂不用于偏好训练。",
+        "source_fact": "Create a listener; do not start receiving packets",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-polarity-gateway-require",
+        "actual_output_sha256": "cd5d0c28981df3874e316e61e382e74bb92dea78fc718f200b867e745ebf1345",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Required: accept unsigned requests",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-polarity-gateway-forbid",
+        "actual_output_sha256": "d163c578ddcce706fc31f957555dda9d203690f45df06e2f304409ac117db3c9",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Forbidden: accept unsigned requests",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-polarity-gateway-failure",
+        "actual_output_sha256": "840d318ce312b3d1f543a66124df273084e907446c02a5e672fd20ba8b4ab945",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Inspection fails: remain disabled",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v6-train-polarity-gateway-success",
+        "actual_output_sha256": "398336d7fcfb1b7534e873d7f949b15073f4403ce5eba3edabd090a15cb5bb7f",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "Inspection succeeds: remain enabled",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-batch-descriptors-0",
+        "actual_output_sha256": "1ce8afc2fb386d50a0cbd61ef8459abe497499da306933016522a2d0ec3a5048",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"complete_actions\", \"english\": \"The batch initializer parses the rows, validates their schema, and constructs\", \"required_chinese_actions\": [\"解析\", \"验证\", \"构造\"], \"final_code\": \"BatchDescriptor\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-batch-descriptors-1",
+        "actual_output_sha256": "e8bea66147b47babb241c756849b6467bc7ba8b3f3f8f93fbf6c1a0039d0a359",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"complete_actions\", \"english\": \"The import routine decodes the header, checks its version, and registers\", \"required_chinese_actions\": [\"解码\", \"检查\", \"注册\"], \"final_code\": \"ImportDescriptor\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-transport-builders-0",
+        "actual_output_sha256": "6d0a76f0548a5649f345071b94609d156120e27f025c82cdf61a518b52703895",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"complete_actions\", \"english\": \"This transport example reserves a port, sets its timeout, and instantiates\", \"required_chinese_actions\": [\"预留\", \"设置\", \"实例化\"], \"final_code\": \"PortBinding\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-transport-builders-1",
+        "actual_output_sha256": "3bd84fc9c26a5c76c5c6831233c113539c0956fa987e43687c6b54de9479626d",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"complete_actions\", \"english\": \"The connection bootstrap checks the route, loads the credentials, and constructs\", \"required_chinese_actions\": [\"检查\", \"加载\", \"构造\"], \"final_code\": \"RouteSession\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-document-indexers-0",
+        "actual_output_sha256": "0b2ae4fad529eb20fb8963d91a278d5c53606e8d8aa4a6bebd1437dc45518cd0",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"complete_actions\", \"english\": \"The document loader reads the sections, extracts their titles, and initializes\", \"required_chinese_actions\": [\"读取\", \"提取\", \"初始化\"], \"final_code\": \"SectionIndex\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-document-indexers-1",
+        "actual_output_sha256": "21f5cc74c964617a23d5f07c2663ced44f5c444a3ca8a9a9a58fe19178dcfc3b",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"complete_actions\", \"english\": \"The search example normalizes the tokens, removes duplicate terms, and builds\", \"required_chinese_actions\": [\"规范化\", \"移除\", \"构建\"], \"final_code\": \"SearchTable\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-telemetry-assemblers-0",
+        "actual_output_sha256": "669c8850ef7ba414af7f3e9a2591ed204317c5a425230c184ec9950dee3542e5",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"complete_actions\", \"english\": \"The telemetry collector reads the counters, converts their units, and creates\", \"required_chinese_actions\": [\"读取\", \"转换\", \"创建\"], \"final_code\": \"MetricBatch\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-telemetry-assemblers-1",
+        "actual_output_sha256": "db851f2bc056a622b4fd081ca86ab531e456d6def3689dc165bc1c5c520d3999",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"complete_actions\", \"english\": \"The trace sampler groups the spans, attaches timestamps, and constructs\", \"required_chinese_actions\": [\"归并\", \"附加\", \"构造\"], \"final_code\": \"TraceEnvelope\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-certificate-attestations-0-before",
+        "actual_output_sha256": "90c7018c774dcc6b4e98cec612e6fe78df66a7930d33e607b531b53c652d1288",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"action_object\", \"action\": \"persist the attestation\", \"chinese\": \"持久保存证明\"}, {\"type\": \"order\", \"first\": \"persist the attestation\", \"relation\": \"before\", \"second\": \"accepting the certificate\"}, {\"type\": \"negation\", \"claim\": \"An issuer name alone is not an attestation\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-certificate-attestations-0-after",
+        "actual_output_sha256": "be530b9209b99974518f8448515f53cf295d29556300ce7aa8f03514d1552ebf",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "[{\"type\": \"action_object\", \"action\": \"persist the attestation\", \"chinese\": \"持久保存证明\"}, {\"type\": \"order\", \"first\": \"persist the attestation\", \"relation\": \"after\", \"second\": \"accepting the certificate\"}, {\"type\": \"negation\", \"claim\": \"An issuer name alone is not an attestation\"}]",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v5-train-replica-notifications-0-before",
+        "actual_output_sha256": "2bd23f5633b27b41cf29a5ffa6fce03d5832464139ffad65b33d865daba063e5",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"action_object\", \"action\": \"seal the snapshot\", \"chinese\": \"封存快照\"}, {\"type\": \"order\", \"first\": \"seal the snapshot\", \"relation\": \"before\", \"second\": \"notifying the replica\"}, {\"type\": \"negation\", \"claim\": \"A notification is not a durable snapshot\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-replica-notifications-0-after",
+        "actual_output_sha256": "4d36c6bc1c0b95cd01a241fd65ca873802db5229ce3af332113a8654aced43e8",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "[{\"type\": \"action_object\", \"action\": \"seal the snapshot\", \"chinese\": \"封存快照\"}, {\"type\": \"order\", \"first\": \"seal the snapshot\", \"relation\": \"after\", \"second\": \"notifying the replica\"}, {\"type\": \"negation\", \"claim\": \"A notification is not a durable snapshot\"}]",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v5-train-dispatcher-ownership-0-before",
+        "actual_output_sha256": "88d88be79548f9b236a67cbe0e0ad371e3fa3d76a003543c52289b68757d40ba",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"action_object\", \"action\": \"detach the callback\", \"chinese\": \"分离回调\"}, {\"type\": \"order\", \"first\": \"detach the callback\", \"relation\": \"before\", \"second\": \"replacing the dispatcher\"}, {\"type\": \"negation\", \"claim\": \"Replacing a dispatcher does not transfer ownership\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-dispatcher-ownership-0-after",
+        "actual_output_sha256": "c1fcc73bcbaaa758e18822b8f4b4df12a51f081856af4d7066177f95cf2c1013",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "[{\"type\": \"action_object\", \"action\": \"detach the callback\", \"chinese\": \"分离回调\"}, {\"type\": \"order\", \"first\": \"detach the callback\", \"relation\": \"after\", \"second\": \"replacing the dispatcher\"}, {\"type\": \"negation\", \"claim\": \"Replacing a dispatcher does not transfer ownership\"}]",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v5-train-debit-journals-0-before",
+        "actual_output_sha256": "cfb782fcfef4ed9c29d524d404e6afe63afd75b78abc30de2286c3a44fcd3c66",
+        "verdict": "uncertain",
+        "reason": "flush 译为刷新可能弱化刷盘含义，但时间次序正确，技术术语含义需独立审核。",
+        "source_fact": "[{\"type\": \"action_object\", \"action\": \"flush the debit journal\", \"chinese\": \"将借记日志刷盘\"}, {\"type\": \"order\", \"first\": \"flush the debit journal\", \"relation\": \"before\", \"second\": \"acknowledging the transfer\"}, {\"type\": \"negation\", \"claim\": \"An acknowledgment does not repair an unflushed journal\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-debit-journals-0-after",
+        "actual_output_sha256": "12c7338eb5fda32ddac9b8df1ece9c076953e885172d2da97c9bc98410f9fa21",
+        "verdict": "semantic_error",
+        "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+        "source_fact": "[{\"type\": \"action_object\", \"action\": \"flush the debit journal\", \"chinese\": \"将借记日志刷盘\"}, {\"type\": \"order\", \"first\": \"flush the debit journal\", \"relation\": \"after\", \"second\": \"acknowledging the transfer\"}, {\"type\": \"negation\", \"claim\": \"An acknowledgment does not repair an unflushed journal\"}]",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v5-train-transfer-retries-0",
+        "actual_output_sha256": "19202b7839a33c11306e219714286d7716c1157f4268827dd39c71bce3d69aae",
+        "verdict": "uncertain",
+        "reason": "英文 transfer 没有明确金融背景；原参考译为转账，模型译为传输。正参考有领域窄化疑问，排除。",
+        "source_fact": "[{\"type\": \"conditional_actions\", \"condition\": \"If the transfer error is retriable\", \"actions\": [\"requeue the pending transfer\", \"retain the attempt counter\"]}, {\"type\": \"distinction\", \"claim\": \"A retriable error is not a completed transfer\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-transfer-retries-1",
+        "actual_output_sha256": "0045152a185f938b8403afe92ddf364e42ac335cfd42ff6fa0fe56153b82a0d1",
+        "verdict": "uncertain",
+        "reason": "英文 transfer 未指定转账；模型传输可属合理解释，不应据参考差异判负。",
+        "source_fact": "[{\"type\": \"conditional_actions\", \"condition\": \"If the transfer error is permanent\", \"actions\": [\"reject the pending transfer\", \"stop the retry timer\"]}, {\"type\": \"distinction\", \"claim\": \"A permanent error must not trigger another automatic attempt\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-permission-prompts-0",
+        "actual_output_sha256": "b94f39316f97abef55c5fa86bed68e6ae493e53e7094d4dd5bd149647c71f1f5",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"conditional_actions\", \"condition\": \"If the owner grants consent\", \"actions\": [\"enable the read-only view\", \"keep editing disabled\"]}, {\"type\": \"distinction\", \"claim\": \"Read permission does not imply write permission\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-permission-prompts-1",
+        "actual_output_sha256": "d9d9142776f1937bda1cb601ae67377ffbd694622d24422c2cf2da7039a4e6ce",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"conditional_actions\", \"condition\": \"If the owner refuses consent\", \"actions\": [\"hide the private view\", \"remove the temporary grant\"]}, {\"type\": \"distinction\", \"claim\": \"A refusal is not an authorization\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-nonce-lifetimes-0",
+        "actual_output_sha256": "3d34c67d1b27872b050a2411a8cc7e2b59bfe0a96fd6a7420c6f00855dc7f90c",
+        "verdict": "semantic_error",
+        "reason": "将 nonce 两次误作非对称密钥，末句又说它不是非对称密钥，与源句的一次性随机值定义矛盾。",
+        "source_fact": "[{\"type\": \"conditional_actions\", \"condition\": \"Once the challenge has been answered\", \"actions\": [\"discard the spent nonce\", \"generate a fresh nonce\"]}, {\"type\": \"distinction\", \"claim\": \"A nonce is a one-use random value, not an asymmetric key\"}]",
+        "chosen_reference_confirmed": true
+      },
+      {
+        "id": "v5-train-nonce-lifetimes-1",
+        "actual_output_sha256": "e0cb72a2bc755c28907202f91606b593b9b4048343ec5551c8f44d2600e10f91",
+        "verdict": "uncertain",
+        "reason": "while 译为尽管改变关系语气，但 nonce 身份与不复用主要含义保留，暂不判定偏好负例。",
+        "source_fact": "[{\"type\": \"conditional_actions\", \"condition\": \"While the challenge is unanswered\", \"actions\": [\"keep the pending nonce\", \"do not reuse it for another challenge\"]}, {\"type\": \"distinction\", \"claim\": \"An unanswered challenge does not make its nonce an encryption key\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-routing-identities-0",
+        "actual_output_sha256": "d8c6c527309d39c4dfdb4983355e06d7765a13e07de6958d934ae7271f1397f1",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"conditional_actions\", \"condition\": \"If the origin header is present\", \"actions\": [\"verify the claimed origin\", \"keep the peer address separate\"]}, {\"type\": \"distinction\", \"claim\": \"A claimed origin is not a verified peer address\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-routing-identities-1",
+        "actual_output_sha256": "23c686b0b3ebf63a4b6defa94592fb5d29e578ff6c831ee1f05f15f904b5c311",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"conditional_actions\", \"condition\": \"If the origin header is missing\", \"actions\": [\"reject the origin-dependent request\", \"record the missing-header reason\"]}, {\"type\": \"distinction\", \"claim\": \"An absent header must not be replaced with a guessed identity\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-parser-handoff-bound-0",
+        "actual_output_sha256": "4d5b6812d8f79ff0bb5d5d5fe45dbe52ec2088341e258b08b8253b6e561953b5",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"transfer_callable\", \"object\": \"read_frame()\", \"receiver\": \"the frame decoder\", \"forbidden_action\": \"bind it again\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-parser-handoff-reference-0",
+        "actual_output_sha256": "1c80a0ae76f02586d428686f9664890a9045f1691db1a73f12d874de68ef7dab",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"transfer_callable\", \"object\": \"frame_callback\", \"receiver\": \"the frame decoder\", \"forbidden_action\": \"invoke it during transfer\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-cache-notifiers-bound-0",
+        "actual_output_sha256": "f71836fec16c47d2dd6e6ebb311a4c2e4f54dc79b198aaed1681bf9432d24b59",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"transfer_callable\", \"object\": \"notify_entry()\", \"receiver\": \"the eviction monitor\", \"forbidden_action\": \"bind it again\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-cache-notifiers-reference-0",
+        "actual_output_sha256": "96db4c296149dbcb2bd0e9c895ee920b1698058ec9d26c0d0e63d285b4922344",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"transfer_callable\", \"object\": \"entry_callback\", \"receiver\": \"the eviction monitor\", \"forbidden_action\": \"invoke it during transfer\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-timer-subscribers-bound-0",
+        "actual_output_sha256": "1fb1ca49d865e8a5d4309d5faf9b9f5aa7575686806a85870e07d9cb5f907332",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"transfer_callable\", \"object\": \"stop_tick()\", \"receiver\": \"the deadline monitor\", \"forbidden_action\": \"bind it again\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-timer-subscribers-reference-0",
+        "actual_output_sha256": "a6da2440f92a944b504f6fd1b744da1c9003d88893cedf76f162b9f9514f3a9f",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"transfer_callable\", \"object\": \"tick_callback\", \"receiver\": \"the deadline monitor\", \"forbidden_action\": \"invoke it during transfer\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-writer-delegates-bound-0",
+        "actual_output_sha256": "5d0d8e3ca9ac41c26e88f0d5fd1be63942762531eef5cde20ef5dd0bd4fd5e1b",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"transfer_callable\", \"object\": \"flush_patch()\", \"receiver\": \"the patch writer\", \"forbidden_action\": \"bind it again\"}]",
+        "chosen_reference_confirmed": false
+      },
+      {
+        "id": "v5-train-writer-delegates-reference-0",
+        "actual_output_sha256": "d278cdf6de2e0b50e940c2bda22252cbb753bfea97d0ac8570c55b84069d006f",
+        "verdict": "acceptable_alternative",
+        "reason": "已逐句检查动作、参与者、条件/时间关系及标记范围；未发现足以作为负例的明确差异，不以未逐字匹配参考判错。",
+        "source_fact": "[{\"type\": \"transfer_callable\", \"object\": \"patch_callback\", \"receiver\": \"the patch writer\", \"forbidden_action\": \"invoke it during transfer\"}]",
+        "chosen_reference_confirmed": false
+      }
+    ]
+  },
+  "bf16_matching_runtime": {
+    "schema_version": 1,
+    "started_utc": "2026-11-04T19:13:20.595259+00:00",
+    "purpose": "CPU original-BF16/old-r16 likelihood of actual Q5-mined errors; not a heldout quality score or training.",
+    "device": "cpu",
+    "dtype": "bfloat16",
+    "autocast": false,
+    "grammar_applied_to_likelihood": false,
+    "model_identities": {
+      "base_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+      "adapter_sha256": "85546101dce5baae57f472b92e8b722f68c4c26550b396187e0b0e5d3e844b02",
+      "adapter_config_sha256": "5af5e26dc0354cff9ebdd9b2d3534fa66542aa751db866dd99db0d23bedc2663"
+    },
+    "inputs_sha256": {
+      "plan": "51200e700f375edf3deb006bc88115ab207b76110e3f5e4efd8a2caef1a0c590",
+      "replay": "16b7eabe8ea4960bd8354725fb35b51ce0088fbe9d86f918df79046cbc3a7cbe",
+      "audit": "27982102649db94e19125841e3aa96222c987d41f1e96e13abfd0aee9c8ce6ea"
+    },
+    "scoring_source_hashes": {
+      "tools/mt-mining-score.py": "01f55733487ac403af2609874f871ab33f144154305d50a13fa2542c9958a6d6",
+      "training/mt-fixed-slots/validation_metrics.py": "1db19573012bccc5d760cf2906f7f4240a29c1eb2ae21a0895d96181c2619379",
+      "training/mt-fixed-slots/config-preference-v6.json": "284f4583c8ae6d7f823040e9eeddd2c47403ead1dd7dbccb455583339d0b8320"
+    },
+    "versions": {
+      "torch": "2.10.0+cpu",
+      "transformers": "5.17.0",
+      "peft": "0.21.0"
+    },
+    "thresholds": {
+      "minimum_sequence_margin_nats": 1.0,
+      "minimum_content_mean_margin_nats_per_token": 0.01
+    },
+    "independently_human_reviewed": false,
+    "training_executed": false,
+    "optimizer_inputs_approved": false,
+    "rows": [
+      {
+        "id": "v6-train-temporal-snapshot-before-text",
+        "family": "v6-temporal-snapshot",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-snapshot-before-text",
+          "actual_output_sha256": "9e0d90aedb3da3f2f5c2d642b992be12925bb43fb321ba7214b19d1f5f241478",
+          "verdict": "scope_error",
+          "reason": "整句次序基本正确，但原来只强调 before 的节点变成强调“加密快照”。",
+          "source_fact": "Encrypt the snapshot before sending it to the mirror",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -25.29108376090764,
+          "target_tokens": 43,
+          "content_mean_logp": -2.8009697659355073,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 25.208727893419564
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.07980209181434361
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0025537756737321615
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -3.1788747882344524,
+          "target_tokens": 42,
+          "content_mean_logp": -0.313956173369661,
+          "components": {
+            "content": {
+              "tokens": 8,
+              "sum_nll": 2.511649386957288
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.6670909422352906
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00013445904187392443
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 22.112208972673187,
+        "actual_minus_chosen_content_mean_logp": 2.4870135925658463,
+        "score_wall_s": 6.81510562099993
+      },
+      {
+        "id": "v6-train-temporal-snapshot-after-text",
+        "family": "v6-temporal-snapshot",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-snapshot-after-text",
+          "actual_output_sha256": "f8ffba48114312695c36426f032484c6c2775d0c66d7071339e7ec5bc706f583",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Encrypt the snapshot after sending it to the mirror",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -21.52971653383878,
+          "target_tokens": 44,
+          "content_mean_logp": -2.1451722288504245,
+          "components": {
+            "content": {
+              "tokens": 10,
+              "sum_nll": 21.451722288504243
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.07691824529041469
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0010760000441223383
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -5.317976240587768,
+          "target_tokens": 43,
+          "content_mean_logp": -0.4459025350709756,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 4.013122815638781
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 1.3040366980665112
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0008167268824763596
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 16.21174029325101,
+        "actual_minus_chosen_content_mean_logp": 1.699269693779449,
+        "score_wall_s": 5.892548327999975
+      },
+      {
+        "id": "v6-train-temporal-snapshot-after-code",
+        "family": "v6-temporal-snapshot",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-snapshot-after-code",
+          "actual_output_sha256": "553e795eebcf165ebeea701a27b5cbe71acfcfb8c5ed088070adb1a8b1748da4",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Encrypt the snapshot after sending it to the mirror",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -27.85500601754481,
+          "target_tokens": 62,
+          "content_mean_logp": -2.524887517094612,
+          "components": {
+            "content": {
+              "tokens": 11,
+              "sum_nll": 27.773762688040733
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.08108384019303116
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00015948931104503572
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -5.313918547120096,
+          "target_tokens": 62,
+          "content_mean_logp": -0.42320180992696393,
+          "components": {
+            "content": {
+              "tokens": 11,
+              "sum_nll": 4.655219909196603
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.6585973151642008
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00010132275929208845
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 22.541087470424714,
+        "actual_minus_chosen_content_mean_logp": 2.1016857071676482,
+        "score_wall_s": 8.551896112000122
+      },
+      {
+        "id": "v6-train-temporal-receipt-before-text",
+        "family": "v6-temporal-receipt",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-receipt-before-text",
+          "actual_output_sha256": "c79a0c89eeea95d3a638dde11a974e6dceb682cd072194f07007aad83efd31dd",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Archive the receipt before notifying the buyer",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -23.84013540453813,
+          "target_tokens": 41,
+          "content_mean_logp": -3.3989050558635165,
+          "components": {
+            "content": {
+              "tokens": 7,
+              "sum_nll": 23.792335391044617
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.0470926373854752
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0007073761080391705
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -6.6759041847710705,
+          "target_tokens": 44,
+          "content_mean_logp": -0.6339292300865054,
+          "components": {
+            "content": {
+              "tokens": 10,
+              "sum_nll": 6.339292300865054
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.33648529165861873
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00012659224739763886
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 17.16423121976706,
+        "actual_minus_chosen_content_mean_logp": 2.764975825777011,
+        "score_wall_s": 6.174846145999709
+      },
+      {
+        "id": "v6-train-temporal-receipt-before-code",
+        "family": "v6-temporal-receipt",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-receipt-before-code",
+          "actual_output_sha256": "aefe43486bd259e57832f758b875ee9a8c35522ba1cb68b5ca506bed3f2eb2b0",
+          "verdict": "scope_error",
+          "reason": "整句先归档再通知基本正确，但 before 的强调节点被替换为“存档回执”动作。",
+          "source_fact": "Archive the receipt before notifying the buyer",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -25.945776515548538,
+          "target_tokens": 59,
+          "content_mean_logp": -3.237856151536107,
+          "components": {
+            "content": {
+              "tokens": 8,
+              "sum_nll": 25.902849212288857
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.04277150885453551
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00015579440514557064
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -7.5813468923565495,
+          "target_tokens": 60,
+          "content_mean_logp": -0.6771383006125689,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 6.09424470551312
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 1.4870047975977911
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 9.738924563862383e-05
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 18.364429623191988,
+        "actual_minus_chosen_content_mean_logp": 2.560717850923538,
+        "score_wall_s": 7.745671499999844
+      },
+      {
+        "id": "v6-train-temporal-receipt-after-text",
+        "family": "v6-temporal-receipt",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-receipt-after-text",
+          "actual_output_sha256": "4a8162e8357e3c0c48469483818c4eec622640200451ea4187461de6efda8a6f",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Archive the receipt after notifying the buyer",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -20.044937066658747,
+          "target_tokens": 42,
+          "content_mean_logp": -2.4997457758290693,
+          "components": {
+            "content": {
+              "tokens": 8,
+              "sum_nll": 19.997966206632555
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.046510341385726406
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0004605186404660344
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -3.9137410727188353,
+          "target_tokens": 42,
+          "content_mean_logp": -0.4589897005353123,
+          "components": {
+            "content": {
+              "tokens": 8,
+              "sum_nll": 3.6719176042824984
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.24176195833467773
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 6.151010165922344e-05
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 16.13119599393991,
+        "actual_minus_chosen_content_mean_logp": 2.040756075293757,
+        "score_wall_s": 7.279342410000027
+      },
+      {
+        "id": "v6-train-temporal-receipt-after-code",
+        "family": "v6-temporal-receipt",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-receipt-after-code",
+          "actual_output_sha256": "efea1ce722668a8581773747f555403c9557103a42c85fa094d22601053b2719",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Archive the receipt after notifying the buyer",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -21.70711535578718,
+          "target_tokens": 60,
+          "content_mean_logp": -2.406836537644267,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 21.661528838798404
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.04544740942489511
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00013910756388213485
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -5.067396611245385,
+          "target_tokens": 60,
+          "content_mean_logp": -0.5329968387571474,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 4.7969715488143265
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.27032493164097104
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00010013079008786008
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 16.639718744541796,
+        "actual_minus_chosen_content_mean_logp": 1.8738396988871195,
+        "score_wall_s": 7.159860753999965
+      },
+      {
+        "id": "v6-train-temporal-partition-after-text",
+        "family": "v6-temporal-partition",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-partition-after-text",
+          "actual_output_sha256": "2c5617ffc52a1ad5a2185ae233ef9c68b19b18863aff1aea0666276d56e70733",
+          "verdict": "scope_error",
+          "reason": "整句先算摘要再封闭分区基本正确，但 after 的强调节点扩大为“计算其摘要，再”整段动作。",
+          "source_fact": "Seal the partition after calculating its digest",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -16.333368098758996,
+          "target_tokens": 43,
+          "content_mean_logp": -1.8062921496780797,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 16.256629347102717
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.06592730728434049
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.010811444371938705
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -3.02813070721038,
+          "target_tokens": 43,
+          "content_mean_logp": -0.3094491950339741,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 2.785042755305767
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.2428221505209649
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0002658013836480677
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 13.305237391548616,
+        "actual_minus_chosen_content_mean_logp": 1.4968429546441055,
+        "score_wall_s": 7.321715978000157
+      },
+      {
+        "id": "v6-train-temporal-partition-after-code",
+        "family": "v6-temporal-partition",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-partition-after-code",
+          "actual_output_sha256": "862058fbbcd1adc721870ef72b24f46b8866ac8c994a8af32acb936cf96092fc",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Seal the partition after calculating its digest",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -24.198094863688304,
+          "target_tokens": 61,
+          "content_mean_logp": -2.4078574907267467,
+          "components": {
+            "content": {
+              "tokens": 10,
+              "sum_nll": 24.078574907267466
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.11608179799440421
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0034381584264338017
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -6.708721701504587,
+          "target_tokens": 61,
+          "content_mean_logp": -0.6287773668766021,
+          "components": {
+            "content": {
+              "tokens": 10,
+              "sum_nll": 6.287773668766022
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.4206404008850626
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00030763185350224376
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 17.489373162183718,
+        "actual_minus_chosen_content_mean_logp": 1.7790801238501446,
+        "score_wall_s": 9.010058104000109
+      },
+      {
+        "id": "v6-train-temporal-catalog-before-text",
+        "family": "v6-temporal-catalog",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-catalog-before-text",
+          "actual_output_sha256": "1309229746d2a732c32100473b6568d07aef8a9b9d5273a9b71360f7703ddc9b",
+          "verdict": "semantic_error",
+          "reason": "译文只剩“先刷新目录再”，漏掉必须随后重启搜索服务这一完整动作和对象。",
+          "source_fact": "Refresh the catalog before restarting the search service",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -15.9863539904986,
+          "target_tokens": 42,
+          "content_mean_logp": -1.986595661524916,
+          "components": {
+            "content": {
+              "tokens": 8,
+              "sum_nll": 15.892765292199329
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.09225349232335134
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.001335205975919962
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -17.58050490222854,
+          "target_tokens": 38,
+          "content_mean_logp": -0.18983373511582613,
+          "components": {
+            "content": {
+              "tokens": 4,
+              "sum_nll": 0.7593349404633045
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 1.9452353609351576
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 14.875934600830078
+            }
+          }
+        },
+        "hard_negative_candidate": false,
+        "actual_minus_chosen_sequence_logp": -1.5941509117299404,
+        "actual_minus_chosen_content_mean_logp": 1.79676192640909,
+        "score_wall_s": 7.4096123920003265
+      },
+      {
+        "id": "v6-train-temporal-catalog-before-code",
+        "family": "v6-temporal-catalog",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-catalog-before-code",
+          "actual_output_sha256": "58fa317f9d86308d80a2b6e29973ee8b81456f41c1bdc3897ce7671808334937",
+          "verdict": "scope_error",
+          "reason": "源句强调时间关系 before；译文强调“和”，失去该范围的时间含义，其他部分也生硬。",
+          "source_fact": "Refresh the catalog before restarting the search service",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -19.747431670012418,
+          "target_tokens": 60,
+          "content_mean_logp": -2.178705749515858,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 19.60835174564272
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.13883354912348977
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00024637524620629847
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -11.671745875358226,
+          "target_tokens": 64,
+          "content_mean_logp": -0.8578780345403805,
+          "components": {
+            "content": {
+              "tokens": 13,
+              "sum_nll": 11.152414449024945
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.5191930339232727
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00013839241000823677
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 8.075685794654191,
+        "actual_minus_chosen_content_mean_logp": 1.3208277149754777,
+        "score_wall_s": 6.720081986999958
+      },
+      {
+        "id": "v6-train-temporal-catalog-after-text",
+        "family": "v6-temporal-catalog",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-catalog-after-text",
+          "actual_output_sha256": "52632858a5dff9361f75a7e8e6ba4177f93e3d366894e437a6f3accda2248ef7",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Refresh the catalog after restarting the search service",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -16.675025163404825,
+          "target_tokens": 43,
+          "content_mean_logp": -1.8408135112581983,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 16.567321601323783
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.10621217447351228
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0014913876075297594
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -2.169515233161235,
+          "target_tokens": 41,
+          "content_mean_logp": -0.2605589326787075,
+          "components": {
+            "content": {
+              "tokens": 7,
+              "sum_nll": 1.8239125287509523
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.345453823096193
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00014888131408952177
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 14.50550993024359,
+        "actual_minus_chosen_content_mean_logp": 1.5802545785794908,
+        "score_wall_s": 5.779522073999942
+      },
+      {
+        "id": "v6-train-temporal-catalog-after-code",
+        "family": "v6-temporal-catalog",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-catalog-after-code",
+          "actual_output_sha256": "9dfc708e8c42b24441c3bdd26c55eb7259997b002e618276a73fb123a648d748",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Refresh the catalog after restarting the search service",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -21.563414243460443,
+          "target_tokens": 61,
+          "content_mean_logp": -2.1331357402727007,
+          "components": {
+            "content": {
+              "tokens": 10,
+              "sum_nll": 21.331357402727008
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.23187434795852369
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00018249277491122484
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -6.345221473368383,
+          "target_tokens": 61,
+          "content_mean_logp": -0.5983834797632881,
+          "components": {
+            "content": {
+              "tokens": 10,
+              "sum_nll": 5.9838347976328805
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.3613043055070193
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 8.237022848334163e-05
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 15.21819277009206,
+        "actual_minus_chosen_content_mean_logp": 1.5347522605094126,
+        "score_wall_s": 7.109655874000055
+      },
+      {
+        "id": "v6-train-temporal-certificate-before-text",
+        "family": "v6-temporal-certificate",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-certificate-before-text",
+          "actual_output_sha256": "1bc8a36553acf71e6822124185779f050cd167f9dc940ea8295f8e31f542611f",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Renew the certificate before reloading the proxy",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -21.047756110972927,
+          "target_tokens": 42,
+          "content_mean_logp": -2.592977466818411,
+          "components": {
+            "content": {
+              "tokens": 8,
+              "sum_nll": 20.743819734547287
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.30240594719370506
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0015304292319342494
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -3.164949511348482,
+          "target_tokens": 43,
+          "content_mean_logp": -0.30472835443086094,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 2.7425551898777485
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.42226319985240934
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0001311216183239594
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 17.882806599624445,
+        "actual_minus_chosen_content_mean_logp": 2.28824911238755,
+        "score_wall_s": 6.130067546000191
+      },
+      {
+        "id": "v6-train-temporal-certificate-before-code",
+        "family": "v6-temporal-certificate",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-certificate-before-code",
+          "actual_output_sha256": "6b5d6fb2cc152bfa10275fdda904d2e9772d74a91cf9bbcc27564564b613dc93",
+          "verdict": "scope_error",
+          "reason": "整句顺序基本正确，但 before 的强调节点扩大为“再重新加载代理”，改变原文强调范围。",
+          "source_fact": "Renew the certificate before reloading the proxy",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -23.551149714777658,
+          "target_tokens": 60,
+          "content_mean_logp": -2.593903747930502,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 23.345133731374517
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.20579427870276135
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0002217047003796324
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -7.160507935177058,
+          "target_tokens": 61,
+          "content_mean_logp": -0.6630797947756946,
+          "components": {
+            "content": {
+              "tokens": 10,
+              "sum_nll": 6.630797947756946
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.5295686151998709
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00014137222024146467
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 16.3906417796006,
+        "actual_minus_chosen_content_mean_logp": 1.9308239531548075,
+        "score_wall_s": 7.288484230999984
+      },
+      {
+        "id": "v6-train-temporal-certificate-after-code",
+        "family": "v6-temporal-certificate",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-certificate-after-code",
+          "actual_output_sha256": "d4c6169977f28d69158e2f7b9b03e09dd3c631b303f6ec625e2e4f5e39cae0f6",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Renew the certificate after reloading the proxy",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -21.229348375717024,
+          "target_tokens": 61,
+          "content_mean_logp": -2.098290670639835,
+          "components": {
+            "content": {
+              "tokens": 10,
+              "sum_nll": 20.982906706398353
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.24625262125519498
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00018904806347563863
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -7.059008056662805,
+          "target_tokens": 62,
+          "content_mean_logp": -0.5807474472305991,
+          "components": {
+            "content": {
+              "tokens": 11,
+              "sum_nll": 6.388221919536591
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.6706917278290518
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 9.440929716220126e-05
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 14.170340319054219,
+        "actual_minus_chosen_content_mean_logp": 1.517543223409236,
+        "score_wall_s": 7.785255347999737
+      },
+      {
+        "id": "v6-train-temporal-sample-after-text",
+        "family": "v6-temporal-sample",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-sample-after-text",
+          "actual_output_sha256": "9453b801c498748c988ee3ace7af12d249349537e41c29153a6f6e6a622f7a9e",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Calibrate the sensor after recording the next sample",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -17.980290099805984,
+          "target_tokens": 43,
+          "content_mean_logp": -1.978516526727213,
+          "components": {
+            "content": {
+              "tokens": 9,
+              "sum_nll": 17.806648740544915
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.16557147243509007
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.008069886825978756
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -3.0629967405563434,
+          "target_tokens": 41,
+          "content_mean_logp": -0.370166444419218,
+          "components": {
+            "content": {
+              "tokens": 7,
+              "sum_nll": 2.5911651109345257
+            },
+            "marker": {
+              "tokens": 33,
+              "sum_nll": 0.47104122686295113
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0007904027588665485
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 14.91729335924964,
+        "actual_minus_chosen_content_mean_logp": 1.6083500823079948,
+        "score_wall_s": 6.6919486110000435
+      },
+      {
+        "id": "v6-train-temporal-sample-after-code",
+        "family": "v6-temporal-sample",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-temporal-sample-after-code",
+          "actual_output_sha256": "5eeb4c62c58616e4a1a0d68d015256ffd317195b2690cd0c7f9638f9c68ec717",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "Calibrate the sensor after recording the next sample",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -24.681475373827965,
+          "target_tokens": 61,
+          "content_mean_logp": -2.4488278213422747,
+          "components": {
+            "content": {
+              "tokens": 10,
+              "sum_nll": 24.488278213422745
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.19244142071588044
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0007557396893389523
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -4.095424867998162,
+          "target_tokens": 62,
+          "content_mean_logp": -0.3446932636963373,
+          "components": {
+            "content": {
+              "tokens": 11,
+              "sum_nll": 3.79162590065971
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.30360181461489333
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0001971527235582471
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 20.586050505829803,
+        "actual_minus_chosen_content_mean_logp": 2.1041345576459376,
+        "score_wall_s": 8.10847087000002
+      },
+      {
+        "id": "v6-train-tool-report-tool",
+        "family": "v6-tool-report",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-tool-report-tool",
+          "actual_output_sha256": "5ca30535c20e3288127d46fd8e523ad4581b60ee34a50f217fb62523b45d7502",
+          "verdict": "semantic_error",
+          "reason": "译文只剩“使用 encode_report()”，漏掉编码报告的动作与对象。",
+          "source_fact": "encode_report() is the tool used to encode the report",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -13.515132310094998,
+          "target_tokens": 28,
+          "content_mean_logp": -3.3719535022974014,
+          "components": {
+            "content": {
+              "tokens": 4,
+              "sum_nll": 13.487814009189606
+            },
+            "marker": {
+              "tokens": 23,
+              "sum_nll": 0.009923929574654267
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.017394371330738068
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -17.22432840292396,
+          "target_tokens": 25,
+          "content_mean_logp": -0.4954082667827606,
+          "components": {
+            "content": {
+              "tokens": 1,
+              "sum_nll": 0.4954082667827606
+            },
+            "marker": {
+              "tokens": 23,
+              "sum_nll": 0.3660031897300655
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 16.362916946411133
+            }
+          }
+        },
+        "hard_negative_candidate": false,
+        "actual_minus_chosen_sequence_logp": -3.709196092828961,
+        "actual_minus_chosen_content_mean_logp": 2.876545235514641,
+        "score_wall_s": 6.2760228849997475
+      },
+      {
+        "id": "v6-train-tool-packet-tool",
+        "family": "v6-tool-packet",
+        "split": "train",
+        "audit": {
+          "id": "v6-train-tool-packet-tool",
+          "actual_output_sha256": "5ca30535c20e3288127d46fd8e523ad4581b60ee34a50f217fb62523b45d7502",
+          "verdict": "semantic_error",
+          "reason": "译文只剩“使用 inspect_packet()”，漏掉检查数据包的动作与对象。",
+          "source_fact": "inspect_packet() is the tool used to inspect the packet",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -7.645926200079316,
+          "target_tokens": 28,
+          "content_mean_logp": -1.9028502106666565,
+          "components": {
+            "content": {
+              "tokens": 4,
+              "sum_nll": 7.611400842666626
+            },
+            "marker": {
+              "tokens": 23,
+              "sum_nll": 0.007963454576724871
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.026561902835965157
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -16.676291992331244,
+          "target_tokens": 25,
+          "content_mean_logp": -0.45512694120407104,
+          "components": {
+            "content": {
+              "tokens": 1,
+              "sum_nll": 0.45512694120407104
+            },
+            "marker": {
+              "tokens": 23,
+              "sum_nll": 0.048719753885961836
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 16.17244529724121
+            }
+          }
+        },
+        "hard_negative_candidate": false,
+        "actual_minus_chosen_sequence_logp": -9.030365792251928,
+        "actual_minus_chosen_content_mean_logp": 1.4477232694625854,
+        "score_wall_s": 6.148070898000242
+      },
+      {
+        "id": "v5-train-certificate-attestations-0-after",
+        "family": "v5-certificate-attestations",
+        "split": "train",
+        "audit": {
+          "id": "v5-train-certificate-attestations-0-after",
+          "actual_output_sha256": "be530b9209b99974518f8448515f53cf295d29556300ce7aa8f03514d1552ebf",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "[{\"type\": \"action_object\", \"action\": \"persist the attestation\", \"chinese\": \"持久保存证明\"}, {\"type\": \"order\", \"first\": \"persist the attestation\", \"relation\": \"after\", \"second\": \"accepting the certificate\"}, {\"type\": \"negation\", \"claim\": \"An issuer name alone is not an attestation\"}]",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -52.58667065075835,
+          "target_tokens": 73,
+          "content_mean_logp": -2.3411542555073868,
+          "components": {
+            "content": {
+              "tokens": 22,
+              "sum_nll": 51.50539362116251
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 1.0809823876549842
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0002946419408544898
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -12.681940955353753,
+          "target_tokens": 70,
+          "content_mean_logp": -0.6440629387874842,
+          "components": {
+            "content": {
+              "tokens": 19,
+              "sum_nll": 12.2371958369622
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.4446457027844417
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 9.941560711013153e-05
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 39.9047296954046,
+        "actual_minus_chosen_content_mean_logp": 1.6970913167199027,
+        "score_wall_s": 8.771747731000232
+      },
+      {
+        "id": "v5-train-replica-notifications-0-after",
+        "family": "v5-replica-notifications",
+        "split": "train",
+        "audit": {
+          "id": "v5-train-replica-notifications-0-after",
+          "actual_output_sha256": "4d36c6bc1c0b95cd01a241fd65ca873802db5229ce3af332113a8654aced43e8",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "[{\"type\": \"action_object\", \"action\": \"seal the snapshot\", \"chinese\": \"封存快照\"}, {\"type\": \"order\", \"first\": \"seal the snapshot\", \"relation\": \"after\", \"second\": \"notifying the replica\"}, {\"type\": \"negation\", \"claim\": \"A notification is not a durable snapshot\"}]",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -51.223444304756384,
+          "target_tokens": 69,
+          "content_mean_logp": -2.754269716821404,
+          "components": {
+            "content": {
+              "tokens": 18,
+              "sum_nll": 49.57685490278527
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 1.646268780379586
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00032062159152701497
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -6.572493169415779,
+          "target_tokens": 65,
+          "content_mean_logp": -0.44502451407190946,
+          "components": {
+            "content": {
+              "tokens": 14,
+              "sum_nll": 6.230343197006732
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.34195842143070365
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0001915509783430025
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 44.650951135340605,
+        "actual_minus_chosen_content_mean_logp": 2.3092452027494943,
+        "score_wall_s": 7.547888076999698
+      },
+      {
+        "id": "v5-train-dispatcher-ownership-0-after",
+        "family": "v5-dispatcher-ownership",
+        "split": "train",
+        "audit": {
+          "id": "v5-train-dispatcher-ownership-0-after",
+          "actual_output_sha256": "c1fcc73bcbaaa758e18822b8f4b4df12a51f081856af4d7066177f95cf2c1013",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "[{\"type\": \"action_object\", \"action\": \"detach the callback\", \"chinese\": \"分离回调\"}, {\"type\": \"order\", \"first\": \"detach the callback\", \"relation\": \"after\", \"second\": \"replacing the dispatcher\"}, {\"type\": \"negation\", \"claim\": \"Replacing a dispatcher does not transfer ownership\"}]",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -52.91724669723314,
+          "target_tokens": 74,
+          "content_mean_logp": -2.2651603569722045,
+          "components": {
+            "content": {
+              "tokens": 23,
+              "sum_nll": 52.098688210360706
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.8181663652021314
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0003921216703020036
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -6.518997411659704,
+          "target_tokens": 67,
+          "content_mean_logp": -0.37792806918332644,
+          "components": {
+            "content": {
+              "tokens": 16,
+              "sum_nll": 6.046849106933223
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.47194209391590647
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00020621081057470292
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 46.398249285573435,
+        "actual_minus_chosen_content_mean_logp": 1.887232287788878,
+        "score_wall_s": 8.06448533799994
+      },
+      {
+        "id": "v5-train-debit-journals-0-after",
+        "family": "v5-debit-journals",
+        "split": "train",
+        "audit": {
+          "id": "v5-train-debit-journals-0-after",
+          "actual_output_sha256": "12c7338eb5fda32ddac9b8df1ece9c076953e885172d2da97c9bc98410f9fa21",
+          "verdict": "semantic_error",
+          "reason": "原句两项动作的先后关系被反转；完整参考保留了源句 before/after 所要求的次序。",
+          "source_fact": "[{\"type\": \"action_object\", \"action\": \"flush the debit journal\", \"chinese\": \"将借记日志刷盘\"}, {\"type\": \"order\", \"first\": \"flush the debit journal\", \"relation\": \"after\", \"second\": \"acknowledging the transfer\"}, {\"type\": \"negation\", \"claim\": \"An acknowledgment does not repair an unflushed journal\"}]",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -58.67166465389661,
+          "target_tokens": 75,
+          "content_mean_logp": -2.2924711258771517,
+          "components": {
+            "content": {
+              "tokens": 24,
+              "sum_nll": 55.019307021051645
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 3.6520648976706696
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.00029273517429828644
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -11.814401808492896,
+          "target_tokens": 71,
+          "content_mean_logp": -0.5775075567042223,
+          "components": {
+            "content": {
+              "tokens": 20,
+              "sum_nll": 11.550151134084444
+            },
+            "marker": {
+              "tokens": 50,
+              "sum_nll": 0.26400274981983074
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 0.0002479245886206627
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 46.85726284540372,
+        "actual_minus_chosen_content_mean_logp": 1.7149635691729295,
+        "score_wall_s": 7.804757132000304
+      },
+      {
+        "id": "v5-train-nonce-lifetimes-0",
+        "family": "v5-nonce-lifetimes",
+        "split": "train",
+        "audit": {
+          "id": "v5-train-nonce-lifetimes-0",
+          "actual_output_sha256": "3d34c67d1b27872b050a2411a8cc7e2b59bfe0a96fd6a7420c6f00855dc7f90c",
+          "verdict": "semantic_error",
+          "reason": "将 nonce 两次误作非对称密钥，末句又说它不是非对称密钥，与源句的一次性随机值定义矛盾。",
+          "source_fact": "[{\"type\": \"conditional_actions\", \"condition\": \"Once the challenge has been answered\", \"actions\": [\"discard the spent nonce\", \"generate a fresh nonce\"]}, {\"type\": \"distinction\", \"claim\": \"A nonce is a one-use random value, not an asymmetric key\"}]",
+          "chosen_reference_confirmed": true
+        },
+        "chosen": {
+          "sequence_logp": -32.49880218804688,
+          "target_tokens": 82,
+          "content_mean_logp": -1.2291311633654494,
+          "components": {
+            "content": {
+              "tokens": 26,
+              "sum_nll": 31.957410247501684
+            },
+            "marker": {
+              "tokens": 55,
+              "sum_nll": 0.5413797812713312
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 1.2159273865108844e-05
+            }
+          }
+        },
+        "actual_wrong": {
+          "sequence_logp": -12.066941365544835,
+          "target_tokens": 88,
+          "content_mean_logp": -0.3725110354293406,
+          "components": {
+            "content": {
+              "tokens": 32,
+              "sum_nll": 11.9203531337389
+            },
+            "marker": {
+              "tokens": 55,
+              "sum_nll": 0.14657178105858293
+            },
+            "eos": {
+              "tokens": 1,
+              "sum_nll": 1.645074735279195e-05
+            }
+          }
+        },
+        "hard_negative_candidate": true,
+        "actual_minus_chosen_sequence_logp": 20.431860822502045,
+        "actual_minus_chosen_content_mean_logp": 0.8566201279361088,
+        "score_wall_s": 8.541578297999877
+      }
+    ],
+    "model_load_wall_s": 0.6092751280002631,
+    "proc_status": [
+      "VmHWM:\t 4651536 kB",
+      "VmRSS:\t 4537672 kB"
+    ],
+    "finished_utc": "2026-11-04T19:16:23.375014+00:00"
+  },
+  "runtime_crosscheck": {
+    "older_versions": {
+      "torch": "2.10.0+cpu",
+      "transformers": "5.6.0",
+      "peft": "0.18.1"
+    },
+    "matching_versions": {
+      "torch": "2.10.0+cpu",
+      "transformers": "5.17.0",
+      "peft": "0.21.0"
+    },
+    "same_hard_candidate_ids": true,
+    "maximum_sequence_logp_difference": 0.0
+  },
+  "gpu_reference_calibration": {
+    "existing_training_sources_only": true,
+    "matched_sources": 20,
+    "mean_absolute_chosen_sequence_logp_difference": 0.13645156241153025,
+    "maximum_absolute_chosen_sequence_logp_difference": 0.32144674897119785,
+    "note": "Different CPU/GPU torch/BF16 paths; does not prove identical rejected-target scores on GPU."
+  },
+  "curated_candidates": {
+    "schema_version": 1,
+    "corpus": "mined-hard-negative-candidates-v7",
+    "protocol": "production-fixed-text-v1",
+    "scope": "Measured training-source candidate pairs for independent review; incompatible with current training manifests until explicitly integrated.",
+    "optimizer_inputs_approved": false,
+    "training_executed": false,
+    "new_gpu_task_installed": false,
+    "independently_human_reviewed": false,
+    "mining_generations": 76,
+    "model_outputs_displayed": 76,
+    "audit_verdicts": {
+      "scope_error": 5,
+      "acceptable_alternative": 41,
+      "semantic_error": 20,
+      "uncertain": 10
+    },
+    "bf16_scored_errors": 25,
+    "bf16_preferred_errors_before_family_cap": 22,
+    "selected_pairs": 17,
+    "selected_families": 11,
+    "selected_error_types": {
+      "semantic_error": 12,
+      "scope_error": 5
+    },
+    "selection_policy": "Post-measurement curation: at most two per family, prioritize before/after coverage, then error/scope diversity, then measured sequence margin. Not a pre-registered benchmark.",
+    "inputs_sha256": {
+      "plan": "51200e700f375edf3deb006bc88115ab207b76110e3f5e4efd8a2caef1a0c590",
+      "replay": "16b7eabe8ea4960bd8354725fb35b51ce0088fbe9d86f918df79046cbc3a7cbe",
+      "audit": "27982102649db94e19125841e3aa96222c987d41f1e96e13abfd0aee9c8ce6ea",
+      "scores": "614315a7cd83fbd55ce721333c0a554e1e2e8883946893ee36ec2d0b74ba8c5b"
+    },
+    "file": {
+      "name": "candidate-pairs.jsonl",
+      "bytes": 67040,
+      "sha256": "ad8556ff33ce7f2f121f5b7eaff905cc4bf927af7e4298fe3872cb7163e900f5"
+    },
+    "thresholds": {
+      "minimum_sequence_margin_nats": 1.0,
+      "minimum_content_mean_margin_nats_per_token": 0.01
+    },
+    "reference_notice": "Assistant references are not independently human reviewed. Ambiguous transfer-as-money references were excluded."
+  },
+  "hard_margin_ranges": {
+    "sequence_actual_minus_chosen": [
+      8.075685794654191,
+      46.85726284540372
+    ],
+    "content_mean_actual_minus_chosen": [
+      0.8566201279361088,
+      2.764975825777011
+    ]
+  },
+  "native_measurements": {
+    "server_ready_wall_s": 1.0902921499998683,
+    "sum_generation_wall_s": 510.2137474839992,
+    "first_nonempty_stream_output_median_s": 2.0143996785001264,
+    "server_predicted_tokens_per_second_median": 13.329839976062699,
+    "proc_status": [
+      "VmHWM:\t 1831392 kB",
+      "VmRSS:\t 1831392 kB"
+    ]
+  },
+  "main_share_sync": {
+    "completed": false,
+    "last_attempt": "UNKNOWN/stat when opening the authorized share",
+    "cause_confirmed": false,
+    "training_entry_changed": false
+  },
+  "evidence_sha256": {
+    "plan.json": "51200e700f375edf3deb006bc88115ab207b76110e3f5e4efd8a2caef1a0c590",
+    "q5-run/run.json": "e61b37bbf6a1e2532938c4420ee9f2d02ece51d3988b85cc674f280cfe9ffd5f",
+    "replay.json": "16b7eabe8ea4960bd8354725fb35b51ce0088fbe9d86f918df79046cbc3a7cbe",
+    "audit.json": "27982102649db94e19125841e3aa96222c987d41f1e96e13abfd0aee9c8ce6ea",
+    "bf16-score-v517/result.json": "614315a7cd83fbd55ce721333c0a554e1e2e8883946893ee36ec2d0b74ba8c5b",
+    "candidates-final/candidate-pairs.jsonl": "ad8556ff33ce7f2f121f5b7eaff905cc4bf927af7e4298fe3872cb7163e900f5"
+  }
+}

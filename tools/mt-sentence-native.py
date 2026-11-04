@@ -26,8 +26,15 @@ def main():
     if digest(args.model) != args.sha256:
         raise ValueError("Pinned model identity changed")
     plan = json.loads(args.plan.read_text())
-    if plan["protocol"] != "sentence-alignment-research-v1" or not plan["jobs"]:
+    if plan["protocol"] not in ["sentence-alignment-research-v1", "fixed-training-error-mining-v1"] or not plan["jobs"]:
         raise ValueError("Unsupported or empty diagnostic plan")
+    if plan["protocol"] == "fixed-training-error-mining-v1":
+        from mt_mining_guard import validate_mining_plan
+        validate_mining_plan(plan)
+        for name, expected in plan["source_hashes"].items():
+            source = (Path(__file__).resolve().parents[1] / name).resolve()
+            if not source.is_relative_to(Path(__file__).resolve().parents[1]) or digest(source) != expected:
+                raise ValueError("Frozen mining source changed: " + name)
     if plan.get("model_binding_sha256") not in (None, args.sha256):
         raise ValueError("A chained draft must be compiled by its recorded model identity")
     args.output.mkdir(parents=True)

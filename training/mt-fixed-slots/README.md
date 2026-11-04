@@ -1,5 +1,9 @@
 # PageLingo MT 定向 LoRA 训练包
 
+最新状态：[v6 两组训练及实际评测](../../eval/mt-quality/results/2026-11-04-candidate-v6.md)已完成，候选尚未批准发布。后续已完成 [v7 实际错译挖掘与 BF16 偏好测量](HARD_NEGATIVE_MINING_V7.md)，产出 17 个待独立审核的候选对和[12 行抽查短表](mining-v7/review-12.md)。尚未安装新 GPU 任务，现有 `x.cmd` 不需要重复运行。
+
+以下保留早期流程探针与启动包说明；各轮实际结果和当前训练数据状态以链接记录为准。
+
 本包已完成 CPU 数据预检、主力机 12-step GPU 流程探针及三组 BF16 生成对照。探针仍是实验候选，尚未作为发布模型。基础模型是 `tencent/Hy-MT2-1.8B`，固定 revision `9a341cd1b679d3efd23b46e847b01745a71ed792`。没有启动收费任务或上传新权重。
 
 主力机使用非 C 盘缓存的用户可使用 [Windows CMD 启动包](windows/README.md)。共享目录中的旧训练配置与本地 final adapter 身份已恢复核实，旧语料采用不同协议，仍需转换和审核。
