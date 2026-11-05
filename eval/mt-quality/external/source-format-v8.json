@@ -1,0 +1,472 @@
+{
+  "schema_version": 1,
+  "corpus": "source-format-diagnostic-v8",
+  "evaluation_only": true,
+  "optimizer_inputs_approved": false,
+  "captured_utc": "2026-11-05",
+  "note": "12 selected paragraphs from four public documentation pages and their published Chinese versions. Small targeted diagnostic, not a random sample or independent human quality certification. Full fetched snapshots retained in cloud evidence; individual paragraph HTML is preserved here.",
+  "attribution": [
+    {
+      "publisher": "Python Software Foundation and contributors",
+      "url": "https://docs.python.org/3/copyright.html",
+      "pages": [
+        "py-queue",
+        "py-sqlite"
+      ]
+    },
+    {
+      "publisher": "MDN contributors",
+      "url": "https://developer.mozilla.org/en-US/docs/MDN/Writing_guidelines/Attrib_copyright_license",
+      "pages": [
+        "mdn-abort",
+        "mdn-all"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "web-v8-queue-shutdown",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "py-queue",
+      "category": "condition_disjunction",
+      "html": "<p>Raises <a class=\"reference internal\" href=\"#asyncio.QueueShutDown\" title=\"asyncio.QueueShutDown\"><code class=\"xref py py-exc docutils literal notranslate\"><span class=\"pre\">QueueShutDown</span></code></a> if the queue has been shut down and\nis empty, or if the queue has been shut down immediately.</p>",
+      "context_url": "https://docs.python.org/3/library/asyncio-queue.html",
+      "source_text": "Raises QueueShutDown if the queue has been shut down and\nis empty, or if the queue has been shut down immediately.",
+      "meaning_reference": "如果队列已被关闭并且为空，或者如果队列已被立即关闭则会引发 QueueShutDown。",
+      "reference_html": "<p class=\"translated\">如果队列已被关闭并且为空，或者如果队列已被立即关闭则会引发 <a class=\"reference internal\" href=\"#asyncio.QueueShutDown\" title=\"asyncio.QueueShutDown\"><code class=\"xref py py-exc docutils literal notranslate\"><span class=\"pre\">QueueShutDown</span></code></a>。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://docs.python.org/3/library/asyncio-queue.html",
+          "final_url": "https://docs.python.org/3/library/asyncio-queue.html",
+          "status": 200,
+          "bytes": 43813,
+          "sha256": "eb495182e0ca2aa1ed0cdc38ee2ea2332da9d6389f3c5876e34c6d9defd8de19",
+          "captured_utc": "2026-11-05T00:53:34.338576+00:00",
+          "paragraph_index": 14,
+          "excerpt_sha256": "3029f3e771a03b16c6b2b88f59fc328882948268de9b276c799fab29bf4b1b8f"
+        },
+        "reference": {
+          "requested_url": "https://docs.python.org/zh-cn/3/library/asyncio-queue.html",
+          "final_url": "https://docs.python.org/zh-cn/3/library/asyncio-queue.html",
+          "status": 200,
+          "bytes": 45750,
+          "sha256": "f639a018b4a79ad4137268b429ec6614e2c86a450d602ae49e937caa37943328",
+          "captured_utc": "2026-11-05T00:53:34.388536+00:00",
+          "paragraph_index": 14,
+          "excerpt_sha256": "889edc763db7598b9f4de946b6369eba21aeb4083e248318ee4bcd664ee378a5"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-queue-completion",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "py-queue",
+      "category": "counter_and_completion",
+      "html": "<p>The count of unfinished tasks goes up whenever an item is added\nto the queue. The count goes down whenever a consumer coroutine calls\n<a class=\"reference internal\" href=\"#asyncio.Queue.task_done\" title=\"asyncio.Queue.task_done\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">task_done()</span></code></a> to indicate that the item was retrieved and all\nwork on it is complete.  When the count of unfinished tasks drops\nto zero, <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">join()</span></code> unblocks.</p>",
+      "context_url": "https://docs.python.org/3/library/asyncio-queue.html",
+      "source_text": "The count of unfinished tasks goes up whenever an item is added\nto the queue. The count goes down whenever a consumer coroutine calls\ntask_done() to indicate that the item was retrieved and all\nwork on it is complete.  When the count of unfinished tasks drops\nto zero, join() unblocks.",
+      "meaning_reference": "当条目添加到队列的时候，未完成任务的计数就会增加。每当消费协程调用 task_done() 表示这个条目已经被回收，该条目所有工作已经完成，未完成计数就会减少。当未完成计数降到零的时候， join() 阻塞被解除。",
+      "reference_html": "<p class=\"translated\">当条目添加到队列的时候，未完成任务的计数就会增加。每当消费协程调用 <a class=\"reference internal\" href=\"#asyncio.Queue.task_done\" title=\"asyncio.Queue.task_done\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">task_done()</span></code></a> 表示这个条目已经被回收，该条目所有工作已经完成，未完成计数就会减少。当未完成计数降到零的时候， <a class=\"reference internal\" href=\"#asyncio.Queue.join\" title=\"asyncio.Queue.join\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">join()</span></code></a> 阻塞被解除。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://docs.python.org/3/library/asyncio-queue.html",
+          "final_url": "https://docs.python.org/3/library/asyncio-queue.html",
+          "status": 200,
+          "bytes": 43813,
+          "sha256": "eb495182e0ca2aa1ed0cdc38ee2ea2332da9d6389f3c5876e34c6d9defd8de19",
+          "captured_utc": "2026-11-05T00:53:34.338576+00:00",
+          "paragraph_index": 18,
+          "excerpt_sha256": "77471d87cd5cfe985dfb51074cee056c32b8e00f1440a3ab1a25a3a327a24295"
+        },
+        "reference": {
+          "requested_url": "https://docs.python.org/zh-cn/3/library/asyncio-queue.html",
+          "final_url": "https://docs.python.org/zh-cn/3/library/asyncio-queue.html",
+          "status": 200,
+          "bytes": 45750,
+          "sha256": "f639a018b4a79ad4137268b429ec6614e2c86a450d602ae49e937caa37943328",
+          "captured_utc": "2026-11-05T00:53:34.388536+00:00",
+          "paragraph_index": 18,
+          "excerpt_sha256": "6eb1e25fb8f8909e9861b00583a7c0d77110d19e2e059091fe1e2261f7e731d0"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-queue-join",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "py-queue",
+      "category": "conditional_completion",
+      "html": "<p>And if <a class=\"reference internal\" href=\"#asyncio.Queue.task_done\" title=\"asyncio.Queue.task_done\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">task_done()</span></code></a> is called for each remaining task, a\npending <a class=\"reference internal\" href=\"#asyncio.Queue.join\" title=\"asyncio.Queue.join\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">join()</span></code></a> will be unblocked normally.</p>",
+      "context_url": "https://docs.python.org/3/library/asyncio-queue.html",
+      "source_text": "And if task_done() is called for each remaining task, a\npending join() will be unblocked normally.",
+      "meaning_reference": "而如果 task_done() 针对每个剩余的任务被调用，则挂起的 join() 将被正常取消阻塞。",
+      "reference_html": "<p class=\"translated\">而如果 <a class=\"reference internal\" href=\"#asyncio.Queue.task_done\" title=\"asyncio.Queue.task_done\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">task_done()</span></code></a> 针对每个剩余的任务被调用，则挂起的 <a class=\"reference internal\" href=\"#asyncio.Queue.join\" title=\"asyncio.Queue.join\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">join()</span></code></a> 将被正常取消阻塞。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://docs.python.org/3/library/asyncio-queue.html",
+          "final_url": "https://docs.python.org/3/library/asyncio-queue.html",
+          "status": 200,
+          "bytes": 43813,
+          "sha256": "eb495182e0ca2aa1ed0cdc38ee2ea2332da9d6389f3c5876e34c6d9defd8de19",
+          "captured_utc": "2026-11-05T00:53:34.338576+00:00",
+          "paragraph_index": 28,
+          "excerpt_sha256": "4ca6667cc71a7990e6553c0c1ed40dc79ae276999631d5b63b0648de8dcf98ef"
+        },
+        "reference": {
+          "requested_url": "https://docs.python.org/zh-cn/3/library/asyncio-queue.html",
+          "final_url": "https://docs.python.org/zh-cn/3/library/asyncio-queue.html",
+          "status": 200,
+          "bytes": 45750,
+          "sha256": "f639a018b4a79ad4137268b429ec6614e2c86a450d602ae49e937caa37943328",
+          "captured_utc": "2026-11-05T00:53:34.388536+00:00",
+          "paragraph_index": 28,
+          "excerpt_sha256": "fdf3ed21b92186c158ab4cfb967819f6ab5aece0448eccceed7ab5102eafeb06"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-queue-immediate",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "py-queue",
+      "category": "shutdown_conditions",
+      "html": "<p>If <em>immediate</em> is true, the queue is terminated immediately.\nThe queue is drained to be completely empty and the count\nof unfinished tasks is reduced by the number of tasks drained.\nIf unfinished tasks is zero, callers of <a class=\"reference internal\" href=\"#asyncio.Queue.join\" title=\"asyncio.Queue.join\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">join()</span></code></a>\nare unblocked.  Also, blocked callers of <a class=\"reference internal\" href=\"#asyncio.Queue.get\" title=\"asyncio.Queue.get\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">get()</span></code></a>\nare unblocked and will raise <a class=\"reference internal\" href=\"#asyncio.QueueShutDown\" title=\"asyncio.QueueShutDown\"><code class=\"xref py py-exc docutils literal notranslate\"><span class=\"pre\">QueueShutDown</span></code></a> because the\nqueue is empty.</p>",
+      "context_url": "https://docs.python.org/3/library/asyncio-queue.html",
+      "source_text": "If immediate is true, the queue is terminated immediately.\nThe queue is drained to be completely empty and the count\nof unfinished tasks is reduced by the number of tasks drained.\nIf unfinished tasks is zero, callers of join()\nare unblocked.  Also, blocked callers of get()\nare unblocked and will raise QueueShutDown because the\nqueue is empty.",
+      "meaning_reference": "如果 immediate 为真值，则队列会被立即终结。队列将缩减至完全为空而未完成任务的计数将去除已缩减的任务数。如果未完成任务数为零，则 join() 的调用方将被取消阻塞。此外，被阻塞的 get() 调用方也将被取消阻塞并将引发 QueueShutDown 因为队列已为空。",
+      "reference_html": "<p class=\"translated\">如果 <em>immediate</em> 为真值，则队列会被立即终结。队列将缩减至完全为空而未完成任务的计数将去除已缩减的任务数。如果未完成任务数为零，则 <a class=\"reference internal\" href=\"#asyncio.Queue.join\" title=\"asyncio.Queue.join\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">join()</span></code></a> 的调用方将被取消阻塞。此外，被阻塞的 <a class=\"reference internal\" href=\"#asyncio.Queue.get\" title=\"asyncio.Queue.get\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">get()</span></code></a> 调用方也将被取消阻塞并将引发 <a class=\"reference internal\" href=\"#asyncio.QueueShutDown\" title=\"asyncio.QueueShutDown\"><code class=\"xref py py-exc docutils literal notranslate\"><span class=\"pre\">QueueShutDown</span></code></a> 因为队列已为空。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://docs.python.org/3/library/asyncio-queue.html",
+          "final_url": "https://docs.python.org/3/library/asyncio-queue.html",
+          "status": 200,
+          "bytes": 43813,
+          "sha256": "eb495182e0ca2aa1ed0cdc38ee2ea2332da9d6389f3c5876e34c6d9defd8de19",
+          "captured_utc": "2026-11-05T00:53:34.338576+00:00",
+          "paragraph_index": 30,
+          "excerpt_sha256": "30987132428833e0d2b562faaa984ff4362dd2ec849d6933ed70a498e6d6a178"
+        },
+        "reference": {
+          "requested_url": "https://docs.python.org/zh-cn/3/library/asyncio-queue.html",
+          "final_url": "https://docs.python.org/zh-cn/3/library/asyncio-queue.html",
+          "status": 200,
+          "bytes": 45750,
+          "sha256": "f639a018b4a79ad4137268b429ec6614e2c86a450d602ae49e937caa37943328",
+          "captured_utc": "2026-11-05T00:53:34.388536+00:00",
+          "paragraph_index": 30,
+          "excerpt_sha256": "496ff14f5243eb3c3122c2aa1d80fbfc509771d6272af21b70e763b5f4c7bc54"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-sqlite-commit",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "py-sqlite",
+      "category": "autocommit_conditions",
+      "html": "<p>Commit any pending transaction to the database.\nIf <a class=\"reference internal\" href=\"#sqlite3.Connection.autocommit\" title=\"sqlite3.Connection.autocommit\"><code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code></a> is <code class=\"docutils literal notranslate\"><span class=\"pre\">True</span></code>, or there is no open transaction,\nthis method does nothing.\nIf <code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code> is <code class=\"docutils literal notranslate\"><span class=\"pre\">False</span></code>, a new transaction is implicitly\nopened if a pending transaction was committed by this method.</p>",
+      "context_url": "https://docs.python.org/3/library/sqlite3.html",
+      "source_text": "Commit any pending transaction to the database.\nIf autocommit is True, or there is no open transaction,\nthis method does nothing.\nIf autocommit is False, a new transaction is implicitly\nopened if a pending transaction was committed by this method.",
+      "meaning_reference": "向数据库提交任何待处理事务。如果 autocommit 为 True，或者没有已开启的事务，则此方法不会做任何操作。如果 autocommit 为 False，则如果有一个待处理事务被此方法提交则会隐式地开启一个新事务。",
+      "reference_html": "<p class=\"translated\">向数据库提交任何待处理事务。如果 <a class=\"reference internal\" href=\"#sqlite3.Connection.autocommit\" title=\"sqlite3.Connection.autocommit\"><code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code></a> 为 <code class=\"docutils literal notranslate\"><span class=\"pre\">True</span></code>，或者没有已开启的事务，则此方法不会做任何操作。如果 <code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code> 为 <code class=\"docutils literal notranslate\"><span class=\"pre\">False</span></code>，则如果有一个待处理事务被此方法提交则会隐式地开启一个新事务。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://docs.python.org/3/library/sqlite3.html",
+          "final_url": "https://docs.python.org/3/library/sqlite3.html",
+          "status": 200,
+          "bytes": 316235,
+          "sha256": "8b7a00295886b49a51fbd30d30c3b402ee10c71cb8a844e98857ff1ac793dc8d",
+          "captured_utc": "2026-11-05T00:53:34.381348+00:00",
+          "paragraph_index": 132,
+          "excerpt_sha256": "b66de576672cdd4e218a56cb6fb0df56d6b3bda73b133536131a83045b75f2c0"
+        },
+        "reference": {
+          "requested_url": "https://docs.python.org/zh-cn/3/library/sqlite3.html",
+          "final_url": "https://docs.python.org/zh-cn/3/library/sqlite3.html",
+          "status": 200,
+          "bytes": 323375,
+          "sha256": "6083a160d8727b75014da3c4f10f08fa0152ce2e5c9a76456ace8a660a772da8",
+          "captured_utc": "2026-11-05T00:53:34.459350+00:00",
+          "paragraph_index": 132,
+          "excerpt_sha256": "138a2a328ed49ff817fdb47a478d0422aa40d12e86dfa329ac57dcb9b582b533"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-sqlite-close",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "py-sqlite",
+      "category": "transaction_close_order",
+      "html": "<p>Close the database connection.\nIf <a class=\"reference internal\" href=\"#sqlite3.Connection.autocommit\" title=\"sqlite3.Connection.autocommit\"><code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code></a> is <code class=\"docutils literal notranslate\"><span class=\"pre\">False</span></code>,\nany pending transaction is implicitly rolled back.\nIf <code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code> is <code class=\"docutils literal notranslate\"><span class=\"pre\">True</span></code> or <a class=\"reference internal\" href=\"#sqlite3.LEGACY_TRANSACTION_CONTROL\" title=\"sqlite3.LEGACY_TRANSACTION_CONTROL\"><code class=\"xref py py-data docutils literal notranslate\"><span class=\"pre\">LEGACY_TRANSACTION_CONTROL</span></code></a>,\nno implicit transaction control is executed.\nMake sure to <a class=\"reference internal\" href=\"#sqlite3.Connection.commit\" title=\"sqlite3.Connection.commit\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">commit()</span></code></a> before closing\nto avoid losing pending changes.</p>",
+      "context_url": "https://docs.python.org/3/library/sqlite3.html",
+      "source_text": "Close the database connection.\nIf autocommit is False,\nany pending transaction is implicitly rolled back.\nIf autocommit is True or LEGACY_TRANSACTION_CONTROL,\nno implicit transaction control is executed.\nMake sure to commit() before closing\nto avoid losing pending changes.",
+      "meaning_reference": "关闭数据库连接。如果 autocommit 为 False，则任何待处理事务都会被隐式地回滚。如果 autocommit 为 True 或 LEGACY_TRANSACTION_CONTROL，则不会执行隐式的事务控制。请确保在关闭之前 commit() 以避免丢失待处理的更改。",
+      "reference_html": "<p class=\"translated\">关闭数据库连接。如果 <a class=\"reference internal\" href=\"#sqlite3.Connection.autocommit\" title=\"sqlite3.Connection.autocommit\"><code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code></a> 为 <code class=\"docutils literal notranslate\"><span class=\"pre\">False</span></code>，则任何待处理事务都会被隐式地回滚。如果 <code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code> 为 <code class=\"docutils literal notranslate\"><span class=\"pre\">True</span></code> 或 <a class=\"reference internal\" href=\"#sqlite3.LEGACY_TRANSACTION_CONTROL\" title=\"sqlite3.LEGACY_TRANSACTION_CONTROL\"><code class=\"xref py py-data docutils literal notranslate\"><span class=\"pre\">LEGACY_TRANSACTION_CONTROL</span></code></a>，则不会执行隐式的事务控制。请确保在关闭之前 <a class=\"reference internal\" href=\"#sqlite3.Connection.commit\" title=\"sqlite3.Connection.commit\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">commit()</span></code></a> 以避免丢失待处理的更改。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://docs.python.org/3/library/sqlite3.html",
+          "final_url": "https://docs.python.org/3/library/sqlite3.html",
+          "status": 200,
+          "bytes": 316235,
+          "sha256": "8b7a00295886b49a51fbd30d30c3b402ee10c71cb8a844e98857ff1ac793dc8d",
+          "captured_utc": "2026-11-05T00:53:34.381348+00:00",
+          "paragraph_index": 134,
+          "excerpt_sha256": "68b377fbdc0280c5369e50c4ec0a2b7e13ca90283eb4ae6f8a521e3e74179ede"
+        },
+        "reference": {
+          "requested_url": "https://docs.python.org/zh-cn/3/library/sqlite3.html",
+          "final_url": "https://docs.python.org/zh-cn/3/library/sqlite3.html",
+          "status": 200,
+          "bytes": 323375,
+          "sha256": "6083a160d8727b75014da3c4f10f08fa0152ce2e5c9a76456ace8a660a772da8",
+          "captured_utc": "2026-11-05T00:53:34.459350+00:00",
+          "paragraph_index": 134,
+          "excerpt_sha256": "25cd57ed64c1486ce326b9efe47d788ac52db9e379cc4fd397e1a53217e54769"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-sqlite-context",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "py-sqlite",
+      "category": "success_failure_conditions",
+      "html": "<p>A <a class=\"reference internal\" href=\"#sqlite3.Connection\" title=\"sqlite3.Connection\"><code class=\"xref py py-class docutils literal notranslate\"><span class=\"pre\">Connection</span></code></a> object can be used as a context manager that\nautomatically commits or rolls back open transactions when leaving the body of\nthe context manager.\nIf the body of the <a class=\"reference internal\" href=\"../reference/compound_stmts.html#with\"><code class=\"xref std std-keyword docutils literal notranslate\"><span class=\"pre\">with</span></code></a> statement finishes without exceptions,\nthe transaction is committed.\nIf this commit fails,\nor if the body of the <code class=\"docutils literal notranslate\"><span class=\"pre\">with</span></code> statement raises an uncaught exception,\nthe transaction is rolled back.\nIf <a class=\"reference internal\" href=\"#sqlite3.Connection.autocommit\" title=\"sqlite3.Connection.autocommit\"><code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code></a> is <code class=\"docutils literal notranslate\"><span class=\"pre\">False</span></code>,\na new transaction is implicitly opened after committing or rolling back.</p>",
+      "context_url": "https://docs.python.org/3/library/sqlite3.html",
+      "source_text": "A Connection object can be used as a context manager that\nautomatically commits or rolls back open transactions when leaving the body of\nthe context manager.\nIf the body of the with statement finishes without exceptions,\nthe transaction is committed.\nIf this commit fails,\nor if the body of the with statement raises an uncaught exception,\nthe transaction is rolled back.\nIf autocommit is False,\na new transaction is implicitly opened after committing or rolling back.",
+      "meaning_reference": "Connection 对象可被用作上下文管理器以便在离开上下文管理器代码块时自动提交或回滚开启的事务。如果 with 语句体无异常地结束，事务将被提交。如果提交失败，或者如果 with 语句体引发了未捕获的异常，则事务将被回滚。 如果 autocommit 为 False，则会在提交或回滚后隐式地开启一个新事务。",
+      "reference_html": "<p class=\"translated\"><a class=\"reference internal\" href=\"#sqlite3.Connection\" title=\"sqlite3.Connection\"><code class=\"xref py py-class docutils literal notranslate\"><span class=\"pre\">Connection</span></code></a> 对象可被用作上下文管理器以便在离开上下文管理器代码块时自动提交或回滚开启的事务。如果 <a class=\"reference internal\" href=\"../reference/compound_stmts.html#with\"><code class=\"xref std std-keyword docutils literal notranslate\"><span class=\"pre\">with</span></code></a> 语句体无异常地结束，事务将被提交。如果提交失败，或者如果 <code class=\"docutils literal notranslate\"><span class=\"pre\">with</span></code> 语句体引发了未捕获的异常，则事务将被回滚。 如果 <a class=\"reference internal\" href=\"#sqlite3.Connection.autocommit\" title=\"sqlite3.Connection.autocommit\"><code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code></a> 为 <code class=\"docutils literal notranslate\"><span class=\"pre\">False</span></code>，则会在提交或回滚后隐式地开启一个新事务。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://docs.python.org/3/library/sqlite3.html",
+          "final_url": "https://docs.python.org/3/library/sqlite3.html",
+          "status": 200,
+          "bytes": 316235,
+          "sha256": "8b7a00295886b49a51fbd30d30c3b402ee10c71cb8a844e98857ff1ac793dc8d",
+          "captured_utc": "2026-11-05T00:53:34.381348+00:00",
+          "paragraph_index": 431,
+          "excerpt_sha256": "a4a866682a8c1a84b0505d3eb438d20a3e7b0af867c62d61c23e8065e8dc60ad"
+        },
+        "reference": {
+          "requested_url": "https://docs.python.org/zh-cn/3/library/sqlite3.html",
+          "final_url": "https://docs.python.org/zh-cn/3/library/sqlite3.html",
+          "status": 200,
+          "bytes": 323375,
+          "sha256": "6083a160d8727b75014da3c4f10f08fa0152ce2e5c9a76456ace8a660a772da8",
+          "captured_utc": "2026-11-05T00:53:34.459350+00:00",
+          "paragraph_index": 417,
+          "excerpt_sha256": "69f55f187e50780e0353c575677010416afee5b1c3007ebef0821b0fddc27ced"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-sqlite-noop",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "py-sqlite",
+      "category": "condition_disjunction",
+      "html": "<p>If there is no open transaction upon leaving the body of the <code class=\"docutils literal notranslate\"><span class=\"pre\">with</span></code> statement,\nor if <a class=\"reference internal\" href=\"#sqlite3.Connection.autocommit\" title=\"sqlite3.Connection.autocommit\"><code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code></a> is <code class=\"docutils literal notranslate\"><span class=\"pre\">True</span></code>,\nthe context manager does nothing.</p>",
+      "context_url": "https://docs.python.org/3/library/sqlite3.html",
+      "source_text": "If there is no open transaction upon leaving the body of the with statement,\nor if autocommit is True,\nthe context manager does nothing.",
+      "meaning_reference": "如果在离开 with 语句体时没有开启的事务，或者如果 autocommit 为 True，则上下文管理器将不做任何操作。",
+      "reference_html": "<p class=\"translated\">如果在离开 <code class=\"docutils literal notranslate\"><span class=\"pre\">with</span></code> 语句体时没有开启的事务，或者如果 <a class=\"reference internal\" href=\"#sqlite3.Connection.autocommit\" title=\"sqlite3.Connection.autocommit\"><code class=\"xref py py-attr docutils literal notranslate\"><span class=\"pre\">autocommit</span></code></a> 为 <code class=\"docutils literal notranslate\"><span class=\"pre\">True</span></code>，则上下文管理器将不做任何操作。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://docs.python.org/3/library/sqlite3.html",
+          "final_url": "https://docs.python.org/3/library/sqlite3.html",
+          "status": 200,
+          "bytes": 316235,
+          "sha256": "8b7a00295886b49a51fbd30d30c3b402ee10c71cb8a844e98857ff1ac793dc8d",
+          "captured_utc": "2026-11-05T00:53:34.381348+00:00",
+          "paragraph_index": 432,
+          "excerpt_sha256": "ee72682f1e1738af6f30cb387428734ee88c2178d0a4f37d4257e94b424fd873"
+        },
+        "reference": {
+          "requested_url": "https://docs.python.org/zh-cn/3/library/sqlite3.html",
+          "final_url": "https://docs.python.org/zh-cn/3/library/sqlite3.html",
+          "status": 200,
+          "bytes": 323375,
+          "sha256": "6083a160d8727b75014da3c4f10f08fa0152ce2e5c9a76456ace8a660a772da8",
+          "captured_utc": "2026-11-05T00:53:34.459350+00:00",
+          "paragraph_index": 418,
+          "excerpt_sha256": "748baac9c833f28042242e9a0b9a5bd9a956845f81bc50a44beebcaa323a29db"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-sqlite-neither",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "py-sqlite",
+      "category": "negation",
+      "html": "<p>The context manager neither implicitly opens a new transaction\nnor closes the connection. If you need a closing context manager, consider\nusing <a class=\"reference internal\" href=\"contextlib.html#contextlib.closing\" title=\"contextlib.closing\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">contextlib.closing()</span></code></a>.</p>",
+      "context_url": "https://docs.python.org/3/library/sqlite3.html",
+      "source_text": "The context manager neither implicitly opens a new transaction\nnor closes the connection. If you need a closing context manager, consider\nusing contextlib.closing().",
+      "meaning_reference": "上下文管理器既不会隐式开启新事务也不会关闭连接。如果你需要关闭上下文管理器，请考虑使用 contextlib.closing()。",
+      "reference_html": "<p class=\"translated\">上下文管理器既不会隐式开启新事务也不会关闭连接。如果你需要关闭上下文管理器，请考虑使用 <a class=\"reference internal\" href=\"contextlib.html#contextlib.closing\" title=\"contextlib.closing\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">contextlib.closing()</span></code></a>。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://docs.python.org/3/library/sqlite3.html",
+          "final_url": "https://docs.python.org/3/library/sqlite3.html",
+          "status": 200,
+          "bytes": 316235,
+          "sha256": "8b7a00295886b49a51fbd30d30c3b402ee10c71cb8a844e98857ff1ac793dc8d",
+          "captured_utc": "2026-11-05T00:53:34.381348+00:00",
+          "paragraph_index": 434,
+          "excerpt_sha256": "944ead19baa70eb1a5a4f2132e1521132c5465c7694ec627b57166079b335753"
+        },
+        "reference": {
+          "requested_url": "https://docs.python.org/zh-cn/3/library/sqlite3.html",
+          "final_url": "https://docs.python.org/zh-cn/3/library/sqlite3.html",
+          "status": 200,
+          "bytes": 323375,
+          "sha256": "6083a160d8727b75014da3c4f10f08fa0152ce2e5c9a76456ace8a660a772da8",
+          "captured_utc": "2026-11-05T00:53:34.459350+00:00",
+          "paragraph_index": 420,
+          "excerpt_sha256": "bb055844d9bdbb773c48cda3e06054629edda33163cd5b1fece983a141788837"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-abort-before",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "mdn-abort",
+      "category": "temporal",
+      "html": "<p>The <strong><code>abort()</code></strong> method of the <a href=\"/en-US/docs/Web/API/AbortController\"><code>AbortController</code></a> interface aborts an asynchronous operation before it has completed.\nThis is able to abort <a href=\"/en-US/docs/Web/API/Window/fetch\">fetch requests</a>, the consumption of any response bodies, or streams.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController/abort",
+      "source_text": "The abort() method of the AbortController interface aborts an asynchronous operation before it has completed.\nThis is able to abort fetch requests, the consumption of any response bodies, or streams.",
+      "meaning_reference": "AbortController 接口的 abort() 方法会在一个异步操作完成之前中止它。它能够中止 fetch 请求、各种响应主体或者流的消耗。",
+      "reference_html": "<p><a href=\"/zh-CN/docs/Web/API/AbortController\"><code>AbortController</code></a> 接口的 <strong><code>abort()</code></strong> 方法会在一个异步操作完成之前中止它。它能够中止 <a href=\"/zh-CN/docs/Web/API/Window/fetch\">fetch 请求</a>、各种响应主体或者流的消耗。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController/abort",
+          "final_url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController/abort",
+          "status": 200,
+          "bytes": 153576,
+          "sha256": "5c7611bf4615ac41e522081534d08815766f50dc3469752ae74e38a9abf94f0c",
+          "captured_utc": "2026-11-05T00:53:34.790753+00:00",
+          "paragraph_index": 2,
+          "excerpt_sha256": "8709b4e57a0aa238752bd7dde9f9f014eeaebd4094099d792f08ba9d81a4895c"
+        },
+        "reference": {
+          "requested_url": "https://developer.mozilla.org/zh-CN/docs/Web/API/AbortController/abort",
+          "final_url": "https://developer.mozilla.org/zh-CN/docs/Web/API/AbortController/abort",
+          "status": 200,
+          "bytes": 174310,
+          "sha256": "3cb3cb6036ca5ae430b2fa788b5330644762e198f185be57abf762f958493ffa",
+          "captured_utc": "2026-11-05T00:53:34.881699+00:00",
+          "paragraph_index": 6,
+          "excerpt_sha256": "767ebba719515f75babaa5710a1ff4e6f42ece78971c782f5c9f612fbae5d25b"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-abort-reason",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "mdn-abort",
+      "category": "default_condition",
+      "html": "<p>The reason why the operation was aborted, which can be any JavaScript value.\nIf not specified, the reason is set to \"AbortError\" <a href=\"/en-US/docs/Web/API/DOMException\"><code>DOMException</code></a>.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController/abort",
+      "source_text": "The reason why the operation was aborted, which can be any JavaScript value.\nIf not specified, the reason is set to \"AbortError\" DOMException.",
+      "meaning_reference": "操作中止的原因，可以是各种 JavaScript 值。如果没有指定，则将原因设置为“AbortError”DOMException。",
+      "reference_html": "<p>操作中止的原因，可以是各种 JavaScript 值。如果没有指定，则将原因设置为“AbortError”<a href=\"/zh-CN/docs/Web/API/DOMException\"><code>DOMException</code></a>。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController/abort",
+          "final_url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController/abort",
+          "status": 200,
+          "bytes": 153576,
+          "sha256": "5c7611bf4615ac41e522081534d08815766f50dc3469752ae74e38a9abf94f0c",
+          "captured_utc": "2026-11-05T00:53:34.790753+00:00",
+          "paragraph_index": 3,
+          "excerpt_sha256": "14386ee56588e627e5708b04bd1e736b752cac683ab6f457bd70faa0affd7037"
+        },
+        "reference": {
+          "requested_url": "https://developer.mozilla.org/zh-CN/docs/Web/API/AbortController/abort",
+          "final_url": "https://developer.mozilla.org/zh-CN/docs/Web/API/AbortController/abort",
+          "status": 200,
+          "bytes": 174310,
+          "sha256": "3cb3cb6036ca5ae430b2fa788b5330644762e198f185be57abf762f958493ffa",
+          "captured_utc": "2026-11-05T00:53:34.881699+00:00",
+          "paragraph_index": 7,
+          "excerpt_sha256": "88543914f3f5cea96d9f490166c407303d298a2019f04d695ee508fa9e931fc1"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    },
+    {
+      "id": "web-v8-promise-reject",
+      "split": "diagnostic",
+      "group": "fresh_web_excerpt",
+      "family": "mdn-all",
+      "category": "any_all_conditions",
+      "html": "<p><code>Promise.all()</code> will reject immediately upon <strong>any</strong> of the input promises rejecting. In comparison, the promise returned by <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled\"><code>Promise.allSettled()</code></a> will wait for all input promises to complete, regardless of whether or not one rejects. Use <code>allSettled()</code> if you need the final result of every promise in the input iterable.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all",
+      "source_text": "Promise.all() will reject immediately upon any of the input promises rejecting. In comparison, the promise returned by Promise.allSettled() will wait for all input promises to complete, regardless of whether or not one rejects. Use allSettled() if you need the final result of every promise in the input iterable.",
+      "meaning_reference": "Promise.all() 方法会在任何一个输入的 Promise 被拒绝时立即拒绝。相比之下，Promise.allSettled() 方法返回的 Promise 会等待所有输入的 Promise 完成，不管其中是否有 Promise 被拒绝。如果你需要获取输入可迭代对象中每个 Promise 的最终结果，则应使用 allSettled() 方法。",
+      "reference_html": "<p><code>Promise.all()</code> 方法会在<strong>任何一个</strong>输入的 Promise 被拒绝时立即拒绝。相比之下，<a href=\"/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled\"><code>Promise.allSettled()</code></a> 方法返回的 Promise 会等待所有输入的 Promise 完成，不管其中是否有 Promise 被拒绝。如果你需要获取输入可迭代对象中每个 Promise 的最终结果，则应使用 <code>allSettled()</code> 方法。</p>",
+      "origin": {
+        "kind": "web_excerpt",
+        "source": {
+          "requested_url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all",
+          "final_url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all",
+          "status": 200,
+          "bytes": 175255,
+          "sha256": "6af996058c32be5982d5b890247d6b81680011e4b84ab59340023f001a7ab49a",
+          "captured_utc": "2026-11-05T00:53:34.699317+00:00",
+          "paragraph_index": 5,
+          "excerpt_sha256": "a8fda0fdc85cc272485cf08ea4e08e7473cec534c58872a8c199489b2f75bbc9"
+        },
+        "reference": {
+          "requested_url": "https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Promise/all",
+          "final_url": "https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Promise/all",
+          "status": 200,
+          "bytes": 192378,
+          "sha256": "f48db3bfaf98ca6bafb6d136be954a3936c103c610e154b34326de0fc3cbb125",
+          "captured_utc": "2026-11-05T00:53:34.855294+00:00",
+          "paragraph_index": 9,
+          "excerpt_sha256": "b5372836d471eb5a9db68fcad172e240ffc2b772c66d81943d7983383e8f0dfb"
+        }
+      },
+      "review_status": "external_published_reference_alignment_checked_by_assistant",
+      "reference_use": "Meaning only; no slot target or exact-wording requirement; never supplied to inference."
+    }
+  ]
+}
