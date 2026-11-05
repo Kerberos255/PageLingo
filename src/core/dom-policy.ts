@@ -45,8 +45,15 @@ var SKIP_SELECTOR = [
   "[inert]",
   "relative-time",
   "time-ago",
-  "local-time"
+  "local-time",
+  "dt.sig",
+  "dt.sig-object"
 ].join(",");
+// Sphinx API declarations use dt/span/em rather than code. Translating names,
+// default values or punctuation makes the displayed declaration invalid.
+export function isProtectedApiSignature(element) {
+  return Boolean(element?.closest?.("dt.sig,dt.sig-object"));
+}
 export function isGeneratedNode(node) {
   const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   return Boolean(element?.closest("[data-flt-generated]"));
@@ -279,6 +286,7 @@ export function findTranslationRoot(node) {
   return fallback;
 }
 function wrapTextNodesInside(container, doc) {
+  if (isProtectedApiSignature(container)) return;
   const skipTags = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT", "OPTION", "BUTTON", "PRE", "CODE", "KBD", "SAMP", "VAR", "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO"]);
   const containers = [container, ...Array.from(container.querySelectorAll("*"))];
   for (const current of containers) {
@@ -307,7 +315,7 @@ function wrapDecoratedStructuralTextNodes(scope) {
   if (scope instanceof Element && scope.matches(selector)) roots.push(scope);
   roots.push(...Array.from(scope.querySelectorAll(selector)));
   for (const root of roots) {
-    if (root.closest("[data-flt-generated]") || isElementEffectivelyHidden(root)) continue;
+    if (isProtectedApiSignature(root) || root.closest("[data-flt-generated]") || isElementEffectivelyHidden(root)) continue;
     const structuralChild = Array.from(root.children).some((child) => {
       if (child.matches("svg,img,picture,canvas,[role='img'],input,select,textarea,button,[aria-hidden='true'],[hidden],relative-time,time-ago,local-time")) {
         return true;

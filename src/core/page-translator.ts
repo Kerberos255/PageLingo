@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { collectTranslationRoots, findTranslationRoot, isGeneratedNode, isTranslationRootElement } from "./dom-policy";
+import { collectTranslationRoots, findTranslationRoot, isGeneratedNode, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./navigation-layout";
@@ -309,7 +309,7 @@ export class PageTranslator {
         return this.translatedCount;
     }
     async translateRoot(root) {
-        if (this.#disposed || !root.isConnected || isGeneratedNode(root))
+        if (this.#disposed || !root.isConnected || isGeneratedNode(root) || isProtectedApiSignature(root))
             return;
         if (this.#inFlight.has(root)) {
             this.#rerun.add(root);
