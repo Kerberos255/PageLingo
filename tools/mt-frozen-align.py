@@ -34,7 +34,7 @@ def readonly_spans(annotations, target):
     return solutions[0]
 
 
-def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inherit_full_parent_flows=False, close_label_colons=False):
+def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inherit_full_parent_flows=False, close_label_colons=False, close_sentence_punctuation=False):
     words_s, words_t, annotations = case['source_words'], case['target_words'], case['annotations']
     chosen = readonly_resolver(annotations, case['frozen_target'])
     diagnostics = []
@@ -94,6 +94,19 @@ def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inheri
             chosen[a['id']] = (start, end + 1)
             diagnostics.append({'id': a['id'], 'rule': 'include_immediately_adjacent_source_label_colon',
                                 'original_span': [start, end], 'new_span': [start, end + 1]})
+    if close_sentence_punctuation:
+        target16 = case['frozen_target'].encode('utf-16-le')
+        marks = {'.': ['.', '。'], '!': ['!', '！'], '?': ['?', '？']}
+        for a in annotations:
+            text = a['text'].rstrip(); symbol = text[-1:] if text else ''
+            if a.get('kind') != 'format' or a['immutable'] or symbol not in marks: continue
+            if len(re.findall(r"[A-Za-z]+(?:[-'][A-Za-z]+)*", text)) < 2 or re.search(r'(?:[A-Za-z]\.){2,}$', text): continue
+            start, end = chosen[a['id']]; allowed = [s.encode('utf-16-le') for s in marks[symbol]]
+            if target16[2 * (end - 1):2 * end] in allowed: continue
+            if target16[2 * end:2 * (end + 1)] not in allowed: raise ValueError('format sentence punctuation missing from scope')
+            chosen[a['id']] = (start, end + 1)
+            diagnostics.append({'id': a['id'], 'rule': 'include_immediately_adjacent_source_sentence_punctuation',
+                                'original_span': [start, end], 'new_span': [start, end + 1]})
     return [{'id': a['id'], 'start': chosen[a['id']][0], 'end': chosen[a['id']][1]} for a in annotations], diagnostics
 
 
@@ -104,8 +117,8 @@ def main():
     args = parser.parse_args()
     if args.output.exists(): raise ValueError('Use a new result file')
     plan = json.loads(args.plan.read_text())
-    if plan.get('protocol') not in ['frozen-target-span-projection-v9', 'production-owned-projection-v11', 'typed-punctuation-projection-v12'] or plan.get('evaluation_only') is not True or plan.get('optimizer_inputs_approved') is not False: raise ValueError('Expected frozen evaluation plan')
-    owned_policy = plan['protocol'] in ['production-owned-projection-v11', 'typed-punctuation-projection-v12']
+    if plan.get('protocol') not in ['frozen-target-span-projection-v9', 'production-owned-projection-v11', 'typed-punctuation-projection-v12', 'collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14'] or plan.get('evaluation_only') is not True or plan.get('optimizer_inputs_approved') is not False: raise ValueError('Expected frozen evaluation plan')
+    owned_policy = plan['protocol'] in ['production-owned-projection-v11', 'typed-punctuation-projection-v12', 'collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14']
     if owned_policy:
         from mt_owned_projection import readonly_owned
     root = Path(__file__).resolve().parents[1]
@@ -153,6 +166,8 @@ def main():
         try:
             kwargs = {'readonly_resolver': readonly_owned, 'inherit_full_parent_flows': True} if owned_policy else {}
             if plan['protocol'] == 'typed-punctuation-projection-v12': kwargs['close_label_colons'] = True
+            if plan['protocol'] in ['collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14']: kwargs['close_label_colons'] = plan['rules']['source_label_colon_closure']
+            if plan['protocol'] == 'frozen-prose-gaps-v14': kwargs['close_sentence_punctuation'] = True
             row['spans'], row['projection_diagnostics'] = project(case, links, plan['rules']['min_cosine'], **kwargs); row['status'] = 'projected'
         except ValueError as error:
             row.update(status='rejected', reason=str(error), spans=[])

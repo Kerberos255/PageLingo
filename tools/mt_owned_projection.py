@@ -16,7 +16,8 @@ def readonly_owned(annotations, target):
         literal = re.escape(a['text'])
         if a['anchor_kind'] == 'prose-punctuation':
             role = a['punctuation']
-            pattern = r'[ \t]*(?:' + '|'.join(re.escape(x) for x in role['alternatives']) + r')[ \t]*'
+            whitespace = r'[ \t\r\n\f]*' if role.get('collapsibleWhitespace') else r'[ \t]*'
+            pattern = whitespace + '(?:' + '|'.join(re.escape(x) for x in role['alternatives']) + ')' + whitespace
             if role['terminal']: pattern += r'\Z'
         else:
             pattern = r'(?<![A-Za-z0-9_$])' + literal + r'(?![A-Za-z0-9_$])' if a['anchor_kind'] == 'opaque' else literal

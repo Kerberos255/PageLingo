@@ -44,8 +44,9 @@ async function plan(parentFile, captureFile, nativeFile, output) {
     const candidate = {text: natural.text, finish_reason: natural.finish_reason};
     const base = {id: old.id, site_id: old.site_id, locator: old.locator, context_url: c.url, html: c.html,
       source_text: c.source_text, source_words: c.source_words, annotations: c.annotations, source_contract: c.source_contract,
-      natural_request: c.natural_request, punctuation_policy: c.punctuation_policy ?? "strict", candidate, frozen_target: natural.text, target_sha256: sha(natural.text),
-      request_sha256: natural.request_sha256, group: "v10_seen_regression_rebound_to_current_owned_source"};
+      natural_request: c.natural_request, punctuation_policy: c.punctuation_policy ?? "strict", whitespace_policy: c.whitespace_policy ?? "literal", allocation_policy: c.allocation_policy ?? "fixed", candidate, frozen_target: natural.text, target_sha256: sha(natural.text),
+      request_sha256: natural.request_sha256, group: "recorded_translation_rebound_to_current_owned_source",
+      prior_experiment: parent.experiment ?? null, prior_group: old.group ?? null};
     source_cases.push(base);
     try {
       const quality = api.assessOwnedCandidate({sourceText: c.source_text, annotations: c.annotations}, candidate);
@@ -56,15 +57,17 @@ async function plan(parentFile, captureFile, nativeFile, output) {
   }
   const paths = [...new Set([...await filesIn("src"), ...await filesIn("eval/mt-quality"), ...files])];
   const typedPunctuation = capture.punctuation_policy === "prose-v1";
-  const result = {protocol: typedPunctuation ? "typed-punctuation-projection-v12" : "production-owned-projection-v11", evaluation_only: true, optimizer_inputs_approved: false,
+  const collapseWhitespace = capture.whitespace_policy === "collapse-v1";
+  const proseGaps = capture.allocation_policy === "prose-gaps-v1";
+  const result = {protocol: proseGaps ? "frozen-prose-gaps-v14" : collapseWhitespace ? "collapsible-whitespace-projection-v13" : typedPunctuation ? "typed-punctuation-projection-v12" : "production-owned-projection-v11", evaluation_only: true, optimizer_inputs_approved: false,
     production_enabled: false, new_translation_generations: 0, source_commit: execFileSync("git", ["rev-parse", "HEAD"], {cwd: projectRoot, encoding: "utf8"}).trim(),
     parent_plan_sha256: sha(await readFile(parentFile)), capture_sha256: sha(await readFile(captureFile)), capture_runtime_sha256: capture.runtime_sha256,
     native_run_sha256: sha(await readFile(nativeFile)), translator: native.model,
     rules: {min_cosine: 0.55, required_content_word_coverage: 1, source_articles_ignored_for_coverage: ["a", "an", "the"],
-      frozen_target_rewriting_allowed: false, only_production_owned_text_nodes_editable: !typedPunctuation,
-      additional_write_authority: typedPunctuation ? "bounded standalone prose punctuation; no added model slots or request changes" : null,
+      frozen_target_rewriting_allowed: false, only_production_owned_text_nodes_editable: !typedPunctuation && !collapseWhitespace,
+      additional_write_authority: proseGaps ? "same-parent original prose gaps may carry frozen target words or become empty, with complete-target witness; no new nodes or model slots" : collapseWhitespace ? "bounded prose punctuation and collapsible ASCII whitespace; no new model slots or request changes" : typedPunctuation ? "bounded standalone prose punctuation; no added model slots or request changes" : null,
       literal_readonly_anchors_exact: true, prose_punctuation_policy: typedPunctuation ? "prose-v1" : "strict",
-      source_label_colon_closure: typedPunctuation, full_parent_flows_inherit_only_parent_span: true, live_scope_review_required: true},
+      allocation_policy: proseGaps ? "prose-gaps-v1" : "fixed", collapsible_whitespace_policy: collapseWhitespace ? "collapse-v1" : "literal", source_label_colon_closure: typedPunctuation, source_sentence_punctuation_closure: proseGaps, full_parent_flows_inherit_only_parent_span: true, live_scope_review_required: true},
     source_hashes: Object.fromEntries(await Promise.all(paths.map(async p => [p, sha(await readFile(path.join(projectRoot, p)))]))),
     excluded_sources: excluded, candidate_refusals, source_cases, cases};
   await write(output, result); return {source_supported_cache_matches: source_cases.length, source_excluded: excluded.length, candidates_rejected: candidate_refusals.length, encoder_pairs: cases.length};

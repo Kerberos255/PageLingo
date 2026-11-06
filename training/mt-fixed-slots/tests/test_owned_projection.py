@@ -14,6 +14,20 @@ owned = module('owned_policy_test', 'mt_owned_projection.py')
 
 
 class OwnedProjectionRules(unittest.TestCase):
+    def test_whole_sentence_format_closes_its_adjacent_period_without_consuming_words(self):
+        case = {'source_text':'Read this paragraph. Then save.','frozen_target':'阅读此段。然后保存。',
+                'source_words':[{'text':'Read','start':0,'end':4,'lexical':True}],
+                'target_words':[{'text':'阅读此段','start':0,'end':4,'lexical':True}],
+                'annotations':[{'id':'s','kind':'format','immutable':False,'parent':None,'start':0,'end':20,'text':'Read this paragraph.'}]}
+        spans,notes=align.project(case,[(0,0,.9)],.55,close_sentence_punctuation=True)
+        self.assertEqual(spans,[{'id':'s','start':0,'end':5}]);self.assertEqual(notes[-1]['rule'],'include_immediately_adjacent_source_sentence_punctuation')
+
+    def test_collapsible_terminal_punctuation_accepts_ascii_line_whitespace_only(self):
+        annotations = [{'id': 'period', 'immutable': True, 'text': '.\n', 'anchor_kind': 'prose-punctuation',
+                        'punctuation': {'symbol': '.', 'alternatives': ['.', '。'], 'terminal': True, 'collapsibleWhitespace': True}}]
+        self.assertEqual(owned.readonly_owned(annotations, '翻译。\n'), {'period': (2, 4)})
+        with self.assertRaises(ValueError): owned.readonly_owned(annotations, '翻译。 ')
+
     def test_typed_terminal_punctuation_does_not_match_a_code_dot_or_earlier_sentence(self):
         annotations = [{'id': 'code', 'immutable': True, 'text': 'x.y()', 'anchor_kind': 'opaque'},
                        {'id': 'period', 'immutable': True, 'text': '.', 'anchor_kind': 'prose-punctuation',

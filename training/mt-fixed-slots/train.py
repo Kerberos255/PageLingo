@@ -37,10 +37,11 @@ args.output.mkdir(parents=True, exist_ok=True)
 manifest = json.loads((args.data / "manifest.json").read_text())
 semantic = manifest.get("corpus") == "semantic-rewrite-v4"
 corrective = manifest.get("corpus") == "corrective-fixed-v5"
+scope_choice = manifest.get("corpus") == "scope-choice-v1"
 paired = semantic or corrective
-if manifest.get("protocol") != ("semantic-rewrite-multitask-v1" if semantic else "production-fixed-text-v1"):
+if manifest.get("protocol") != ("frozen-scope-choice-v1" if scope_choice else "semantic-rewrite-multitask-v1" if semantic else "production-fixed-text-v1"):
     raise ValueError("Training data must be exported with the production fixed-text protocol")
-if args.synthetic_candidate and manifest.get("corpus") not in ["targeted-synthetic-v2", "targeted-synthetic-v3", "semantic-rewrite-v4", "corrective-fixed-v5"]:
+if args.synthetic_candidate and manifest.get("corpus") not in ["targeted-synthetic-v2", "targeted-synthetic-v3", "semantic-rewrite-v4", "corrective-fixed-v5", "scope-choice-v1"]:
     raise ValueError("Synthetic candidate mode requires a separate audited curriculum, not the old seed or an evaluation set")
 if manifest.get("corpus") == "targeted-synthetic-v3" and config.get("checkpoint_selection") != "final":
     raise ValueError("v3 compares both fixed final checkpoints; total validation loss must not silently select one")
@@ -57,7 +58,13 @@ if corrective:
     from corrective_contract import validate_corrective_config, validate_corrective_row
     from validation_metrics import target_kinds
     validate_corrective_config(config, manifest)
-if args.expected_initial_sha256 and (not paired or not re.fullmatch(r"[a-f0-9]{64}", args.expected_initial_sha256)):
+if scope_choice:
+    if not args.synthetic_candidate: raise ValueError("Scope choices require an explicit bounded synthetic pilot")
+    from scope_choice_contract import validate_scope_config, validate_scope_rows, scope_trainer_class
+    validate_scope_config(config, manifest)
+    validate_scope_rows({split: [json.loads(line) for line in (args.data / manifest["files"][split]["file"]).read_text().splitlines() if line.strip()]
+                         for split in ["train", "validation"]})
+if args.expected_initial_sha256 and (not (paired or scope_choice) or not re.fullmatch(r"[a-f0-9]{64}", args.expected_initial_sha256)):
     raise ValueError("Expected initialization digest must identify an explicit paired curriculum")
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -163,6 +170,8 @@ for split in ["train", "validation"]:  # Evaluation/diagnostic files can never e
             for kind, weight in zip(kinds, weights):
                 kind_counts[kind] = kind_counts.get(kind, 0) + 1
                 weighted_mass[kind] = weighted_mass.get(kind, 0.) + weight
+        elif scope_choice:
+            task_counts[row["task"]] = task_counts.get(row["task"], 0) + 1
         encoded.append(item)
         lengths.append(len(input_ids)); targets.append(len(target_ids))
     datasets[split] = encoded
@@ -171,6 +180,9 @@ for split in ["train", "validation"]:  # Evaluation/diagnostic files can never e
         if task_counts != manifest["task_counts"][split]:
             raise ValueError("Task counts differ from the frozen manifest")
         stats["splits"][split].update(task_counts=task_counts, target_kind_tokens=kind_counts, weighted_target_mass=weighted_mass)
+    elif scope_choice:
+        if task_counts != manifest["task_counts"][split]: raise ValueError("Scope task counts differ from the manifest")
+        stats["splits"][split]["task_counts"] = task_counts
 
 def collate(rows):
     size = max(len(row["input_ids"]) for row in rows)
@@ -190,6 +202,10 @@ if semantic:
 elif corrective:
     stats["loss_definition"] = {"kind": "trainer_default_causal_cross_entropy", "content_weight": 1., "marker_weight": 1.,
         "eos_weight": 1., "prompt_and_padding_masked": True, "validation_loss_is_weighted": False}
+elif scope_choice:
+    stats["loss_definition"] = {"kind": "batch1_sequence_mean_target_ce", "prompt_and_padding_masked": True,
+        "eos_supervised": True, "token_count_across_accumulation_passed_to_model": False,
+        "note": "Choice/EOS examples and translation examples each contribute their sequence mean; no automatic checkpoint winner."}
 stats["review_status"] = "assistant_audited_synthetic" if args.synthetic_candidate and unreviewed else "assistant_authored_needs_human_review" if unreviewed else "human_reviewed"
 stats["run_kind"] = "synthetic_research_candidate" if args.synthetic_candidate else "pipeline_probe" if unreviewed or args.probe else "fine_tuning_candidate"
 resume_adapter = None
@@ -244,7 +260,7 @@ else:
 model.enable_input_require_grads()
 stats["model_and_adapter_load_wall_s"] = time.perf_counter() - load_started
 stats["parameters"] = {"total": sum(p.numel() for p in model.parameters()), "trainable": sum(p.numel() for p in model.parameters() if p.requires_grad)}
-if paired:
+if paired or scope_choice:
     if not stats["parameters"]["trainable"] or any(p.requires_grad and "lora_" not in name for name, p in model.named_parameters()):
         raise RuntimeError("Only LoRA parameters may train in paired curricula")
     stats["base_weights_frozen"] = True
@@ -264,7 +280,7 @@ class FiniteMetrics(TrainerCallback):
             if key in (logs or {}) and not math.isfinite(float(logs[key])):
                 raise FloatingPointError("Non-finite training metric: " + key)
 
-TrainerType = semantic_trainer_class(Trainer) if semantic else Trainer
+TrainerType = scope_trainer_class(Trainer) if scope_choice else semantic_trainer_class(Trainer) if semantic else Trainer
 trainer = TrainerType(model=model, args=arguments, train_dataset=datasets["train"], eval_dataset=datasets["validation"], data_collator=collate, callbacks=[FiniteMetrics()])
 start = time.perf_counter()
 before = trainer.evaluate()

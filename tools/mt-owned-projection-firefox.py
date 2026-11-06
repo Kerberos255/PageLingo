@@ -22,6 +22,8 @@ def main():
     parser.add_argument('--mode', choices=['capture', 'preview', 'commit'], default='capture')
     parser.add_argument('--input', type=Path)
     parser.add_argument('--punctuation-policy', choices=['strict', 'prose-v1'], default='strict')
+    parser.add_argument('--whitespace-policy', choices=['literal', 'collapse-v1'], default='literal')
+    parser.add_argument('--allocation-policy', choices=['fixed', 'prose-gaps-v1'], default='fixed')
     args = parser.parse_args()
     if args.output.exists(): raise ValueError('Preserve earlier evidence; use a new directory')
     if args.mode != 'capture' and not args.input: raise ValueError('Preview/commit require frozen input')
@@ -30,10 +32,12 @@ def main():
     subprocess.run(['node', '--input-type=module', '-e', "import{build}from'esbuild';await build({entryPoints:['eval/mt-quality/browser-owned-projection.ts'],bundle:true,platform:'browser',format:'iife',globalName:'OwnedEval',footer:{js:'window.__ownedEval=OwnedEval;'},outfile:process.argv[1],logLevel:'silent'});", str(runtime)], cwd=ROOT, check=True)
     sites = json.loads(args.sites.read_text()); parent = json.loads(args.parent.read_text())
     items = parent['cases'] if args.mode == 'capture' else json.loads(args.input.read_text())
-    if args.mode == 'capture': items = [{**x, 'punctuation_policy': args.punctuation_policy} for x in items]
+    if args.mode == 'capture': items = [{**x, 'punctuation_policy': args.punctuation_policy, 'whitespace_policy': args.whitespace_policy, 'allocation_policy': args.allocation_policy} for x in items]
     policy = 'prose-v1' if any(x.get('punctuation_policy') == 'prose-v1' for x in items) else 'strict'
-    result = {'protocol': 'typed-punctuation-projection-v12-browser' if policy == 'prose-v1' else 'production-owned-projection-v11-browser', 'mode': args.mode,
-              'punctuation_policy': policy,
+    whitespace = 'collapse-v1' if any(x.get('whitespace_policy') == 'collapse-v1' for x in items) else 'literal'
+    allocation = 'prose-gaps-v1' if any(x.get('allocation_policy') == 'prose-gaps-v1' for x in items) else 'fixed'
+    result = {'protocol': 'frozen-prose-gaps-v14-browser' if allocation == 'prose-gaps-v1' else 'collapsible-whitespace-projection-v13-browser' if whitespace == 'collapse-v1' else 'typed-punctuation-projection-v12-browser' if policy == 'prose-v1' else 'production-owned-projection-v11-browser', 'mode': args.mode,
+              'punctuation_policy': policy, 'whitespace_policy': whitespace, 'allocation_policy': allocation,
               'started_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'parent_plan_sha256': sha(args.parent),
               'runtime_sha256': sha(runtime), 'sites_sha256': sha(args.sites), 'new_model_inference': False,
               'tls_verification_enabled': True, 'sites': []}

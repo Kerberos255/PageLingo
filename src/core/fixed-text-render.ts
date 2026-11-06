@@ -1,8 +1,9 @@
 import { mountTranslation } from "./render";
 import { isOptionalEnglishArticle } from "./translation-quality";
 import { isElementEffectivelyHidden, isTranslationRootElement } from "./dom-policy";
+import {canCollapseProseWhitespace, canWriteFrozenProseGap, isAsciiWhitespace, isAsciiWhitespaceOrEmpty} from "./collapsible-whitespace";
 
-export interface SourceTextSlot { id: number; node: Text; parent: Node; source: string }
+export interface SourceTextSlot { id: number; node: Text; parent: Node; source: string; writePolicy?: "collapsible-whitespace" | "frozen-prose-gap" }
 interface TextEdit extends SourceTextSlot { translated: string }
 export interface FixedTextRecord {
   root: HTMLElement;
@@ -11,6 +12,9 @@ export interface FixedTextRecord {
   mode: "translation" | "bilingual";
   translationNode: HTMLElement | null;
 }
+export interface FrozenProseWitness {target: string; readProjected: (edits: ReadonlyMap<Text, string>) => string}
+const frozenSourceAuthority = new WeakSet<SourceTextSlot>();
+const frozenRecordAuthority = new WeakMap<FixedTextRecord, FrozenProseWitness>();
 
 function sourceNodes(root: HTMLElement): Node[] {
   const nodes: Node[] = [];
@@ -37,11 +41,33 @@ export function prepareFixedTextRecord(root: HTMLElement, slots: SourceTextSlot[
       throw new Error("MT text-node mapping changed; original paragraph retained");
     }
     const translated = target.textContent ?? "";
-    if (!translated.trim() && !isOptionalEnglishArticle(slot.source)) throw new Error("MT empty text-node translation");
+    if (slot.writePolicy === "frozen-prose-gap") {
+      if (!frozenSourceAuthority.has(slot) || !canWriteFrozenProseGap(slot.node, slot.source)) {
+        throw new Error("MT frozen prose gap requires verified application authority");
+      }
+    } else if (slot.writePolicy === "collapsible-whitespace") {
+      if (!isAsciiWhitespace(slot.source) || !isAsciiWhitespaceOrEmpty(translated) || !canCollapseProseWhitespace(slot.node)) {
+        throw new Error("MT collapsible whitespace ownership changed");
+      }
+    } else if (!translated.trim() && !isOptionalEnglishArticle(slot.source)) throw new Error("MT empty text-node translation");
     edits.push({...slot, translated});
   }
   const snapshot = sourceNodes(root).map(node => ({node, text: node.nodeType === Node.TEXT_NODE ? node.textContent : null}));
   return {root, edits, snapshot, mode: "bilingual", translationNode: null};
+}
+
+// The caller owns and verifies semantic ranges. This separate API only admits
+// ordinary prose gaps after checking the complete frozen target against the
+// renderer's parsed edits. JSON/model output cannot mint the private authority.
+export function prepareFrozenProseRecord(root: HTMLElement, slots: SourceTextSlot[], html: string, witness: FrozenProseWitness): FixedTextRecord {
+  if (!witness.target.trim()) throw new Error("MT frozen prose target is empty");
+  const authorized = slots.map(slot => ({...slot}));
+  authorized.forEach(slot => {if (slot.writePolicy === "frozen-prose-gap") frozenSourceAuthority.add(slot);});
+  const record = prepareFixedTextRecord(root, authorized, html);
+  if (witness.readProjected(new Map(record.edits.map(edit => [edit.node, edit.translated]))) !== witness.target) {
+    throw new Error("MT frozen prose target witness failed");
+  }
+  frozenRecordAuthority.set(record, Object.freeze({target: witness.target, readProjected: witness.readProjected})); return record;
 }
 
 export function fixedTextRecordUnchanged(record: FixedTextRecord): boolean {
@@ -101,7 +127,12 @@ function bilingualFragment(root: HTMLElement, record: FixedTextRecord): Document
 export function applyFixedTextRecord(root: HTMLElement, record: FixedTextRecord, mode: "translation" | "bilingual", language: string): boolean {
   const unchanged = fixedTextRecordUnchanged(record);
   clearFixedTextRecord(record);
-  if (!unchanged) return false;
+  if (!unchanged || record.edits.some(edit => edit.writePolicy === "collapsible-whitespace"
+    && !canCollapseProseWhitespace(edit.node) || edit.writePolicy === "frozen-prose-gap"
+    && !canWriteFrozenProseGap(edit.node, edit.source))) return false;
+  const witness = frozenRecordAuthority.get(record);
+  if (record.edits.some(edit => edit.writePolicy === "frozen-prose-gap") && !witness) return false;
+  if (witness && witness.readProjected(new Map(record.edits.map(edit => [edit.node, edit.translated]))) !== witness.target) return false;
   if (mode === "translation") {
     // Validate the entire paragraph before the first write; only existing Text.data changes.
     for (const edit of record.edits) edit.node.data = edit.translated;
