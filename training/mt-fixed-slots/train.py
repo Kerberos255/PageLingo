@@ -37,11 +37,11 @@ args.output.mkdir(parents=True, exist_ok=True)
 manifest = json.loads((args.data / "manifest.json").read_text())
 semantic = manifest.get("corpus") == "semantic-rewrite-v4"
 corrective = manifest.get("corpus") == "corrective-fixed-v5"
-scope_choice = manifest.get("corpus") == "scope-choice-v1"
+scope_choice = manifest.get("corpus") in ["scope-choice-v1", "scope-choice-v2"]
 paired = semantic or corrective
 if manifest.get("protocol") != ("frozen-scope-choice-v1" if scope_choice else "semantic-rewrite-multitask-v1" if semantic else "production-fixed-text-v1"):
     raise ValueError("Training data must be exported with the production fixed-text protocol")
-if args.synthetic_candidate and manifest.get("corpus") not in ["targeted-synthetic-v2", "targeted-synthetic-v3", "semantic-rewrite-v4", "corrective-fixed-v5", "scope-choice-v1"]:
+if args.synthetic_candidate and manifest.get("corpus") not in ["targeted-synthetic-v2", "targeted-synthetic-v3", "semantic-rewrite-v4", "corrective-fixed-v5", "scope-choice-v1", "scope-choice-v2"]:
     raise ValueError("Synthetic candidate mode requires a separate audited curriculum, not the old seed or an evaluation set")
 if manifest.get("corpus") == "targeted-synthetic-v3" and config.get("checkpoint_selection") != "final":
     raise ValueError("v3 compares both fixed final checkpoints; total validation loss must not silently select one")

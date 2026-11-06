@@ -28,7 +28,8 @@ def validate_scope_rows(splits):
  return True
 
 def validate_scope_config(config,manifest):
- if manifest.get('protocol')!='frozen-scope-choice-v1' or manifest.get('corpus')!='scope-choice-v1' or manifest.get('holdout_in_optimizer_inputs') is not False:raise ValueError('Invalid scope manifest')
+ if manifest.get('protocol')!='frozen-scope-choice-v1' or manifest.get('corpus') not in ['scope-choice-v1','scope-choice-v2'] or manifest.get('holdout_in_optimizer_inputs') is not False:raise ValueError('Invalid scope manifest')
+ if config.get('corpus','scope-choice-v1')!=manifest['corpus']:raise ValueError('Scope config and corpus differ')
  if config.get('initialization')!='fresh_base' or config.get('checkpoint_selection')!='final' or config.get('batch_size')!=1:raise ValueError('Scope pilot requires fresh base, batch1 and a fixed final checkpoint')
  if not 1<=config.get('candidate_max_steps',0)<=128:raise ValueError('Scope pilot exceeds the step bound')
 

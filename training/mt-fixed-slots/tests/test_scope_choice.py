@@ -37,10 +37,21 @@ class ScopeChoiceContract(unittest.TestCase):
    self.assertGreater(m['task_counts']['train']['scope_choice'],m['task_counts']['train']['natural_replay'])
 
 class ScopeChoiceKit(unittest.TestCase):
- def build_kit(self,root):
+ def build_kit(self,root,version='v1',previous=None):
   spec=importlib.util.spec_from_file_location('scope_package_builder',HERE.parents[1]/'tools/mt-scope-training-package.py')
   module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-  return module.build(root,None)
+  return module.build(root,None,version,previous)
+ def test_v2_uses_new_holdout_and_preserves_every_old_evaluation_request(self):
+  import subprocess
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp);old=self.build_kit(root/'v1');previous=Path(old['package'])/'scope-evaluation-plan.json'
+   new=self.build_kit(root/'v2','v2',previous);package=Path(new['package']);plan=json.loads((package/'scope-evaluation-plan.json').read_text())
+   old_jobs=json.loads(previous.read_text())['jobs'];regression=[j for j in plan['jobs'] if j['evaluation_cohort']=='frozen-v1-regression']
+   self.assertEqual([j['request'] for j in regression],[j['request'] for j in old_jobs]);self.assertEqual(new['gpu_jobs_each'],200)
+   self.assertEqual(len([j for j in plan['jobs'] if j['evaluation_cohort']=='scope-choice-v2-new-holdout']),100)
+   result=subprocess.run([sys.executable,'-S',str(package/'research_v2.py'),'--root',str(root/'v2'),'--mode','run','--plan'],capture_output=True,text=True)
+   self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(json.loads(result.stdout)['bf16_jobs_each'],200)
+   self.assertEqual(json.loads((root/'v2/tools/mt-control/current-task.json').read_text())['run_prefix'],'scope-choice-v2')
  def test_portable_plan_validates_all_files_without_gpu_or_dependencies(self):
   import subprocess,hashlib,zipfile
   with tempfile.TemporaryDirectory() as temp:
@@ -86,5 +97,62 @@ class ScopeChoiceKit(unittest.TestCase):
     with patch.object(sys,'argv',['workflow','--root',str(root),'--mode','run']):self.assertEqual(module.main(),0)
    self.assertEqual(len(calls),4);run=next((root/'outputs').glob('scope-choice-v1-run-*'));state=json.loads((run/'workflow-result.json').read_text())
    self.assertTrue(state['training_completed']);self.assertTrue(state['gpu_comparison_completed']);self.assertTrue((run/'gpu-handoff.zip').is_file())
+   self.assertTrue(state['handoff_validation']['all_member_sha256_passed'])
+
+class HardScopeData(unittest.TestCase):
+ def test_new_data_is_disjoint_from_old_prompts_and_keeps_real_template_families_separate(self):
+  from scope_choice_data_v2 import build as build_v2,AGENTS
+  data=build_v2();self.assertTrue(validate_scope_rows(data));old={r['messages'][0]['content'] for rows in build().values() for r in rows}
+  self.assertFalse(old&{r['messages'][0]['content'] for split in ['train','validation'] for r in data[split]})
+  normalized={}
+  for split,rows in data.items():
+   values=set()
+   for row in rows:
+    if row.get('reference_kind')!='assistant_audited_causal_contrast':continue
+    source=row['source_text']
+    for term,zh in sum((list(group) for group in AGENTS[split]),[]):source=source.replace(term,'ENTITY')
+    values.add(source)
+   normalized[split]=values
+  self.assertFalse(normalized['train']&normalized['validation']);self.assertFalse(normalized['train']&normalized['holdout']);self.assertFalse(normalized['validation']&normalized['holdout'])
+ def test_missing_and_present_pairs_bind_the_same_occurrence_without_changing_translation(self):
+  from scope_choice_data_v2 import build as build_v2
+  data=build_v2();positive={};missing={}
+  for row in data['train']:
+   if row['task']!='scope_choice' or row['category'].startswith('quantity'):continue
+   key=row['pair_id'].rsplit('-',1)[0];(missing if row['category'].endswith('_missing') else positive).setdefault(key,row)
+  self.assertEqual(positive.keys(),missing.keys())
+  for key,row in positive.items():
+   other=missing[key]
+   for field in ['source_text','source_focus','frozen_target']:self.assertEqual(row[field],other[field])
+   self.assertIsNone(other['gold_candidate']);self.assertNotIn(row['gold_candidate'],[[c['start'],c['end']] for c in other['candidates']])
+  choices=[r for r in data['train'] if r['task']=='scope_choice'];self.assertEqual(sum(r['gold_candidate'] is None for r in choices),len(choices)//2)
+ def test_v2_config_cannot_be_applied_to_v1_or_resume_the_previous_adapter(self):
+  c=json.loads((HERE/'config-scope-choice-v2.json').read_text());m={'protocol':'frozen-scope-choice-v1','corpus':'scope-choice-v2','holdout_in_optimizer_inputs':False}
+  validate_scope_config(c,m);self.assertRaises(ValueError,validate_scope_config,c,{**m,'corpus':'scope-choice-v1'})
+  self.assertRaises(ValueError,validate_scope_config,{**c,'initialization':'resume_verified_adapter'},m)
+
+class HandoffIdentity(unittest.TestCase):
+ def make_zip(self,path,records,payload):
+  import zipfile
+  with zipfile.ZipFile(path,'w') as bundle:
+   for name,data in payload.items():bundle.writestr(name,data)
+   bundle.writestr('MANIFEST.json',json.dumps({'files':records}))
+ def test_legacy_windows_paths_are_explicit_and_never_change_payload_identity(self):
+  import hashlib
+  from handoff_archive import verify_handoff
+  with tempfile.TemporaryDirectory() as temp:
+   p=Path(temp)/'legacy.zip';record={'bytes':3,'sha256':hashlib.sha256(b'abc').hexdigest()}
+   self.make_zip(p,{'candidate\\adapter\\part.json':record},{'candidate/adapter/part.json':b'abc'})
+   self.assertRaises(ValueError,verify_handoff,p);self.assertEqual(verify_handoff(p,legacy_windows_paths=True)['legacy_windows_paths_normalized'],1)
+   self.make_zip(p,{'candidate/adapter/part.json':record},{'candidate/adapter/part.json':b'bad'})
+   self.assertRaises(ValueError,verify_handoff,p)
+ def test_colliding_paths_and_unlisted_members_are_rejected(self):
+  import hashlib
+  from handoff_archive import verify_handoff
+  with tempfile.TemporaryDirectory() as temp:
+   p=Path(temp)/'legacy.zip';record={'bytes':3,'sha256':hashlib.sha256(b'abc').hexdigest()}
+   self.make_zip(p,{'a\\b':record,'a/b':record},{'a/b':b'abc'})
+   self.assertRaises(ValueError,verify_handoff,p,legacy_windows_paths=True)
+   self.make_zip(p,{'a':record},{'a':b'abc','extra':b'abc'});self.assertRaises(ValueError,verify_handoff,p)
 
 if __name__=='__main__':unittest.main()
