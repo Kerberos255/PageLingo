@@ -15,11 +15,15 @@ def main(config_name='config-scope-choice-v1.json'):
  from scope_choice_contract import validate_scope_config
  from evaluate_scope_choice import validate_eval_plan
  validate_scope_config(config,manifest);evaluation=json.loads((HERE/'scope-evaluation-plan.json').read_text());validate_eval_plan(evaluation)
+ diagnostics=config.get('diagnostic_adapters',[]);diagnostic_jobs=0
+ if diagnostics:
+  control=json.loads((HERE/'candidate-count-plan.json').read_text());validate_eval_plan(control);diagnostic_jobs=len(control['jobs'])
  root=args.root.resolve();prefix=manifest['corpus']
  if args.plan:
   print(json.dumps({'mode':args.mode,'source_commit':package['source_commit'],'base':'models/hy-mt2-1.8b','base_revision':config['base_revision'],
    'initialization':'fresh original base, no old adapter resumed','max_optimizer_steps':config['candidate_max_steps'],'data':manifest['task_counts'],
    'bf16_jobs_each':len(evaluation['jobs']),'gpu_scope':['training','BF16 comparison'],'cloud_scope':['LoRA conversion/quantization','CPU evaluation','Firefox'],
+   'diagnostic_jobs_each':diagnostic_jobs,'diagnostic_adapters':[d['id'] for d in diagnostics],'maximum_generation_calls':2*len(evaluation['jobs'])+len(diagnostics)*diagnostic_jobs,
    'main_pc_browser_required':False,'dependencies_installed':False,'upload':False},indent=2));return 0
  if os.name=='nt' and (root.drive.lower()=='c:' or str(root).startswith('\\\\')):raise ValueError('Launch from the original local non-C project drive')
  for key in CACHE_KEYS:
@@ -41,6 +45,22 @@ def main(config_name='config-scope-choice-v1.json'):
   if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():raise ValueError('BF16 CUDA GPU required; no training started')
   run('preflight',[sys.executable,'-u',HERE/'train.py','--data',HERE/'data','--base',base,'--output',out/'preflight','--config',HERE/config_name,'--synthetic-candidate'])
   if args.mode=='check':state.update(workflow_completed=True,check_passed=True);save();print('GPU_PREFLIGHT_COMPLETE: no optimization or model conversion executed.');return 0
+  if diagnostics:
+   control_plan=HERE/'candidate-count-plan.json';validate_eval_plan(json.loads(control_plan.read_text()))
+   for diagnostic in diagnostics:
+    matches=[]
+    for previous in sorted((root/'outputs').glob(diagnostic['run_prefix']+'-run-*'),reverse=True):
+     previous_state=previous/'workflow-result.json';old=previous/'candidate/adapter'
+     if not old.resolve().is_relative_to(root) or not previous_state.is_file() or not json.loads(previous_state.read_text()).get('workflow_completed'):continue
+     if (old/'adapter_model.safetensors').is_file() and sha(old/'adapter_model.safetensors')==diagnostic['adapter_sha256']:
+      if sha(old/'adapter_config.json')!=diagnostic['adapter_config_sha256']:raise ValueError('Frozen diagnostic adapter config changed')
+      matches.append(old);break
+    if not matches:raise ValueError('Frozen diagnostic adapter missing or changed: '+diagnostic['id'])
+    name='count-control-'+diagnostic['id']
+    run(name,[sys.executable,'-u',HERE/'evaluate_scope_choice.py','--base',base,'--adapter',matches[0],'--plan',control_plan,'--output',out/(name+'.json')])
+    diagnostic_result=json.loads((out/(name+'.json')).read_text())
+    if not diagnostic_result.get('finished_utc') or len(diagnostic_result['generations'])!=diagnostic_jobs or diagnostic_result.get('plan_sha256')!=sha(control_plan):raise ValueError('Frozen diagnostic comparison incomplete')
+   state['diagnostic_completed']=True;save()
   common=[sys.executable,'-u',HERE/'evaluate_scope_choice.py','--base',base,'--plan',HERE/'scope-evaluation-plan.json']
   run('bf16-base',common+['--output',out/'bf16-base.json'])
   run('train-candidate',[sys.executable,'-u',HERE/'train.py','--data',HERE/'data','--base',base,'--project-root',root,'--output',out/'candidate',
@@ -55,6 +75,7 @@ def main(config_name='config-scope-choice-v1.json'):
   state['gpu_comparison_completed']=True;save()
   files={f.relative_to(out).as_posix():f for f in out.rglob('*') if f.is_file() and 'checkpoints' not in f.parts and f.name!='workflow-result.json'}
   files.update({'scope-evaluation-plan.json':HERE/'scope-evaluation-plan.json','data-manifest.json':HERE/'data/manifest.json','config.json':HERE/config_name,'package-manifest.json':HERE/'package-manifest.json'})
+  if diagnostics:files['candidate-count-plan.json']=HERE/'candidate-count-plan.json'
   inventory={name:{'bytes':f.stat().st_size,'sha256':sha(f)} for name,f in files.items()}
   bundle=out/'gpu-handoff.zip'
   with zipfile.ZipFile(bundle,'x',zipfile.ZIP_DEFLATED) as z:

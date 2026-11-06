@@ -41,6 +41,12 @@ class ScopeChoiceKit(unittest.TestCase):
   spec=importlib.util.spec_from_file_location('scope_package_builder',HERE.parents[1]/'tools/mt-scope-training-package.py')
   module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
   return module.build(root,None,version,previous)
+ def previous_with_controls(self,root):
+  one=self.build_kit(root/'prior-v1');two=self.build_kit(root/'prior-v2','v2',Path(one['package'])/'scope-evaluation-plan.json')
+  previous=json.loads((Path(two['package'])/'scope-evaluation-plan.json').read_text())
+  controls=[j for j in previous['jobs'] if j['kind']=='scope_choice' and j['expected_id']!='X'][:9]
+  previous['jobs'] += [{**j,'case_id':'test-cold-'+str(i),'variant':'selector-permutation:0'} for i,j in enumerate(controls)]
+  path=root/'previous-with-controls.json';path.write_text(json.dumps(previous));return path
  def test_v2_uses_new_holdout_and_preserves_every_old_evaluation_request(self):
   import subprocess
   with tempfile.TemporaryDirectory() as temp:
@@ -67,6 +73,10 @@ class ScopeChoiceKit(unittest.TestCase):
    refused=subprocess.run([sys.executable,'-S',str(package/'research_v2.py'),'--root',str(root),'--plan'],capture_output=True,text=True)
    self.assertNotEqual(refused.returncode,0);self.assertIn('Staged package changed',refused.stderr)
  def test_workflow_separates_check_from_run_and_really_requests_optimization(self):
+  self.fixture_workflow('v1')
+ def test_v3_runs_frozen_diagnostics_without_retraining_old_adapters(self):
+  self.fixture_workflow('v3')
+ def fixture_workflow(self,version):
   import hashlib
   sys.path.insert(0,str(HERE/'windows'))
   try:
@@ -74,10 +84,18 @@ class ScopeChoiceKit(unittest.TestCase):
    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
   finally:sys.path.pop(0)
   with tempfile.TemporaryDirectory() as temp:
-   root=Path(temp)/'kit';receipt=self.build_kit(root);module.HERE=Path(receipt['package'])
+   root=Path(temp)/'kit'
+   previous=self.previous_with_controls(Path(temp)) if version=='v3' else None
+   receipt=self.build_kit(root,version,previous);module.HERE=Path(receipt['package'])
    base=root/'models/hy-mt2-1.8b';base.mkdir(parents=True);(base/'model.safetensors').write_bytes(b'fixture')
-   expected=json.loads((module.HERE/'config-scope-choice-v1.json').read_text())['base_weight_sha256'];original_sha=module.sha
-   def digest(path):return expected if path==base/'model.safetensors' else original_sha(path)
+   config_name='config-scope-choice-'+version+'.json';config=json.loads((module.HERE/config_name).read_text());expected=config['base_weight_sha256'];original_sha=module.sha
+   digest_fixtures={base/'model.safetensors':expected};old_adapters=[]
+   for diagnostic in config.get('diagnostic_adapters',[]):
+    old_run=root/'outputs'/(diagnostic['run_prefix']+'-run-20260101');old=old_run/'candidate/adapter';old.mkdir(parents=True)
+    (old_run/'workflow-result.json').write_text(json.dumps({'workflow_completed':True}))
+    for name,key in [('adapter_model.safetensors','adapter_sha256'),('adapter_config.json','adapter_config_sha256')]:
+     f=old/name;f.write_bytes(b'unchanged old adapter fixture');digest_fixtures[f]=diagnostic[key];old_adapters.append(f)
+   def digest(path):return digest_fixtures.get(path,original_sha(path))
    calls=[]
    def child(command,**kwargs):
     command=[str(x) for x in command];calls.append(command);output=Path(command[command.index('--output')+1])
@@ -87,17 +105,19 @@ class ScopeChoiceKit(unittest.TestCase):
       self.assertIn('--train',command);(output/'adapter').mkdir();(output/'adapter/fixture.json').write_text('{}')
       (output/'training-result.json').write_text(json.dumps({'training_executed':True,'optimizer_steps':128,'base_weights_frozen':True}))
      else:self.assertNotIn('--train',command)
-    else:output.write_text(json.dumps({'finished_utc':'fixture','generations':[{}]*100}))
+    else:
+     plan_path=Path(command[command.index('--plan')+1]);plan=json.loads(plan_path.read_text());output.write_text(json.dumps({'finished_utc':'fixture','plan_sha256':hashlib.sha256(plan_path.read_bytes()).hexdigest(),'generations':[{}]*len(plan['jobs'])}))
     return SimpleNamespace(returncode=0)
    fake_torch=SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:True,is_bf16_supported=lambda:True))
    with patch.dict('os.environ',{key:str(root/'.cache') for key in module.CACHE_KEYS}),patch.dict(sys.modules,{'torch':fake_torch}),patch.object(module,'sha',digest),patch.object(module.subprocess,'run',child):
-    with patch.object(sys,'argv',['workflow','--root',str(root),'--mode','check']):self.assertEqual(module.main(),0)
-    self.assertEqual(len(calls),1);self.assertFalse(list((root/'outputs').glob('scope-choice-v1-run-*')))
+    with patch.object(sys,'argv',['workflow','--root',str(root),'--mode','check']):self.assertEqual(module.main(config_name),0)
+    self.assertEqual(len(calls),1);self.assertFalse(list((root/'outputs').glob('scope-choice-'+version+'-run-*')))
     calls.clear()
-    with patch.object(sys,'argv',['workflow','--root',str(root),'--mode','run']):self.assertEqual(module.main(),0)
-   self.assertEqual(len(calls),4);run=next((root/'outputs').glob('scope-choice-v1-run-*'));state=json.loads((run/'workflow-result.json').read_text())
+    with patch.object(sys,'argv',['workflow','--root',str(root),'--mode','run']):self.assertEqual(module.main(config_name),0)
+   self.assertEqual(len(calls),6 if version=='v3' else 4);run=next((root/'outputs').glob('scope-choice-'+version+'-run-*'));state=json.loads((run/'workflow-result.json').read_text())
    self.assertTrue(state['training_completed']);self.assertTrue(state['gpu_comparison_completed']);self.assertTrue((run/'gpu-handoff.zip').is_file())
    self.assertTrue(state['handoff_validation']['all_member_sha256_passed'])
+   for f in old_adapters:self.assertEqual(f.read_bytes(),b'unchanged old adapter fixture')
 
 class HardScopeData(unittest.TestCase):
  def test_new_data_is_disjoint_from_old_prompts_and_keeps_real_template_families_separate(self):
@@ -154,5 +174,45 @@ class HandoffIdentity(unittest.TestCase):
    self.make_zip(p,{'a\\b':record,'a/b':record},{'a/b':b'abc'})
    self.assertRaises(ValueError,verify_handoff,p,legacy_windows_paths=True)
    self.make_zip(p,{'a':record},{'a':b'abc','extra':b'abc'});self.assertRaises(ValueError,verify_handoff,p)
+
+class CountBalancedCurriculum(unittest.TestCase):
+ def test_count_and_whole_sentence_style_never_predict_answer_availability(self):
+  from scope_choice_data_v3 import build as build_v3
+  from scope_choice_contract import validate_count_balance
+  import collections
+  data=build_v3();self.assertTrue(validate_scope_rows(data));self.assertTrue(validate_count_balance(data))
+  for rows in data.values():
+   counts=collections.Counter((len(r['candidates']),r['gold_candidate'] is None) for r in rows if r['task']=='scope_choice')
+   for n in [3,4]:self.assertEqual(counts[n,True],counts[n,False])
+   for row in rows:
+    if row['task']=='scope_choice':self.assertTrue(any(c['start']==0 and c['end']==len(row['frozen_target']) for c in row['candidates']))
+  data['train']=[r for r in data['train'] if not (r['task']=='scope_choice' and len(r['candidates'])==4 and r['gold_candidate'] is None)]
+  self.assertRaises(ValueError,validate_count_balance,data)
+ def test_previous_v2_export_remains_byte_identical(self):
+  from scope_choice_data_v2 import export as export_v2
+  with tempfile.TemporaryDirectory() as temp:
+   manifest=export_v2(Path(temp)/'data');self.assertEqual(manifest['files']['train']['sha256'],'57d48d7a1128b847c9a40f88b098266c9cbe20b31cec591fdcbb22f497e48315')
+ def test_v3_optimizer_prompts_do_not_reuse_previous_holdouts(self):
+  from scope_choice_data_v2 import build as build_v2
+  from scope_choice_data_v3 import build as build_v3
+  old={r['messages'][0]['content'] for dataset in [build(),build_v2()] for r in dataset['holdout']}
+  current=build_v3();self.assertFalse(old&{r['messages'][0]['content'] for split in ['train','validation'] for r in current[split]})
+ def test_matched_gpu_controls_change_only_wrong_options_and_mask(self):
+  from scope_choice_controls import build_count_plan
+  from evaluate_scope_choice import validate_eval_plan
+  import collections
+  with tempfile.TemporaryDirectory() as temp:
+   helper=ScopeChoiceKit();root=Path(temp);one=helper.build_kit(root/'v1');two=helper.build_kit(root/'v2','v2',Path(one['package'])/'scope-evaluation-plan.json')
+   previous=json.loads((Path(two['package'])/'scope-evaluation-plan.json').read_text())
+   controls=[j for j in previous['jobs'] if j['kind']=='scope_choice' and j['expected_id']!='X'][:9]
+   previous['jobs'] += [{**j,'case_id':'test-cold-'+str(i),'variant':'selector-permutation:0'} for i,j in enumerate(controls)]
+   plan=build_count_plan(previous);self.assertTrue(validate_eval_plan(plan));self.assertEqual(len(plan['jobs']),48);groups=collections.defaultdict(list)
+   for j in plan['jobs']:groups[j['matched_group']].append(j)
+   for rows in groups.values():
+    a,b=rows;self.assertEqual([a['candidate_count'],b['candidate_count']],[3,4]);self.assertEqual(a['expected_id'],b['expected_id'])
+    fa=json.loads(a['request']['messages'][0]['content'].split('\n',1)[1]);fb=json.loads(b['request']['messages'][0]['content'].split('\n',1)[1])
+    for key in ['english_before','english_focus','english_after','frozen_chinese']:self.assertEqual(fa[key],fb[key])
+    self.assertTrue(all(c in fb['candidates'] for c in fa['candidates']))
+    added=next(c for c in fb['candidates'] if c not in fa['candidates']);self.assertNotEqual(added['id'],a['expected_id'])
 
 if __name__=='__main__':unittest.main()

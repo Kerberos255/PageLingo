@@ -27,8 +27,11 @@ AGENTS={'train':([('arbiter','仲裁器'),('controller','控制器'),('superviso
  'validation':([('router','路由器'),('notifier','通知器')],[('encoder','编码器')]),
  'holdout':([('auditor','审计器'),('dispatcher','分派器')],[('scanner','扫描器')])}
 
-def build():
- result={s:[] for s in TERMS};serial=0
+def build(*,terms=None,frames=None,numbers=None,agents=None,quantity_forms=None,causal_overrides=None):
+ terms=TERMS if terms is None else terms;frames=FRAMES if frames is None else frames
+ numbers=NUMBERS if numbers is None else numbers;agents=AGENTS if agents is None else agents
+ quantity_forms=quantity_forms or {'train':('Schedule','attempts','安排','尝试'),'validation':('Allow','checks','允许','检查'),'holdout':('Plan','retries','规划','重试')}
+ result={s:[] for s in terms};serial=0
  def add(split,family,prompt,target,task,**metadata):
   nonlocal serial
   serial+=1;result[split].append({'id':f'scope-v2-{serial:05d}','split':split,'family':family,'task':task,
@@ -43,9 +46,9 @@ def build():
     optimizer_inputs_approved=split in ['train','validation'])
  def replay(split,family,source,target,kind):
   add(split,family,natural_prompt(source),target,'natural_replay',source_text=source,reference_kind=kind)
- for split,pairs in TERMS.items():
+ for split,pairs in terms.items():
   for term,(ea,za,eb,zb) in enumerate(pairs):
-   for family,before,middle,after,cbefore,cmiddle,cafter in FRAMES[split]:
+   for family,before,middle,after,cbefore,cmiddle,cafter in frames[split]:
     for repeated in [False,True]:
      b,zhb=(ea,za) if repeated else (eb,zb)
      source=before+ea+middle+b+after;target=cbefore+za+cmiddle+zhb+cafter
@@ -63,13 +66,13 @@ def build():
       missing=[c for i,c in enumerate(choices) if i!=which]
       select(split,family+'-choice',stem+'-missing',source,focus,target,missing,None,kind+'_missing')
      replay(split,family+'-replay',source,target,'assistant_audited_label_contrast')
-  for ni,(number,zh) in enumerate(NUMBERS[split]):
+  for ni,(number,zh) in enumerate(numbers[split]):
    for relation,cn in [('no more than','不超过'),('no fewer than','不少于')]:
     focus=relation+' '+number
     for contiguous in [False,True]:
      # All words and number are identical; the target grammar determines whether
      # the English focus has a complete contiguous counterpart without a verb.
-     english_verb,english_noun,verb,noun={'train':('Schedule','attempts','安排','尝试'),'validation':('Allow','checks','允许','检查'),'holdout':('Plan','retries','规划','重试')}[split]
+     english_verb,english_noun,verb,noun=quantity_forms[split]
      before=english_verb+' ';source=before+focus+' '+english_noun+'.'
      if contiguous:
       target=verb+'的'+noun+'次数'+cn+zh+'次。';a=target.index(cn);z=a+len(cn+zh+'次');gold=0;lead=cn
@@ -81,7 +84,7 @@ def build():
      select(split,family,pair,source,(len(before),len(before)+len(focus)),target,choices,gold,'quantity_contiguous' if contiguous else 'quantity_missing')
      # Rehearse one faithful realization per source, avoiding duplicate prompts.
      if contiguous:replay(split,split+'-quantity-replay-v2',source,target,'assistant_audited_quantity')
-  first,second=AGENTS[split]
+  first,second=agents[split]
   for ai,(a,ca) in enumerate(first):
    for bi,(b,cb) in enumerate(second):
     cases=[
@@ -105,6 +108,7 @@ def build():
       (f'Failure signalled by the {b} causes the {a} to stop waiting; returning and throwing are different events.',f'{cb}发出的失败信号使{ca}停止等待；返回与抛出异常是不同的事件。'),
       (f'A normal completion of the {b} makes the {a} throw, despite the {b} reporting no error.',f'尽管{cb}未报告错误，{cb}正常结束仍会使{ca}抛出异常。'),
       (f'After time has expired, the {a} must still keep storage if the {b} has not confirmed completion.',f'时间到期后，如果{cb}尚未确认完成，{ca}仍必须保留存储空间。')]
+    if causal_overrides and split in causal_overrides:cases=causal_overrides[split](a,ca,b,cb)
     for ci,(source,target) in enumerate(cases):replay(split,f'{split}-causal-v2-{ci}',source,target,'assistant_audited_causal_contrast')
  validate_scope_rows(result);return result
 
