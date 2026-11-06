@@ -5,7 +5,7 @@ import {isProtectedApiSignature} from "../../src/core/dom-policy";
 import {serializeRichSegment, type SerializedSourcePart} from "../../src/core/rich-segment";
 import type {TargetSpan} from "./frozen-span-projection";
 
-interface ParentCase {id: string; site_id: string; locator: string; context_url: string; natural_request: unknown; captured_fixed_calls?: unknown}
+interface ParentCase {id: string; site_id: string; locator: string; context_url: string; natural_request: unknown; captured_fixed_calls?: unknown; punctuation_policy?: "strict" | "prose-v1"}
 interface InputCase extends ParentCase {
   model: string; source_contract: unknown; html: string; candidate: FrozenCandidate;
   alignment_status: string; alignment_reason?: string; spans: TargetSpan[]; review?: OwnedScopeReview;
@@ -24,12 +24,12 @@ export function captureOwnedWebCases(cases: ParentCase[]) {
     if (!root) return {id: c.id, status: "missing_source", reason: "Live locator no longer exists"};
     if (isProtectedApiSignature(root)) return {id: c.id, status: "protected_api", html: root.outerHTML};
     try {
-      const p = liveRequest(root, document.location.href), source = captureOwnedSource(root);
+      const p = liveRequest(root, document.location.href), source = captureOwnedSource(root, {punctuationPolicy: c.punctuation_policy ?? "strict"});
       const plain = serializeRichSegment(root, {fixedTextSlots: true});
       if (plain.html !== source.segment.html) throw new Error("Ownership trace changed production wire HTML");
       const source_contract = ownedSourceContract(source);
       return {id: c.id, site_id: c.site_id, status: "supported", url: document.location.href, locator: c.locator,
-        html: root.outerHTML, source_text: source.sourceText, source_words: words(source.sourceText, "en"),
+        html: root.outerHTML, source_text: source.sourceText, source_words: words(source.sourceText, "en"), punctuation_policy: source.punctuationPolicy,
         source_contract, natural_request: p.natural, annotations: source.annotations,
         cached_natural_request_matches: c.context_url === document.location.href && canonicalOwnedData(p.natural) === canonicalOwnedData(c.natural_request),
         cached_production_calls_match: canonicalOwnedData(p.calls) === canonicalOwnedData(c.captured_fixed_calls),
@@ -47,7 +47,7 @@ export function inspectOwnedWebCase(input: InputCase, mode: "preview" | "commit"
   if (!root || document.location.href !== input.context_url) return {...base, status: "source_changed", displayed: false, reason: "Locator or URL changed"};
   const before = root.outerHTML;
   try {
-    const p = liveRequest(root, document.location.href), source = captureOwnedSource(root);
+    const p = liveRequest(root, document.location.href), source = captureOwnedSource(root, {punctuationPolicy: input.punctuation_policy ?? "strict"});
     if (canonicalOwnedData(p.natural) !== canonicalOwnedData(input.natural_request)
       || canonicalOwnedData(ownedSourceContract(source)) !== canonicalOwnedData(input.source_contract)) {
       return {...base, status: "source_contract_changed", displayed: false, rejected_source_untouched: root.outerHTML === before,

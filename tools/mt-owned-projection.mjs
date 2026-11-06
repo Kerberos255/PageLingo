@@ -44,7 +44,7 @@ async function plan(parentFile, captureFile, nativeFile, output) {
     const candidate = {text: natural.text, finish_reason: natural.finish_reason};
     const base = {id: old.id, site_id: old.site_id, locator: old.locator, context_url: c.url, html: c.html,
       source_text: c.source_text, source_words: c.source_words, annotations: c.annotations, source_contract: c.source_contract,
-      natural_request: c.natural_request, candidate, frozen_target: natural.text, target_sha256: sha(natural.text),
+      natural_request: c.natural_request, punctuation_policy: c.punctuation_policy ?? "strict", candidate, frozen_target: natural.text, target_sha256: sha(natural.text),
       request_sha256: natural.request_sha256, group: "v10_seen_regression_rebound_to_current_owned_source"};
     source_cases.push(base);
     try {
@@ -54,14 +54,17 @@ async function plan(parentFile, captureFile, nativeFile, output) {
           .map(x => ({text: x.segment, start: x.index, end: x.index + x.segment.length, lexical: x.isWordLike === true}))});
     } catch (error) {candidate_refusals.push({id: old.id, reason: String(error), target_sha256: base.target_sha256});}
   }
-  const paths = [...await filesIn("src"), ...files];
-  const result = {protocol: "production-owned-projection-v11", evaluation_only: true, optimizer_inputs_approved: false,
+  const paths = [...new Set([...await filesIn("src"), ...await filesIn("eval/mt-quality"), ...files])];
+  const typedPunctuation = capture.punctuation_policy === "prose-v1";
+  const result = {protocol: typedPunctuation ? "typed-punctuation-projection-v12" : "production-owned-projection-v11", evaluation_only: true, optimizer_inputs_approved: false,
     production_enabled: false, new_translation_generations: 0, source_commit: execFileSync("git", ["rev-parse", "HEAD"], {cwd: projectRoot, encoding: "utf8"}).trim(),
     parent_plan_sha256: sha(await readFile(parentFile)), capture_sha256: sha(await readFile(captureFile)), capture_runtime_sha256: capture.runtime_sha256,
     native_run_sha256: sha(await readFile(nativeFile)), translator: native.model,
     rules: {min_cosine: 0.55, required_content_word_coverage: 1, source_articles_ignored_for_coverage: ["a", "an", "the"],
-      frozen_target_rewriting_allowed: false, only_production_owned_text_nodes_editable: true,
-      literal_readonly_anchors_exact: true, full_parent_flows_inherit_only_parent_span: true, live_scope_review_required: true},
+      frozen_target_rewriting_allowed: false, only_production_owned_text_nodes_editable: !typedPunctuation,
+      additional_write_authority: typedPunctuation ? "bounded standalone prose punctuation; no added model slots or request changes" : null,
+      literal_readonly_anchors_exact: true, prose_punctuation_policy: typedPunctuation ? "prose-v1" : "strict",
+      source_label_colon_closure: typedPunctuation, full_parent_flows_inherit_only_parent_span: true, live_scope_review_required: true},
     source_hashes: Object.fromEntries(await Promise.all(paths.map(async p => [p, sha(await readFile(path.join(projectRoot, p)))]))),
     excluded_sources: excluded, candidate_refusals, source_cases, cases};
   await write(output, result); return {source_supported_cache_matches: source_cases.length, source_excluded: excluded.length, candidates_rejected: candidate_refusals.length, encoder_pairs: cases.length};

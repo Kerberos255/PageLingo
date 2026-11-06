@@ -1,0 +1,5 @@
+[
+  {"id":"mdn-http-cache-v12","url":"https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Caching","selectors":["main"],"features":["links","code","emphasis","table"]},
+  {"id":"python-logging-v12","url":"https://docs.python.org/3/library/logging.html","selectors":["[role=\"main\"]","main"],"features":["definition","code","links","api-protection"]},
+  {"id":"docker-build-v12","url":"https://docs.docker.com/build/building/best-practices/","selectors":["main","article"],"features":["code","links","lists","admonitions"]}
+]

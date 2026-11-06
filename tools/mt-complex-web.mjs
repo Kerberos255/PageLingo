@@ -3,6 +3,7 @@ import {createHash} from "node:crypto";
 import {readFile, writeFile, mkdir, readdir} from "node:fs/promises";
 import path from "node:path";
 import {parseArgs} from "node:util";
+import {execFileSync} from "node:child_process";
 import {projectRoot} from "./mt-quality-runtime.mjs";
 
 const sha = s => createHash("sha256").update(s).digest("hex");
@@ -28,7 +29,7 @@ async function checkRun(planPath, runPath) {
     assert.equal(g.variant, j.variant); assert.equal(g.request_sha256, j.request_sha256);});
   return {plan, run};
 }
-async function plan(captureFile, previousFile, output) {
+async function plan(captureFile, previousFile, output, experiment) {
   const captured = await read(captureFile), previous = await read(previousFile);
   assert.equal(captured.mode, "capture"); assert.equal(captured.accept_insecure_certs, false); assert.ok(captured.finished_utc);
   const reserved = new Set(previous.cases.map(c => c.source_text.replace(/\s+/gu, " ").trim().toLowerCase()));
@@ -47,8 +48,8 @@ async function plan(captureFile, previousFile, output) {
     c.fixed_calls.forEach((call, i) => add("production-fixed:" + i, call)); cases.push(sample);
   }
   const files = [...await sourceFiles("src"), ...extraSources];
-  const result = {schema_version: 1, protocol: "source-format-diagnostic-v8", experiment: "new-complex-live-web-v10",
-    evaluation_only: true, optimizer_inputs_approved: false, source_commit: "d547206d6b1a620922685e8d49509a30ca453135",
+  const result = {schema_version: 1, protocol: "source-format-diagnostic-v8", experiment,
+    evaluation_only: true, optimizer_inputs_approved: false, source_commit: execFileSync("git", ["rev-parse", "HEAD"], {cwd: projectRoot, encoding: "utf8"}).trim(),
     capture_sha256: sha(await readFile(captureFile)), previous_v8_sha256: sha(await readFile(previousFile)),
     selection_review_before_any_inference: true, prior_capture_retained: true,
     sampling_notes: ["Initial source-only inventory exposed missing table strata; final capture adds one table cell where absent.",
@@ -103,8 +104,9 @@ async function input(planPath, modelsPath, output) {
   await write(output, inputs); return {models: models.length, live_replay_inputs: inputs.length};
 }
 const {values} = parseArgs({options: {mode: {type: "string", default: "plan"}, capture: {type: "string"}, previous: {type: "string"},
+  experiment: {type: "string", default: "new-complex-live-web-v10"},
   plan: {type: "string"}, run: {type: "string"}, models: {type: "string"}, out: {type: "string"}}});
-const result = values.mode === "plan" ? await plan(values.capture, values.previous, values.out)
+const result = values.mode === "plan" ? await plan(values.capture, values.previous, values.out, values.experiment)
   : values.mode === "frozen" ? await frozen(values.plan, values.run, values.out)
   : values.mode === "input" ? await input(values.plan, values.models, values.out) : (() => {throw Error("Unknown mode");})();
 console.log(JSON.stringify(result));

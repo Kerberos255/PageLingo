@@ -14,6 +14,25 @@ owned = module('owned_policy_test', 'mt_owned_projection.py')
 
 
 class OwnedProjectionRules(unittest.TestCase):
+    def test_typed_terminal_punctuation_does_not_match_a_code_dot_or_earlier_sentence(self):
+        annotations = [{'id': 'code', 'immutable': True, 'text': 'x.y()', 'anchor_kind': 'opaque'},
+                       {'id': 'period', 'immutable': True, 'text': '.', 'anchor_kind': 'prose-punctuation',
+                        'punctuation': {'symbol': '.', 'alternatives': ['.', '。'], 'terminal': True}}]
+        self.assertEqual(owned.readonly_owned(annotations, '先阅读。调用x.y()。'), {'code': (6, 11), 'period': (11, 12)})
+        for text in ['调用x.y()', '调用x.y()！', '调用x.y()。\n']:
+            with self.subTest(text=text), self.assertRaises(ValueError): owned.readonly_owned(annotations, text)
+
+    def test_colon_closure_includes_only_the_immediately_adjacent_delimiter(self):
+        case = {'source_text': 'Caution: Read on.', 'frozen_target': '小心：继续读。',
+                'source_words': [{'text': 'Caution', 'start': 0, 'end': 7, 'lexical': True}],
+                'target_words': [{'text': '小心', 'start': 0, 'end': 2, 'lexical': True}],
+                'annotations': [{'id': 'strong', 'kind': 'format', 'immutable': False, 'parent': None, 'start': 0, 'end': 8, 'text': 'Caution:'}]}
+        spans, diagnostics = align.project(case, [(0, 0, .9)], .55, close_label_colons=True)
+        self.assertEqual(spans, [{'id': 'strong', 'start': 0, 'end': 3}])
+        self.assertEqual(diagnostics[-1]['rule'], 'include_immediately_adjacent_source_label_colon')
+        case['frozen_target'] = '小心操作：继续读。'
+        with self.assertRaises(ValueError): align.project(case, [(0, 0, .9)], .55, close_label_colons=True)
+
     def test_literal_whitespace_and_punctuation_are_exact_anchors(self):
         annotations = [{'id': 'space', 'immutable': True, 'text': ' ', 'anchor_kind': 'literal'},
                        {'id': 'code', 'immutable': True, 'text': 'x()', 'anchor_kind': 'opaque'},

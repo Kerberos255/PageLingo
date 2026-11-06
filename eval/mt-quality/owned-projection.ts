@@ -3,6 +3,7 @@ import {serializeRichSegment, type RichSegment, type SerializedSourcePart, type 
 import {applyFixedTextRecord, clearFixedTextRecord, prepareFixedTextRecord, type SourceTextSlot} from "../../src/core/fixed-text-render";
 import {assessTranslationQuality, isOptionalEnglishArticle} from "../../src/core/translation-quality";
 import {isProtectedApiSignature} from "../../src/core/dom-policy";
+import {classifyProsePunctuation, prosePunctuationPattern, closeLabelColon, type ProsePunctuation} from "../../src/core/prose-punctuation";
 import {prepareSemanticRewrite} from "./semantic-rewrite";
 import type {TargetSpan} from "./frozen-span-projection";
 
@@ -10,10 +11,10 @@ interface Snapshot {node: Node; children: Node[]; attributes: string | null; tex
 export interface OwnedAnnotation {
   id: string; tag: string; start: number; end: number; text: string; parent: string | null;
   immutable: boolean; kind: "format" | "block" | "flow" | "readonly";
-  anchor_kind?: "opaque" | "literal"; full_parent?: boolean;
+  anchor_kind?: "opaque" | "literal" | "prose-punctuation"; full_parent?: boolean; punctuation?: ProsePunctuation;
 }
 interface Part {
-  kind: "text" | "group" | "readonly" | "boundary";
+  kind: "text" | "group" | "readonly" | "boundary" | "punctuation";
   node?: Node; source: string; start: number; end: number; owned: boolean;
   annotation?: OwnedAnnotation; children?: Part[]; hard: boolean;
 }
@@ -22,6 +23,7 @@ export interface OwnedSource {
   root: HTMLElement; url: string; sourceText: string; parts: Part[]; annotations: OwnedAnnotation[];
   slots: SourceTextSlot[]; segment: RichSegment; trace: SerializedSourceTrace;
   snapshot: Snapshot[]; ancestors: Snapshot[]; stamp: TraceStamp[]; rootParent: Node | null;
+  punctuationPolicy: "strict" | "prose-v1";
 }
 export interface FrozenCandidate {text: string; finish_reason: string}
 const attributes = (n: Node) => n.nodeType === Node.ELEMENT_NODE
@@ -40,7 +42,7 @@ function structurallyCurrent(source: OwnedSource) {
 function traceStamp(parts: SerializedSourcePart[]): TraceStamp[] {
   const out: TraceStamp[] = [];
   const walk = (p: SerializedSourcePart) => {
-    const detail = p.kind === "text" ? JSON.stringify([p.source, p.slotId])
+    const detail = p.kind === "text" ? JSON.stringify([p.source, p.slotId, p.editableContext])
       : p.kind === "opaque" ? p.source : p.kind === "boundary" ? p.reason
         : JSON.stringify([p.tagName, p.inline, p.fallbackText ?? null]);
     out.push({node: p.node, kind: p.kind, detail});
@@ -59,16 +61,18 @@ function declaredNoTranslate(node: Text) {
   }
   return false;
 }
+const punctuationWhitespaceAllowed = (node: Text) => !["pre", "pre-wrap", "break-spaces"].includes(
+  node.ownerDocument.defaultView!.getComputedStyle(node.parentElement!).whiteSpace);
 function traceText(parts: SerializedSourcePart[]): string {
   return parts.map(p => p.kind === "text" || p.kind === "opaque" ? p.source
     : p.kind === "boundary" ? "" : p.fallbackText ?? traceText(p.children)).join("");
 }
-export function captureOwnedSource(root: HTMLElement): OwnedSource {
+export function captureOwnedSource(root: HTMLElement, {punctuationPolicy = "strict"}: {punctuationPolicy?: "strict" | "prose-v1"} = {}): OwnedSource {
   if (!root.isConnected || isProtectedApiSignature(root)) throw new Error("Owned projection source detached or protected API declaration");
   const before = snapshot(root), ancestors: Snapshot[] = [];
   for (let n = root.parentElement; n; n = n.parentElement) ancestors.push({node: n, children: [...n.childNodes], attributes: attributes(n), text: null});
   const segment = serializeRichSegment(root, {fixedTextSlots: true, captureOwnership: true});
-  const slots = segment.textSlots!, trace = segment.sourceTrace!;
+  const slots = [...segment.textSlots!], productionSlotCount = slots.length, trace = segment.sourceTrace!;
   if (!slots.length) throw new Error("Owned projection has no production-owned text");
   if (slots.some(s => declaredNoTranslate(s.node))) throw new Error("Owned projection refuses an explicit no-translate source slot");
   const raw = traceText(trace.parts), lo = trace.trimStart, hi = raw.length - trace.trimEnd;
@@ -82,12 +86,17 @@ export function captureOwnedSource(root: HTMLElement): OwnedSource {
       const value = t.kind === "element" ? t.fallbackText! : t.source;
       const source = clip(value, cursor); cursor += value.length;
       const owned = t.kind === "text" && t.slotId !== null;
+      const punctuation = punctuationPolicy === "prose-v1" && t.kind === "text" && !owned && t.editableContext
+        && !declaredNoTranslate(t.node) && !t.node.parentElement!.closest("a") && source === value
+        && punctuationWhitespaceAllowed(t.node)
+        ? classifyProsePunctuation(source, raw.slice(lo, lo + start), raw.slice(cursor, hi)) : null;
       if (owned && source !== value) throw new Error("Owned text was unexpectedly trimmed by transport");
-      const part: Part = {kind: owned ? "text" : source ? "readonly" : "boundary", node: t.node,
-        source, start, end: start + source.length, owned, hard: t.kind === "element"};
-      if (part.kind === "readonly") part.annotation = {id: "", tag: t.node.nodeType === Node.TEXT_NODE ? "#TEXT" : (t.node as Element).tagName,
+      const part: Part = {kind: owned ? "text" : punctuation ? "punctuation" : source ? "readonly" : "boundary", node: t.node,
+        source, start, end: start + source.length, owned: owned || Boolean(punctuation), hard: t.kind === "element"};
+      if (punctuation) slots.push({id: slots.length, node: t.node as Text, parent: t.node.parentNode!, source: value});
+      if (part.kind === "readonly" || part.kind === "punctuation") part.annotation = {id: "", tag: t.node.nodeType === Node.TEXT_NODE ? "#TEXT" : (t.node as Element).tagName,
         start, end: start + source.length, text: source, parent: null, immutable: true, kind: "readonly",
-        anchor_kind: t.kind === "opaque" ? "opaque" : "literal"};
+        anchor_kind: punctuation ? "prose-punctuation" : t.kind === "opaque" ? "opaque" : "literal", ...(punctuation ? {punctuation} : {})};
       return part;
     }
     const children = t.children.map(build), source = children.map(c => c.source).join("");
@@ -133,17 +142,18 @@ export function captureOwnedSource(root: HTMLElement): OwnedSource {
     p.children?.forEach(c => number(c, p.annotation?.id ?? parent));
   };
   grouped.forEach(p => number(p, null));
-  if (owners.length !== slots.length || owners.some((n, i) => n !== slots[i]!.node)) throw new Error("Trace and production text ownership differ");
+  if (owners.length !== productionSlotCount || owners.some((n, i) => n !== slots[i]!.node)) throw new Error("Trace and production text ownership differ");
   const sourceText = raw.slice(lo, hi);
   const semantic = prepareSemanticRewrite({html: segment.html, sourceLanguage: "en", targetLanguage: "zh-Hans"}, segment.opaque);
   if (sourceText !== semantic.sourceText) throw new Error("Owned source differs from actual natural translation input");
   const source: OwnedSource = {root, url: root.ownerDocument.URL, sourceText, parts: grouped, annotations, slots, segment, trace,
-    snapshot: before, ancestors, stamp: traceStamp(trace.parts), rootParent: root.parentNode};
+    snapshot: before, ancestors, stamp: traceStamp(trace.parts), rootParent: root.parentNode, punctuationPolicy};
   if (!structurallyCurrent(source)) throw new Error("Owned source changed during capture");
   return source;
 }
 function sourceCurrent(source: OwnedSource) {
   if (source.root.ownerDocument.URL !== source.url || !structurallyCurrent(source) || source.slots.some(s => s.node.data !== s.source || s.node.parentNode !== s.parent)) return false;
+  if (source.slots.slice(source.segment.textSlots!.length).some(s => !punctuationWhitespaceAllowed(s.node))) return false;
   const now = serializeRichSegment(source.root, {fixedTextSlots: true, captureOwnership: true});
   return now.html === source.segment.html && sameTrace(source.stamp, traceStamp(now.sourceTrace!.parts));
 }
@@ -153,7 +163,8 @@ const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 export function immutableOwnedSpans(source: Pick<OwnedSource, "annotations">, target: string): TargetSpan[] {
   const atoms = source.annotations.filter(a => a.immutable);
   const candidates = atoms.map(a => {
-    const pattern = a.anchor_kind === "opaque" ? "(?<![A-Za-z0-9_$])" + escapeRegex(a.text) + "(?![A-Za-z0-9_$])" : escapeRegex(a.text);
+    const pattern = a.anchor_kind === "prose-punctuation" ? prosePunctuationPattern(a.punctuation!)
+      : a.anchor_kind === "opaque" ? "(?<![A-Za-z0-9_$])" + escapeRegex(a.text) + "(?![A-Za-z0-9_$])" : escapeRegex(a.text);
     return [...target.matchAll(new RegExp(pattern, "gu"))].map(m => ({id: a.id, start: m.index, end: m.index + m[0].length}));
   });
   const memo = new Map<string, number>();
@@ -202,7 +213,7 @@ export function ownedSourceContract(source: OwnedSource) {
   };
   source.parts.forEach(walk);
   return {url: source.url, root_tag: source.root.tagName, root_attributes: attributes(source.root),
-    source_text: source.sourceText, wire_html: source.segment.html, annotations: source.annotations,
+    source_text: source.sourceText, wire_html: source.segment.html, punctuation_policy: source.punctuationPolicy, annotations: source.annotations,
     owned_slots: source.slots.map(s => ({id: s.id, source: s.source})), roles, boundaries};
 }
 export function ownedProposalKey(source: OwnedSource, candidate: FrozenCandidate, spans: TargetSpan[]) {
@@ -233,6 +244,12 @@ export function compileOwnedProjection(source: OwnedSource, candidate: FrozenCan
     const got = byId.get(s.id)!;
     if (got.start !== s.start || got.end !== s.end) throw new Error("Owned immutable span differs from unique source anchor");
   }
+  if (source.punctuationPolicy === "prose-v1") for (const a of source.annotations) {
+    if (a.kind !== "format" || a.immutable) continue;
+    const s = byId.get(a.id)!;
+    const closed = closeLabelColon(a.text, target, s.start, s.end);
+    if (closed.end !== s.end) throw new Error("Format label colon is outside its scope");
+  }
   const distribute = (nodes: Text[], text: string) => {
     if (!nodes.length) {if (text) throw new Error("Owned target has no production text carrier"); return;}
     if (nodes.length > 1) {
@@ -251,13 +268,14 @@ export function compileOwnedProjection(source: OwnedSource, candidate: FrozenCan
       const s = byId.get(p.annotation!.id)!;
       if (s.start < cursor || s.end > end) throw new Error("Owned reordered, crossing or unnested scope");
       distribute(pending, target.slice(cursor, s.start)); pending = [];
+      if (p.kind === "punctuation") edits.set(p.node as Text, target.slice(s.start, s.end));
       if (p.kind === "group") assign(p.children!, s.start, s.end);
       cursor = s.end;
     }
     distribute(pending, target.slice(cursor, end));
   };
   assign(source.parts, 0, target.length);
-  const logical = (parts: Part[], actual: boolean): string => parts.map(p => p.kind === "text"
+  const logical = (parts: Part[], actual: boolean): string => parts.map(p => p.kind === "text" || p.kind === "punctuation"
     ? actual ? (p.node as Text).data : edits.get(p.node as Text) ?? (p.node as Text).data
     : p.kind === "group" ? logical(p.children!, actual) : p.source).join("");
   if (logical(source.parts, false) !== target) throw new Error("Owned compiler rewrote frozen target");

@@ -193,10 +193,13 @@ export function isElementEffectivelyHidden(element) {
   }
   return false;
 }
-export function isEligibleTextNode(node) {
-  if (!node.data.trim() || isProtectedGitHubIdentifierText(node)) return false;
+export function isEligibleTextContext(node) {
+  if (isProtectedGitHubIdentifierText(node)) return false;
   const parent = node.parentElement;
-  if (!parent || parent.closest(SKIP_SELECTOR) || isElementEffectivelyHidden(parent)) return false;
+  return Boolean(parent && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent));
+}
+export function isEligibleTextNode(node) {
+  if (!node.data.trim() || !isEligibleTextContext(node)) return false;
   // Pure counters/dates/numeric badges do not need translation and duplicating them can
   // surface otherwise hidden UI state (for example GitHub's hidden "0" tab counters).
   return /\p{L}/u.test(node.data);

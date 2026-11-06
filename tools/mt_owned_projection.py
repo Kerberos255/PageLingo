@@ -14,7 +14,12 @@ def readonly_owned(annotations, target):
         if not a['text']:
             raise ValueError('empty owned immutable annotation')
         literal = re.escape(a['text'])
-        pattern = r'(?<![A-Za-z0-9_$])' + literal + r'(?![A-Za-z0-9_$])' if a['anchor_kind'] == 'opaque' else literal
+        if a['anchor_kind'] == 'prose-punctuation':
+            role = a['punctuation']
+            pattern = r'[ \t]*(?:' + '|'.join(re.escape(x) for x in role['alternatives']) + r')[ \t]*'
+            if role['terminal']: pattern += r'\Z'
+        else:
+            pattern = r'(?<![A-Za-z0-9_$])' + literal + r'(?![A-Za-z0-9_$])' if a['anchor_kind'] == 'opaque' else literal
         candidates.append([(u16(target, m.start()), u16(target, m.end())) for m in re.finditer(pattern, target)])
 
     @lru_cache(None)

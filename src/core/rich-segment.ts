@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { isElementEffectivelyHidden, isTranslationRootElement, isEligibleTextNode } from "./dom-policy";
+import { isElementEffectivelyHidden, isTranslationRootElement, isEligibleTextNode, isEligibleTextContext } from "./dom-policy";
 import type { SourceTextSlot } from "./fixed-text-render";
 import { normalizeGlossaryEntry } from "../shared/settings";
 
@@ -8,7 +8,7 @@ export interface LinkSnapshot { href:string|null; target:string|null; rel:string
 export interface OpaqueSnapshot { tagName:string; text:string }
 export interface TerminologyEntry { source:string; target:string; mode:"protect"|"replace"; caseSensitive?:boolean; origin?:"builtin"|"user"; aliases?:string[] }
 export type SerializedSourcePart =
-    | {kind:"text"; node:Text; source:string; slotId:number|null}
+    | {kind:"text"; node:Text; source:string; slotId:number|null; editableContext:boolean}
     | {kind:"opaque"; node:HTMLElement; source:string; opaqueIndex:number}
     | {kind:"element"; node:HTMLElement; tagName:string; inline:boolean; children:SerializedSourcePart[]; fallbackText?:string}
     | {kind:"boundary"; node:HTMLElement; reason:"generated"|"time"|"hidden"|"nested-root"|"br"|"wbr"};
@@ -69,7 +69,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
                     html += `<span data-flt-text-id="${id}">${text}</span>`;
                 } else html += `<span data-flt-fixed="true">${text}</span>`;
             } else html += text;
-            trace?.push({kind: "text", node, source: node.data, slotId});
+            trace?.push({kind: "text", node, source: node.data, slotId, editableContext: isEligibleTextContext(node)});
             continue;
         }
         if (node.nodeType !== Node.ELEMENT_NODE)

@@ -34,7 +34,7 @@ def readonly_spans(annotations, target):
     return solutions[0]
 
 
-def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inherit_full_parent_flows=False):
+def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inherit_full_parent_flows=False, close_label_colons=False):
     words_s, words_t, annotations = case['source_words'], case['target_words'], case['annotations']
     chosen = readonly_resolver(annotations, case['frozen_target'])
     diagnostics = []
@@ -83,6 +83,17 @@ def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inheri
         if len(options) != 1 or best[0] <= 0: raise ValueError('ambiguous or nonpositive tag projection')
         chosen[a['id']] = options[0]
         diagnostics.append({'id': a['id'], 'source_words': sorted(src), 'score': best[0], 'candidate_ties': len(options)})
+    if close_label_colons:
+        target16 = case['frozen_target'].encode('utf-16-le')
+        for a in annotations:
+            if a.get('kind') != 'format' or a['immutable'] or not a['text'].rstrip().endswith(':'): continue
+            start, end = chosen[a['id']]
+            if target16[2 * start:2 * end].decode('utf-16-le').endswith((':', '：')): continue
+            if target16[2 * end:2 * (end + 1)] not in [':'.encode('utf-16-le'), '：'.encode('utf-16-le')]:
+                raise ValueError('format label colon missing from scope')
+            chosen[a['id']] = (start, end + 1)
+            diagnostics.append({'id': a['id'], 'rule': 'include_immediately_adjacent_source_label_colon',
+                                'original_span': [start, end], 'new_span': [start, end + 1]})
     return [{'id': a['id'], 'start': chosen[a['id']][0], 'end': chosen[a['id']][1]} for a in annotations], diagnostics
 
 
@@ -93,8 +104,8 @@ def main():
     args = parser.parse_args()
     if args.output.exists(): raise ValueError('Use a new result file')
     plan = json.loads(args.plan.read_text())
-    if plan.get('protocol') not in ['frozen-target-span-projection-v9', 'production-owned-projection-v11'] or plan.get('evaluation_only') is not True or plan.get('optimizer_inputs_approved') is not False: raise ValueError('Expected frozen evaluation plan')
-    owned_policy = plan['protocol'] == 'production-owned-projection-v11'
+    if plan.get('protocol') not in ['frozen-target-span-projection-v9', 'production-owned-projection-v11', 'typed-punctuation-projection-v12'] or plan.get('evaluation_only') is not True or plan.get('optimizer_inputs_approved') is not False: raise ValueError('Expected frozen evaluation plan')
+    owned_policy = plan['protocol'] in ['production-owned-projection-v11', 'typed-punctuation-projection-v12']
     if owned_policy:
         from mt_owned_projection import readonly_owned
     root = Path(__file__).resolve().parents[1]
@@ -141,6 +152,7 @@ def main():
                'inference_s': inference_s, 'input_ids_sha256': hashlib.sha256(feed['input_ids'].tobytes()).hexdigest()}
         try:
             kwargs = {'readonly_resolver': readonly_owned, 'inherit_full_parent_flows': True} if owned_policy else {}
+            if plan['protocol'] == 'typed-punctuation-projection-v12': kwargs['close_label_colons'] = True
             row['spans'], row['projection_diagnostics'] = project(case, links, plan['rules']['min_cosine'], **kwargs); row['status'] = 'projected'
         except ValueError as error:
             row.update(status='rejected', reason=str(error), spans=[])
