@@ -1,0 +1,983 @@
+{
+  "protocol": "production-owned-projection-v11-report",
+  "created_utc": "2026-11-06T02:36:33.514770+00:00",
+  "evaluation_only": true,
+  "optimizer_inputs_approved": false,
+  "production_projection_enabled": false,
+  "new_translation_generations": 0,
+  "training_executed": false,
+  "dataset_status": "v10 seen regression outputs rebound to current production-owned source; not independent holdout",
+  "source": {
+    "public_sites": 12,
+    "frozen_locators": 38,
+    "supported": 36,
+    "protected_api": 2,
+    "previous_v10_projection_source_supported": 28,
+    "natural_request_matches": 36,
+    "production_calls_match": 36,
+    "trace_wire_parity": 36
+  },
+  "preview": {
+    "records": 72,
+    "statuses": {
+      "alignment_or_candidate_rejected": 54,
+      "mechanically_compilable": 15,
+      "compiler_rejected": 3
+    },
+    "original_writes": 0
+  },
+  "review": {
+    "reviewer": "assistant",
+    "independent_human_review": false,
+    "decisions": {
+      "wrong": 2,
+      "confirmed": 10,
+      "uncertain": 3
+    },
+    "automatic_semantic_validation": false,
+    "review_after_observing_proposals": true
+  },
+  "live": {
+    "records": 72,
+    "statuses": {
+      "alignment_or_candidate_rejected": 53,
+      "source_contract_changed": 1,
+      "scope_rejected": 5,
+      "displayed_after_scope_review": 10,
+      "compiler_rejected": 3
+    },
+    "displayed": 10,
+    "not_displayed": 62,
+    "all_refusals_original_untouched": true,
+    "checks": {
+      "owned_target_exact": {
+        "passed": 10,
+        "denominator": 10
+      },
+      "original_structure_unchanged": {
+        "passed": 10,
+        "denominator": 10
+      },
+      "ancestors_unchanged": {
+        "passed": 10,
+        "denominator": 10
+      },
+      "non_owned_text_unchanged": {
+        "passed": 10,
+        "denominator": 10
+      },
+      "code_unchanged": {
+        "passed": 10,
+        "denominator": 10
+      },
+      "links_and_handler_properties_unchanged": {
+        "passed": 10,
+        "denominator": 10
+      },
+      "nonnavigation_listeners_preserved": {
+        "passed": 10,
+        "denominator": 10
+      },
+      "restored_exact": {
+        "passed": 10,
+        "denominator": 10
+      }
+    },
+    "external_links_clicked": false,
+    "original_add_event_listener_enumerated": false,
+    "event_test": "a custom nonnavigation listener on the same link objects; onclick identity and link attributes checked"
+  },
+  "browser": {
+    "version": "158.0.1",
+    "accept_insecure_certs": false,
+    "capture_utc": [
+      "2026-11-06T02:08:22.396615+00:00",
+      "2026-11-06T02:08:43.922960+00:00"
+    ],
+    "preview_utc": [
+      "2026-11-06T02:11:30.000932+00:00",
+      "2026-11-06T02:11:49.985898+00:00"
+    ],
+    "commit_utc": [
+      "2026-11-06T02:21:39.445511+00:00",
+      "2026-11-06T02:22:00.424134+00:00"
+    ],
+    "runtime_sha256": "52a8c03eef9cc280988ad46520cc3b801695365cf24bc149138cbdd6c9ee700e",
+    "site_errors": []
+  },
+  "environment": {
+    "captured_utc": "2026-11-06T02:33:20.332801+00:00",
+    "os_release": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.6\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\"",
+    "kernel": "6.18.57",
+    "architecture": "x86_64",
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+    "visible_cpus": 3,
+    "cpu_max": "200000 100000",
+    "memory_max_bytes": 8589934592,
+    "memory_events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "disk_available_bytes": 162127872,
+    "inference_device": "CPUExecutionProvider"
+  },
+  "models": {
+    "formal_v022_q5": {
+      "translator": {
+        "path": "/workspace/scratch/pagelingo-cpu-test/models/PageLingo-Translate-1.8B-v0.2.2-Q5_K_M.gguf",
+        "sha256": "8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc",
+        "bytes": 1298755616
+      },
+      "source_hashes_count": 57,
+      "candidate_refusals": 22,
+      "candidate_primary_diagnostic_categories": {
+        "readonly_literal_absent": 13,
+        "ordered_anchor_assignment_ambiguous_or_unavailable": 3,
+        "code_anchor_absent": 6
+      },
+      "candidate_refusal_diagnostics_are_translation_grades": false,
+      "encoder_pairs": 14,
+      "alignment_statuses": {
+        "rejected": 6,
+        "projected": 8
+      },
+      "preview_statuses": {
+        "alignment_or_candidate_rejected": 28,
+        "mechanically_compilable": 6,
+        "compiler_rejected": 2
+      },
+      "scope_review_decisions": {
+        "wrong": 1,
+        "confirmed": 4,
+        "uncertain": 1
+      },
+      "live_statuses": {
+        "alignment_or_candidate_rejected": 28,
+        "scope_rejected": 2,
+        "compiler_rejected": 2,
+        "displayed_after_scope_review": 4
+      },
+      "displayed_ids": [
+        "github-docs-rebase-3",
+        "mdn-aria-table-1",
+        "python-asyncio-1",
+        "w3c-dialog-1"
+      ],
+      "alignment_metrics": {
+        "load_window_s_warm_cache": 0.2665394309997282,
+        "pair_encoder_s_median": 0.04823029299996051,
+        "pair_wall_s_median": 0.06565770149995842,
+        "process_memory": [
+          "VmHWM:\t  620116 kB",
+          "VmRSS:\t  581468 kB"
+        ],
+        "common_v10_input_token_ids_identical": 9,
+        "common_v10_pairs": 9
+      },
+      "aligner_sha256": "beb17c2e9520155f7da7bb94a1fb8e74f5e528acdbd8f4415854c99a3d84f429",
+      "aligner_bytes": 149709873,
+      "aligner_notice": "Public cstr export card identifies truncated pretrained multilingual BERT layer 8; not asserted to be the fine-tuned official AWESOME checkpoint.",
+      "runtime": "1.23.2",
+      "source_newly_supported_ids": [
+        "mdn-aria-table-2",
+        "rfc-http-2",
+        "rfc-http-3",
+        "w3c-dialog-1",
+        "w3c-dialog-2",
+        "w3c-dialog-3",
+        "wikipedia-tls-2",
+        "wikipedia-tls-4"
+      ]
+    },
+    "old_r16_q5": {
+      "translator": {
+        "path": "/workspace/scratch/pagelingo-cpu-test/quality-v2b/exports/candidate-v2b-Q5_K_M.gguf",
+        "sha256": "748c66dee23ec95583d0c84bd49bd3e516b0d2c1d242fbf4e152ff710e0f62bb",
+        "bytes": 1298755552
+      },
+      "source_hashes_count": 57,
+      "candidate_refusals": 23,
+      "candidate_primary_diagnostic_categories": {
+        "readonly_literal_absent": 13,
+        "ordered_anchor_assignment_ambiguous_or_unavailable": 6,
+        "code_anchor_absent": 3,
+        "short_echo": 1
+      },
+      "candidate_refusal_diagnostics_are_translation_grades": false,
+      "encoder_pairs": 13,
+      "alignment_statuses": {
+        "rejected": 3,
+        "projected": 10
+      },
+      "preview_statuses": {
+        "alignment_or_candidate_rejected": 26,
+        "mechanically_compilable": 9,
+        "compiler_rejected": 1
+      },
+      "scope_review_decisions": {
+        "wrong": 1,
+        "confirmed": 6,
+        "uncertain": 2
+      },
+      "live_statuses": {
+        "source_contract_changed": 1,
+        "alignment_or_candidate_rejected": 25,
+        "scope_rejected": 3,
+        "displayed_after_scope_review": 6,
+        "compiler_rejected": 1
+      },
+      "displayed_ids": [
+        "kubernetes-pods-2",
+        "github-docs-rebase-2",
+        "github-docs-rebase-3",
+        "mdn-aria-table-1",
+        "python-asyncio-1",
+        "w3c-dialog-1"
+      ],
+      "alignment_metrics": {
+        "load_window_s_warm_cache": 0.28520858499996393,
+        "pair_encoder_s_median": 0.05131075999997847,
+        "pair_wall_s_median": 0.07062619399994219,
+        "process_memory": [
+          "VmHWM:\t  620536 kB",
+          "VmRSS:\t  576584 kB"
+        ],
+        "common_v10_input_token_ids_identical": 9,
+        "common_v10_pairs": 9
+      },
+      "aligner_sha256": "beb17c2e9520155f7da7bb94a1fb8e74f5e528acdbd8f4415854c99a3d84f429",
+      "aligner_bytes": 149709873,
+      "aligner_notice": "Public cstr export card identifies truncated pretrained multilingual BERT layer 8; not asserted to be the fine-tuned official AWESOME checkpoint.",
+      "runtime": "1.23.2",
+      "source_newly_supported_ids": [
+        "mdn-aria-table-2",
+        "rfc-http-2",
+        "rfc-http-3",
+        "w3c-dialog-1",
+        "w3c-dialog-2",
+        "w3c-dialog-3",
+        "wikipedia-tls-2",
+        "wikipedia-tls-4"
+      ]
+    }
+  },
+  "limitations": [
+    "Only one displayed case has a variable semantic format range; the other admitted cases are readonly anchors or full-parent flow.",
+    "Two dereferencing-to-partial-reference proposals remain wrong in raw alignment and are blocked only by assistant scope review.",
+    "Three Note:/Warning: proposals omit the colon from emphasis and are conservatively uncertain.",
+    "Exact readonly punctuation/whitespace rejects many fluent Chinese candidates; candidate refusal is not a translation-error label.",
+    "No new translator inference, Firefox/wllama inference, WebGPU inference, whole-site coverage or pixel/layout benchmark in v11.",
+    "One live Wikipedia source contract changed and was refused; the exact changed field was not saved by this harness.",
+    "No independent human review or blind holdout; no promotion/default-weight/training decision from these counts."
+  ],
+  "sites": [
+    {
+      "id": "wikipedia-tls",
+      "url": "https://en.wikipedia.org/wiki/Transport_Layer_Security",
+      "statuses": {
+        "alignment_or_candidate_rejected": 5,
+        "source_contract_changed": 1
+      },
+      "displayed_ids": []
+    },
+    {
+      "id": "rust-borrowing",
+      "url": "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html",
+      "statuses": {
+        "alignment_or_candidate_rejected": 4,
+        "scope_rejected": 2
+      },
+      "displayed_ids": []
+    },
+    {
+      "id": "typescript-narrowing",
+      "url": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html",
+      "statuses": {
+        "alignment_or_candidate_rejected": 6
+      },
+      "displayed_ids": []
+    },
+    {
+      "id": "react-effects",
+      "url": "https://react.dev/learn/synchronizing-with-effects",
+      "statuses": {
+        "alignment_or_candidate_rejected": 6
+      },
+      "displayed_ids": []
+    },
+    {
+      "id": "kubernetes-pods",
+      "url": "https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/",
+      "statuses": {
+        "alignment_or_candidate_rejected": 7,
+        "displayed_after_scope_review": 1
+      },
+      "displayed_ids": [
+        {
+          "model": "old_r16_q5",
+          "id": "kubernetes-pods-2"
+        }
+      ]
+    },
+    {
+      "id": "github-docs-rebase",
+      "url": "https://docs.github.com/en/get-started/using-git/about-git-rebase",
+      "statuses": {
+        "alignment_or_candidate_rejected": 2,
+        "compiler_rejected": 1,
+        "displayed_after_scope_review": 3
+      },
+      "displayed_ids": [
+        {
+          "model": "formal_v022_q5",
+          "id": "github-docs-rebase-3"
+        },
+        {
+          "model": "old_r16_q5",
+          "id": "github-docs-rebase-2"
+        },
+        {
+          "model": "old_r16_q5",
+          "id": "github-docs-rebase-3"
+        }
+      ]
+    },
+    {
+      "id": "mdn-aria-table",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/table_role",
+      "statuses": {
+        "displayed_after_scope_review": 2,
+        "alignment_or_candidate_rejected": 2,
+        "compiler_rejected": 1,
+        "scope_rejected": 1
+      },
+      "displayed_ids": [
+        {
+          "model": "formal_v022_q5",
+          "id": "mdn-aria-table-1"
+        },
+        {
+          "model": "old_r16_q5",
+          "id": "mdn-aria-table-1"
+        }
+      ]
+    },
+    {
+      "id": "python-asyncio",
+      "url": "https://docs.python.org/3/library/asyncio-task.html",
+      "statuses": {
+        "displayed_after_scope_review": 2,
+        "alignment_or_candidate_rejected": 2
+      },
+      "displayed_ids": [
+        {
+          "model": "formal_v022_q5",
+          "id": "python-asyncio-1"
+        },
+        {
+          "model": "old_r16_q5",
+          "id": "python-asyncio-1"
+        }
+      ]
+    },
+    {
+      "id": "w3c-dialog",
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/",
+      "statuses": {
+        "displayed_after_scope_review": 2,
+        "compiler_rejected": 1,
+        "alignment_or_candidate_rejected": 3
+      },
+      "displayed_ids": [
+        {
+          "model": "formal_v022_q5",
+          "id": "w3c-dialog-1"
+        },
+        {
+          "model": "old_r16_q5",
+          "id": "w3c-dialog-1"
+        }
+      ]
+    },
+    {
+      "id": "rfc-http",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+      "statuses": {
+        "alignment_or_candidate_rejected": 4,
+        "scope_rejected": 2
+      },
+      "displayed_ids": []
+    },
+    {
+      "id": "github-typescript",
+      "url": "https://github.com/microsoft/TypeScript",
+      "statuses": {
+        "alignment_or_candidate_rejected": 6
+      },
+      "displayed_ids": []
+    },
+    {
+      "id": "stackoverflow-hidden",
+      "url": "https://stackoverflow.com/questions/178325/how-do-i-check-if-an-element-is-hidden-in-jquery",
+      "statuses": {
+        "alignment_or_candidate_rejected": 6
+      },
+      "displayed_ids": []
+    }
+  ],
+  "scope_review_cases": [
+    {
+      "model": "formal_v022_q5",
+      "id": "rust-borrowing-2",
+      "decision": "wrong",
+      "reason": "原词是完整解引用概念，目标 EM 仅为引用，把去留在外。整句文字冻结不等于格式范围正确。",
+      "target_sha256": "22ecb6c12c3bb4a302017574720e8d39b86f0244c551e5bb735140861050cbbd",
+      "proposal_sha256": "eef649bdb5fa15437293581a9c2b79b1ed6995fe2d65c6e19bcb441b7283f621",
+      "ranges": [
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "&",
+          "target": "&"
+        },
+        {
+          "tag": "EM",
+          "kind": "format",
+          "source": "dereferencing",
+          "target": "引用"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "*",
+          "target": "*"
+        }
+      ]
+    },
+    {
+      "model": "old_r16_q5",
+      "id": "rust-borrowing-2",
+      "decision": "wrong",
+      "reason": "原词是完整解引用概念，目标 EM 仅为引用，把去留在外。整句文字冻结不等于格式范围正确。",
+      "target_sha256": "725d359134ca7b8e04ed69b0df0aface9eda6840ad177e5b3ed45a2d2c146d28",
+      "proposal_sha256": "b63306a7ec6b44454d2358e9d1f530e324be4a611fea690d6c8ec11df4cb5ce6",
+      "ranges": [
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "&",
+          "target": "&"
+        },
+        {
+          "tag": "EM",
+          "kind": "format",
+          "source": "dereferencing",
+          "target": "引用"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "*",
+          "target": "*"
+        }
+      ]
+    },
+    {
+      "model": "old_r16_q5",
+      "id": "kubernetes-pods-2",
+      "decision": "confirmed",
+      "reason": "STRONG 仅为重复崩溃，对应 Repeated crashes；restartPolicy 的原链接和代码保持。",
+      "target_sha256": "a7f51de31abeca4df8c8ada7cd55aab2165b64fcbcdcbaf37fb6fd3183ffae11",
+      "proposal_sha256": "2f4b8abb5f52539dffcb9cd718b67401a07593c43866d1ee573ef8ffb25048d1",
+      "ranges": [
+        {
+          "tag": "STRONG",
+          "kind": "format",
+          "source": "Repeated crashes",
+          "target": "重复崩溃"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "restartPolicy",
+          "target": "restartPolicy"
+        }
+      ]
+    },
+    {
+      "model": "formal_v022_q5",
+      "id": "github-docs-rebase-3",
+      "decision": "confirmed",
+      "reason": "逐项核对实际提议：代码/标识符锚点保持，整块 owned flow 只承载本根文字；子列表与隐藏内容不进入该范围。没有可变语义格式的样本仅验证编译/不变性。",
+      "target_sha256": "86ec37c2b0eec84a7170cb5ee7ad7570702f6aa8cd9ab747f6bd71e500b0b0a5",
+      "proposal_sha256": "eb6e27ac3fb791c6f14035d070700c759c8187f63ba7ce42c3d442de8765a64f",
+      "ranges": [
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "reword",
+          "target": "reword"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "pick",
+          "target": "pick"
+        }
+      ]
+    },
+    {
+      "model": "old_r16_q5",
+      "id": "github-docs-rebase-2",
+      "decision": "confirmed",
+      "reason": "逐项核对实际提议：代码/标识符锚点保持，整块 owned flow 只承载本根文字；子列表与隐藏内容不进入该范围。没有可变语义格式的样本仅验证编译/不变性。",
+      "target_sha256": "a443434930a3d43ac44164b0facf4257a888c781bc1f8e0d704667aa93c57934",
+      "proposal_sha256": "1e00523948c77392d8a21fdf2acacd41394a055996f7d7845f60fcce6f3d0be4",
+      "ranges": [
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "pick",
+          "target": "pick"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "pick",
+          "target": "pick"
+        }
+      ]
+    },
+    {
+      "model": "old_r16_q5",
+      "id": "github-docs-rebase-3",
+      "decision": "confirmed",
+      "reason": "逐项核对实际提议：代码/标识符锚点保持，整块 owned flow 只承载本根文字；子列表与隐藏内容不进入该范围。没有可变语义格式的样本仅验证编译/不变性。",
+      "target_sha256": "fe0382114100e4627ec5592e378b5688b398d78bedc4d56d789bb91a0ed3c018",
+      "proposal_sha256": "a7de070af01b4e56b3e31189b30e2efadb81297aeac4515a4a57b6c9954934cf",
+      "ranges": [
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "reword",
+          "target": "reword"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "pick",
+          "target": "pick"
+        }
+      ]
+    },
+    {
+      "model": "formal_v022_q5",
+      "id": "mdn-aria-table-1",
+      "decision": "confirmed",
+      "reason": "逐项核对实际提议：代码/标识符锚点保持，整块 owned flow 只承载本根文字；子列表与隐藏内容不进入该范围。没有可变语义格式的样本仅验证编译/不变性。",
+      "target_sha256": "91e4cc17de96bae92c376c9cc2785b343d42fd67d60669d83c42cddc173a4417",
+      "proposal_sha256": "b42bb4e7daec6398e727ca56a9f0e1c359a7d903d5d0212cd811dbb9e1ee6e65",
+      "ranges": [
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-sort",
+          "target": "aria-sort"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-colcount",
+          "target": "aria-colcount"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-rowcount",
+          "target": "aria-rowcount"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-colindex",
+          "target": "aria-colindex"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-rowindex",
+          "target": "aria-rowindex"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-colindex",
+          "target": "aria-colindex"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-rowindex",
+          "target": "aria-rowindex"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-rowspan",
+          "target": "aria-rowspan"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-colspan",
+          "target": "aria-colspan"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "<table>",
+          "target": "<table>"
+        }
+      ]
+    },
+    {
+      "model": "old_r16_q5",
+      "id": "mdn-aria-table-1",
+      "decision": "confirmed",
+      "reason": "逐项核对实际提议：代码/标识符锚点保持，整块 owned flow 只承载本根文字；子列表与隐藏内容不进入该范围。没有可变语义格式的样本仅验证编译/不变性。",
+      "target_sha256": "34d6a2e944798922b50f20bbadf8a34e3b69ac393f10d47b4342f17390a6d709",
+      "proposal_sha256": "47a6e98673de1135257390b09682e294dc6c00cc613e3d1b918077e96116507d",
+      "ranges": [
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-sort",
+          "target": "aria-sort"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-colcount",
+          "target": "aria-colcount"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-rowcount",
+          "target": "aria-rowcount"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-colindex",
+          "target": "aria-colindex"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-rowindex",
+          "target": "aria-rowindex"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-colindex",
+          "target": "aria-colindex"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-rowindex",
+          "target": "aria-rowindex"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-rowspan",
+          "target": "aria-rowspan"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "aria-colspan",
+          "target": "aria-colspan"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "<table>",
+          "target": "<table>"
+        }
+      ]
+    },
+    {
+      "model": "old_r16_q5",
+      "id": "mdn-aria-table-3",
+      "decision": "uncertain",
+      "reason": "Note:/Warning: 的源格式包含冒号，提议范围只覆盖注意/警告，将标点置于格式外；按结构优先留待独立审核，不计通过。",
+      "target_sha256": "fdd3e91501164568f154747d250c7533869400b73ffe7d318a0ed340caa1ceef",
+      "proposal_sha256": "10521c1ff15a57ba08c81c5070525d1af41c9b2d2ff2558fb714bc9da9cff7f0",
+      "ranges": [
+        {
+          "tag": "STRONG",
+          "kind": "format",
+          "source": "Warning:",
+          "target": "警告"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "grid",
+          "target": "grid"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "treegrid",
+          "target": "treegrid"
+        }
+      ]
+    },
+    {
+      "model": "formal_v022_q5",
+      "id": "python-asyncio-1",
+      "decision": "confirmed",
+      "reason": "逐项核对实际提议：代码/标识符锚点保持，整块 owned flow 只承载本根文字；子列表与隐藏内容不进入该范围。没有可变语义格式的样本仅验证编译/不变性。",
+      "target_sha256": "c52a6c9b5baefc81f44fbb55858e41bc25079bb551019e65efab960028af7cee",
+      "proposal_sha256": "9d2500e2eb594fc62d811992b9405b9c637aa6c1eb2d316b60e99516f27cb1b8",
+      "ranges": [
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "async with",
+          "target": "async with"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "__aexit__()",
+          "target": "__aexit__()"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "__aexit__()",
+          "target": "__aexit__()"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "asyncio.CancelledError",
+          "target": "asyncio.CancelledError"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "KeyboardInterrupt",
+          "target": "KeyboardInterrupt"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "SystemExit",
+          "target": "SystemExit"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "async with",
+          "target": "async with"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "GeneratorExit",
+          "target": "GeneratorExit"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "GeneratorExit",
+          "target": "GeneratorExit"
+        }
+      ]
+    },
+    {
+      "model": "old_r16_q5",
+      "id": "python-asyncio-1",
+      "decision": "confirmed",
+      "reason": "逐项核对实际提议：代码/标识符锚点保持，整块 owned flow 只承载本根文字；子列表与隐藏内容不进入该范围。没有可变语义格式的样本仅验证编译/不变性。",
+      "target_sha256": "d0e6300ce33f7db387a191c23d3dc8b9c5a93b75f1d2b4b96bc45f1d693f63ae",
+      "proposal_sha256": "a5157d125660a164763f220b8abcfc8f606adfb34207c18460f9913d58c53661",
+      "ranges": [
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "async with",
+          "target": "async with"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "__aexit__()",
+          "target": "__aexit__()"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "__aexit__()",
+          "target": "__aexit__()"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "asyncio.CancelledError",
+          "target": "asyncio.CancelledError"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "KeyboardInterrupt",
+          "target": "KeyboardInterrupt"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "SystemExit",
+          "target": "SystemExit"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "async with",
+          "target": "async with"
+        },
+        {
+          "tag": "A",
+          "kind": "readonly",
+          "source": "GeneratorExit",
+          "target": "GeneratorExit"
+        },
+        {
+          "tag": "CODE",
+          "kind": "readonly",
+          "source": "GeneratorExit",
+          "target": "GeneratorExit"
+        }
+      ]
+    },
+    {
+      "model": "formal_v022_q5",
+      "id": "w3c-dialog-1",
+      "decision": "confirmed",
+      "reason": "逐项核对实际提议：代码/标识符锚点保持，整块 owned flow 只承载本根文字；子列表与隐藏内容不进入该范围。没有可变语义格式的样本仅验证编译/不变性。",
+      "target_sha256": "3315f7da445801a7fcd71b32f0175234ff60d6d3a9b4d12b859de298c09b31a8",
+      "proposal_sha256": "c3e8faeca302485106727aa2f8e682c40a441b32c152b6ac6cc031bff36ffcf4",
+      "ranges": [
+        {
+          "tag": "FLOW",
+          "kind": "flow",
+          "source": "\n            The dialog has either:\n            ",
+          "target": "对话框要么是："
+        }
+      ]
+    },
+    {
+      "model": "old_r16_q5",
+      "id": "w3c-dialog-1",
+      "decision": "confirmed",
+      "reason": "逐项核对实际提议：代码/标识符锚点保持，整块 owned flow 只承载本根文字；子列表与隐藏内容不进入该范围。没有可变语义格式的样本仅验证编译/不变性。",
+      "target_sha256": "60e2a6d9a46b9602ef3cd55cb3fb34ae8ce9d6dccaf95c6eb341cdfd4d3a253f",
+      "proposal_sha256": "604c085152065ee5351bc1e99f9c4bda03cc6dca88951fb72219be0b873e5e50",
+      "ranges": [
+        {
+          "tag": "FLOW",
+          "kind": "flow",
+          "source": "\n            The dialog has either:\n            ",
+          "target": "对话框要么："
+        }
+      ]
+    },
+    {
+      "model": "formal_v022_q5",
+      "id": "rfc-http-3",
+      "decision": "uncertain",
+      "reason": "Note:/Warning: 的源格式包含冒号，提议范围只覆盖注意/警告，将标点置于格式外；按结构优先留待独立审核，不计通过。",
+      "target_sha256": "c0f71e9e6f1fa60ca5d0aa1fb0620a159b667804ecf4e8cd67163a180c4d57f4",
+      "proposal_sha256": "3ebdba533c3dd22b0322e658a6b25bf495ff0d41d7c07690ba61a5acd1d8141f",
+      "ranges": [
+        {
+          "tag": "FLOW",
+          "kind": "flow",
+          "source": "Note: The fact that the value syntax for the \"realm\" parameter\n      is restricted to quoted-string was a bad design choice not to be repeated\n      for new parameters.",
+          "target": "注意：“领域”参数的值语法被限制为引号字符串，这是一个糟糕的设计选择，不应在新参数中重复。"
+        },
+        {
+          "tag": "STRONG",
+          "kind": "format",
+          "source": "Note:",
+          "target": "注意"
+        }
+      ]
+    },
+    {
+      "model": "old_r16_q5",
+      "id": "rfc-http-3",
+      "decision": "uncertain",
+      "reason": "Note:/Warning: 的源格式包含冒号，提议范围只覆盖注意/警告，将标点置于格式外；按结构优先留待独立审核，不计通过。",
+      "target_sha256": "c299a96be6591e9d5eec3e42596e60cc75df5f22d623e77dc05a4d9c54c95dff",
+      "proposal_sha256": "970aceb49f9ad43102d114f755aa2e443c1f714bfa9a0e476f4ad654073b01a2",
+      "ranges": [
+        {
+          "tag": "FLOW",
+          "kind": "flow",
+          "source": "Note: The fact that the value syntax for the \"realm\" parameter\n      is restricted to quoted-string was a bad design choice not to be repeated\n      for new parameters.",
+          "target": "注意：“领域”参数的值语法被限制为引号字符串，这一设计选择并不合理，不应在新参数中重复。"
+        },
+        {
+          "tag": "STRONG",
+          "kind": "format",
+          "source": "Note:",
+          "target": "注意"
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "npm_verify_exit_code": 0,
+    "js_tests_passed": 339,
+    "python_tests_passed": 85,
+    "typecheck": "passed",
+    "production_audit_vulnerabilities": 0,
+    "build": "passed",
+    "addon_lint_errors": 0,
+    "addon_lint_warnings": 1,
+    "warning": "Existing UNSAFE_VAR_ASSIGNMENT in generated content.js; not introduced by the opt-in trace"
+  },
+  "artifact_sha256": {
+    "environment.json": "1294a68bf271c652d388c2d1a8ffa3981e246803c6d7e145141b250871843c94",
+    "capture-final/result.json": "988750bd2ccc64968c9bd625586bcc0c4e87146e8fc916f41438ba35629831c7",
+    "formal-plan.json": "5cdd6de09b0ab7d6011eb5d2c480a35b0600c217c997af80b7d988e06434b498",
+    "r16-plan.json": "59dafb99eb31c1cf7f1a285aeaf19dd6405fdf0ee841c9145617e09c7794dfa1",
+    "formal-alignment.json": "346114d3701c4c41f63df3825884c4e9fedc3db74a7a6c0baa5cc3b53c21b564",
+    "r16-alignment.json": "31345dfc396548851543349e1dd1757d5a36f71e3d893546948f8a8c61a0decb",
+    "formal-input.json": "c79da29b61c4c4cbde8aaf2268382a704b05789e7bc836d9fe1479a4149d5a4e",
+    "r16-input.json": "68d515d29f3af9601f517cccdf9b4ee3dfcbfa752983ef77d6201894dcc57a3e",
+    "preview-input.json": "b822a3fdb90da92af72a9774590e6872dc66841b00cc23828e831e4da218ea5e",
+    "preview-first/result.json": "836890c8677b6a0c4abc7f8a06e2c1a49139e60e6964ae17b0e0c5e76dc7a0d8",
+    "scope-review.json": "89b39dacc5f388ca22a839524975a47504e7a3d67fae804b0064a4fbec728c03",
+    "commit-input.json": "85051c13ae013fd1f74adc670648033c8c0cbfff51b01fcfddd2af098cd574e9",
+    "commit-first/result.json": "12a7d4ce41357d5d9d538554ae12992fa6eaaed93b5a3a1124283465036efa81",
+    "npm-verify.log": "30982e2a951b91c3902572ad971f80326587e8c7ce1094e29dd1b9a533f5ce26",
+    "python-tests.log": "c335bfee19ef6c64eec32205ae7f241ed5b9f5ae1e24678327b828f7ba2e773c",
+    "formal-candidate-refusal-analysis.json": "c49ceb23b3f3dc55c421a3db1e3b2cdf1b5c3f1f631cb1c78dec5a992b13d678",
+    "r16-candidate-refusal-analysis.json": "0b057494bd8719e04594a2dd3b5788ef141a1006ce92cbf5d2b5405f98dd50e1"
+  },
+  "evidence_archive": {
+    "path": "/workspace/artifacts/pagelingo-owned-projection-v11-evidence-20261106.zip",
+    "bytes": 4883251,
+    "sha256": "b12ed175191ffe84b85986d3460667cdee766993a8e0eebbec8b60c2ce03dbf4",
+    "members": 282,
+    "crc_verified": true,
+    "all_member_sha256_verified": true,
+    "contains_weights": false,
+    "source_snapshot_files": 213
+  }
+}

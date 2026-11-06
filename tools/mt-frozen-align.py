@@ -34,12 +34,19 @@ def readonly_spans(annotations, target):
     return solutions[0]
 
 
-def project(case, links, min_cosine):
+def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inherit_full_parent_flows=False):
     words_s, words_t, annotations = case['source_words'], case['target_words'], case['annotations']
-    chosen = readonly_spans(annotations, case['frozen_target'])
+    chosen = readonly_resolver(annotations, case['frozen_target'])
     diagnostics = []
     for a in annotations:
         if a['id'] in chosen: continue
+        if inherit_full_parent_flows and a.get('kind') == 'flow' and a.get('full_parent'):
+            parent = next((p for p in annotations if p['id'] == a['parent']), None)
+            expected = (parent['start'], parent['end']) if parent else (0, u16(case['source_text'], len(case['source_text'])))
+            if (a['start'], a['end']) != expected or a['parent'] is not None and a['parent'] not in chosen:
+                raise ValueError('invalid full-parent flow witness')
+            chosen[a['id']] = chosen[a['parent']] if parent else (0, u16(case['frozen_target'], len(case['frozen_target'])))
+            continue
         # Code-only links/format wrappers share their immutable descendant's range.
         same = [b for b in annotations if b['immutable'] and b['start'] == a['start'] and b['end'] == a['end']]
         if len(same) == 1:
@@ -86,7 +93,10 @@ def main():
     args = parser.parse_args()
     if args.output.exists(): raise ValueError('Use a new result file')
     plan = json.loads(args.plan.read_text())
-    if plan.get('protocol') != 'frozen-target-span-projection-v9' or plan.get('evaluation_only') is not True or plan.get('optimizer_inputs_approved') is not False: raise ValueError('Expected frozen evaluation plan')
+    if plan.get('protocol') not in ['frozen-target-span-projection-v9', 'production-owned-projection-v11'] or plan.get('evaluation_only') is not True or plan.get('optimizer_inputs_approved') is not False: raise ValueError('Expected frozen evaluation plan')
+    owned_policy = plan['protocol'] == 'production-owned-projection-v11'
+    if owned_policy:
+        from mt_owned_projection import readonly_owned
     root = Path(__file__).resolve().parents[1]
     for name, expected in plan['source_hashes'].items():
         p = (root / name).resolve()
@@ -130,7 +140,8 @@ def main():
         row = {'id': case['id'], 'target_sha256': hashlib.sha256(case['frozen_target'].encode()).hexdigest(), 'links': links,
                'inference_s': inference_s, 'input_ids_sha256': hashlib.sha256(feed['input_ids'].tobytes()).hexdigest()}
         try:
-            row['spans'], row['projection_diagnostics'] = project(case, links, plan['rules']['min_cosine']); row['status'] = 'projected'
+            kwargs = {'readonly_resolver': readonly_owned, 'inherit_full_parent_flows': True} if owned_policy else {}
+            row['spans'], row['projection_diagnostics'] = project(case, links, plan['rules']['min_cosine'], **kwargs); row['status'] = 'projected'
         except ValueError as error:
             row.update(status='rejected', reason=str(error), spans=[])
         row['wall_s'] = time.perf_counter() - began; result['rows'].append(row)
