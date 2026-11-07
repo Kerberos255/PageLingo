@@ -1,0 +1,3940 @@
+{
+  "protocol": "scope-choice-v3-review-v1",
+  "evaluation_only": true,
+  "optimizer_inputs_approved": false,
+  "source_commit": "5326a11cc326419f8f3e12b85b23aa691e397583",
+  "date": "2026-11-07",
+  "gpu_workflow": {
+    "source_commit": "5326a11cc326419f8f3e12b85b23aa691e397583",
+    "check_only": false,
+    "training_completed": true,
+    "gpu_comparison_completed": true,
+    "workflow_completed": true,
+    "stages": [
+      {
+        "name": "preflight",
+        "exit_code": 0,
+        "wall_s": 20.326395600102842,
+        "log": "preflight.log"
+      },
+      {
+        "name": "count-control-v1",
+        "exit_code": 0,
+        "wall_s": 13.529135399963707,
+        "log": "count-control-v1.log"
+      },
+      {
+        "name": "count-control-v2",
+        "exit_code": 0,
+        "wall_s": 12.784548999974504,
+        "log": "count-control-v2.log"
+      },
+      {
+        "name": "bf16-base",
+        "exit_code": 0,
+        "wall_s": 54.78953940002248,
+        "log": "bf16-base.log"
+      },
+      {
+        "name": "train-candidate",
+        "exit_code": 0,
+        "wall_s": 307.2838230000343,
+        "log": "train-candidate.log"
+      },
+      {
+        "name": "bf16-candidate",
+        "exit_code": 0,
+        "wall_s": 109.07542410003953,
+        "log": "bf16-candidate.log"
+      }
+    ],
+    "diagnostic_completed": true,
+    "handoff_validation": {
+      "members": 26,
+      "all_member_sha256_passed": true,
+      "legacy_windows_paths_normalized": 0
+    },
+    "handoff": "E:\\PageLingo-MT\\outputs\\scope-choice-v3-run-20261107-235618-3ee43c\\gpu-handoff.zip",
+    "handoff_sha256": "a4fa59ccc14a8e337ffbd897e24cbf4a47fffeec87bb98ad1a5090152f7e985c",
+    "release_approved": false
+  },
+  "training": {
+    "created_utc": "2026-11-07T15:58:15.443928+00:00",
+    "training_executed": true,
+    "cuda_available": true,
+    "base_model": "tencent/Hy-MT2-1.8B",
+    "base_revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+    "base_path": "E:\\PageLingo-MT\\models\\hy-mt2-1.8b",
+    "config": {
+      "base_model": "tencent/Hy-MT2-1.8B",
+      "base_revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+      "base_weight_file": "model.safetensors",
+      "base_weight_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+      "max_length": 1536,
+      "seed": 42,
+      "epochs": 4,
+      "learning_rate": 3e-05,
+      "batch_size": 1,
+      "gradient_accumulation_steps": 8,
+      "warmup_ratio": 0.05,
+      "weight_decay": 0.01,
+      "lora_r": 16,
+      "lora_alpha": 32,
+      "lora_dropout": 0.05,
+      "target_modules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj"
+      ],
+      "probe_max_steps": 12,
+      "candidate_max_steps": 128,
+      "initialization": "fresh_base",
+      "checkpoint_selection": "final",
+      "purpose": "Correct the candidate-count shortcut with fully crossed availability/count controls and constant distractor style; diagnose frozen v1/v2 adapters before a bounded fresh-base pilot. No automatic promotion.",
+      "corpus": "scope-choice-v3",
+      "diagnostic_adapters": [
+        {
+          "id": "v1",
+          "run_prefix": "scope-choice-v1",
+          "adapter_sha256": "46ed3bd8d551c0c36b2beb52d9821c6769c3ecf8b9b5af46f2dd5d2cd7f58c3c",
+          "adapter_config_sha256": "51298125808a941c464471454ce33b822dc15b88c0f69bffa82ebaaf2402cd67"
+        },
+        {
+          "id": "v2",
+          "run_prefix": "scope-choice-v2",
+          "adapter_sha256": "c75c7cac493e18f15852498338867243c4b527ba03586f02e5fc68f18018f5e2",
+          "adapter_config_sha256": "8b704bc969f03bb0cbecf563adad714ea62c312629e41f5dae5053e8bb38b818"
+        }
+      ]
+    },
+    "versions": {
+      "torch": "2.14.0+cu130",
+      "transformers": "5.17.0",
+      "peft": "0.21.0"
+    },
+    "local_weight_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+    "config_sha256": "d648316c741be42aafa75f5d1a9de6afde1e41cffe94a757f0d4ef719844ba0c",
+    "training_argument_check": {
+      "passed": true,
+      "device": "cuda:0",
+      "bf16": true,
+      "warmup_steps_argument": 0.05,
+      "warmup_steps_for_12_step_probe": 1,
+      "model_weights_loaded": false,
+      "max_optimizer_steps": 128,
+      "warmup_steps_for_this_run": 7
+    },
+    "input_manifest_sha256": "8896d18692043cae28e394c25151275b417bb5d13569b3d1bef9d4c79e18a789",
+    "splits": {
+      "train": {
+        "rows": 844,
+        "max_tokens": 297,
+        "target_tokens": 5370,
+        "prompt_and_padding_masked": true,
+        "eos_supervised": true,
+        "targets_truncated": false,
+        "sha256": "e7bd41cf78472ed392914b50098e32507d835f23a91b9351bb1c6148d7116a26",
+        "task_counts": {
+          "scope_choice": 608,
+          "natural_replay": 236
+        }
+      },
+      "validation": {
+        "rows": 180,
+        "max_tokens": 279,
+        "target_tokens": 603,
+        "prompt_and_padding_masked": true,
+        "eos_supervised": true,
+        "targets_truncated": false,
+        "sha256": "1868217b19832e80d839b9d1843a2da3e60b89ee8b268102513cace0c9dd26b3",
+        "task_counts": {
+          "scope_choice": 160,
+          "natural_replay": 20
+        }
+      }
+    },
+    "loss_definition": {
+      "kind": "batch1_sequence_mean_target_ce",
+      "prompt_and_padding_masked": true,
+      "eos_supervised": true,
+      "token_count_across_accumulation_passed_to_model": false,
+      "note": "Choice/EOS examples and translation examples each contribute their sequence mean; no automatic checkpoint winner."
+    },
+    "review_status": "assistant_audited_synthetic",
+    "run_kind": "synthetic_research_candidate",
+    "collator_padding_mask_checked": true,
+    "checkpoint_target_check": {
+      "matched_weight_tensors": 128,
+      "lora_weights_from_tensor_shapes": 6815744
+    },
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 4070 Ti",
+      "total_memory_bytes": 12878086144
+    },
+    "model_and_adapter_load_wall_s": 2.620004499796778,
+    "parameters": {
+      "total": 1797896192,
+      "trainable": 6815744
+    },
+    "base_weights_frozen": true,
+    "initial_trainable_sha256": "cbc83b31a34c4da81ef90e9715ee9f23e6a4163514a30c7a920e004e67d9481f",
+    "training_wall_s": 295.22558470000513,
+    "validation_before": {
+      "eval_loss": 2.466373920440674,
+      "eval_model_preparation_time": 0.009,
+      "eval_runtime": 8.8686,
+      "eval_samples_per_second": 20.296,
+      "eval_steps_per_second": 20.296,
+      "epoch": 0
+    },
+    "validation_after": {
+      "eval_loss": 0.5403818488121033,
+      "eval_model_preparation_time": 0.009,
+      "eval_runtime": 10.6509,
+      "eval_samples_per_second": 16.9,
+      "eval_steps_per_second": 16.9,
+      "epoch": 1.2085308056872037
+    },
+    "train_metrics": {
+      "train_runtime": 275.4425,
+      "train_samples_per_second": 3.718,
+      "train_steps_per_second": 0.465,
+      "total_flos": 1985693916020736.0,
+      "train_loss": 0.8460261001018807,
+      "epoch": 1.2085308056872037
+    },
+    "optimizer_steps": 128,
+    "cuda_peak_allocated_bytes": 4181217792,
+    "cuda_peak_reserved_bytes": 6197084160,
+    "selection": {
+      "criterion": "fixed final checkpoint; both candidates require semantic review",
+      "best_checkpoint": null,
+      "best_metric": null,
+      "max_optimizer_steps": 128,
+      "release_approved": false
+    }
+  },
+  "metadata_transfer": {
+    "bytes": 144479,
+    "sha256": "92d83db0e7d2aeed289aa8dc91832c7d59c8b02807f280516ca776ebb6f79dc5",
+    "original_manifest_entries_verified": 23,
+    "weights_omitted_locally": [
+      "candidate/adapter/adapter_model.safetensors",
+      "candidate/adapter/tokenizer.json"
+    ]
+  },
+  "provenance": {
+    "scope_plan_sha256": "8c7886f728a458c4434ba7c2da1af6a5cdfb9cc9ebbd3409bbf3796d3e96a4af",
+    "candidate_count_plan_sha256": "9269812bd3ecd0f0a27201743dd89381cd0127308a5cfad2db2eae99cc15f4b9",
+    "base_raw_sha256": "af495cc66c2d469e59cd8b594a41f5a04127a0b516430e9255cd1a57ff253d63",
+    "candidate_raw_sha256": "23bae9cdf38b19454004d0c7a895dc2882d936a8e9cc8056c453ab83b75712e0",
+    "v2_baseline_identical_token_sequences": 226,
+    "v1_baseline_identical_token_sequences": 126
+  },
+  "bf16": {
+    "base": {
+      "all": {
+        "total": 334,
+        "correct": 134,
+        "valid_total": 200,
+        "valid_correct": 1,
+        "abstentions": 331,
+        "false_accepts": 1,
+        "wrong_non_abstaining_selections": 2,
+        "none_total": 134,
+        "none_correct": 133
+      },
+      "cohorts": {
+        "scope-choice-v3-new-holdout": {
+          "total": 160,
+          "correct": 80,
+          "valid_total": 80,
+          "valid_correct": 0,
+          "abstentions": 160,
+          "false_accepts": 0,
+          "wrong_non_abstaining_selections": 0,
+          "none_total": 80,
+          "none_correct": 80
+        },
+        "frozen-v2-regression": {
+          "total": 80,
+          "correct": 40,
+          "valid_total": 40,
+          "valid_correct": 0,
+          "abstentions": 80,
+          "false_accepts": 0,
+          "wrong_non_abstaining_selections": 0,
+          "none_total": 40,
+          "none_correct": 40
+        },
+        "frozen-v1-regression": {
+          "total": 94,
+          "correct": 14,
+          "valid_total": 80,
+          "valid_correct": 1,
+          "abstentions": 91,
+          "false_accepts": 1,
+          "wrong_non_abstaining_selections": 2,
+          "none_total": 14,
+          "none_correct": 13
+        }
+      }
+    },
+    "candidate": {
+      "all": {
+        "total": 334,
+        "correct": 141,
+        "valid_total": 200,
+        "valid_correct": 13,
+        "abstentions": 307,
+        "false_accepts": 6,
+        "wrong_non_abstaining_selections": 14,
+        "none_total": 134,
+        "none_correct": 128
+      },
+      "cohorts": {
+        "scope-choice-v3-new-holdout": {
+          "total": 160,
+          "correct": 84,
+          "valid_total": 80,
+          "valid_correct": 8,
+          "abstentions": 146,
+          "false_accepts": 4,
+          "wrong_non_abstaining_selections": 6,
+          "none_total": 80,
+          "none_correct": 76
+        },
+        "frozen-v2-regression": {
+          "total": 80,
+          "correct": 41,
+          "valid_total": 40,
+          "valid_correct": 3,
+          "abstentions": 73,
+          "false_accepts": 2,
+          "wrong_non_abstaining_selections": 4,
+          "none_total": 40,
+          "none_correct": 38
+        },
+        "frozen-v1-regression": {
+          "total": 94,
+          "correct": 16,
+          "valid_total": 80,
+          "valid_correct": 2,
+          "abstentions": 88,
+          "false_accepts": 0,
+          "wrong_non_abstaining_selections": 4,
+          "none_total": 14,
+          "none_correct": 14
+        }
+      }
+    },
+    "base_cuda_peak_allocated_bytes": 3626201600,
+    "candidate_cuda_peak_allocated_bytes": 3653464576,
+    "base_cuda_peak_reserved_bytes": 3653238784,
+    "candidate_cuda_peak_reserved_bytes": 3680501760,
+    "all_908_eos": true
+  },
+  "count_diagnostics": {
+    "v1": {
+      "stats": {
+        "all": {
+          "total": 48,
+          "correct": 23,
+          "valid_total": 32,
+          "valid_correct": 23,
+          "abstentions": 0,
+          "false_accepts": 16,
+          "wrong_non_abstaining_selections": 25,
+          "none_total": 16,
+          "none_correct": 0
+        },
+        "cohorts": {
+          "candidate-count-control": {
+            "total": 48,
+            "correct": 23,
+            "valid_total": 32,
+            "valid_correct": 23,
+            "abstentions": 0,
+            "false_accepts": 16,
+            "wrong_non_abstaining_selections": 25,
+            "none_total": 16,
+            "none_correct": 0
+          }
+        }
+      },
+      "controls": {
+        "breakdown": {
+          "count-3-valid": {
+            "total": 16,
+            "correct": 12,
+            "abstentions": 0
+          },
+          "count-4-valid": {
+            "total": 16,
+            "correct": 11,
+            "abstentions": 0
+          },
+          "count-3-none": {
+            "total": 8,
+            "correct": 0,
+            "abstentions": 0
+          },
+          "count-4-none": {
+            "total": 8,
+            "correct": 0,
+            "abstentions": 0
+          }
+        },
+        "matched_pairs": 24,
+        "changed_output_pairs": 6,
+        "changed_abstention_pairs": 0,
+        "both_correct_pairs": 9,
+        "pairs": [
+          {
+            "matched_group": "0-0",
+            "expected": "C",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "0-1",
+            "expected": "B",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "1-0",
+            "expected": "D",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "1-1",
+            "expected": "C",
+            "count_3_output": "A",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "2-0",
+            "expected": "D",
+            "count_3_output": "D",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "2-1",
+            "expected": "C",
+            "count_3_output": "A",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "3-0",
+            "expected": "A",
+            "count_3_output": "A",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "3-1",
+            "expected": "D",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "4-0",
+            "expected": "D",
+            "count_3_output": "D",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "4-1",
+            "expected": "C",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "5-0",
+            "expected": "C",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "5-1",
+            "expected": "B",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "6-0",
+            "expected": "A",
+            "count_3_output": "A",
+            "count_4_output": "A"
+          },
+          {
+            "matched_group": "6-1",
+            "expected": "D",
+            "count_3_output": "D",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "7-0",
+            "expected": "D",
+            "count_3_output": "D",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "7-1",
+            "expected": "C",
+            "count_3_output": "C",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "8-0",
+            "expected": "X",
+            "count_3_output": "A",
+            "count_4_output": "A"
+          },
+          {
+            "matched_group": "8-1",
+            "expected": "X",
+            "count_3_output": "A",
+            "count_4_output": "A"
+          },
+          {
+            "matched_group": "9-0",
+            "expected": "X",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "9-1",
+            "expected": "X",
+            "count_3_output": "B",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "10-0",
+            "expected": "X",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "10-1",
+            "expected": "X",
+            "count_3_output": "A",
+            "count_4_output": "A"
+          },
+          {
+            "matched_group": "11-0",
+            "expected": "X",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "11-1",
+            "expected": "X",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          }
+        ]
+      },
+      "raw_sha256": "de55f7f59ea3b41ee311a187d85a122196a9b0f1bc8438675982ee5394a3aa28"
+    },
+    "v2": {
+      "stats": {
+        "all": {
+          "total": 48,
+          "correct": 17,
+          "valid_total": 32,
+          "valid_correct": 7,
+          "abstentions": 30,
+          "false_accepts": 6,
+          "wrong_non_abstaining_selections": 11,
+          "none_total": 16,
+          "none_correct": 10
+        },
+        "cohorts": {
+          "candidate-count-control": {
+            "total": 48,
+            "correct": 17,
+            "valid_total": 32,
+            "valid_correct": 7,
+            "abstentions": 30,
+            "false_accepts": 6,
+            "wrong_non_abstaining_selections": 11,
+            "none_total": 16,
+            "none_correct": 10
+          }
+        }
+      },
+      "controls": {
+        "breakdown": {
+          "count-3-valid": {
+            "total": 16,
+            "correct": 0,
+            "abstentions": 16
+          },
+          "count-4-valid": {
+            "total": 16,
+            "correct": 7,
+            "abstentions": 4
+          },
+          "count-3-none": {
+            "total": 8,
+            "correct": 8,
+            "abstentions": 8
+          },
+          "count-4-none": {
+            "total": 8,
+            "correct": 2,
+            "abstentions": 2
+          }
+        },
+        "matched_pairs": 24,
+        "changed_output_pairs": 18,
+        "changed_abstention_pairs": 18,
+        "both_correct_pairs": 2,
+        "pairs": [
+          {
+            "matched_group": "0-0",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "0-1",
+            "expected": "B",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "1-0",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "1-1",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "2-0",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "2-1",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "3-0",
+            "expected": "A",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "3-1",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "4-0",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "4-1",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "5-0",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "5-1",
+            "expected": "B",
+            "count_3_output": "X",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "6-0",
+            "expected": "A",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "6-1",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "7-0",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "7-1",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "8-0",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "8-1",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "9-0",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "9-1",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "10-0",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "10-1",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "11-0",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "11-1",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "B"
+          }
+        ]
+      },
+      "raw_sha256": "1d02cf72ec4567865c8354599ce4fad16514270f528cba86239c2a81d2ff0522"
+    }
+  },
+  "natural_outputs": [
+    {
+      "case_id": "scope-v3-01041",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The status card on the left reads not verified; the status card on the right reads verified.",
+      "base": "左边的状态卡片显示“未验证”；右边的状态卡片显示“已验证”。",
+      "candidate": "左侧的状态卡片显示“未验证”；右侧的状态卡片显示“已验证”。",
+      "request_sha256": "4f77ef7a73d77fb1a74cf97d37b0e33d522c003aa14e9868e2f3c4b242a9c8e4",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "scope-v3-01058",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The status card on the left reads not verified; the status card on the right reads not verified.",
+      "base": "左边的状态卡片显示“未验证”；右边的状态卡片也显示“未验证”。",
+      "candidate": "左侧的状态卡片显示未验证；右侧的状态卡片也显示未验证。",
+      "request_sha256": "8ca9c5fa4a11eeecc78dd041b43345bfaf8fb0aa69de3ec100c728dc508dc375",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "scope-v3-01075",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The primary indicator shows not verified and the fallback indicator shows verified.",
+      "base": "主要指示符显示未验证，备用指示符显示已验证。",
+      "candidate": "主指示符显示未验证，备用指示符显示已验证。",
+      "request_sha256": "3db1f972572642e1819498ee8903f4643f52cb504535fc876bcd882070c29cf6",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "scope-v3-01092",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The primary indicator shows not verified and the fallback indicator shows not verified.",
+      "base": "主要指示符显示未验证，备用指示符也显示未验证。",
+      "candidate": "主指示符显示未验证，备用指示符也显示未验证。",
+      "request_sha256": "2579ed0d19d0b410382769f955e29b09e1a8c4733e013c818c95c91bd015aefd",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "scope-v3-01109",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The status card on the left reads not subscribed; the status card on the right reads subscribed.",
+      "base": "左边的状态卡片显示“未订阅”；右边的状态卡片显示“已订阅”。",
+      "candidate": "左侧的状态卡片显示未订阅；右侧的状态卡片显示已订阅。",
+      "request_sha256": "c41794786a07776eda0e06eb085a76558544616c95f90dab280a2cb99ca6b6b8",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "scope-v3-01126",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The status card on the left reads not subscribed; the status card on the right reads not subscribed.",
+      "base": "左边的状态卡片显示未订阅；右边的状态卡片也显示未订阅。",
+      "candidate": "左侧的状态卡片显示未订阅；右侧的状态卡片也显示未订阅。",
+      "request_sha256": "565652213545846e2111a359e4e1ed35769f379aa26fd3f3949bdabadbc811c9",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "scope-v3-01143",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The primary indicator shows not subscribed and the fallback indicator shows subscribed.",
+      "base": "主要指示器显示未订阅，备用指示器显示已订阅。",
+      "candidate": "主指示符显示未订阅，备用指示符显示已订阅。",
+      "request_sha256": "8d43b793d116bf90ac351ab5e18417f500e964937a7ecb0fe09f8e024adfa9f4",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "scope-v3-01160",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The primary indicator shows not subscribed and the fallback indicator shows not subscribed.",
+      "base": "主要指示符显示未订阅，备用指示符也显示未订阅。",
+      "candidate": "主指示符显示未订阅，备用指示符也显示未订阅。",
+      "request_sha256": "b382df3e5642ba80df4b52c24e4312e82f8e86e3418996ccb25219bcf1f2c5a1",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "scope-v3-01169",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "Permit no more than eleven polls.",
+      "base": "最多允许十一项投票。",
+      "candidate": "最多允许十一个投票。",
+      "request_sha256": "c87239c8dfe65c584bdbd1e8b9d3a9951a48af747acf08c882ea5e92f211d0ae",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01178",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "Permit no fewer than eleven polls.",
+      "base": "允许至少十一个投票。",
+      "candidate": "允许不少于十一个投票。",
+      "request_sha256": "436b0ede95106f63dcb087db47a40575f4208d40dfa58e47fd893f4295b9809e",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01187",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "Permit no more than twelve polls.",
+      "base": "最多允许十二个投票。",
+      "candidate": "最多允许十二个投票。",
+      "request_sha256": "3161d3f5c63615cda3699e7548f00ce14df38cc23aa09bd095e27e939861783f",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01196",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "Permit no fewer than twelve polls.",
+      "base": "允许至少十二项投票。",
+      "candidate": "允许不少于十二次投票。",
+      "request_sha256": "d6da81d3ee4a18d3028c5e96fc9acb7df66eaefc349baf357eeb72bcf3126afc",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01197",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "Only after the serializer task has failed with an exception does the observer task complete its wait; the exception originates in the serializer task.",
+      "base": "只有在序列化器任务因异常失败后，观察者任务才会完成等待；该异常来自序列化器任务。",
+      "candidate": "只有在序列化器任务因异常失败后，观察者任务才会结束等待；该异常来自序列化器任务。",
+      "request_sha256": "5edb6bbf15db928d3f69f6b764437d8bff03406f83f812ec38be8775dba3bac9",
+      "review": {
+        "status": "focused_relation_check_passed_both",
+        "reason": "本轮检查的异常主体、等待返回/否定/先后关系保持；不代表独立盲审。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01198",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The end of the serializer task due to an exception is what allows the observer task to return, rather than requiring the observer task to raise an exception.",
+      "base": "由于异常导致序列化器任务结束，这使得观察器任务可以返回结果，而不需要观察器任务引发异常。",
+      "candidate": "由于异常导致序列化器任务结束，这使得观察器任务可以返回结果，而无需观察器任务抛出异常。",
+      "request_sha256": "4d0492436b50b4eebf9cd2c4513403a906062a1e81210f81959f3d1d0940c224",
+      "review": {
+        "status": "focused_relation_check_passed_both",
+        "reason": "本轮检查的异常主体、等待返回/否定/先后关系保持；不代表独立盲审。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01199",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "This test requires the observer task to raise an exception on a successful return by the serializer task, even though the serializer task has not failed.",
+      "base": "此测试要求观察者任务在序列化器任务成功返回时引发异常，即使序列化器任务并未失败。",
+      "candidate": "此测试要求观察器任务在序列化器任务成功返回时抛出异常，即使序列化器任务没有失败。",
+      "request_sha256": "47614ec2235df6a20b297e18b2a19acc041852097551de9678ded0546df930df",
+      "review": {
+        "status": "focused_relation_check_passed_both",
+        "reason": "本轮检查的异常主体、等待返回/否定/先后关系保持；不代表独立盲审。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01200",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The observer task cannot discard storage merely because time elapsed: it still needs confirmation that the serializer task completed.",
+      "base": "观察者任务不能仅仅因为时间过去就放弃存储：它仍然需要确认序列化器任务已经完成。",
+      "candidate": "观察器任务不能仅仅因为时间过去就丢弃存储：它仍然需要确认序列化器任务已完成。",
+      "request_sha256": "453adbec0d990eea0e16c099560d99a616f6b0da035169b63575bf273af4e76c",
+      "review": {
+        "status": "focused_relation_check_passed_both",
+        "reason": "本轮检查的异常主体、等待返回/否定/先后关系保持；不代表独立盲审。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01201",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "Only after the serializer task has failed with an exception does the supervisor task complete its wait; the exception originates in the serializer task.",
+      "base": "只有当序列化器任务因异常失败后，监督者任务才会完成等待；该异常来自序列化器任务。",
+      "candidate": "只有在序列化器任务因异常失败后，监督器任务才会结束等待；该异常来自序列化器任务。",
+      "request_sha256": "7d47944359985c983dd33db170da6034c03c707238d4accf55227d26edcd96b8",
+      "review": {
+        "status": "focused_relation_check_passed_both",
+        "reason": "本轮检查的异常主体、等待返回/否定/先后关系保持；不代表独立盲审。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01202",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The end of the serializer task due to an exception is what allows the supervisor task to return, rather than requiring the supervisor task to raise an exception.",
+      "base": "由于异常导致序列化任务结束，这使得监督任务能够返回结果，而不需要监督任务引发异常。",
+      "candidate": "由于异常导致序列化任务结束，使得监督器任务可以返回，而不要求监督器任务抛出异常。",
+      "request_sha256": "0622a4f5c0e08d35754e5bc4700ea6766fa0fbf0d6da34d69cd0118bbf8e4697",
+      "review": {
+        "status": "focused_relation_check_passed_both",
+        "reason": "本轮检查的异常主体、等待返回/否定/先后关系保持；不代表独立盲审。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01203",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "This test requires the supervisor task to raise an exception on a successful return by the serializer task, even though the serializer task has not failed.",
+      "base": "此测试要求在序列化器任务成功返回时，监督者任务必须引发异常，即使序列化器任务并未失败。",
+      "candidate": "此测试要求监视器任务在序列化器任务成功返回时抛出异常，即使序列化器任务没有失败。",
+      "request_sha256": "04023c05745746d55d42367161bddac698094900c4931689aa2af74e4a99bf24",
+      "review": {
+        "status": "focused_relation_check_passed_both",
+        "reason": "本轮检查的异常主体、等待返回/否定/先后关系保持；不代表独立盲审。"
+      }
+    },
+    {
+      "case_id": "scope-v3-01204",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "source": "The supervisor task cannot discard storage merely because time elapsed: it still needs confirmation that the serializer task completed.",
+      "base": "主管任务不能仅仅因为时间过去就丢弃存储：它仍然需要确认序列化器任务已完成。",
+      "candidate": "监督器任务不能仅仅因为时间过去就丢弃存储：它仍然需要确认序列化器任务已完成。",
+      "request_sha256": "33289f471b5056af84553171d20aec61ef65a7afa3d5a806d7812c4023b440de",
+      "review": {
+        "status": "focused_relation_check_passed_both",
+        "reason": "本轮检查的异常主体、等待返回/否定/先后关系保持；不代表独立盲审。"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00873",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "The upper log row is marked not synchronized; the lower log row is marked synchronized.",
+      "base": "上方的日志行标记为未同步；下方的日志行标记为已同步。",
+      "candidate": "上排日志行标记为未同步；下排日志行标记为已同步。",
+      "request_sha256": "b36d88463b20c4c924e19ff4a59c7a64f903a359b0ecede579355729e3be7ddf",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00882",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "The upper log row is marked not synchronized; the lower log row is marked not synchronized.",
+      "base": "上方的日志行被标记为未同步；下方的日志行也被标记为未同步。",
+      "candidate": "上排日志行标记为未同步；下排日志行也标记为未同步。",
+      "request_sha256": "2b8b0fb8b4d59cae44ab0b3eef308808576c219694fb06b730cfadebfffc3a1a",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00891",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "The inspector reads not synchronized on the primary badge and synchronized on the secondary badge.",
+      "base": "检查员指出，主徽章上的信息未同步，而副徽章上的信息已同步。",
+      "candidate": "检查器显示主徽章未同步，而副徽章已同步。",
+      "request_sha256": "f5db4ce5f9f1c784285f76591518190b16c1a092b06d509d804add8d6e5367dc",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00900",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "The inspector reads not synchronized on the primary badge and not synchronized on the secondary badge.",
+      "base": "检查员指出，主徽章和副徽章都没有同步。",
+      "candidate": "检查器显示主徽章未同步，副徽章也未同步。",
+      "request_sha256": "84c83965e20de708f50227397e69548bd4a46a0bfb57671300e19b3919282482",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00909",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "The upper log row is marked not initialized; the lower log row is marked initialized.",
+      "base": "上方的日志行标记为未初始化；下方的日志行标记为已初始化。",
+      "candidate": "上排日志行标记为未初始化；下排日志行标记为已初始化。",
+      "request_sha256": "0de34f258700bc31f2d26e3f78a6793b4657e976caa254cc95484b2c8719ca62",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00918",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "The upper log row is marked not initialized; the lower log row is marked not initialized.",
+      "base": "上方的日志行被标记为未初始化；下方的日志行也被标记为未初始化。",
+      "candidate": "上排日志行标记为未初始化；下排日志行也标记为未初始化。",
+      "request_sha256": "31f46a0e587618fc251189b00079682f10f05025fc4069db8fe0a11ff12fe53b",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00927",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "The inspector reads not initialized on the primary badge and initialized on the secondary badge.",
+      "base": "检查员指出主徽章上没有初始化，而副徽章上已初始化。",
+      "candidate": "检查器在主徽章上读取未初始化的值，在副徽章上读取已初始化的值。",
+      "request_sha256": "4ecd8896d41148508e5407add5ee2ee7eae61e1605bcf17313226009f0d85881",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00936",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "The inspector reads not initialized on the primary badge and not initialized on the secondary badge.",
+      "base": "检查员发现主徽章和副徽章都没有被初始化。",
+      "candidate": "检查器显示主徽章未初始化，副徽章也未初始化。",
+      "request_sha256": "0f756332c0b3666b5f7967683378ccb6e4df77c0e1503b0b76587d77bb67dea8",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00941",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "Plan no more than eleven retries.",
+      "base": "计划最多进行十一次重试。",
+      "candidate": "计划最多进行十一次重试。",
+      "request_sha256": "9881af75aa94c53b8ae34bab0df9b4d168da8e1f9874740adc6e2e7cfceec263",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00946",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "Plan no fewer than eleven retries.",
+      "base": "计划至少进行十一次重试。",
+      "candidate": "计划至少进行十一次重试。",
+      "request_sha256": "c6acbb973b11b126e43cdb78146961a7c618849c5430ce120b4b159d9fe24c45",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00951",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "Plan no more than twelve retries.",
+      "base": "计划最多进行十二次重试。",
+      "candidate": "计划最多进行十二次重试。",
+      "request_sha256": "13fd9a0f3986794d3c12185dc0ec15df9c42b3244973299a75b76ec402cc53c8",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00956",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "Plan no fewer than twelve retries.",
+      "base": "计划至少进行十二次重试。",
+      "candidate": "计划至少进行十二次重试。",
+      "request_sha256": "c42c9744abc8e3a8f9f510b61a3030536ec30b9564cea7fda3b0a8ac364578bb",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00957",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "It is the scanner, rather than the auditor, that throws when the scanner ends; only then does the auditor return.",
+      "base": "当扫描器停止时，是扫描器而不是审核员停止；只有那时，审核员才会返回。",
+      "candidate": "是扫描器而不是审核器在扫描器结束时抛出异常；只有那时审核器才会返回。",
+      "request_sha256": "6d3a2ddaa7bcf679c63a32b0f6bef292a69610807f839b2426ce4f3f0eb85c59",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00958",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "Failure signalled by the scanner causes the auditor to stop waiting; returning and throwing are different events.",
+      "base": "扫描器发出的失败信号使得审计员停止等待；返回和抛出是两种不同的操作。",
+      "candidate": "扫描器发出的失败信号使审计员停止等待；返回和抛出是不同的事件。",
+      "request_sha256": "bf4daf79b7da008ceb6dee7a652a50ba4607527d8f8a1400036c27bb12a4c0d6",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00959",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "A normal completion of the scanner makes the auditor throw, despite the scanner reporting no error.",
+      "base": "扫描仪正常完成后，审计员仍会发出警报，尽管扫描仪显示没有错误。",
+      "candidate": "扫描器正常完成后，审计员仍会发出警报，尽管扫描器显示没有错误。",
+      "request_sha256": "6f44080f8901da9309a98b735f957e2a5b8856f344f25dc94655ff9db9cedf4a",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00960",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "After time has expired, the auditor must still keep storage if the scanner has not confirmed completion.",
+      "base": "时间到期后，如果扫描器未确认完成，审计员仍必须保留存储数据。",
+      "candidate": "时间到期后，如果扫描器未确认完成，审计员仍必须保留存储数据。",
+      "request_sha256": "82cfc331947c312d598ca384d0a35c0338d1046b914278931264b551c38125c5",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00961",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "It is the scanner, rather than the dispatcher, that throws when the scanner ends; only then does the dispatcher return.",
+      "base": "当扫描器结束时，是扫描器而不是调度器停止工作；只有那时调度器才会返回。",
+      "candidate": "是扫描器在结束时抛出异常，而不是调度器；只有此时调度器才会返回。",
+      "request_sha256": "00dba1c42095908a1250bf779ee7d1e6878338a82c4d9481f16fe858a19d4a44",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00962",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "Failure signalled by the scanner causes the dispatcher to stop waiting; returning and throwing are different events.",
+      "base": "扫描器发出的失败信号使得调度员停止等待；返回和投掷是不同的事件。",
+      "candidate": "扫描器发出的故障信号使调度器停止等待；返回和抛出是不同的事件。",
+      "request_sha256": "41b5119bb57ea82fab4f506ffc006f1c2ab2f64521e08a169f733e5f1a620f49",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00963",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "A normal completion of the scanner makes the dispatcher throw, despite the scanner reporting no error.",
+      "base": "扫描器的正常运行导致调度器发出错误提示，尽管扫描器显示没有故障。",
+      "candidate": "扫描器正常完成后，调度器仍会抛出异常，尽管扫描器显示没有错误。",
+      "request_sha256": "51dbfef1de73b5fb8354fb2f31de10ed589b34e7030a6a58218c613e525fec1b",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00964",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "source": "After time has expired, the dispatcher must still keep storage if the scanner has not confirmed completion.",
+      "base": "时间到期后，如果扫描器未确认完成，调度员仍必须保留存储数据。",
+      "candidate": "时间到期后，如果扫描器未确认完成，调度器仍必须保留存储数据。",
+      "request_sha256": "85fd2c2e06a592c5a8a0f9896a99f89aff21def1a70ccc438750a28e9f9ea8ea",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00807",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The operator selected deregistration instead of registration.",
+      "base": "操作员选择了去注册而非注册。",
+      "candidate": "操作器选择了去注册而非注册。",
+      "request_sha256": "20798b67eb0537b218f51ccac5ad98c817ece1e85b9ad61b52daa053f68066cf",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00812",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The request log describes deregistration; the response log describes deregistration.",
+      "base": "请求日志描述了注销操作；响应日志也描述了注销操作。",
+      "candidate": "请求日志描述了注销；响应日志也描述了注销。",
+      "request_sha256": "d10731303f4121e5569649a2e8c9d7ffae964ce01476532f0f8293e0731ec520",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00817",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The procedure describes deregistration, followed by registration.",
+      "base": "该流程描述了去注册，随后是注册。",
+      "candidate": "该流程描述了去注册，随后是注册。",
+      "request_sha256": "77cc0df2911e9d6fd42c0599b9d78155fa59f77ad332481624d5240bf3d0181a",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00822",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Read the remark about deregistration, then read the second remark about deregistration.",
+      "base": "阅读关于取消注册的评论，然后阅读关于取消注册的第二条评论。",
+      "candidate": "阅读关于注销的备注，然后阅读关于注销的第二条备注。",
+      "request_sha256": "e76ed9abf07d82f59a6b64c78329d722b554ffc2563a6be469c0b656d57395ef",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00827",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The operator selected unbinding instead of binding.",
+      "base": "操作员选择了解绑而非绑定。",
+      "candidate": "运算符选择了解绑而非绑定。",
+      "request_sha256": "7993704fdb722109ce2a67ad42843a4c6ad72a2908ba5ee52725b4418ca34dde",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00832",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The request log describes unbinding; the response log describes unbinding.",
+      "base": "请求日志描述了解绑操作；响应日志也描述了解绑操作。",
+      "candidate": "请求日志描述了解绑；响应日志也描述了解绑。",
+      "request_sha256": "8cdb83dfb9aa53b0bd14fafa7db1542910155df089cd337cbb81b7eba81235ad",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00837",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The procedure describes unbinding, followed by binding.",
+      "base": "该流程描述了解绑，随后是绑定。",
+      "candidate": "该过程描述了解绑，随后是绑定。",
+      "request_sha256": "3f63c7b5c4cabc6074787f0432b1a2b0aa2748ada6f5aea0ca8adc654d745140",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00842",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Read the remark about unbinding, then read the second remark about unbinding.",
+      "base": "阅读关于解绑的备注，然后阅读关于解绑的第二条备注。",
+      "candidate": "阅读关于解绑的备注，然后阅读关于解绑的第二条备注。",
+      "request_sha256": "7be33577c611e9d00f93be44b8dc9b694a41c584301aa70febb8c7fb0d96dfc4",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00847",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The operator selected unfreezing instead of freezing.",
+      "base": "操作员选择了解冻而非冻结。",
+      "candidate": "操作器选择了解冻而非冻结。",
+      "request_sha256": "815855d68b490a77d010c9034feb54a03022d8158d25524c9b21dd89d6baa3ab",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00852",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The request log describes unfreezing; the response log describes unfreezing.",
+      "base": "请求日志描述了解冻过程；响应日志也描述了解冻过程。",
+      "candidate": "请求日志描述了解冻；响应日志也描述了解冻。",
+      "request_sha256": "dc323330cb1b18a9b7b61990b5ad3577082d1eb487bcc2870b53bb2ad60216c2",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00857",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The procedure describes unfreezing, followed by freezing.",
+      "base": "程序描述了解冻，随后是冻结。",
+      "candidate": "该流程描述了解冻，随后是冻结。",
+      "request_sha256": "b0a2893815140cbf0c85a87f9b38b7b8680d6776be073ba388b1e35e20efd5e4",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00862",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Read the remark about unfreezing, then read the second remark about unfreezing.",
+      "base": "阅读关于解冻的评论，然后阅读关于解冻的第二条评论。",
+      "candidate": "阅读关于解冻的备注，然后阅读关于解冻的第二条备注。",
+      "request_sha256": "411fb1cc305c7b8e51b1c9f3520209bb2a10ba581d828d3446dbd54b9efdf80e",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00867",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The operator selected draining instead of filling.",
+      "base": "操作器选择了排水而非填充。",
+      "candidate": "运算符选择的是排水而非填充。",
+      "request_sha256": "d4b34e7418a94f97c286e90f12165e93a3527cac8b7ed04c51365062580acd21",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00872",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The request log describes draining; the response log describes draining.",
+      "base": "请求日志描述了资源耗尽；响应日志也描述了资源耗尽。",
+      "candidate": "请求日志描述了耗竭；响应日志也描述了耗竭。",
+      "request_sha256": "85ec4d95c9a04ef8dff3738ffa695f419348e4bb6372a3c004c394220a9673f2",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00877",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The procedure describes draining, followed by filling.",
+      "base": "该流程描述了排液，随后填充的过程。",
+      "candidate": "该流程描述了排水，随后填充。",
+      "request_sha256": "0585ba6c74a08ce946f2b858ea42ce024450d8d883f0498e5e8a95337cbac810",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00882",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Read the remark about draining, then read the second remark about draining.",
+      "base": "阅读关于排水的评论，然后阅读关于排水的第二条评论。",
+      "candidate": "阅读关于排水的评论，然后阅读关于排水的第二条评论。",
+      "request_sha256": "a9397adb6deca9605437475a0f62839f1ac054e41672437fbcf09441bccf2b22",
+      "review": {
+        "status": "source_context_uncertain",
+        "reason": "缺少领域/角色或 throws 宾语上下文，不按单一参考判定错义。"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00885",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Limit the worker to at most three reads.",
+      "base": "将工作线程的读取次数限制为最多三次。",
+      "candidate": "将工作器最多限制为三次读取。",
+      "request_sha256": "70edadaeefce7541101d0127447962721752a53057a6112e8522ca4a4e53922e",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00888",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Limit the worker to at most four reads.",
+      "base": "将工作线程的读取次数限制在最多四次。",
+      "candidate": "将工作器最多限制为四次读取。",
+      "request_sha256": "ef645be470827051922db2353d0b621cf51ee727caa625dbc49ae2e0b56af2da",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00891",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Limit the worker to at most five reads.",
+      "base": "将工作线程的读取次数限制在最多五次。",
+      "candidate": "将工作器的最大读取次数限制为五次。",
+      "request_sha256": "d04a54841a6dc30fbdb79592125df59a8c6ed5f5f6457efd2ce3098e5050a27e",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00894",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Limit the worker to at most six reads.",
+      "base": "将工作线程的读取次数限制在最多六次。",
+      "candidate": "将工作器的最大读取次数限制为六次。",
+      "request_sha256": "e3c28a6cab1b6cbb7cd705f143ffdaee4907262edce1aa997dc60283b844208f",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00897",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Limit the worker to at most seven reads.",
+      "base": "将工作线程的读取次数限制在最多七次。",
+      "candidate": "将工作器的最大读取次数限制为七次。",
+      "request_sha256": "2273f6fec6dbb0d31ea3acd8e8b89b5629fcad6feff39829ac56fd3c2c5e035e",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00900",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Limit the worker to at most eight reads.",
+      "base": "将工作线程的读取次数限制在最多八次。",
+      "candidate": "将工作器的最大读取次数限制为八次。",
+      "request_sha256": "25eeba2932a2493977fe12b8b072a99e62afc24466b9de14dc77c64914bb697f",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00911",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "The monitor is resumed after a sender finishes by throwing a stream error. The sender throws; the monitor resumes.",
+      "base": "当发送者完成操作后，通过抛出流错误使监视器重新启动。发送者抛出异常，监视器便继续运行。",
+      "candidate": "发送方抛出流错误后，监视器恢复运行。发送方抛出异常，监视器继续运行。",
+      "request_sha256": "f051a2c964849de6b73fd06ebe566319c2e35af329bf7500bb9d4aedc5735184",
+      "review": {
+        "status": "candidate_condition_incomplete",
+        "reason": "v3 恢复 sender 抛异常主体，但没有明确保留 sender finishes 的结束条件；不记完整修复。"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00912",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "source": "Storage must stay allocated until the observer confirms completion; elapsed time alone is insufficient.",
+      "base": "存储资源必须保持分配状态，直到观察者确认完成；仅经过的时间是不够的。",
+      "candidate": "存储资源必须保持分配状态，直到观察器确认完成；仅经过的时间是不够的。",
+      "request_sha256": "b4c73917fbf2f53c8065bb54c69990134d46ff7749255643aa1f942fae67434b",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-cold-known-future",
+      "variant": "translation-natural",
+      "cohort": "frozen-v1-regression",
+      "source": "The function will return when any future finishes by raising an exception. If no future raises an exception then it is equivalent to ALL_COMPLETED.",
+      "base": "当任何未来任务完成时，该函数会通过抛出异常来返回。如果没有任务抛出异常，则相当于 ALL_COMPLETED。",
+      "candidate": "当任何 Future 执行完毕时，函数会抛出异常。如果没有 Future 抛出异常，则相当于 ALL_COMPLETED。",
+      "request_sha256": "45c91c0c6112fd0adea67e038744d1bd8e8ef5d9d76fb3e98501e28ecdeaa1d6",
+      "review": {
+        "status": "critical_meaning_error_both",
+        "reason": "异常错误转移至等待函数，丢失 Future 因异常结束的等待返回条件。"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-cold-known-future",
+      "variant": "translation-concise",
+      "cohort": "frozen-v1-regression",
+      "source": "The function will return when any future finishes by raising an exception. If no future raises an exception then it is equivalent to ALL_COMPLETED.",
+      "base": "当任何 Future 完成时，该函数会抛出异常。如果没有任何 Future 抛出异常，则相当于 ALL_COMPLETED。",
+      "candidate": "当任何 Future 完成时，函数会抛出异常。如果没有 Future 抛出异常，则相当于 ALL_COMPLETED。",
+      "request_sha256": "dd8c4e49285da0478f3225d4e9efa10a29180fe68f042dda0fd5349a8d30396f",
+      "review": {
+        "status": "critical_meaning_error_both",
+        "reason": "异常错误转移至等待函数，丢失 Future 因异常结束的等待返回条件。"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-cold-reverse-future",
+      "variant": "translation-natural",
+      "cohort": "frozen-v1-regression",
+      "source": "The function raises an exception when any future returns normally. If no future returns normally, it waits until every future has failed.",
+      "base": "当任何 future 正常返回时，函数会引发异常。如果没有 future 正常返回，它就会等待直到所有 future 都失败。",
+      "candidate": "当任何 future 正常返回时，函数会抛出异常。如果没有 future 正常返回，它就会等待直到所有 future 都失败。",
+      "request_sha256": "56fc3f116079553ccec4c7f58e3eedd4d5f19bf183bd670ed7097a1380f7a233",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-cold-reverse-future",
+      "variant": "translation-concise",
+      "cohort": "frozen-v1-regression",
+      "source": "The function raises an exception when any future returns normally. If no future returns normally, it waits until every future has failed.",
+      "base": "当任何 future 正常返回时，该函数会引发异常。如果没有任何 future 正常返回，它就会等待直到所有 future 都失败。",
+      "candidate": "当任何 future 正常返回时，该函数会抛出异常。如果没有 future 正常返回，它就会等待直到所有 future 都失败。",
+      "request_sha256": "52a68f899fdaadfec3088bb390d1fe500fc37943d3cf4324c4e352df478e26e5",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-cold-callback-order",
+      "variant": "translation-natural",
+      "cohort": "frozen-v1-regression",
+      "source": "Do not release the buffer until the callback has completed. A timeout alone does not prove completion.",
+      "base": "在回调完成之前，不要释放缓冲区。仅超时并不能证明任务已完成。",
+      "candidate": "在回调完成之前，不要释放缓冲区。仅超时并不能证明已完成。",
+      "request_sha256": "bfcadeda221cb6e8b95dd94c1dc82ed32b5aec3412255846861f9054e9266af4",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-cold-callback-order",
+      "variant": "translation-concise",
+      "cohort": "frozen-v1-regression",
+      "source": "Do not release the buffer until the callback has completed. A timeout alone does not prove completion.",
+      "base": "在回调完成之前，不要释放缓冲区。仅超时并不能证明回调已完成。",
+      "candidate": "在回调完成之前，不要释放缓冲区。仅超时并不能证明回调已完成。",
+      "request_sha256": "f5249a0b0817a00bcb494363d8afe5a867e31a3b26b29df01e72a85f04c73e87",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-cold-failed-status",
+      "variant": "translation-natural",
+      "cohort": "frozen-v1-regression",
+      "source": "A failed operation may be retried, but it must not be reported as a success.",
+      "base": "失败的操作可以重新尝试，但不得被报告为成功。",
+      "candidate": "失败的操作可以重试，但不得被报告为成功。",
+      "request_sha256": "f9f0544399f5a979f5c111a5259f14644a3eaab5ca224e5e6672cdf92ff84e72",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    },
+    {
+      "case_id": "v2-regression-v1-regression-cold-failed-status",
+      "variant": "translation-concise",
+      "cohort": "frozen-v1-regression",
+      "source": "A failed operation may be retried, but it must not be reported as a success.",
+      "base": "失败的操作可以重新尝试，但不得被报告为成功。",
+      "candidate": "失败的操作可以重试，但不得被报告为成功。",
+      "request_sha256": "b75fc5d130c7be162eb33518db310fbc6b69e1e611b57660023f248a4a9cebe6",
+      "review": {
+        "status": "raw_preserved_without_overall_grade"
+      }
+    }
+  ],
+  "cpu_controls": {
+    "qwen": {
+      "stats": {
+        "all": {
+          "total": 48,
+          "correct": 25,
+          "valid_total": 32,
+          "valid_correct": 25,
+          "abstentions": 2,
+          "false_accepts": 16,
+          "wrong_non_abstaining_selections": 21,
+          "none_total": 16,
+          "none_correct": 0
+        },
+        "cohorts": {
+          "candidate-count-control": {
+            "total": 48,
+            "correct": 25,
+            "valid_total": 32,
+            "valid_correct": 25,
+            "abstentions": 2,
+            "false_accepts": 16,
+            "wrong_non_abstaining_selections": 21,
+            "none_total": 16,
+            "none_correct": 0
+          }
+        }
+      },
+      "controls": {
+        "breakdown": {
+          "count-3-valid": {
+            "total": 16,
+            "correct": 12,
+            "abstentions": 1
+          },
+          "count-4-valid": {
+            "total": 16,
+            "correct": 13,
+            "abstentions": 1
+          },
+          "count-3-none": {
+            "total": 8,
+            "correct": 0,
+            "abstentions": 0
+          },
+          "count-4-none": {
+            "total": 8,
+            "correct": 0,
+            "abstentions": 0
+          }
+        },
+        "matched_pairs": 24,
+        "changed_output_pairs": 7,
+        "changed_abstention_pairs": 0,
+        "both_correct_pairs": 11,
+        "pairs": [
+          {
+            "matched_group": "0-0",
+            "expected": "C",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "0-1",
+            "expected": "B",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "1-0",
+            "expected": "D",
+            "count_3_output": "B",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "1-1",
+            "expected": "C",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "2-0",
+            "expected": "D",
+            "count_3_output": "D",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "2-1",
+            "expected": "C",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "3-0",
+            "expected": "A",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "3-1",
+            "expected": "D",
+            "count_3_output": "A",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "4-0",
+            "expected": "D",
+            "count_3_output": "B",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "4-1",
+            "expected": "C",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "5-0",
+            "expected": "C",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "5-1",
+            "expected": "B",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "6-0",
+            "expected": "A",
+            "count_3_output": "A",
+            "count_4_output": "A"
+          },
+          {
+            "matched_group": "6-1",
+            "expected": "D",
+            "count_3_output": "D",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "7-0",
+            "expected": "D",
+            "count_3_output": "D",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "7-1",
+            "expected": "C",
+            "count_3_output": "C",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "8-0",
+            "expected": "X",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "8-1",
+            "expected": "X",
+            "count_3_output": "A",
+            "count_4_output": "D"
+          },
+          {
+            "matched_group": "9-0",
+            "expected": "X",
+            "count_3_output": "B",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "9-1",
+            "expected": "X",
+            "count_3_output": "B",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "10-0",
+            "expected": "X",
+            "count_3_output": "A",
+            "count_4_output": "A"
+          },
+          {
+            "matched_group": "10-1",
+            "expected": "X",
+            "count_3_output": "A",
+            "count_4_output": "A"
+          },
+          {
+            "matched_group": "11-0",
+            "expected": "X",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          },
+          {
+            "matched_group": "11-1",
+            "expected": "X",
+            "count_3_output": "B",
+            "count_4_output": "B"
+          }
+        ]
+      },
+      "natural": [
+        {
+          "case_id": "v2-regression-v1-regression-cold-known-future",
+          "variant": "translation-natural",
+          "text": "当任何一个未来因引发异常而结束时，该函数将返回。如果没有任何未来引发异常，则等同于 ALL_COMPLETED。",
+          "review": {
+            "status": "critical_relation_preserved_with_terminology_issue",
+            "reason": "Qwen 保持 Future 抛异常、等待函数返回；“未来”术语需改进。Hy-MT 将抛异常移到等待函数。"
+          }
+        },
+        {
+          "case_id": "v2-regression-v1-regression-cold-known-future",
+          "variant": "translation-concise",
+          "text": "当任何一个未来的任务通过抛出异常而结束时，该函数将返回。如果没有任何未来的任务抛出异常，则其行为等同于 ALL_COMPLETED。",
+          "review": {
+            "status": "critical_relation_preserved_with_terminology_issue",
+            "reason": "Qwen 保持 Future 抛异常、等待函数返回；“未来”术语需改进。Hy-MT 将抛异常移到等待函数。"
+          }
+        }
+      ],
+      "model": {
+        "path": "/workspace/scratch/pagelingo-cpu-test/diagnostic-v8/models/Qwen3-4B-Instruct-2507-Q5_K_M.gguf",
+        "sha256": "5bde5e9d883622acb02bf77fe7dcbc56a8b9a9ad4be78a72ca23a532658b4ecb",
+        "bytes": 2889514080
+      },
+      "plan_sha256": "3b5793332f77ee3047e4caab2f1854e0be1cb7479c71d2e3537955dfc5f33e81",
+      "raw_sha256": "cf70d184b1314e61472dded8c888bce6d42650b7c312adfb3f0718c9eec8cd3a",
+      "started_utc": "2026-11-07T18:23:59.848893+00:00",
+      "finished_utc": "2026-11-07T18:28:54.044208+00:00",
+      "generations": 50,
+      "ready_wall_s": 1.1407118999995873,
+      "proc_status": [
+        "VmHWM:\t 4136380 kB",
+        "VmRSS:\t 4136380 kB"
+      ],
+      "scope_first_nonempty_fragment_median_s": 5.637018066499877,
+      "scope_decode_median_tokens_s": 6.713003389137019,
+      "scope_wall_s_sum": 281.17769419200704,
+      "natural_measurements": [
+        {
+          "case_id": "v2-regression-v1-regression-cold-known-future",
+          "variant": "translation-natural",
+          "text": "当任何一个未来因引发异常而结束时，该函数将返回。如果没有任何未来引发异常，则等同于 ALL_COMPLETED。",
+          "request_sha256": "45c91c0c6112fd0adea67e038744d1bd8e8ef5d9d76fb3e98501e28ecdeaa1d6",
+          "actual_prompt_sha256": "bd1437b0f2b5b8b606d5f80b817d39da69b4757cb87c207be5de137de69e1f95",
+          "input_tokens": 91,
+          "input_token_ids_sha256": "73531b0709bcc5835690321be119155b828192bfcbab8fad77a97393643c6994",
+          "stop_type": "eos",
+          "finish_reason": "stop",
+          "first_token_s": 2.3271948879992124,
+          "wall_s": 5.621123723998608,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 91,
+            "prompt_ms": 2310.134,
+            "prompt_per_token_ms": 25.386087912087913,
+            "prompt_per_second": 39.39165433693457,
+            "predicted_n": 28,
+            "predicted_ms": 3293.567,
+            "predicted_per_token_ms": 121.98396296296296,
+            "predicted_per_second": 8.197798921351836
+          }
+        },
+        {
+          "case_id": "v2-regression-v1-regression-cold-known-future",
+          "variant": "translation-concise",
+          "text": "当任何一个未来的任务通过抛出异常而结束时，该函数将返回。如果没有任何未来的任务抛出异常，则其行为等同于 ALL_COMPLETED。",
+          "request_sha256": "dd8c4e49285da0478f3225d4e9efa10a29180fe68f042dda0fd5349a8d30396f",
+          "actual_prompt_sha256": "a28d63469c1542bdb53f9d5fc07831871c0296add47a6d46d9488268a81c036b",
+          "input_tokens": 49,
+          "input_token_ids_sha256": "582b4604482796779e87646226c0885efde6edf849445b22878175ccd92be268",
+          "stop_type": "eos",
+          "finish_reason": "stop",
+          "first_token_s": 1.6472884100003284,
+          "wall_s": 5.9978676959999575,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 49,
+            "prompt_ms": 1639.377,
+            "prompt_per_token_ms": 33.45667346938775,
+            "prompt_per_second": 29.88940310861992,
+            "predicted_n": 34,
+            "predicted_ms": 4350.264,
+            "predicted_per_token_ms": 131.82618181818182,
+            "predicted_per_second": 7.5857465202111864
+          }
+        }
+      ]
+    },
+    "base-q5": {
+      "stats": {
+        "all": {
+          "total": 48,
+          "correct": 16,
+          "valid_total": 32,
+          "valid_correct": 0,
+          "abstentions": 47,
+          "false_accepts": 0,
+          "wrong_non_abstaining_selections": 1,
+          "none_total": 16,
+          "none_correct": 16
+        },
+        "cohorts": {
+          "candidate-count-control": {
+            "total": 48,
+            "correct": 16,
+            "valid_total": 32,
+            "valid_correct": 0,
+            "abstentions": 47,
+            "false_accepts": 0,
+            "wrong_non_abstaining_selections": 1,
+            "none_total": 16,
+            "none_correct": 16
+          }
+        }
+      },
+      "controls": {
+        "breakdown": {
+          "count-3-valid": {
+            "total": 16,
+            "correct": 0,
+            "abstentions": 16
+          },
+          "count-4-valid": {
+            "total": 16,
+            "correct": 0,
+            "abstentions": 15
+          },
+          "count-3-none": {
+            "total": 8,
+            "correct": 8,
+            "abstentions": 8
+          },
+          "count-4-none": {
+            "total": 8,
+            "correct": 8,
+            "abstentions": 8
+          }
+        },
+        "matched_pairs": 24,
+        "changed_output_pairs": 1,
+        "changed_abstention_pairs": 1,
+        "both_correct_pairs": 8,
+        "pairs": [
+          {
+            "matched_group": "0-0",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "0-1",
+            "expected": "B",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "1-0",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "1-1",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "2-0",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "2-1",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "3-0",
+            "expected": "A",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "3-1",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "C"
+          },
+          {
+            "matched_group": "4-0",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "4-1",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "5-0",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "5-1",
+            "expected": "B",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "6-0",
+            "expected": "A",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "6-1",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "7-0",
+            "expected": "D",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "7-1",
+            "expected": "C",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "8-0",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "8-1",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "9-0",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "9-1",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "10-0",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "10-1",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "11-0",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          },
+          {
+            "matched_group": "11-1",
+            "expected": "X",
+            "count_3_output": "X",
+            "count_4_output": "X"
+          }
+        ]
+      },
+      "natural": [
+        {
+          "case_id": "v2-regression-v1-regression-cold-known-future",
+          "variant": "translation-natural",
+          "text": "当任何未来任务完成时，该函数将通过抛出异常来返回。如果没有任务抛出异常，则相当于 ALL_COMPLETED。",
+          "review": {
+            "status": "critical_meaning_error",
+            "reason": "Qwen 保持 Future 抛异常、等待函数返回；“未来”术语需改进。Hy-MT 将抛异常移到等待函数。"
+          }
+        },
+        {
+          "case_id": "v2-regression-v1-regression-cold-known-future",
+          "variant": "translation-concise",
+          "text": "当任何未来任务完成时，该函数会通过抛出异常来返回。如果没有任何任务抛出异常，则相当于 ALL_COMPLETED。",
+          "review": {
+            "status": "critical_meaning_error",
+            "reason": "Qwen 保持 Future 抛异常、等待函数返回；“未来”术语需改进。Hy-MT 将抛异常移到等待函数。"
+          }
+        }
+      ],
+      "model": {
+        "path": "/workspace/scratch/pagelingo-cpu-test/quality-v1/Hy-MT2-1.8B-base-Q5_K_M-eos120020.gguf",
+        "sha256": "2f9d1f1e854ecf23821de96402621f81c799a9c69a011a6cf1b60a941bc63940",
+        "bytes": 1298756064
+      },
+      "plan_sha256": "16d5207495352edbb20e79f9b3c9502a124e79bc943a6b7fdea3f44e83972866",
+      "raw_sha256": "2dd4b39327f76cd0acffee8955b88fd2344e818e0e1eee27579703cf5f09784f",
+      "started_utc": "2026-11-07T18:29:48.299903+00:00",
+      "finished_utc": "2026-11-07T18:31:43.187801+00:00",
+      "generations": 50,
+      "ready_wall_s": 0.6747185240001272,
+      "proc_status": [
+        "VmHWM:\t 1895312 kB",
+        "VmRSS:\t 1895312 kB"
+      ],
+      "scope_first_nonempty_fragment_median_s": 2.204030365000108,
+      "scope_decode_median_tokens_s": 16.374703385549324,
+      "scope_wall_s_sum": 109.60208203599359,
+      "natural_measurements": [
+        {
+          "case_id": "v2-regression-v1-regression-cold-known-future",
+          "variant": "translation-natural",
+          "text": "当任何未来任务完成时，该函数将通过抛出异常来返回。如果没有任务抛出异常，则相当于 ALL_COMPLETED。",
+          "request_sha256": "45c91c0c6112fd0adea67e038744d1bd8e8ef5d9d76fb3e98501e28ecdeaa1d6",
+          "actual_prompt_sha256": "74e32e0d9e566e28d0ae4865797024488e6e4abe5367e39569e646761fd3b120",
+          "input_tokens": 90,
+          "input_token_ids_sha256": "5c5d186be370429aa056db1f2314c6ed226f08e71eaf76d9eebc460f56aa645f",
+          "stop_type": "eos",
+          "finish_reason": "stop",
+          "first_token_s": 0.7984608159986237,
+          "wall_s": 2.3111093579991575,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 90,
+            "prompt_ms": 789.94,
+            "prompt_per_token_ms": 8.777111111111111,
+            "prompt_per_second": 113.93270374965186,
+            "predicted_n": 26,
+            "predicted_ms": 1512.299,
+            "predicted_per_token_ms": 60.49196,
+            "predicted_per_second": 16.53112248305395
+          }
+        },
+        {
+          "case_id": "v2-regression-v1-regression-cold-known-future",
+          "variant": "translation-concise",
+          "text": "当任何未来任务完成时，该函数会通过抛出异常来返回。如果没有任何任务抛出异常，则相当于 ALL_COMPLETED。",
+          "request_sha256": "dd8c4e49285da0478f3225d4e9efa10a29180fe68f042dda0fd5349a8d30396f",
+          "actual_prompt_sha256": "b4fc63df5a57c37b4ce56c949ae8f63eb53b42a372b4a8732bf9bb63a2fef19a",
+          "input_tokens": 46,
+          "input_token_ids_sha256": "4e9ba483c552449c67444b81ad10c6e609c352542e858d31c3300f1c53f296e9",
+          "stop_type": "eos",
+          "finish_reason": "stop",
+          "first_token_s": 0.5124967669999023,
+          "wall_s": 2.047706860999824,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 46,
+            "prompt_ms": 507.388,
+            "prompt_per_token_ms": 11.030173913043479,
+            "prompt_per_second": 90.66040190150339,
+            "predicted_n": 27,
+            "predicted_ms": 1534.857,
+            "predicted_per_token_ms": 59.032961538461535,
+            "predicted_per_second": 16.939688843976995
+          }
+        }
+      ]
+    }
+  },
+  "decision": {
+    "release_approved": false,
+    "default_model_changed": false,
+    "production_pipeline_enabled": false,
+    "new_gpu_task_prepared": false,
+    "additional_same_recipe_sft_stopped": true
+  },
+  "models_uploaded": false,
+  "quantization_executed": false,
+  "candidate_browser_writes": 0,
+  "cpu_environment": {
+    "captured_utc": "2026-11-07T18:33:35.285777+00:00",
+    "os_release": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.6\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\"\n",
+    "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+    "cpu_models": [
+      "AMD EPYC 9V74 80-Core Processor"
+    ],
+    "logical_cpu": 3,
+    "cpu_max": "200000 100000",
+    "memory_max": 8589934592,
+    "memory_events_after_runs": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+    "disk_after_runs": {
+      "total": 33770192896,
+      "used": 31994269696,
+      "free": 41160704
+    },
+    "no_gpu": true
+  },
+  "comparison_limits": [
+    "Scope scores are not translation quality scores; exact label scoring is appropriate only for these frozen choices.",
+    "The four models share the same 48 request/grammar payloads, not the same parameter size, precision, tokenizer or chat template.",
+    "Qwen3-4B was already examined in v8; this is an additional diagnostic, not a new blind holdout.",
+    "Adding a wrong option changes candidate content and the allowed-letter mask; count is not an isolated internal mechanism.",
+    "No independent human blind semantic review; no aggregate natural-translation accuracy is assigned.",
+    "CPU ready follows weight SHA scanning; streaming first-nonempty-fragment time is not internal token sampling time.",
+    "The final native runner requires source_hashes directly, preserving prior protocol requirements; executed source snapshots retain their plan-pinned hashes."
+  ],
+  "matched_count_cases": [
+    {
+      "matched_group": "0-0",
+      "source_case_id": "v1-regression-cold-dereferencing",
+      "expected": "C",
+      "english_before": "The opposite operation is ",
+      "english_focus": "dereferencing",
+      "english_after": ", which follows a reference to its value.",
+      "frozen_chinese": "相反的操作是去引用，即沿引用访问其值。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 14,
+          "end": 18,
+          "text": "访问其值",
+          "left_context": "相反的操作是去引用，即沿引用",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 7,
+          "end": 9,
+          "text": "引用",
+          "left_context": "相反的操作是去",
+          "right_context": "，即沿引用访问其值。"
+        },
+        {
+          "id": "C",
+          "start": 6,
+          "end": 9,
+          "text": "去引用",
+          "left_context": "相反的操作是",
+          "right_context": "，即沿引用访问其值。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "D",
+        "start": 0,
+        "end": 19,
+        "text": "相反的操作是去引用，即沿引用访问其值。",
+        "left_context": "",
+        "right_context": ""
+      }
+    },
+    {
+      "matched_group": "0-1",
+      "source_case_id": "v1-regression-cold-dereferencing",
+      "expected": "B",
+      "english_before": "The opposite operation is ",
+      "english_focus": "dereferencing",
+      "english_after": ", which follows a reference to its value.",
+      "frozen_chinese": "相反的操作是去引用，即沿引用访问其值。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 7,
+          "end": 9,
+          "text": "引用",
+          "left_context": "相反的操作是去",
+          "right_context": "，即沿引用访问其值。"
+        },
+        {
+          "id": "B",
+          "start": 6,
+          "end": 9,
+          "text": "去引用",
+          "left_context": "相反的操作是",
+          "right_context": "，即沿引用访问其值。"
+        },
+        {
+          "id": "D",
+          "start": 14,
+          "end": 18,
+          "text": "访问其值",
+          "left_context": "相反的操作是去引用，即沿引用",
+          "right_context": "。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "C",
+        "start": 0,
+        "end": 19,
+        "text": "相反的操作是去引用，即沿引用访问其值。",
+        "left_context": "",
+        "right_context": ""
+      }
+    },
+    {
+      "matched_group": "1-0",
+      "source_case_id": "v1-regression-cold-decryption",
+      "expected": "D",
+      "english_before": "",
+      "english_focus": "Decryption",
+      "english_after": " is different from encryption.",
+      "frozen_chinese": "解密不同于加密。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 5,
+          "end": 7,
+          "text": "加密",
+          "left_context": "解密不同于",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 0,
+          "end": 8,
+          "text": "解密不同于加密。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "D",
+          "start": 0,
+          "end": 2,
+          "text": "解密",
+          "left_context": "",
+          "right_context": "不同于加密。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "C",
+        "start": 1,
+        "end": 2,
+        "text": "密",
+        "left_context": "解",
+        "right_context": "不同于加密。"
+      }
+    },
+    {
+      "matched_group": "1-1",
+      "source_case_id": "v1-regression-cold-decryption",
+      "expected": "C",
+      "english_before": "",
+      "english_focus": "Decryption",
+      "english_after": " is different from encryption.",
+      "frozen_chinese": "解密不同于加密。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 8,
+          "text": "解密不同于加密。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "C",
+          "start": 0,
+          "end": 2,
+          "text": "解密",
+          "left_context": "",
+          "right_context": "不同于加密。"
+        },
+        {
+          "id": "D",
+          "start": 5,
+          "end": 7,
+          "text": "加密",
+          "left_context": "解密不同于",
+          "right_context": "。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "B",
+        "start": 1,
+        "end": 2,
+        "text": "密",
+        "left_context": "解",
+        "right_context": "不同于加密。"
+      }
+    },
+    {
+      "matched_group": "2-0",
+      "source_case_id": "v1-regression-cold-nonblocking",
+      "expected": "D",
+      "english_before": "Reads are ",
+      "english_focus": "non-blocking",
+      "english_after": "; writes still block.",
+      "frozen_chinese": "读取不阻塞，但写入会阻塞。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 3,
+          "end": 5,
+          "text": "阻塞",
+          "left_context": "读取不",
+          "right_context": "，但写入会阻塞。"
+        },
+        {
+          "id": "B",
+          "start": 0,
+          "end": 13,
+          "text": "读取不阻塞，但写入会阻塞。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "D",
+          "start": 2,
+          "end": 5,
+          "text": "不阻塞",
+          "left_context": "读取",
+          "right_context": "，但写入会阻塞。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "C",
+        "start": 10,
+        "end": 12,
+        "text": "阻塞",
+        "left_context": "读取不阻塞，但写入会",
+        "right_context": "。"
+      }
+    },
+    {
+      "matched_group": "2-1",
+      "source_case_id": "v1-regression-cold-nonblocking",
+      "expected": "C",
+      "english_before": "Reads are ",
+      "english_focus": "non-blocking",
+      "english_after": "; writes still block.",
+      "frozen_chinese": "读取不阻塞，但写入会阻塞。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 13,
+          "text": "读取不阻塞，但写入会阻塞。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "C",
+          "start": 2,
+          "end": 5,
+          "text": "不阻塞",
+          "left_context": "读取",
+          "right_context": "，但写入会阻塞。"
+        },
+        {
+          "id": "D",
+          "start": 3,
+          "end": 5,
+          "text": "阻塞",
+          "left_context": "读取不",
+          "right_context": "，但写入会阻塞。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "B",
+        "start": 10,
+        "end": 12,
+        "text": "阻塞",
+        "left_context": "读取不阻塞，但写入会",
+        "right_context": "。"
+      }
+    },
+    {
+      "matched_group": "3-0",
+      "source_case_id": "v1-regression-cold-unlock",
+      "expected": "A",
+      "english_before": "",
+      "english_focus": "Unlock the mutex",
+      "english_after": " after reading; do not create another mutex.",
+      "frozen_chinese": "读取后释放互斥锁，不要创建另一个互斥锁。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 3,
+          "end": 8,
+          "text": "释放互斥锁",
+          "left_context": "读取后",
+          "right_context": "，不要创建另一个互斥锁。"
+        },
+        {
+          "id": "B",
+          "start": 5,
+          "end": 8,
+          "text": "互斥锁",
+          "left_context": "读取后释放",
+          "right_context": "，不要创建另一个互斥锁。"
+        },
+        {
+          "id": "C",
+          "start": 16,
+          "end": 19,
+          "text": "互斥锁",
+          "left_context": "读取后释放互斥锁，不要创建另一个",
+          "right_context": "。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "D",
+        "start": 0,
+        "end": 20,
+        "text": "读取后释放互斥锁，不要创建另一个互斥锁。",
+        "left_context": "",
+        "right_context": ""
+      }
+    },
+    {
+      "matched_group": "3-1",
+      "source_case_id": "v1-regression-cold-unlock",
+      "expected": "D",
+      "english_before": "",
+      "english_focus": "Unlock the mutex",
+      "english_after": " after reading; do not create another mutex.",
+      "frozen_chinese": "读取后释放互斥锁，不要创建另一个互斥锁。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 5,
+          "end": 8,
+          "text": "互斥锁",
+          "left_context": "读取后释放",
+          "right_context": "，不要创建另一个互斥锁。"
+        },
+        {
+          "id": "C",
+          "start": 0,
+          "end": 20,
+          "text": "读取后释放互斥锁，不要创建另一个互斥锁。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "D",
+          "start": 3,
+          "end": 8,
+          "text": "释放互斥锁",
+          "left_context": "读取后",
+          "right_context": "，不要创建另一个互斥锁。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "B",
+        "start": 16,
+        "end": 19,
+        "text": "互斥锁",
+        "left_context": "读取后释放互斥锁，不要创建另一个",
+        "right_context": "。"
+      }
+    },
+    {
+      "matched_group": "4-0",
+      "source_case_id": "v1-regression-cold-atmost",
+      "expected": "D",
+      "english_before": "Use ",
+      "english_focus": "at most once",
+      "english_after": " rather than at least once for delivery.",
+      "frozen_chinese": "采用最多一次，而非至少一次的投递方式。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 9,
+          "end": 13,
+          "text": "至少一次",
+          "left_context": "采用最多一次，而非",
+          "right_context": "的投递方式。"
+        },
+        {
+          "id": "B",
+          "start": 0,
+          "end": 19,
+          "text": "采用最多一次，而非至少一次的投递方式。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "D",
+          "start": 2,
+          "end": 6,
+          "text": "最多一次",
+          "left_context": "采用",
+          "right_context": "，而非至少一次的投递方式。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "C",
+        "start": 4,
+        "end": 6,
+        "text": "一次",
+        "left_context": "采用最多",
+        "right_context": "，而非至少一次的投递方式。"
+      }
+    },
+    {
+      "matched_group": "4-1",
+      "source_case_id": "v1-regression-cold-atmost",
+      "expected": "C",
+      "english_before": "Use ",
+      "english_focus": "at most once",
+      "english_after": " rather than at least once for delivery.",
+      "frozen_chinese": "采用最多一次，而非至少一次的投递方式。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 19,
+          "text": "采用最多一次，而非至少一次的投递方式。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "C",
+          "start": 2,
+          "end": 6,
+          "text": "最多一次",
+          "left_context": "采用",
+          "right_context": "，而非至少一次的投递方式。"
+        },
+        {
+          "id": "D",
+          "start": 9,
+          "end": 13,
+          "text": "至少一次",
+          "left_context": "采用最多一次，而非",
+          "right_context": "的投递方式。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "B",
+        "start": 4,
+        "end": 6,
+        "text": "一次",
+        "left_context": "采用最多",
+        "right_context": "，而非至少一次的投递方式。"
+      }
+    },
+    {
+      "matched_group": "5-0",
+      "source_case_id": "v1-regression-cold-not-required",
+      "expected": "C",
+      "english_before": "The index ",
+      "english_focus": "is not required",
+      "english_after": ", but a key is required.",
+      "frozen_chinese": "索引并非必需，但键是必需的。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 4,
+          "end": 6,
+          "text": "必需",
+          "left_context": "索引并非",
+          "right_context": "，但键是必需的。"
+        },
+        {
+          "id": "B",
+          "start": 0,
+          "end": 2,
+          "text": "索引",
+          "left_context": "",
+          "right_context": "并非必需，但键是必需的。"
+        },
+        {
+          "id": "C",
+          "start": 2,
+          "end": 6,
+          "text": "并非必需",
+          "left_context": "索引",
+          "right_context": "，但键是必需的。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "D",
+        "start": 0,
+        "end": 14,
+        "text": "索引并非必需，但键是必需的。",
+        "left_context": "",
+        "right_context": ""
+      }
+    },
+    {
+      "matched_group": "5-1",
+      "source_case_id": "v1-regression-cold-not-required",
+      "expected": "B",
+      "english_before": "The index ",
+      "english_focus": "is not required",
+      "english_after": ", but a key is required.",
+      "frozen_chinese": "索引并非必需，但键是必需的。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 2,
+          "text": "索引",
+          "left_context": "",
+          "right_context": "并非必需，但键是必需的。"
+        },
+        {
+          "id": "B",
+          "start": 2,
+          "end": 6,
+          "text": "并非必需",
+          "left_context": "索引",
+          "right_context": "，但键是必需的。"
+        },
+        {
+          "id": "D",
+          "start": 4,
+          "end": 6,
+          "text": "必需",
+          "left_context": "索引并非",
+          "right_context": "，但键是必需的。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "C",
+        "start": 0,
+        "end": 14,
+        "text": "索引并非必需，但键是必需的。",
+        "left_context": "",
+        "right_context": ""
+      }
+    },
+    {
+      "matched_group": "6-0",
+      "source_case_id": "v1-regression-cold-optional",
+      "expected": "A",
+      "english_before": "The server ",
+      "english_focus": "may, but need not",
+      "english_after": ", send an ETag.",
+      "frozen_chinese": "服务器可以但不必发送 ETag。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 3,
+          "end": 8,
+          "text": "可以但不必",
+          "left_context": "服务器",
+          "right_context": "发送 ETag。"
+        },
+        {
+          "id": "B",
+          "start": 0,
+          "end": 16,
+          "text": "服务器可以但不必发送 ETag。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "C",
+          "start": 3,
+          "end": 5,
+          "text": "可以",
+          "left_context": "服务器",
+          "right_context": "但不必发送 ETag。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "D",
+        "start": 8,
+        "end": 10,
+        "text": "发送",
+        "left_context": "服务器可以但不必",
+        "right_context": " ETag。"
+      }
+    },
+    {
+      "matched_group": "6-1",
+      "source_case_id": "v1-regression-cold-optional",
+      "expected": "D",
+      "english_before": "The server ",
+      "english_focus": "may, but need not",
+      "english_after": ", send an ETag.",
+      "frozen_chinese": "服务器可以但不必发送 ETag。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 16,
+          "text": "服务器可以但不必发送 ETag。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "C",
+          "start": 8,
+          "end": 10,
+          "text": "发送",
+          "left_context": "服务器可以但不必",
+          "right_context": " ETag。"
+        },
+        {
+          "id": "D",
+          "start": 3,
+          "end": 8,
+          "text": "可以但不必",
+          "left_context": "服务器",
+          "right_context": "发送 ETag。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "B",
+        "start": 3,
+        "end": 5,
+        "text": "可以",
+        "left_context": "服务器",
+        "right_context": "但不必发送 ETag。"
+      }
+    },
+    {
+      "matched_group": "7-0",
+      "source_case_id": "v1-regression-cold-repeated",
+      "expected": "D",
+      "english_before": "Messages below the configured ",
+      "english_focus": "level",
+      "english_after": " are ignored; the level itself is set separately.",
+      "frozen_chinese": "严重程度低于所配置级别的消息会被忽略；级别本身单独设置。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 19,
+          "end": 23,
+          "text": "级别本身",
+          "left_context": "度低于所配置级别的消息会被忽略；",
+          "right_context": "单独设置。"
+        },
+        {
+          "id": "B",
+          "start": 0,
+          "end": 28,
+          "text": "严重程度低于所配置级别的消息会被忽略；级别本身单独设置。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "D",
+          "start": 9,
+          "end": 11,
+          "text": "级别",
+          "left_context": "严重程度低于所配置",
+          "right_context": "的消息会被忽略；级别本身单独设置"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "C",
+        "start": 19,
+        "end": 21,
+        "text": "级别",
+        "left_context": "度低于所配置级别的消息会被忽略；",
+        "right_context": "本身单独设置。"
+      }
+    },
+    {
+      "matched_group": "7-1",
+      "source_case_id": "v1-regression-cold-repeated",
+      "expected": "C",
+      "english_before": "Messages below the configured ",
+      "english_focus": "level",
+      "english_after": " are ignored; the level itself is set separately.",
+      "frozen_chinese": "严重程度低于所配置级别的消息会被忽略；级别本身单独设置。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 28,
+          "text": "严重程度低于所配置级别的消息会被忽略；级别本身单独设置。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "C",
+          "start": 9,
+          "end": 11,
+          "text": "级别",
+          "left_context": "严重程度低于所配置",
+          "right_context": "的消息会被忽略；级别本身单独设置"
+        },
+        {
+          "id": "D",
+          "start": 19,
+          "end": 23,
+          "text": "级别本身",
+          "left_context": "度低于所配置级别的消息会被忽略；",
+          "right_context": "单独设置。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "B",
+        "start": 19,
+        "end": 21,
+        "text": "级别",
+        "left_context": "度低于所配置级别的消息会被忽略；",
+        "right_context": "本身单独设置。"
+      }
+    },
+    {
+      "matched_group": "8-0",
+      "source_case_id": "v1-regression-cold-no-contiguous",
+      "expected": "X",
+      "english_before": "Deliver ",
+      "english_focus": "at most once",
+      "english_after": ".",
+      "frozen_chinese": "最多投递一次。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 7,
+          "text": "最多投递一次。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "B",
+          "start": 0,
+          "end": 6,
+          "text": "最多投递一次",
+          "left_context": "",
+          "right_context": "。"
+        },
+        {
+          "id": "C",
+          "start": 4,
+          "end": 6,
+          "text": "一次",
+          "left_context": "最多投递",
+          "right_context": "。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "D",
+        "start": 0,
+        "end": 2,
+        "text": "最多",
+        "left_context": "",
+        "right_context": "投递一次。"
+      }
+    },
+    {
+      "matched_group": "8-1",
+      "source_case_id": "v1-regression-cold-no-contiguous",
+      "expected": "X",
+      "english_before": "Deliver ",
+      "english_focus": "at most once",
+      "english_after": ".",
+      "frozen_chinese": "最多投递一次。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 6,
+          "text": "最多投递一次",
+          "left_context": "",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 4,
+          "end": 6,
+          "text": "一次",
+          "left_context": "最多投递",
+          "right_context": "。"
+        },
+        {
+          "id": "D",
+          "start": 0,
+          "end": 7,
+          "text": "最多投递一次。",
+          "left_context": "",
+          "right_context": ""
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "C",
+        "start": 0,
+        "end": 2,
+        "text": "最多",
+        "left_context": "",
+        "right_context": "投递一次。"
+      }
+    },
+    {
+      "matched_group": "9-0",
+      "source_case_id": "scope-v2-00867",
+      "expected": "X",
+      "english_before": "The upper log row is marked ",
+      "english_focus": "not synchronized",
+      "english_after": "; the lower log row is marked synchronized.",
+      "frozen_chinese": "上方日志行标为未同步；下方日志行标为已同步。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 18,
+          "end": 21,
+          "text": "已同步",
+          "left_context": "日志行标为未同步；下方日志行标为",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 0,
+          "end": 22,
+          "text": "上方日志行标为未同步；下方日志行标为已同步。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "C",
+          "start": 8,
+          "end": 10,
+          "text": "同步",
+          "left_context": "上方日志行标为未",
+          "right_context": "；下方日志行标为已同步。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "D",
+        "start": 7,
+        "end": 21,
+        "text": "未同步；下方日志行标为已同步",
+        "left_context": "上方日志行标为",
+        "right_context": "。"
+      }
+    },
+    {
+      "matched_group": "9-1",
+      "source_case_id": "scope-v2-00867",
+      "expected": "X",
+      "english_before": "The upper log row is marked ",
+      "english_focus": "not synchronized",
+      "english_after": "; the lower log row is marked synchronized.",
+      "frozen_chinese": "上方日志行标为未同步；下方日志行标为已同步。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 22,
+          "text": "上方日志行标为未同步；下方日志行标为已同步。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "B",
+          "start": 8,
+          "end": 10,
+          "text": "同步",
+          "left_context": "上方日志行标为未",
+          "right_context": "；下方日志行标为已同步。"
+        },
+        {
+          "id": "D",
+          "start": 18,
+          "end": 21,
+          "text": "已同步",
+          "left_context": "日志行标为未同步；下方日志行标为",
+          "right_context": "。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "C",
+        "start": 7,
+        "end": 21,
+        "text": "未同步；下方日志行标为已同步",
+        "left_context": "上方日志行标为",
+        "right_context": "。"
+      }
+    },
+    {
+      "matched_group": "10-0",
+      "source_case_id": "scope-v2-00871",
+      "expected": "X",
+      "english_before": "The upper log row is marked not synchronized; the lower log row is marked ",
+      "english_focus": "synchronized",
+      "english_after": ".",
+      "frozen_chinese": "上方日志行标为未同步；下方日志行标为已同步。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 7,
+          "end": 10,
+          "text": "未同步",
+          "left_context": "上方日志行标为",
+          "right_context": "；下方日志行标为已同步。"
+        },
+        {
+          "id": "B",
+          "start": 8,
+          "end": 10,
+          "text": "同步",
+          "left_context": "上方日志行标为未",
+          "right_context": "；下方日志行标为已同步。"
+        },
+        {
+          "id": "C",
+          "start": 0,
+          "end": 22,
+          "text": "上方日志行标为未同步；下方日志行标为已同步。",
+          "left_context": "",
+          "right_context": ""
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "D",
+        "start": 7,
+        "end": 21,
+        "text": "未同步；下方日志行标为已同步",
+        "left_context": "上方日志行标为",
+        "right_context": "。"
+      }
+    },
+    {
+      "matched_group": "10-1",
+      "source_case_id": "scope-v2-00871",
+      "expected": "X",
+      "english_before": "The upper log row is marked not synchronized; the lower log row is marked ",
+      "english_focus": "synchronized",
+      "english_after": ".",
+      "frozen_chinese": "上方日志行标为未同步；下方日志行标为已同步。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 8,
+          "end": 10,
+          "text": "同步",
+          "left_context": "上方日志行标为未",
+          "right_context": "；下方日志行标为已同步。"
+        },
+        {
+          "id": "B",
+          "start": 0,
+          "end": 22,
+          "text": "上方日志行标为未同步；下方日志行标为已同步。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "D",
+          "start": 7,
+          "end": 10,
+          "text": "未同步",
+          "left_context": "上方日志行标为",
+          "right_context": "；下方日志行标为已同步。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "C",
+        "start": 7,
+        "end": 21,
+        "text": "未同步；下方日志行标为已同步",
+        "left_context": "上方日志行标为",
+        "right_context": "。"
+      }
+    },
+    {
+      "matched_group": "11-0",
+      "source_case_id": "scope-v2-00876",
+      "expected": "X",
+      "english_before": "The upper log row is marked ",
+      "english_focus": "not synchronized",
+      "english_after": "; the lower log row is marked not synchronized.",
+      "frozen_chinese": "上方日志行标为未同步；下方日志行标为未同步。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 8,
+          "end": 10,
+          "text": "同步",
+          "left_context": "上方日志行标为未",
+          "right_context": "；下方日志行标为未同步。"
+        },
+        {
+          "id": "B",
+          "start": 7,
+          "end": 21,
+          "text": "未同步；下方日志行标为未同步",
+          "left_context": "上方日志行标为",
+          "right_context": "。"
+        },
+        {
+          "id": "C",
+          "start": 18,
+          "end": 21,
+          "text": "未同步",
+          "left_context": "日志行标为未同步；下方日志行标为",
+          "right_context": "。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "D",
+        "start": 0,
+        "end": 22,
+        "text": "上方日志行标为未同步；下方日志行标为未同步。",
+        "left_context": "",
+        "right_context": ""
+      }
+    },
+    {
+      "matched_group": "11-1",
+      "source_case_id": "scope-v2-00876",
+      "expected": "X",
+      "english_before": "The upper log row is marked ",
+      "english_focus": "not synchronized",
+      "english_after": "; the lower log row is marked not synchronized.",
+      "frozen_chinese": "上方日志行标为未同步；下方日志行标为未同步。",
+      "three_candidates": [
+        {
+          "id": "A",
+          "start": 7,
+          "end": 21,
+          "text": "未同步；下方日志行标为未同步",
+          "left_context": "上方日志行标为",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 18,
+          "end": 21,
+          "text": "未同步",
+          "left_context": "日志行标为未同步；下方日志行标为",
+          "right_context": "。"
+        },
+        {
+          "id": "D",
+          "start": 8,
+          "end": 10,
+          "text": "同步",
+          "left_context": "上方日志行标为未",
+          "right_context": "；下方日志行标为未同步。"
+        }
+      ],
+      "added_wrong_candidate": {
+        "id": "C",
+        "start": 0,
+        "end": 22,
+        "text": "上方日志行标为未同步；下方日志行标为未同步。",
+        "left_context": "",
+        "right_context": ""
+      }
+    }
+  ],
+  "wrong_non_abstaining_selections": [
+    {
+      "case_id": "scope-v3-01091",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "expected_id": "X",
+      "output": "D",
+      "request_sha256": "14d0b31f94a6167449c7687293069293898e29ed4029e0528737c4c0462be635",
+      "english_before": "The primary indicator shows not verified and the fallback indicator shows ",
+      "english_focus": "not verified",
+      "english_after": ".",
+      "frozen_chinese": "主指示器显示未验证，备用指示器显示未验证。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 21,
+          "text": "主指示器显示未验证，备用指示器显示未验证。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "B",
+          "start": 6,
+          "end": 20,
+          "text": "未验证，备用指示器显示未验证",
+          "left_context": "主指示器显示",
+          "right_context": "。"
+        },
+        {
+          "id": "C",
+          "start": 7,
+          "end": 9,
+          "text": "验证",
+          "left_context": "主指示器显示未",
+          "right_context": "，备用指示器显示未验证。"
+        },
+        {
+          "id": "D",
+          "start": 6,
+          "end": 9,
+          "text": "未验证",
+          "left_context": "主指示器显示",
+          "right_context": "，备用指示器显示未验证。"
+        }
+      ]
+    },
+    {
+      "case_id": "scope-v3-01121",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "expected_id": "D",
+      "output": "C",
+      "request_sha256": "76731f150c18a65083416fc4862cac5b2678ef2b24cf420635668cf673368f86",
+      "english_before": "The status card on the left reads not subscribed; the status card on the right reads ",
+      "english_focus": "not subscribed",
+      "english_after": ".",
+      "frozen_chinese": "左侧状态卡显示未订阅；右侧状态卡显示未订阅。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 8,
+          "end": 10,
+          "text": "订阅",
+          "left_context": "左侧状态卡显示未",
+          "right_context": "；右侧状态卡显示未订阅。"
+        },
+        {
+          "id": "B",
+          "start": 0,
+          "end": 22,
+          "text": "左侧状态卡显示未订阅；右侧状态卡显示未订阅。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "C",
+          "start": 7,
+          "end": 10,
+          "text": "未订阅",
+          "left_context": "左侧状态卡显示",
+          "right_context": "；右侧状态卡显示未订阅。"
+        },
+        {
+          "id": "D",
+          "start": 18,
+          "end": 21,
+          "text": "未订阅",
+          "left_context": "状态卡显示未订阅；右侧状态卡显示",
+          "right_context": "。"
+        }
+      ]
+    },
+    {
+      "case_id": "scope-v3-01124",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "expected_id": "X",
+      "output": "D",
+      "request_sha256": "f6d3d441dd8c47e8b46f4e5bef870adeb93fc6149865ea77a8d52c88a68c1649",
+      "english_before": "The status card on the left reads not subscribed; the status card on the right reads ",
+      "english_focus": "not subscribed",
+      "english_after": ".",
+      "frozen_chinese": "左侧状态卡显示未订阅；右侧状态卡显示未订阅。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 22,
+          "text": "左侧状态卡显示未订阅；右侧状态卡显示未订阅。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "B",
+          "start": 7,
+          "end": 21,
+          "text": "未订阅；右侧状态卡显示未订阅",
+          "left_context": "左侧状态卡显示",
+          "right_context": "。"
+        },
+        {
+          "id": "C",
+          "start": 8,
+          "end": 10,
+          "text": "订阅",
+          "left_context": "左侧状态卡显示未",
+          "right_context": "；右侧状态卡显示未订阅。"
+        },
+        {
+          "id": "D",
+          "start": 7,
+          "end": 10,
+          "text": "未订阅",
+          "left_context": "左侧状态卡显示",
+          "right_context": "；右侧状态卡显示未订阅。"
+        }
+      ]
+    },
+    {
+      "case_id": "scope-v3-01144",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "expected_id": "B",
+      "output": "A",
+      "request_sha256": "2c38c918451ab6ac8706dbaf2bab6cee70906cfbbcb4f2250dfb6fb5a7c09be9",
+      "english_before": "The primary indicator shows ",
+      "english_focus": "not subscribed",
+      "english_after": " and the fallback indicator shows not subscribed.",
+      "frozen_chinese": "主指示器显示未订阅，备用指示器显示未订阅。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 17,
+          "end": 20,
+          "text": "未订阅",
+          "left_context": "指示器显示未订阅，备用指示器显示",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 6,
+          "end": 9,
+          "text": "未订阅",
+          "left_context": "主指示器显示",
+          "right_context": "，备用指示器显示未订阅。"
+        },
+        {
+          "id": "C",
+          "start": 0,
+          "end": 21,
+          "text": "主指示器显示未订阅，备用指示器显示未订阅。",
+          "left_context": "",
+          "right_context": ""
+        }
+      ]
+    },
+    {
+      "case_id": "scope-v3-01151",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "expected_id": "X",
+      "output": "B",
+      "request_sha256": "621f8d162911206b7282019085eb8ad1ff9fa09a5bae24993ecfdd28682b7c8a",
+      "english_before": "The primary indicator shows ",
+      "english_focus": "not subscribed",
+      "english_after": " and the fallback indicator shows not subscribed.",
+      "frozen_chinese": "主指示器显示未订阅，备用指示器显示未订阅。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 7,
+          "end": 9,
+          "text": "订阅",
+          "left_context": "主指示器显示未",
+          "right_context": "，备用指示器显示未订阅。"
+        },
+        {
+          "id": "B",
+          "start": 17,
+          "end": 20,
+          "text": "未订阅",
+          "left_context": "指示器显示未订阅，备用指示器显示",
+          "right_context": "。"
+        },
+        {
+          "id": "C",
+          "start": 6,
+          "end": 20,
+          "text": "未订阅，备用指示器显示未订阅",
+          "left_context": "主指示器显示",
+          "right_context": "。"
+        },
+        {
+          "id": "D",
+          "start": 0,
+          "end": 21,
+          "text": "主指示器显示未订阅，备用指示器显示未订阅。",
+          "left_context": "",
+          "right_context": ""
+        }
+      ]
+    },
+    {
+      "case_id": "scope-v3-01158",
+      "variant": "synthetic-holdout",
+      "cohort": "scope-choice-v3-new-holdout",
+      "expected_id": "X",
+      "output": "D",
+      "request_sha256": "1ffb64044e4d6c7b273d1af2f933ced2560ad56f1054f8337072eb069f1f10e6",
+      "english_before": "The primary indicator shows not subscribed and the fallback indicator shows ",
+      "english_focus": "not subscribed",
+      "english_after": ".",
+      "frozen_chinese": "主指示器显示未订阅，备用指示器显示未订阅。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 0,
+          "end": 21,
+          "text": "主指示器显示未订阅，备用指示器显示未订阅。",
+          "left_context": "",
+          "right_context": ""
+        },
+        {
+          "id": "B",
+          "start": 6,
+          "end": 20,
+          "text": "未订阅，备用指示器显示未订阅",
+          "left_context": "主指示器显示",
+          "right_context": "。"
+        },
+        {
+          "id": "C",
+          "start": 7,
+          "end": 9,
+          "text": "订阅",
+          "left_context": "主指示器显示未",
+          "right_context": "，备用指示器显示未订阅。"
+        },
+        {
+          "id": "D",
+          "start": 6,
+          "end": 9,
+          "text": "未订阅",
+          "left_context": "主指示器显示",
+          "right_context": "，备用指示器显示未订阅。"
+        }
+      ]
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00874",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "expected_id": "C",
+      "output": "B",
+      "request_sha256": "41502ae9a1e0edb4d086202f647df4f1a5192e2382c05df77be57552d9830ea2",
+      "english_before": "The upper log row is marked ",
+      "english_focus": "not synchronized",
+      "english_after": "; the lower log row is marked not synchronized.",
+      "frozen_chinese": "上方日志行标为未同步；下方日志行标为未同步。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 8,
+          "end": 10,
+          "text": "同步",
+          "left_context": "上方日志行标为未",
+          "right_context": "；下方日志行标为未同步。"
+        },
+        {
+          "id": "B",
+          "start": 18,
+          "end": 21,
+          "text": "未同步",
+          "left_context": "日志行标为未同步；下方日志行标为",
+          "right_context": "。"
+        },
+        {
+          "id": "C",
+          "start": 7,
+          "end": 10,
+          "text": "未同步",
+          "left_context": "上方日志行标为",
+          "right_context": "；下方日志行标为未同步。"
+        },
+        {
+          "id": "D",
+          "start": 7,
+          "end": 21,
+          "text": "未同步；下方日志行标为未同步",
+          "left_context": "上方日志行标为",
+          "right_context": "。"
+        }
+      ]
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00875",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "expected_id": "B",
+      "output": "A",
+      "request_sha256": "7a3b10a7ca409ca26205e0d00b8c6762c90319561a645d48a72804b4e6f426db",
+      "english_before": "The upper log row is marked ",
+      "english_focus": "not synchronized",
+      "english_after": "; the lower log row is marked not synchronized.",
+      "frozen_chinese": "上方日志行标为未同步；下方日志行标为未同步。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 18,
+          "end": 21,
+          "text": "未同步",
+          "left_context": "日志行标为未同步；下方日志行标为",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 7,
+          "end": 10,
+          "text": "未同步",
+          "left_context": "上方日志行标为",
+          "right_context": "；下方日志行标为未同步。"
+        },
+        {
+          "id": "C",
+          "start": 7,
+          "end": 21,
+          "text": "未同步；下方日志行标为未同步",
+          "left_context": "上方日志行标为",
+          "right_context": "。"
+        },
+        {
+          "id": "D",
+          "start": 8,
+          "end": 10,
+          "text": "同步",
+          "left_context": "上方日志行标为未",
+          "right_context": "；下方日志行标为未同步。"
+        }
+      ]
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00877",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "expected_id": "X",
+      "output": "A",
+      "request_sha256": "6ea2e63a68e5f8ca7b2b03c053b77588b6782f63054e454ad6cf0fa3112ed7ba",
+      "english_before": "The upper log row is marked ",
+      "english_focus": "not synchronized",
+      "english_after": "; the lower log row is marked not synchronized.",
+      "frozen_chinese": "上方日志行标为未同步；下方日志行标为未同步。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 18,
+          "end": 21,
+          "text": "未同步",
+          "left_context": "日志行标为未同步；下方日志行标为",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 8,
+          "end": 10,
+          "text": "同步",
+          "left_context": "上方日志行标为未",
+          "right_context": "；下方日志行标为未同步。"
+        },
+        {
+          "id": "C",
+          "start": 7,
+          "end": 21,
+          "text": "未同步；下方日志行标为未同步",
+          "left_context": "上方日志行标为",
+          "right_context": "。"
+        }
+      ]
+    },
+    {
+      "case_id": "v2-regression-scope-v2-00895",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v2-regression",
+      "expected_id": "X",
+      "output": "A",
+      "request_sha256": "3655a73819fafffcaee8e3e5a05164592fad5c8923d77ded7a4ba574c1c52713",
+      "english_before": "The inspector reads ",
+      "english_focus": "not synchronized",
+      "english_after": " on the primary badge and not synchronized on the secondary badge.",
+      "frozen_chinese": "检查器在主标记上读到未同步，在次标记上读到未同步。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 21,
+          "end": 24,
+          "text": "未同步",
+          "left_context": "标记上读到未同步，在次标记上读到",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 11,
+          "end": 13,
+          "text": "同步",
+          "left_context": "检查器在主标记上读到未",
+          "right_context": "，在次标记上读到未同步。"
+        },
+        {
+          "id": "C",
+          "start": 10,
+          "end": 24,
+          "text": "未同步，在次标记上读到未同步",
+          "left_context": "检查器在主标记上读到",
+          "right_context": "。"
+        }
+      ]
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00804",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "expected_id": "D",
+      "output": "C",
+      "request_sha256": "a545f6ed329c5641bef13728287cd5eae437149cbe0cabedfe84604a8a5d3092",
+      "english_before": "The operator selected ",
+      "english_focus": "deregistration",
+      "english_after": " instead of registration.",
+      "frozen_chinese": "操作员选择了注销登记而非登记注册。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 12,
+          "end": 16,
+          "text": "登记注册",
+          "left_context": "操作员选择了注销登记而非",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 9,
+          "end": 10,
+          "text": "记",
+          "left_context": "操作员选择了注销登",
+          "right_context": "而非登记注册。"
+        },
+        {
+          "id": "C",
+          "start": 6,
+          "end": 16,
+          "text": "注销登记而非登记注册",
+          "left_context": "操作员选择了",
+          "right_context": "。"
+        },
+        {
+          "id": "D",
+          "start": 6,
+          "end": 10,
+          "text": "注销登记",
+          "left_context": "操作员选择了",
+          "right_context": "而非登记注册。"
+        }
+      ]
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00826",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "expected_id": "A",
+      "output": "D",
+      "request_sha256": "e0e67cfc0aeeb8285d9dfc2e1ca9c3a33c0ce12e5ec0af167da952e244d74d11",
+      "english_before": "The operator selected unbinding instead of ",
+      "english_focus": "binding",
+      "english_after": ".",
+      "frozen_chinese": "操作员选择了解除绑定而非绑定。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 12,
+          "end": 14,
+          "text": "绑定",
+          "left_context": "操作员选择了解除绑定而非",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 6,
+          "end": 14,
+          "text": "解除绑定而非绑定",
+          "left_context": "操作员选择了",
+          "right_context": "。"
+        },
+        {
+          "id": "C",
+          "start": 9,
+          "end": 10,
+          "text": "定",
+          "left_context": "操作员选择了解除绑",
+          "right_context": "而非绑定。"
+        },
+        {
+          "id": "D",
+          "start": 6,
+          "end": 10,
+          "text": "解除绑定",
+          "left_context": "操作员选择了",
+          "right_context": "而非绑定。"
+        }
+      ]
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00844",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "expected_id": "A",
+      "output": "D",
+      "request_sha256": "41f9dc4644e2db6a0366ef6c50a6b4fb86fa3454a4a3e08ff67ea4a2f12cf1e1",
+      "english_before": "The operator selected ",
+      "english_focus": "unfreezing",
+      "english_after": " instead of freezing.",
+      "frozen_chinese": "操作员选择了解除冻结而非冻结。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 6,
+          "end": 10,
+          "text": "解除冻结",
+          "left_context": "操作员选择了",
+          "right_context": "而非冻结。"
+        },
+        {
+          "id": "B",
+          "start": 9,
+          "end": 10,
+          "text": "结",
+          "left_context": "操作员选择了解除冻",
+          "right_context": "而非冻结。"
+        },
+        {
+          "id": "C",
+          "start": 12,
+          "end": 14,
+          "text": "冻结",
+          "left_context": "操作员选择了解除冻结而非",
+          "right_context": "。"
+        },
+        {
+          "id": "D",
+          "start": 6,
+          "end": 14,
+          "text": "解除冻结而非冻结",
+          "left_context": "操作员选择了",
+          "right_context": "。"
+        }
+      ]
+    },
+    {
+      "case_id": "v2-regression-v1-regression-scope-v1-00855",
+      "variant": "synthetic-holdout",
+      "cohort": "frozen-v1-regression",
+      "expected_id": "A",
+      "output": "D",
+      "request_sha256": "c640315e9aa631decd02722f8ccfba71ddb3596131a6363e5b1d34a445541d3a",
+      "english_before": "The procedure describes unfreezing, followed by ",
+      "english_focus": "freezing",
+      "english_after": ".",
+      "frozen_chinese": "该流程先描述解除冻结，随后描述冻结。",
+      "candidates": [
+        {
+          "id": "A",
+          "start": 15,
+          "end": 17,
+          "text": "冻结",
+          "left_context": "该流程先描述解除冻结，随后描述",
+          "right_context": "。"
+        },
+        {
+          "id": "B",
+          "start": 9,
+          "end": 10,
+          "text": "结",
+          "left_context": "该流程先描述解除冻",
+          "right_context": "，随后描述冻结。"
+        },
+        {
+          "id": "C",
+          "start": 6,
+          "end": 10,
+          "text": "解除冻结",
+          "left_context": "该流程先描述",
+          "right_context": "，随后描述冻结。"
+        },
+        {
+          "id": "D",
+          "start": 6,
+          "end": 17,
+          "text": "解除冻结，随后描述冻结",
+          "left_context": "该流程先描述",
+          "right_context": "。"
+        }
+      ]
+    }
+  ],
+  "checks": {
+    "python_tests": 111,
+    "python_test_runtime_s": 5.726,
+    "python_test_failures": 0,
+    "python_log_sha256": "78892af1b90327a59ea4f894347c7c455bb9e318f21688f8bf59a1b331119a11",
+    "new_local_javascript_tests_executed": false,
+    "previous_javascript_tests": 391,
+    "gpu_executions": 908,
+    "cpu_executions": 100,
+    "all_generations_eos": 1008,
+    "model_weights_downloaded_this_review": false
+  },
+  "native_executed_source_hashes": {
+    "tools/mt-sentence-native.py": "4afa7355c0d4d7cef428e7498cfcb774152d38a9ec000560fc29f81345f8586c",
+    "training/mt-fixed-slots/evaluate_scope_choice.py": "5a2f5a3582621962330806997f89c958eac9fd6c5153cf9f221768ce9290d0a8"
+  },
+  "review_source_hashes": {
+    "tools/mt-sentence-native.py": "01da22b3eb35dc93ec1f58cf7cfd0642ffe1c2d65358bd21f043f0f7fa0555c0",
+    "training/mt-fixed-slots/tests/test_scope_native.py": "1c2e8dd6345b4ece974c79e0386fb649b4bbb8d121c56196376eb4119fc98ab4"
+  },
+  "evidence_archive": {
+    "filename": "pagelingo-scope-choice-v3-bf16-evidence-20261107.zip",
+    "bytes": 602839,
+    "sha256": "cdc806f2a51b224eb82655d51c1785c84b89303107565bd4af0955d8a829cc8d",
+    "members": 54,
+    "crc_and_all_member_sha256_passed": true,
+    "weights_included": false,
+    "recompute": "Extract and run python scope-choice-v3-results-20261107/audit_results.py; no ML dependencies required."
+  }
+}

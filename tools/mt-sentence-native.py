@@ -15,6 +15,18 @@ def digest(path):
         return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
+def validate_plan_protocol(plan):
+    if plan.get("protocol") not in ["sentence-alignment-research-v1", "fixed-training-error-mining-v1", "source-format-diagnostic-v8", "scope-choice-evaluation-v1"] or not plan.get("jobs"):
+        raise ValueError("Unsupported or empty diagnostic plan")
+    if plan["protocol"] == "scope-choice-evaluation-v1":
+        import importlib.util
+        file = Path(__file__).resolve().parents[1] / "training/mt-fixed-slots/evaluate_scope_choice.py"
+        spec = importlib.util.spec_from_file_location("scope_evaluation_guard", file)
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        guard.validate_eval_plan(plan)
+
+
 def main():
     parser = argparse.ArgumentParser()
     for flag in ("server", "model", "plan", "output"):
@@ -26,8 +38,7 @@ def main():
     if digest(args.model) != args.sha256:
         raise ValueError("Pinned model identity changed")
     plan = json.loads(args.plan.read_text())
-    if plan["protocol"] not in ["sentence-alignment-research-v1", "fixed-training-error-mining-v1", "source-format-diagnostic-v8"] or not plan["jobs"]:
-        raise ValueError("Unsupported or empty diagnostic plan")
+    validate_plan_protocol(plan)
     if plan["protocol"] == "fixed-training-error-mining-v1":
         from mt_mining_guard import validate_mining_plan
         validate_mining_plan(plan)
@@ -37,7 +48,7 @@ def main():
         guard = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(guard)
         guard.validate_source_diagnostic(plan)
-    if plan["protocol"] in ["fixed-training-error-mining-v1", "source-format-diagnostic-v8"]:
+    if plan["protocol"] in ["fixed-training-error-mining-v1", "source-format-diagnostic-v8", "scope-choice-evaluation-v1"]:
         for name, expected in plan["source_hashes"].items():
             source = (Path(__file__).resolve().parents[1] / name).resolve()
             if not source.is_relative_to(Path(__file__).resolve().parents[1]) or digest(source) != expected:
