@@ -34,12 +34,26 @@ def readonly_spans(annotations, target):
     return solutions[0]
 
 
-def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inherit_full_parent_flows=False, close_label_colons=False, close_sentence_punctuation=False):
+def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inherit_full_parent_flows=False, close_label_colons=False, close_sentence_punctuation=False, source_scope_constraints=False):
     words_s, words_t, annotations = case['source_words'], case['target_words'], case['annotations']
     chosen = readonly_resolver(annotations, case['frozen_target'])
     diagnostics = []
+    constraints = {c['id']: c for c in case['scope_constraints']} if source_scope_constraints else {}
+    if source_scope_constraints and set(constraints) != {a['id'] for a in annotations if not a['immutable']}:
+        raise ValueError('source scope constraints missing or unknown annotation')
     for a in annotations:
         if a['id'] in chosen: continue
+        constraint = constraints.get(a['id'])
+        if constraint and constraint['source_word_cut']:
+            raise ValueError('source format scope cuts a lexical word')
+        if constraint and constraint['full_parent']:
+            parent = next((p for p in annotations if p['id'] == a['parent']), None)
+            expected = (parent['start'], parent['end']) if parent else (0, u16(case['source_text'], len(case['source_text'])))
+            if (a['start'], a['end']) != expected or a['parent'] is not None and a['parent'] not in chosen:
+                raise ValueError('invalid complete-parent source scope witness')
+            chosen[a['id']] = chosen[a['parent']] if parent else (0, u16(case['frozen_target'], len(case['frozen_target'])))
+            diagnostics.append({'id': a['id'], 'rule': 'inherit_complete_parent_source_scope'})
+            continue
         if inherit_full_parent_flows and a.get('kind') == 'flow' and a.get('full_parent'):
             parent = next((p for p in annotations if p['id'] == a['parent']), None)
             expected = (parent['start'], parent['end']) if parent else (0, u16(case['source_text'], len(case['source_text'])))
@@ -53,10 +67,12 @@ def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inheri
             chosen[a['id']] = chosen[same[0]['id']]; continue
         # A unique unchanged whole word is a supported deterministic tag anchor.
         matches = list(re.finditer(r'(?<![A-Za-z0-9_$])' + re.escape(a['text']) + r'(?![A-Za-z0-9_$])', case['frozen_target']))
-        if len(matches) == 1:
+        if len(matches) == 1 and (not constraint or constraint['floor'] <= u16(case['frozen_target'], matches[0].start()) < u16(case['frozen_target'], matches[0].end()) <= constraint['ceiling']):
             m = matches[0]; chosen[a['id']] = (u16(case['frozen_target'], m.start()), u16(case['frozen_target'], m.end())); continue
         if a['parent'] is not None and a['parent'] not in chosen: raise ValueError('parent annotation unresolved')
         lo, hi = chosen.get(a['parent'], (0, u16(case['frozen_target'], len(case['frozen_target']))))
+        if constraint:
+            lo, hi = max(lo, constraint['floor']), min(hi, constraint['ceiling'])
         if any(w['lexical'] and w['start'] < a['end'] and w['end'] > a['start']
                and not (w['start'] >= a['start'] and w['end'] <= a['end']) for w in words_s):
             raise ValueError('source annotation cuts a lexical word')
@@ -117,8 +133,8 @@ def main():
     args = parser.parse_args()
     if args.output.exists(): raise ValueError('Use a new result file')
     plan = json.loads(args.plan.read_text())
-    if plan.get('protocol') not in ['frozen-target-span-projection-v9', 'production-owned-projection-v11', 'typed-punctuation-projection-v12', 'collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14'] or plan.get('evaluation_only') is not True or plan.get('optimizer_inputs_approved') is not False: raise ValueError('Expected frozen evaluation plan')
-    owned_policy = plan['protocol'] in ['production-owned-projection-v11', 'typed-punctuation-projection-v12', 'collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14']
+    if plan.get('protocol') not in ['frozen-target-span-projection-v9', 'production-owned-projection-v11', 'typed-punctuation-projection-v12', 'collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14', 'source-constrained-projection-v15'] or plan.get('evaluation_only') is not True or plan.get('optimizer_inputs_approved') is not False: raise ValueError('Expected frozen evaluation plan')
+    owned_policy = plan['protocol'] in ['production-owned-projection-v11', 'typed-punctuation-projection-v12', 'collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14', 'source-constrained-projection-v15']
     if owned_policy:
         from mt_owned_projection import readonly_owned
     root = Path(__file__).resolve().parents[1]
@@ -166,8 +182,9 @@ def main():
         try:
             kwargs = {'readonly_resolver': readonly_owned, 'inherit_full_parent_flows': True} if owned_policy else {}
             if plan['protocol'] == 'typed-punctuation-projection-v12': kwargs['close_label_colons'] = True
-            if plan['protocol'] in ['collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14']: kwargs['close_label_colons'] = plan['rules']['source_label_colon_closure']
-            if plan['protocol'] == 'frozen-prose-gaps-v14': kwargs['close_sentence_punctuation'] = True
+            if plan['protocol'] in ['collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14', 'source-constrained-projection-v15']: kwargs['close_label_colons'] = plan['rules']['source_label_colon_closure']
+            if plan['protocol'] in ['frozen-prose-gaps-v14', 'source-constrained-projection-v15']: kwargs['close_sentence_punctuation'] = True
+            if plan['protocol'] == 'source-constrained-projection-v15': kwargs['source_scope_constraints'] = True
             row['spans'], row['projection_diagnostics'] = project(case, links, plan['rules']['min_cosine'], **kwargs); row['status'] = 'projected'
         except ValueError as error:
             row.update(status='rejected', reason=str(error), spans=[])

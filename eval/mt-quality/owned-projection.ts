@@ -7,6 +7,8 @@ import {classifyProsePunctuation, prosePunctuationPattern, closeLabelColon, clos
 import {canCollapseProseWhitespace, canWriteFrozenProseGap, isAsciiWhitespace, isAsciiWhitespaceOrEmpty} from "../../src/core/collapsible-whitespace";
 import {prepareSemanticRewrite} from "./semantic-rewrite";
 import type {TargetSpan} from "./frozen-span-projection";
+import {assertSourceScopeConstraints, deriveSourceScopeConstraints} from "./scope-constraints";
+export {deriveSourceScopeConstraints};
 
 interface Snapshot {node: Node; children: Node[]; attributes: string | null; text: string | null}
 export interface OwnedAnnotation {
@@ -28,6 +30,7 @@ export interface OwnedSource {
   punctuationPolicy: "strict" | "prose-v1";
   whitespacePolicy: "literal" | "collapse-v1";
   allocationPolicy: "fixed" | "prose-gaps-v1";
+  scopePolicy: "alignment-v1" | "source-constraints-v1";
 }
 export interface FrozenCandidate {text: string; finish_reason: string}
 const attributes = (n: Node) => n.nodeType === Node.ELEMENT_NODE
@@ -71,8 +74,8 @@ function traceText(parts: SerializedSourcePart[]): string {
   return parts.map(p => p.kind === "text" || p.kind === "opaque" ? p.source
     : p.kind === "boundary" ? "" : p.fallbackText ?? traceText(p.children)).join("");
 }
-export function captureOwnedSource(root: HTMLElement, {punctuationPolicy = "strict", whitespacePolicy = "literal", allocationPolicy = "fixed"}: {
-  punctuationPolicy?: "strict" | "prose-v1"; whitespacePolicy?: "literal" | "collapse-v1"; allocationPolicy?: "fixed" | "prose-gaps-v1"} = {}): OwnedSource {
+export function captureOwnedSource(root: HTMLElement, {punctuationPolicy = "strict", whitespacePolicy = "literal", allocationPolicy = "fixed", scopePolicy = "alignment-v1"}: {
+  punctuationPolicy?: "strict" | "prose-v1"; whitespacePolicy?: "literal" | "collapse-v1"; allocationPolicy?: "fixed" | "prose-gaps-v1"; scopePolicy?: "alignment-v1" | "source-constraints-v1"} = {}): OwnedSource {
   if (!root.isConnected || isProtectedApiSignature(root)) throw new Error("Owned projection source detached or protected API declaration");
   const before = snapshot(root), ancestors: Snapshot[] = [];
   for (let n = root.parentElement; n; n = n.parentElement) ancestors.push({node: n, children: [...n.childNodes], attributes: attributes(n), text: null});
@@ -161,7 +164,7 @@ export function captureOwnedSource(root: HTMLElement, {punctuationPolicy = "stri
   const semantic = prepareSemanticRewrite({html: segment.html, sourceLanguage: "en", targetLanguage: "zh-Hans"}, segment.opaque);
   if (sourceText !== semantic.sourceText) throw new Error("Owned source differs from actual natural translation input");
   const source: OwnedSource = {root, url: root.ownerDocument.URL, sourceText, parts: grouped, annotations, slots, segment, trace,
-    snapshot: before, ancestors, stamp: traceStamp(trace.parts), rootParent: root.parentNode, punctuationPolicy, whitespacePolicy, allocationPolicy};
+    snapshot: before, ancestors, stamp: traceStamp(trace.parts), rootParent: root.parentNode, punctuationPolicy, whitespacePolicy, allocationPolicy, scopePolicy};
   if (!structurallyCurrent(source)) throw new Error("Owned source changed during capture");
   return source;
 }
@@ -229,6 +232,7 @@ export function ownedSourceContract(source: OwnedSource) {
   };
   source.parts.forEach(walk);
   return {url: source.url, root_tag: source.root.tagName, root_attributes: attributes(source.root),
+    ...(source.scopePolicy === "source-constraints-v1" ? {scope_policy: source.scopePolicy} : {}),
     source_text: source.sourceText, wire_html: source.segment.html, punctuation_policy: source.punctuationPolicy, whitespace_policy: source.whitespacePolicy, allocation_policy: source.allocationPolicy, annotations: source.annotations,
     owned_slots: source.slots.map(s => ({id: s.id, source: s.source, write_policy: s.writePolicy ?? null})), roles, boundaries};
 }
@@ -266,6 +270,7 @@ export function compileOwnedProjection(source: OwnedSource, candidate: FrozenCan
     const got = byId.get(s.id)!;
     if (got.start !== s.start || got.end !== s.end) throw new Error("Owned immutable span differs from unique source anchor");
   }
+  if (source.scopePolicy === "source-constraints-v1") assertSourceScopeConstraints(source.sourceText, source.annotations, target, checked.immutable, spans);
   if (source.punctuationPolicy === "prose-v1") for (const a of source.annotations) {
     if (a.kind !== "format" || a.immutable) continue;
     const s = byId.get(a.id)!;

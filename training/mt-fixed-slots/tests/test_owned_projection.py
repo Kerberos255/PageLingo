@@ -14,6 +14,37 @@ owned = module('owned_policy_test', 'mt_owned_projection.py')
 
 
 class OwnedProjectionRules(unittest.TestCase):
+    def test_complete_source_wrapper_inherits_without_neural_links(self):
+        case = {'source_text':'Read guide.','frozen_target':'阅读指南。','source_words':[],'target_words':[],
+                'annotations':[{'id':'a','kind':'format','immutable':False,'parent':None,'start':0,'end':11,'text':'Read guide.'}],
+                'scope_constraints':[{'id':'a','full_parent':True,'source_word_cut':False,'floor':0,'ceiling':5}]}
+        spans, notes = align.project(case, [], .55, source_scope_constraints=True)
+        self.assertEqual(spans,[{'id':'a','start':0,'end':5}])
+        self.assertEqual(notes[-1]['rule'],'inherit_complete_parent_source_scope')
+        case['annotations'][0]['end']=10
+        with self.assertRaises(ValueError):align.project(case, [], .55, source_scope_constraints=True)
+
+    def test_source_anchor_fence_disambiguates_two_equal_neural_matches(self):
+        case = {'source_text':'before x() guide','frozen_target':'指南x()指南',
+                'source_words':[{'text':'before','start':0,'end':6,'lexical':True},{'text':'x','start':7,'end':10,'lexical':True},{'text':'guide','start':11,'end':16,'lexical':True}],
+                'target_words':[{'text':'指南','start':0,'end':2,'lexical':True},{'text':'x','start':2,'end':5,'lexical':True},{'text':'指南','start':5,'end':7,'lexical':True}],
+                'annotations':[{'id':'x','kind':'readonly','immutable':True,'anchor_kind':'opaque','parent':None,'start':7,'end':10,'text':'x()'},
+                               {'id':'a','kind':'format','immutable':False,'parent':None,'start':11,'end':16,'text':'guide'}],
+                'scope_constraints':[{'id':'a','full_parent':False,'source_word_cut':False,'floor':5,'ceiling':7}]}
+        links=[(2,0,.9),(2,2,.9)]
+        old_spans,_=align.project(case,links,.55,readonly_resolver=owned.readonly_owned)
+        self.assertEqual(old_spans[-1],{'id':'a','start':0,'end':7})
+        spans,_=align.project(case,links,.55,readonly_resolver=owned.readonly_owned,source_scope_constraints=True)
+        self.assertEqual(spans[-1],{'id':'a','start':5,'end':7})
+
+    def test_missing_or_source_word_cut_constraints_refuse_before_alignment(self):
+        case={'source_text':'unstable','frozen_target':'不稳定','source_words':[],'target_words':[],
+              'annotations':[{'id':'a','kind':'format','immutable':False,'parent':None,'start':0,'end':2,'text':'un'}],
+              'scope_constraints':[]}
+        with self.assertRaises(ValueError):align.project(case,[],.55,source_scope_constraints=True)
+        case['scope_constraints']=[{'id':'a','source_word_cut':True,'full_parent':False,'floor':0,'ceiling':3}]
+        with self.assertRaises(ValueError):align.project(case,[],.55,source_scope_constraints=True)
+
     def test_whole_sentence_format_closes_its_adjacent_period_without_consuming_words(self):
         case = {'source_text':'Read this paragraph. Then save.','frozen_target':'阅读此段。然后保存。',
                 'source_words':[{'text':'Read','start':0,'end':4,'lexical':True}],

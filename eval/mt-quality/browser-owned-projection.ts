@@ -5,7 +5,7 @@ import {isProtectedApiSignature} from "../../src/core/dom-policy";
 import {serializeRichSegment, type SerializedSourcePart} from "../../src/core/rich-segment";
 import type {TargetSpan} from "./frozen-span-projection";
 
-interface ParentCase {id: string; site_id: string; locator: string; context_url: string; natural_request: unknown; captured_fixed_calls?: unknown; punctuation_policy?: "strict" | "prose-v1"; whitespace_policy?: "literal" | "collapse-v1"; allocation_policy?: "fixed" | "prose-gaps-v1"}
+interface ParentCase {id: string; site_id: string; locator: string; context_url: string; natural_request: unknown; captured_fixed_calls?: unknown; punctuation_policy?: "strict" | "prose-v1"; whitespace_policy?: "literal" | "collapse-v1"; allocation_policy?: "fixed" | "prose-gaps-v1"; scope_policy?: "alignment-v1" | "source-constraints-v1"}
 interface InputCase extends ParentCase {
   model: string; source_contract: unknown; html: string; candidate: FrozenCandidate;
   alignment_status: string; alignment_reason?: string; spans: TargetSpan[]; review?: OwnedScopeReview;
@@ -24,12 +24,12 @@ export function captureOwnedWebCases(cases: ParentCase[]) {
     if (!root) return {id: c.id, status: "missing_source", reason: "Live locator no longer exists"};
     if (isProtectedApiSignature(root)) return {id: c.id, status: "protected_api", html: root.outerHTML};
     try {
-      const p = liveRequest(root, document.location.href), source = captureOwnedSource(root, {punctuationPolicy: c.punctuation_policy ?? "strict", whitespacePolicy: c.whitespace_policy ?? "literal", allocationPolicy: c.allocation_policy ?? "fixed"});
+      const p = liveRequest(root, document.location.href), source = captureOwnedSource(root, {punctuationPolicy: c.punctuation_policy ?? "strict", whitespacePolicy: c.whitespace_policy ?? "literal", allocationPolicy: c.allocation_policy ?? "fixed", scopePolicy: c.scope_policy ?? "alignment-v1"});
       const plain = serializeRichSegment(root, {fixedTextSlots: true});
       if (plain.html !== source.segment.html) throw new Error("Ownership trace changed production wire HTML");
       const source_contract = ownedSourceContract(source);
       return {id: c.id, site_id: c.site_id, status: "supported", url: document.location.href, locator: c.locator,
-        html: root.outerHTML, source_text: source.sourceText, source_words: words(source.sourceText, "en"), punctuation_policy: source.punctuationPolicy, whitespace_policy: source.whitespacePolicy, allocation_policy: source.allocationPolicy,
+        html: root.outerHTML, source_text: source.sourceText, source_words: words(source.sourceText, "en"), punctuation_policy: source.punctuationPolicy, whitespace_policy: source.whitespacePolicy, allocation_policy: source.allocationPolicy, scope_policy: source.scopePolicy,
         source_contract, natural_request: p.natural, annotations: source.annotations,
         cached_natural_request_matches: c.context_url === document.location.href && canonicalOwnedData(p.natural) === canonicalOwnedData(c.natural_request),
         cached_production_calls_match: canonicalOwnedData(p.calls) === canonicalOwnedData(c.captured_fixed_calls),
@@ -47,7 +47,7 @@ export function inspectOwnedWebCase(input: InputCase, mode: "preview" | "commit"
   if (!root || document.location.href !== input.context_url) return {...base, status: "source_changed", displayed: false, reason: "Locator or URL changed"};
   const before = root.outerHTML;
   try {
-    const p = liveRequest(root, document.location.href), source = captureOwnedSource(root, {punctuationPolicy: input.punctuation_policy ?? "strict", whitespacePolicy: input.whitespace_policy ?? "literal", allocationPolicy: input.allocation_policy ?? "fixed"});
+    const p = liveRequest(root, document.location.href), source = captureOwnedSource(root, {punctuationPolicy: input.punctuation_policy ?? "strict", whitespacePolicy: input.whitespace_policy ?? "literal", allocationPolicy: input.allocation_policy ?? "fixed", scopePolicy: input.scope_policy ?? "alignment-v1"});
     if (canonicalOwnedData(p.natural) !== canonicalOwnedData(input.natural_request)
       || canonicalOwnedData(ownedSourceContract(source)) !== canonicalOwnedData(input.source_contract)) {
       return {...base, status: "source_contract_changed", displayed: false, rejected_source_untouched: root.outerHTML === before,

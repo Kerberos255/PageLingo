@@ -44,13 +44,14 @@ async function plan(parentFile, captureFile, nativeFile, output) {
     const candidate = {text: natural.text, finish_reason: natural.finish_reason};
     const base = {id: old.id, site_id: old.site_id, locator: old.locator, context_url: c.url, html: c.html,
       source_text: c.source_text, source_words: c.source_words, annotations: c.annotations, source_contract: c.source_contract,
-      natural_request: c.natural_request, punctuation_policy: c.punctuation_policy ?? "strict", whitespace_policy: c.whitespace_policy ?? "literal", allocation_policy: c.allocation_policy ?? "fixed", candidate, frozen_target: natural.text, target_sha256: sha(natural.text),
+      natural_request: c.natural_request, punctuation_policy: c.punctuation_policy ?? "strict", whitespace_policy: c.whitespace_policy ?? "literal", allocation_policy: c.allocation_policy ?? "fixed", scope_policy: c.scope_policy ?? "alignment-v1", candidate, frozen_target: natural.text, target_sha256: sha(natural.text),
       request_sha256: natural.request_sha256, group: "recorded_translation_rebound_to_current_owned_source",
       prior_experiment: parent.experiment ?? null, prior_group: old.group ?? null};
     source_cases.push(base);
     try {
       const quality = api.assessOwnedCandidate({sourceText: c.source_text, annotations: c.annotations}, candidate);
       cases.push({...base, candidate_quality: quality.quality,
+        ...(c.scope_policy === "source-constraints-v1" ? {scope_constraints: api.deriveSourceScopeConstraints(c.source_text, c.annotations, natural.text, quality.immutable)} : {}),
         target_words: [...new Intl.Segmenter("zh", {granularity: "word"}).segment(natural.text)].filter(x => x.segment.trim())
           .map(x => ({text: x.segment, start: x.index, end: x.index + x.segment.length, lexical: x.isWordLike === true}))});
     } catch (error) {candidate_refusals.push({id: old.id, reason: String(error), target_sha256: base.target_sha256});}
@@ -59,11 +60,13 @@ async function plan(parentFile, captureFile, nativeFile, output) {
   const typedPunctuation = capture.punctuation_policy === "prose-v1";
   const collapseWhitespace = capture.whitespace_policy === "collapse-v1";
   const proseGaps = capture.allocation_policy === "prose-gaps-v1";
-  const result = {protocol: proseGaps ? "frozen-prose-gaps-v14" : collapseWhitespace ? "collapsible-whitespace-projection-v13" : typedPunctuation ? "typed-punctuation-projection-v12" : "production-owned-projection-v11", evaluation_only: true, optimizer_inputs_approved: false,
+  const constrainedScope = capture.scope_policy === "source-constraints-v1";
+  const result = {protocol: constrainedScope ? "source-constrained-projection-v15" : proseGaps ? "frozen-prose-gaps-v14" : collapseWhitespace ? "collapsible-whitespace-projection-v13" : typedPunctuation ? "typed-punctuation-projection-v12" : "production-owned-projection-v11", evaluation_only: true, optimizer_inputs_approved: false,
     production_enabled: false, new_translation_generations: 0, source_commit: execFileSync("git", ["rev-parse", "HEAD"], {cwd: projectRoot, encoding: "utf8"}).trim(),
     parent_plan_sha256: sha(await readFile(parentFile)), capture_sha256: sha(await readFile(captureFile)), capture_runtime_sha256: capture.runtime_sha256,
     native_run_sha256: sha(await readFile(nativeFile)), translator: native.model,
     rules: {min_cosine: 0.55, required_content_word_coverage: 1, source_articles_ignored_for_coverage: ["a", "an", "the"],
+      source_scope_constraints: constrainedScope, full_parent_formats_inherit_source_scope: constrainedScope,
       frozen_target_rewriting_allowed: false, only_production_owned_text_nodes_editable: !typedPunctuation && !collapseWhitespace,
       additional_write_authority: proseGaps ? "same-parent original prose gaps may carry frozen target words or become empty, with complete-target witness; no new nodes or model slots" : collapseWhitespace ? "bounded prose punctuation and collapsible ASCII whitespace; no new model slots or request changes" : typedPunctuation ? "bounded standalone prose punctuation; no added model slots or request changes" : null,
       literal_readonly_anchors_exact: true, prose_punctuation_policy: typedPunctuation ? "prose-v1" : "strict",
