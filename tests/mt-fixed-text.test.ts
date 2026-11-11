@@ -25,6 +25,25 @@ function provider() {
 }
 
 describe("MT fixed text protocol", () => {
+  it.each([" ","\u3000","\t","\n",""])("restores a source numbered heading's nonbreaking separator: %j", separator => {
+    const encoded=encodeFixedMtText('3.4.\u00a0Transactions');
+    const original=encoded.texts[0]!.node;
+    expect(decodeFixedMtText(encoded,`⟦0⟧3.4.${separator}事务⟦/0⟧`)).toBe('3.4.&nbsp;事务');
+    expect(encoded.texts[0]!.node).toBe(original);expect(original.data).toBe('3.4.\u00a0事务');
+  });
+  it.each(['事务','3.5. 事务','3.4.2. 事务','3.4.'])("rejects a changed or missing numbered heading atomically: %s", output => {
+    const encoded=encodeFixedMtText('3.4.\u00a0Transactions'),before=encoded.body.innerHTML;
+    expect(()=>decodeFixedMtText(encoded,`⟦0⟧${output}⟦/0⟧`)).toThrow(/numbered text slot/);expect(encoded.body.innerHTML).toBe(before);
+  });
+  it("preserves a narrow nonbreaking separator with original links and text nodes",()=>{
+    const encoded=encodeFixedMtText('<p>1.\u202fRead <a href="/guide">the guide</a>.</p>'),p=encoded.body.firstElementChild!,children=[...p.childNodes],link=p.querySelector('a')!;
+    decodeFixedMtText(encoded,'⟦0⟧1.阅读⟦/0⟧⟦1⟧指南⟦/1⟧⟪P0⟫');
+    expect(p.firstChild!.textContent).toBe('1.\u202f阅读 ');expect(p.querySelector('a')).toBe(link);expect([...p.childNodes]).toEqual(children);expect(link.getAttribute('href')).toBe('/guide');
+  });
+  it("leaves ordinary ASCII spacing and decimal prose under the existing contract",()=>{
+    expect(decodeFixedMtText(encodeFixedMtText('3.4. Transactions'),'⟦0⟧3.4.　事务⟦/0⟧')).toBe('3.4.　事务');
+    expect(decodeFixedMtText(encodeFixedMtText('3.14 seconds'),'⟦0⟧3.14秒⟦/0⟧')).toBe('3.14秒');
+  });
   it("retains the whole source for a translation label introduced mid-slot by the actual v2b Q5", async () => {
     const encoded = encodeFixedMtText(innerTranslationLabel.html), before = encoded.body.innerHTML;
     expect(() => decodeFixedMtText(encoded, innerTranslationLabel.text)).toThrow(/introduced translation label/);

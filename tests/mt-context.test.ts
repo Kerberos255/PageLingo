@@ -1,15 +1,40 @@
-import {afterEach,describe,expect,it} from 'vitest';
+import {afterEach,describe,expect,it,vi} from 'vitest';
 import {collectTranslationRoots} from '../src/core/dom-policy';
 import {PageTranslator} from '../src/core/page-translator';
 import {planMtSentences} from '../src/providers/pagelingo-mt/sentence-plan';
 import {inferMtHtml} from '../src/providers/pagelingo-mt/inference';
 import {encodeMtHtml,mtPrompt} from '../src/providers/pagelingo-mt/protocol';
-import {translationContextForUrl} from '../src/core/translation-context';
+import {contextualTerminology,translationContextForUrl} from '../src/core/translation-context';
+import {terminologyForText} from '../src/core/rich-segment';
 import {richHtmlStructureCompatible} from '../src/core/rich-segment-splitter';
-import type {TranslationRequest} from '../src/core/provider';
+import type {TranslationRequest,TranslationTerminologyEntry} from '../src/core/provider';
 
-afterEach(()=>document.body.replaceChildren());
+afterEach(()=>{document.body.replaceChildren();vi.restoreAllMocks();});
 describe('MT sentence context and atomic rendering',()=>{
+ it('recognizes versioned Django database documentation without treating commerce pages as SQL',()=>{
+  for(const url of ['https://docs.djangoproject.com/en/5.2/topics/db/transactions/','https://docs.djangoproject.com/en/dev/topics/db/queries/','https://docs.djangoproject.com/zh-hans/6.0/topics/db/'])expect(translationContextForUrl(url)).toBe('sql');
+  for(const url of ['https://docs.djangoproject.com/en/5.2/topics/http/views/','https://docs.djangoproject.com/en/5.2/topics/db-notes/','https://docs.djangoproject.com.evil.example/en/5.2/topics/db/','https://shop.example/transactions'])expect(translationContextForUrl(url)).toBeUndefined();
+ });
+ it('provides database transaction terminology with complete English word boundaries',()=>{
+  const terms=contextualTerminology('sql');
+  expect(terminologyForText(terms,'A transaction contains multiple transactions.').filter((t:TranslationTerminologyEntry)=>t.target==='事务').map((t:TranslationTerminologyEntry)=>t.source)).toEqual(['transactions','transaction']);
+  expect(terminologyForText(terms,'Transactional behavior in TransactionTestCase.').filter((t:TranslationTerminologyEntry)=>t.target==='事务')).toEqual([]);
+  expect(mtPrompt('Controlling transactions explicitly',terminologyForText(terms,'Controlling transactions explicitly'),'sql')).toContain('transactions translates to 事务');
+ });
+ it('keeps user terminology authoritative and preserves original links and code on a Django page',async()=>{
+  vi.spyOn(document,'URL','get').mockReturnValue('https://docs.djangoproject.com/en/5.2/topics/db/transactions/');
+  document.body.innerHTML='<p>Read <a href="/atomic">transaction</a> guidance with <code>transaction.atomic()</code>.</p>';
+  const p=document.querySelector('p')!,link=p.querySelector('a')!,code=p.querySelector('code')!,before=p.outerHTML,requests:TranslationRequest[]=[];
+  const translator=new PageTranslator(document,{prefersWholeSentenceHtml:async()=>true,translateHtml:async (request:TranslationRequest)=>{
+   requests.push(request);const b=new DOMParser().parseFromString(request.html,'text/html').body;
+   for(const span of b.querySelectorAll('[data-flt-text-id]'))span.textContent=span.textContent?.trim()==='transaction'?'自定义事务':'阅读说明';
+   return b.innerHTML;
+  }},{displayMode:'translation',terminology:[{source:'transaction',target:'自定义事务',mode:'replace',origin:'user'}]});
+  await translator.translateAll(p);expect(requests).toHaveLength(1);expect(requests[0]!.context).toBe('sql');
+  expect(requests[0]!.terminology?.filter(t=>t.source==='transaction')).toEqual([{source:'transaction',target:'自定义事务',mode:'replace'}]);
+  expect(p.querySelector('a')).toBe(link);expect(link.getAttribute('href')).toBe('/atomic');expect(p.querySelector('code')).toBe(code);expect(code.textContent).toBe('transaction.atomic()');
+  translator.restore();expect(p.outerHTML).toBe(before);
+ });
  it('keeps a numeric linked HTTP code within its full sentence without modifying the source',()=>{
   document.body.innerHTML='<p>The response must include the headers of an equivalent <a href="/200"><code>200</code></a> response, such as:</p>';
   const before=document.body.innerHTML;const p=document.querySelector('p')!;

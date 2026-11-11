@@ -32,6 +32,19 @@ function translationLabels(text: string): Map<string, number> {
 }
 const isLabelSlot = (slot: TextSlot) => Boolean(slot.node.parentElement?.closest("a,em,strong,b,i,mark"));
 const markerBracketPairs = [["〔", "〕"], ["⟬", "⟭"], ["【", "】"]] as const;
+function restoreNumberedNonbreakingSeparator(source: string, translated: string): string {
+  const prefix = source.trimStart().match(/^((?:\d+\.)+)([\u00a0\u202f]+)/u);
+  if (!prefix) return translated;
+  const label = prefix[1]!;
+  if (!translated.startsWith(label) || /^[\d.]/u.test(translated.slice(label.length))) {
+    throw new Error("MT numbered text slot changed its original label; original paragraph retained");
+  }
+  const rest = translated.slice(label.length).trimStart();
+  if (!/\p{L}/u.test(rest)) throw new Error("MT numbered text slot lost its translated label");
+  // Restore only the source's literal label separator; translated words remain
+  // untouched. Dropped or changed numbers are rejected rather than reconstructed.
+  return label + prefix[2]! + rest;
+}
 function balancedPair(text: string, opening: string, closing: string): boolean {
   let depth = 0;
   for (const char of text) {
@@ -141,7 +154,7 @@ export function decodeFixedMtText(encoded: FixedMtText, output: string): string 
     const closing = `⟦/${part.text.id}⟧`;
     const end = output.indexOf(closing, cursor);
     if (end < 0) throw new Error("MT unclosed text slot");
-    const value = output.slice(cursor, end).trim();
+    const value = restoreNumberedNonbreakingSeparator(part.text.source, output.slice(cursor, end).trim());
     const isLabel = isLabelSlot(part.text);
     if (isLabel && !/[\p{L}\p{N}]/u.test(value)) throw new Error("MT link/emphasis text became empty or punctuation-only");
     if (isLabel && standaloneNegation.test(part.text.source.trim()) && !translatedNegation.test(value)) {

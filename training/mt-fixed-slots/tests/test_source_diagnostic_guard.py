@@ -11,6 +11,17 @@ spec.loader.exec_module(guard)
 
 
 class SourceDiagnosticGuard(unittest.TestCase):
+    def test_context_comparison_accepts_only_complete_fixed_requests_and_no_production_enable(self):
+        value=self.plan();value.update(protocol='source-context-comparison-v16',production_enabled=False)
+        natural=value['jobs'].pop(0);guard.validate_source_diagnostic(value)
+        for mutation in ['enabled','missing','natural','context']:
+            bad=copy.deepcopy(value)
+            if mutation=='enabled':bad['production_enabled']=True
+            if mutation=='missing':bad['jobs']=[]
+            if mutation=='natural':bad['jobs'].append(natural)
+            if mutation=='context':bad['cases'][0]['context_check']=True
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):guard.validate_source_diagnostic(bad)
+
     def plan(self):
         jobs = []
         for variant, grammar in [("natural-visible", None), ("production-fixed:0", 'root ::= "frame"')]:

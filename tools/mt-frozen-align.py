@@ -34,7 +34,7 @@ def readonly_spans(annotations, target):
     return solutions[0]
 
 
-def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inherit_full_parent_flows=False, close_label_colons=False, close_sentence_punctuation=False, source_scope_constraints=False):
+def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inherit_full_parent_flows=False, close_label_colons=False, close_sentence_punctuation=False, source_scope_constraints=False, reject_related_source_concepts=False):
     words_s, words_t, annotations = case['source_words'], case['target_words'], case['annotations']
     chosen = readonly_resolver(annotations, case['frozen_target'])
     diagnostics = []
@@ -46,6 +46,8 @@ def project(case, links, min_cosine, *, readonly_resolver=readonly_spans, inheri
         constraint = constraints.get(a['id'])
         if constraint and constraint['source_word_cut']:
             raise ValueError('source format scope cuts a lexical word')
+        if constraint and reject_related_source_concepts and constraint.get('related_source_terms') and not (constraint['full_parent'] or constraint.get('exact_immutable') or constraint.get('literal_anchor')):
+            raise ValueError('related source concepts lack an independent local scope witness')
         if constraint and constraint['full_parent']:
             parent = next((p for p in annotations if p['id'] == a['parent']), None)
             expected = (parent['start'], parent['end']) if parent else (0, u16(case['source_text'], len(case['source_text'])))
@@ -133,8 +135,8 @@ def main():
     args = parser.parse_args()
     if args.output.exists(): raise ValueError('Use a new result file')
     plan = json.loads(args.plan.read_text())
-    if plan.get('protocol') not in ['frozen-target-span-projection-v9', 'production-owned-projection-v11', 'typed-punctuation-projection-v12', 'collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14', 'source-constrained-projection-v15'] or plan.get('evaluation_only') is not True or plan.get('optimizer_inputs_approved') is not False: raise ValueError('Expected frozen evaluation plan')
-    owned_policy = plan['protocol'] in ['production-owned-projection-v11', 'typed-punctuation-projection-v12', 'collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14', 'source-constrained-projection-v15']
+    if plan.get('protocol') not in ['frozen-target-span-projection-v9', 'production-owned-projection-v11', 'typed-punctuation-projection-v12', 'collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14', 'source-constrained-projection-v15', 'source-constrained-projection-v16'] or plan.get('evaluation_only') is not True or plan.get('optimizer_inputs_approved') is not False: raise ValueError('Expected frozen evaluation plan')
+    owned_policy = plan['protocol'] in ['production-owned-projection-v11', 'typed-punctuation-projection-v12', 'collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14', 'source-constrained-projection-v15', 'source-constrained-projection-v16']
     if owned_policy:
         from mt_owned_projection import readonly_owned
     root = Path(__file__).resolve().parents[1]
@@ -182,9 +184,10 @@ def main():
         try:
             kwargs = {'readonly_resolver': readonly_owned, 'inherit_full_parent_flows': True} if owned_policy else {}
             if plan['protocol'] == 'typed-punctuation-projection-v12': kwargs['close_label_colons'] = True
-            if plan['protocol'] in ['collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14', 'source-constrained-projection-v15']: kwargs['close_label_colons'] = plan['rules']['source_label_colon_closure']
-            if plan['protocol'] in ['frozen-prose-gaps-v14', 'source-constrained-projection-v15']: kwargs['close_sentence_punctuation'] = True
-            if plan['protocol'] == 'source-constrained-projection-v15': kwargs['source_scope_constraints'] = True
+            if plan['protocol'] in ['collapsible-whitespace-projection-v13', 'frozen-prose-gaps-v14', 'source-constrained-projection-v15', 'source-constrained-projection-v16']: kwargs['close_label_colons'] = plan['rules']['source_label_colon_closure']
+            if plan['protocol'] in ['frozen-prose-gaps-v14', 'source-constrained-projection-v15', 'source-constrained-projection-v16']: kwargs['close_sentence_punctuation'] = True
+            if plan['protocol'] in ['source-constrained-projection-v15', 'source-constrained-projection-v16']: kwargs['source_scope_constraints'] = True
+            if plan['protocol'] == 'source-constrained-projection-v16': kwargs['reject_related_source_concepts'] = True
             row['spans'], row['projection_diagnostics'] = project(case, links, plan['rules']['min_cosine'], **kwargs); row['status'] = 'projected'
         except ValueError as error:
             row.update(status='rejected', reason=str(error), spans=[])

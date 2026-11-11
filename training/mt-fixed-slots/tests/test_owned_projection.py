@@ -14,6 +14,14 @@ owned = module('owned_policy_test', 'mt_owned_projection.py')
 
 
 class OwnedProjectionRules(unittest.TestCase):
+    def test_related_source_concepts_require_independent_witness_only_in_v16(self):
+        case={'source_text':'binding','frozen_target':'绑定','source_words':[],'target_words':[],
+              'annotations':[{'id':'a','kind':'format','immutable':False,'parent':None,'start':0,'end':7,'text':'binding'}],
+              'scope_constraints':[{'id':'a','full_parent':True,'source_word_cut':False,'floor':0,'ceiling':2,'related_source_terms':[]}]}
+        spans,_=align.project(case,[],.55,source_scope_constraints=True,reject_related_source_concepts=True)
+        self.assertEqual(spans,[{'id':'a','start':0,'end':2}])
+        case['scope_constraints'][0].update(full_parent=False,related_source_terms=[{'text':'unbinding'}])
+        with self.assertRaisesRegex(ValueError,'related source concepts'):align.project(case,[],.55,source_scope_constraints=True,reject_related_source_concepts=True)
     def test_complete_source_wrapper_inherits_without_neural_links(self):
         case = {'source_text':'Read guide.','frozen_target':'阅读指南。','source_words':[],'target_words':[],
                 'annotations':[{'id':'a','kind':'format','immutable':False,'parent':None,'start':0,'end':11,'text':'Read guide.'}],

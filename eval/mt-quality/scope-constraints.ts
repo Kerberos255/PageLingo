@@ -8,11 +8,34 @@ export interface SourceScopeConstraint {
   id: string; parent: string | null; full_parent: boolean; exact_immutable: string | null;
   floor: number; ceiling: number; source_word_cut: boolean; format: boolean;
   literal_anchor: {start: number; end: number} | null;
+  related_source_terms: Array<{text: string; start: number; end: number; shared_stem: string}>;
 }
 const words = (text: string, language: string) => [...new Intl.Segmenter(language, {granularity: "word"}).segment(text)]
   .filter(w => w.isWordLike).map(w => ({start: w.index, end: w.index + w.segment.length}));
 const cutsWord = (start: number, end: number, lexical: Array<{start: number; end: number}>) => lexical.some(w =>
   w.start < start && start < w.end || w.start < end && end < w.end);
+
+// This detects a source ambiguity, not a positive/negative meaning. A prefix
+// relationship alone never identifies the correct Chinese translation.
+function relatedSourceTerms(source: string, a: ScopeAnnotation, parent: {start: number; end: number}) {
+  const focus = source.slice(a.start, a.end).trim();
+  if (!/^[A-Za-z]+(?:-[A-Za-z]+)*$/u.test(focus)) return [];
+  const forms = (word: string) => {
+    const value = word.toLowerCase().replace(/-/gu, ""), values = new Set([value]);
+    for (const prefix of ["de", "dis", "non", "un", "re", "en", "in", "im"]) {
+      if (value.startsWith(prefix) && value.length - prefix.length >= 4) values.add(value.slice(prefix.length));
+    }
+    return values;
+  };
+  const focused = forms(focus), normalized = focus.toLowerCase().replace(/-/gu, "");
+  return [...source.matchAll(/[A-Za-z]+(?:-[A-Za-z]+)*/gu)].flatMap(m => {
+    const start = m.index, end = start + m[0].length;
+    if (start < parent.start || end > parent.end || start < a.end && end > a.start
+      || m[0].toLowerCase().replace(/-/gu, "") === normalized) return [];
+    const shared = [...forms(m[0])].find(stem => stem.length >= 4 && focused.has(stem));
+    return shared ? [{text: m[0], start, end, shared_stem: shared}] : [];
+  });
+}
 
 export function deriveSourceScopeConstraints(sourceText: string, annotations: ScopeAnnotation[], target: string, immutable: ScopeSpan[]): SourceScopeConstraint[] {
   const byId = new Map(annotations.map(a => [a.id, a])), fixed = new Map(immutable.map(s => [s.id, s]));
@@ -47,11 +70,12 @@ export function deriveSourceScopeConstraints(sourceText: string, annotations: Sc
     return {id: a.id, parent: a.parent, full_parent: a.start === parent.start && a.end === parent.end,
       exact_immutable: exact.length === 1 ? exact[0]!.id : null, floor, ceiling,
       literal_anchor: literals.get(a.id) ?? null,
+      related_source_terms: a.kind === "format" ? relatedSourceTerms(sourceText, a, parent) : [],
       source_word_cut: a.kind === "format" && cutsWord(a.start, a.end, lexical), format: a.kind === "format"};
   });
 }
 
-export function assertSourceScopeConstraints(sourceText: string, annotations: ScopeAnnotation[], target: string, immutable: ScopeSpan[], spans: ScopeSpan[]) {
+export function assertSourceScopeConstraints(sourceText: string, annotations: ScopeAnnotation[], target: string, immutable: ScopeSpan[], spans: ScopeSpan[], {rejectRelatedSourceConcepts = false}: {rejectRelatedSourceConcepts?: boolean} = {}) {
   const byId = new Map(spans.map(s => [s.id, s])), lexical = words(target, "zh");
   for (const c of deriveSourceScopeConstraints(sourceText, annotations, target, immutable)) {
     const s = byId.get(c.id), parent = c.parent === null ? {start: 0, end: target.length} : byId.get(c.parent);
@@ -66,6 +90,9 @@ export function assertSourceScopeConstraints(sourceText: string, annotations: Sc
     if (!c.format) continue;
     if (c.source_word_cut || cutsWord(s.start, s.end, lexical)) throw new Error("Format scope cuts a source or target lexical word");
     if (c.full_parent || c.exact_immutable) continue;
+    if (rejectRelatedSourceConcepts && c.related_source_terms.length && !c.literal_anchor) {
+      throw new Error("Related source concepts lack an independent local scope witness");
+    }
     // A neural choice is insufficient to distinguish identical target phrases.
     // Only source-owned immutable/literal fences narrow it, not guessed scopes.
     const value = target.slice(s.start, s.end);

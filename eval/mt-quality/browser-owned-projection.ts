@@ -5,7 +5,7 @@ import {isProtectedApiSignature} from "../../src/core/dom-policy";
 import {serializeRichSegment, type SerializedSourcePart} from "../../src/core/rich-segment";
 import type {TargetSpan} from "./frozen-span-projection";
 
-interface ParentCase {id: string; site_id: string; locator: string; context_url: string; natural_request: unknown; captured_fixed_calls?: unknown; punctuation_policy?: "strict" | "prose-v1"; whitespace_policy?: "literal" | "collapse-v1"; allocation_policy?: "fixed" | "prose-gaps-v1"; scope_policy?: "alignment-v1" | "source-constraints-v1"}
+interface ParentCase {id: string; site_id: string; locator: string; context_url: string; natural_request: unknown; captured_fixed_calls?: unknown; punctuation_policy?: "strict" | "prose-v1"; whitespace_policy?: "literal" | "collapse-v1"; allocation_policy?: "fixed" | "prose-gaps-v1"; scope_policy?: "alignment-v1" | "source-constraints-v1" | "source-constraints-v2"}
 interface InputCase extends ParentCase {
   model: string; source_contract: unknown; html: string; candidate: FrozenCandidate;
   alignment_status: string; alignment_reason?: string; spans: TargetSpan[]; review?: OwnedScopeReview;

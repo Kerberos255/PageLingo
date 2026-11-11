@@ -4,18 +4,21 @@ import json
 
 
 def validate_source_diagnostic(plan):
-    if plan.get("protocol") != "source-format-diagnostic-v8" or plan.get("evaluation_only") is not True or plan.get("optimizer_inputs_approved") is not False:
+    context_only = plan.get("protocol") == "source-context-comparison-v16"
+    if plan.get("protocol") not in ["source-format-diagnostic-v8", "source-context-comparison-v16"] or plan.get("evaluation_only") is not True or plan.get("optimizer_inputs_approved") is not False:
         raise ValueError("Expected evaluation-only diagnostic")
+    if context_only and plan.get("production_enabled") is not False:
+        raise ValueError("Context comparison must be explicitly disabled for production")
     cases = {row["id"]: row for row in plan["cases"]}
     if not cases or len(cases) != len(plan["cases"]) or any(row.get("split") != "diagnostic" for row in cases.values()):
         raise ValueError("Repeated or non-diagnostic sources")
-    expected = {(row["id"], "natural-visible") for row in cases.values()}
+    expected = set() if context_only else {(row["id"], "natural-visible") for row in cases.values()}
     for row in cases.values():
         if not isinstance(row.get("fixed_calls"), int) or row["fixed_calls"] < 1:
             raise ValueError("Missing production calls")
         expected.update((row["id"], "production-fixed:" + str(i)) for i in range(row["fixed_calls"]))
         if row.get("context_check") is True:
-            if row["fixed_calls"] != 1:
+            if context_only or row["fixed_calls"] != 1:
                 raise ValueError("Context probe requires one complete frame")
             expected.add((row["id"], "context-fixed"))
     seen = set()
