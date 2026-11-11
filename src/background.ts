@@ -136,7 +136,9 @@ async function translationEngineStateForUi() {
     activeEngineId: state.activeEngineId,
     structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
       || Boolean(activeExternal && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
-    prefersWholeSentenceHtml: state.activeEngineId === PAGELINGO_MT_ENGINE_ID,
+    // Every backend returns text for an application-owned template. Provider
+    // markup never replaces source nodes or supplies event handlers/styles.
+    prefersWholeSentenceHtml: true,
     mt,
     engines: state.engines.map((engine) => ({
       id: engine.id,

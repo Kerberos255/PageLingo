@@ -1,6 +1,7 @@
 import { languageLabel } from "../shared/settings";
 import { isLoopbackHostname } from "../shared/network-endpoint";
 import type { TranslationEngineConfig } from "../shared/translation-engine-settings";
+import {restoreFixedHtmlTransport} from "../core/fixed-html-transport";
 
 export interface ExternalTranslationTerminologyEntry {
   source: string;
@@ -15,7 +16,7 @@ export interface ExternalTranslationRequest {
   terminology?: ExternalTranslationTerminologyEntry[];
 }
 
-const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. Output only the translated HTML. Do not use Markdown or add explanations.";
+const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. If numbered data-flt-text-id spans are present, translate their text with the whole paragraph as context, keep each ID exactly once in its original parent and order, and put all translated words inside their original spans. Keep data-flt-fixed content and code placeholders exactly unchanged. Output only the translated HTML. Do not use Markdown or add explanations.";
 const EXTERNAL_REQUEST_TIMEOUT_MS = 30_000;
 const OPENCODE_GO_SESSION_ID = "pagelingo";
 
@@ -165,11 +166,12 @@ function requireModel(config: TranslationEngineConfig): string {
 async function translateMicrosoft(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
   const base = requireBaseUrl(config, "https://api.cognitive.microsofttranslator.com");
   const key = requireApiKey(config);
-  const from = encodeURIComponent(apiLanguage(request.sourceLanguage, config.type));
   const to = encodeURIComponent(apiLanguage(request.targetLanguage, config.type));
+  const from = request.sourceLanguage && request.sourceLanguage !== "auto"
+    ? `&from=${encodeURIComponent(apiLanguage(request.sourceLanguage, config.type))}` : "";
   const headers: Record<string, string> = { "Content-Type": "application/json", "Ocp-Apim-Subscription-Key": key };
   if (config.region) headers["Ocp-Apim-Subscription-Region"] = config.region;
-  const result = await jsonRequest(`${base}/translate?api-version=3.0&from=${from}&to=${to}&textType=html`, {
+  const result = await jsonRequest(`${base}/translate?api-version=3.0${from}&to=${to}&textType=html`, {
     method: "POST",
     headers,
     body: JSON.stringify([{ Text: request.html }]),
@@ -180,13 +182,14 @@ async function translateMicrosoft(config: TranslationEngineConfig, request: Exte
 }
 
 async function translateGoogle(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
-  const endpoint = config.baseUrl || "https://translation.googleapis.com/language/translate/v2";
+  const endpoint = requireBaseUrl(config, "https://translation.googleapis.com/language/translate/v2");
   const result = await jsonRequest(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": requireApiKey(config) },
     body: JSON.stringify({
       q: request.html,
-      source: apiLanguage(request.sourceLanguage, config.type),
+      ...(request.sourceLanguage && request.sourceLanguage !== "auto"
+        ? {source: apiLanguage(request.sourceLanguage, config.type)} : {}),
       target: apiLanguage(request.targetLanguage, config.type),
       format: "html",
     }),
@@ -466,5 +469,6 @@ export async function translateWithExternalEngine(
     case "openai-compatible": translated = await translateOpenAiCompatible(config, request); break;
     case "custom-rest": translated = await translateCustomRest(config, request); break;
   }
+  if (/<span\b[^>]*\bdata-flt-text-id\s*=/iu.test(request.html)) translated = restoreFixedHtmlTransport(request.html, translated);
   return validateTranslatedHtml(request.html, translated);
 }

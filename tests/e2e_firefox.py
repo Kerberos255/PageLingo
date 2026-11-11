@@ -186,6 +186,9 @@ def main() -> None:
         original_href = driver.execute_script(
             """
             const link = document.getElementById('docs');
+            window.__pageLingoRichRoot=document.getElementById('rich');
+            const sourceNodes=n=>[n,...Array.from(n.childNodes).flatMap(sourceNodes)];
+            window.__pageLingoRichNodes=sourceNodes(window.__pageLingoRichRoot);
             link.__pageLingoSentinel = 42;
             window.__pageLingoClicks = 0;
             link.addEventListener('click', (event) => {
@@ -321,27 +324,32 @@ def main() -> None:
         driver.switch_to.window(target_handle)
         WebDriverWait(driver, 30).until(
             lambda d: d.execute_script(
-                "return document.getElementById('rich').classList.contains('flt-source-hidden')"
+                "return /[\\u3400-\\u9fff]/.test(document.getElementById('rich').textContent) && !document.querySelector('#rich + .flt-translation')"
             )
         )
         translation_only = driver.execute_script(
             """
             const source = document.getElementById('rich');
-            const translated = source.nextElementSibling;
+            const walk=n=>[n,...Array.from(n.childNodes).flatMap(walk)];
+            const nodes=walk(source);
             return {
-              sourceNodeStillPresent: source === document.getElementById('rich'),
+              sourceNodeStillPresent: source === window.__pageLingoRichRoot,
+              originalRichNodesPreserved: nodes.length===window.__pageLingoRichNodes.length && nodes.every((n,i)=>n===window.__pageLingoRichNodes[i]),
               sourceHidden: source.classList.contains('flt-source-hidden'),
-              translatedVisible: translated?.classList.contains('flt-translation') || false,
-              translatedHref: translated?.querySelector('a')?.href || null,
+              translatedVisible: /[\u3400-\u9fff]/.test(source.textContent) && !source.nextElementSibling?.classList.contains('flt-translation'),
+              translatedHref: source.querySelector('a')?.href || null,
+              sourceSentinel: source.querySelector('a')?.__pageLingoSentinel,
             };
             """
         )
         assert translation_only["sourceNodeStillPresent"], translation_only
-        assert translation_only["sourceHidden"], translation_only
+        assert translation_only["originalRichNodesPreserved"], translation_only
+        assert not translation_only["sourceHidden"], translation_only
+        assert translation_only["sourceSentinel"] == 42, translation_only
         assert translation_only["translatedVisible"], translation_only
         assert translation_only["translatedHref"] == original_href, translation_only
 
-        driver.execute_script("document.querySelector('#rich + .flt-translation a').click();")
+        driver.execute_script("document.querySelector('#rich a').click();")
         clicks = driver.execute_script("return window.__pageLingoClicks;")
         assert clicks == 2, f"Translated link did not preserve source click behavior: clicks={clicks}"
 
@@ -351,8 +359,8 @@ def main() -> None:
         )
         driver.switch_to.window(target_handle)
         WebDriverWait(driver, 30).until(
-            lambda d: not d.execute_script(
-                "return document.getElementById('rich').classList.contains('flt-source-hidden')"
+            lambda d: d.execute_script(
+                "return Boolean(document.querySelector('#rich + .flt-translation')) && !/[\\u3400-\\u9fff]/.test(document.getElementById('rich').textContent)"
             )
         )
 

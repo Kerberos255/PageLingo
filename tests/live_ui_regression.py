@@ -394,6 +394,13 @@ def main() -> None:
         fixture_handle = driver.current_window_handle
         driver.get(fixture_url)
         WebDriverWait(driver, 20).until(lambda d: d.execute_script("return document.readyState") == "complete")
+        driver.execute_script("""
+          const root=document.getElementById('complex');
+          const walk=n=>[n,...Array.from(n.childNodes).flatMap(walk)];
+          window.__complexSourceNodes=walk(root);
+          window.__complexSourceChildren=window.__complexSourceNodes.map(n=>Array.from(n.childNodes));
+          window.__complexSourceAttrs=window.__complexSourceNodes.map(n=>n instanceof Element?Array.from(n.attributes,a=>[a.name,a.value]):[]);
+        """)
         before_requests = TranslationHandler.request_count
         result = translate_tab(driver, extension_handle, fixture_url, timeout=30)
         if not result.get("ok") or (result.get("value") or {}).get("ok") is not True:
@@ -405,16 +412,20 @@ def main() -> None:
         complex_result = driver.execute_script(
             """
             const source = document.getElementById('complex');
-            const translated = source?.nextElementSibling;
+            const walk=n=>[n,...Array.from(n.childNodes).flatMap(walk)];
+            const current=walk(source);
             return {
-              generated: Boolean(translated?.matches('.flt-translation')),
-              strongCount: translated?.querySelectorAll('strong').length ?? 0,
-              text: (translated?.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+              originalNodesPreserved: current.length===window.__complexSourceNodes.length && current.every((n,i)=>
+                n===window.__complexSourceNodes[i] && Array.from(n.childNodes).every((child,j)=>child===window.__complexSourceChildren[i][j]) &&
+                n.childNodes.length===window.__complexSourceChildren[i].length && JSON.stringify(n instanceof Element?Array.from(n.attributes,a=>[a.name,a.value]):[])===JSON.stringify(window.__complexSourceAttrs[i])),
+              generated: Boolean(source?.nextElementSibling?.matches('.flt-translation')),
+              strongCount: source?.querySelectorAll('strong').length ?? 0,
+              text: (source?.textContent ?? '').replace(/\\s+/g, ' ').trim(),
             };
             """
         )
-        if not complex_result.get("generated"):
-            raise AssertionError(f"Complex splitter fixture produced no translation: {complex_result}")
+        if not complex_result.get("originalNodesPreserved") or complex_result.get("generated"):
+            raise AssertionError(f"Original-node fixture changed its source structure: {complex_result}")
         if complex_result.get("strongCount") != 10:
             raise AssertionError(f"Complex splitter lost inline structure: {complex_result}")
         if "甲" not in complex_result.get("text", "") or "癸" not in complex_result.get("text", ""):

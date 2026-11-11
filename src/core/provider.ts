@@ -17,7 +17,7 @@ export interface TranslationProvider {
   translateHtml(request: TranslationRequest): Promise<string>;
   translateHtmlChecked?(request: TranslationRequest): Promise<CheckedTranslationResult>;
   supportsStructuralSplitting?(): Promise<boolean>;
-  /** MT fixed-text contract: preserve transport text slots; do not retry isolated leaves. */
+  /** Original-node contract: preserve transport text slots and whole-paragraph context. */
   prefersWholeSentenceHtml?(): Promise<boolean>;
 }
 

@@ -6,6 +6,7 @@ import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./nav
 import { TooltipController } from "./tooltip-controller";
 import { contextualTerminology, translationContextForUrl } from "./translation-context";
 import {prepareFixedTextRecord, fixedTextRecordUnchanged, clearFixedTextRecord, applyFixedTextRecord} from "./fixed-text-render";
+import {restoreFixedHtmlTransport} from "./fixed-html-transport";
 import {
     richHtmlStructureCompatible,
     richMarkerCandidateCount,
@@ -435,6 +436,7 @@ export class PageTranslator {
         // there is nothing to recover, so do not spend extra Bergamot calls on each label
         // and the text gaps around them. Keep the previous standalone path only as a
         // transport-damage fallback.
+        if (this.#wholeSentenceContext) translatedHtml = restoreFixedHtmlTransport(segment.html, translatedHtml);
         const mainLinksComplete = translatedLinkTransportComplete(translatedHtml, segment.links);
         if (this.#wholeSentenceContext && !mainLinksComplete) throw new Error("MT link transport incomplete; preserving the original paragraph");
         const translatedLinkTexts = mainLinksComplete ? [] : await Promise.all(segment.links.map(async (link) => {
