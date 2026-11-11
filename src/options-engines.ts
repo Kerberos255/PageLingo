@@ -3,6 +3,7 @@ import { requestExternalAuthenticationConsent, requestExternalTranslationConsent
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
   PAGELINGO_MT_ENGINE_ID,
+  OPENCODE_GO_BASE_URL,
   type ExternalTranslationEngineType,
   type TranslationEngineConfig,
 } from "./shared/translation-engine-settings";
@@ -57,7 +58,7 @@ const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
   deepl: { name: "DeepL API", baseUrl: "https://api.deepl.com/v2" },
   gemini: { name: "Gemini API", baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-3.8-flash" },
   openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free" },
-  "opencode-go": { name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1", model: "deepseek-v4.1-flash" },
+  "opencode-go": { name: "OpenCode Go", baseUrl: OPENCODE_GO_BASE_URL, model: "deepseek-v4.1-flash" },
   deepseek: { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
   "openai-compatible": { name: "OpenAI Compatible", baseUrl: "", model: "" },
   libretranslate: { name: "LibreTranslate", baseUrl: "https://libretranslate.com" },

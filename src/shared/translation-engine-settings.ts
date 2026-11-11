@@ -2,6 +2,7 @@ import { isLoopbackHostname } from "./network-endpoint";
 
 export const LOCAL_TRANSLATION_ENGINE_ID = "firefox-local";
 export const PAGELINGO_MT_ENGINE_ID = "pagelingo-mt";
+export const OPENCODE_GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1";
 
 export type ExternalTranslationEngineType =
   | "microsoft"

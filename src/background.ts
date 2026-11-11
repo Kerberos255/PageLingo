@@ -444,7 +444,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
           throw new Error("外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权");
         }
-        const html = await translateWithExternalEngine(external, { html: request.html, sourceLanguage, targetLanguage, terminology });
+        const html = await keepEventPageAlive(translateWithExternalEngine(external, { html: request.html, sourceLanguage, targetLanguage, terminology }), "external-translate");
         return { ok: true, html };
       }
       const overrides = await currentOverrides();
@@ -599,11 +599,11 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       if (!await hasExternalTranslationConsent(Boolean(config.apiKey))) {
         throw new Error("未授权向外部翻译服务发送数据");
       }
-      const html = await translateWithExternalEngine(config, {
+      const html = await keepEventPageAlive(translateWithExternalEngine(config, {
         html: "<strong>Hello</strong> world",
         sourceLanguage: "en",
         targetLanguage: "zh-Hans",
-      });
+      }), "external-test");
       return { ok: true, preview: html };
     }
 

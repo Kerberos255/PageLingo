@@ -1,6 +1,6 @@
 import { languageLabel } from "../shared/settings";
 import { isLoopbackHostname } from "../shared/network-endpoint";
-import type { TranslationEngineConfig } from "../shared/translation-engine-settings";
+import { OPENCODE_GO_BASE_URL, type TranslationEngineConfig } from "../shared/translation-engine-settings";
 import {restoreFixedHtmlTransport} from "../core/fixed-html-transport";
 
 export interface ExternalTranslationTerminologyEntry {
@@ -18,6 +18,7 @@ export interface ExternalTranslationRequest {
 
 const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. If numbered data-flt-text-id spans are present, translate their text with the whole paragraph as context, keep each ID exactly once in its original parent and order, and put all translated words inside their original spans. Keep data-flt-fixed content and code placeholders exactly unchanged. Output only the translated HTML. Do not use Markdown or add explanations.";
 const EXTERNAL_REQUEST_TIMEOUT_MS = 30_000;
+const LLM_REQUEST_TIMEOUT_MS = 120_000;
 const OPENCODE_GO_SESSION_ID = "pagelingo";
 
 function trimSlash(value: string): string {
@@ -118,9 +119,9 @@ function responseErrorDetail(raw: string): string {
   return compact.slice(0, 600);
 }
 
-async function jsonRequest(url: string, init: RequestInit): Promise<unknown> {
+async function jsonRequest(url: string, init: RequestInit, timeoutMs = EXTERNAL_REQUEST_TIMEOUT_MS): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), EXTERNAL_REQUEST_TIMEOUT_MS);
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
     if (!response.ok) {
@@ -253,7 +254,7 @@ async function translateLibre(config: TranslationEngineConfig, request: External
 function isOpenCodeGoUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return url.hostname.toLowerCase() === "opencode.ai" && /^\/zen\/go\/v1(?:\/|$)/.test(url.pathname);
+    return url.hostname.toLowerCase() === "opencode.ai" && /^\/(?:zen\/go|inference\/go\/openai)\/v1(?:\/|$)/.test(url.pathname);
   } catch {
     return false;
   }
@@ -263,7 +264,7 @@ async function translateOpenAiCompatible(config: TranslationEngineConfig, reques
   const fallback = config.type === "openrouter"
     ? "https://openrouter.ai/api/v1"
     : config.type === "opencode-go"
-      ? "https://opencode.ai/zen/go/v1"
+      ? OPENCODE_GO_BASE_URL
       : config.type === "deepseek"
         ? "https://api.deepseek.com"
         : "";
@@ -272,7 +273,7 @@ async function translateOpenAiCompatible(config: TranslationEngineConfig, reques
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
   if (config.type === "openrouter") headers["X-OpenRouter-Title"] = "PageLingo";
-  if (isOpenCodeGoUrl(base)) headers["x-opencode-session"] = OPENCODE_GO_SESSION_ID;
+  if (config.type === "opencode-go" || isOpenCodeGoUrl(base)) headers["x-opencode-session"] = OPENCODE_GO_SESSION_ID;
   const result = await jsonRequest(endpoint, {
     method: "POST",
     headers,
@@ -284,7 +285,7 @@ async function translateOpenAiCompatible(config: TranslationEngineConfig, reques
       ],
       temperature: 0,
     }),
-  }) as { choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> };
+  }, LLM_REQUEST_TIMEOUT_MS) as { choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> };
   const content = result.choices?.[0]?.message?.content;
   if (typeof content === "string") return stripCodeFence(content);
   if (Array.isArray(content)) {
@@ -304,7 +305,7 @@ async function translateGemini(config: TranslationEngineConfig, request: Externa
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: `${renderPrompt(config, request)}\n\nHTML:\n${request.html}` }] }],
     }),
-  }) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  }, LLM_REQUEST_TIMEOUT_MS) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
   const text = result.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
   if (!text) throw new Error("Gemini 返回格式异常");
   return stripCodeFence(text);
@@ -404,7 +405,7 @@ export async function listExternalTranslationModels(config: TranslationEngineCon
   const fallback = config.type === "openrouter"
     ? "https://openrouter.ai/api/v1"
     : config.type === "opencode-go"
-      ? "https://opencode.ai/zen/go/v1"
+      ? OPENCODE_GO_BASE_URL
       : config.type === "deepseek"
         ? "https://api.deepseek.com"
         : "";

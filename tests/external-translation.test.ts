@@ -168,6 +168,33 @@ describe("external translation HTML safety", () => {
     expect(models[0]?.name).toBe("DeepSeek V4.1 Flash");
   });
 
+  it.each([
+    {type:"openai-compatible" as const,baseUrl:"https://opencode.ai/inference/go/openai/v1"},
+    {type:"openai-compatible" as const,baseUrl:"https://opencode.ai/zen/go/v1"},
+    {type:"opencode-go" as const,baseUrl:"https://gateway.example.invalid/opencode"},
+    {type:"opencode-go" as const,baseUrl:""},
+  ])("includes the required Go session for translation and discovery: $type $baseUrl",async overrides=>{
+    const calls:Array<{url:string;session:string}>=[];
+    vi.stubGlobal('fetch',vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
+      const session=(init?.headers as Record<string,string>)['x-opencode-session'];expect(session).toBe('pagelingo');
+      calls.push({url:String(url),session:session!});
+      return new Response(JSON.stringify(String(url).endsWith('/models')?{data:[{id:'longcat-2.5-free'}]}:{choices:[{message:{content:'你好'}}]}));
+    }));
+    const engine=config({...overrides,model:'longcat-2.5-free'});
+    await expect(translateWithExternalEngine(engine,{html:'Hello',sourceLanguage:'en',targetLanguage:'zh-Hans'})).resolves.toBe('你好');
+    expect(await listExternalTranslationModels(engine)).toHaveLength(1);
+    expect(calls).toHaveLength(2);
+    if(!overrides.baseUrl)expect(calls[0]!.url).toBe('https://opencode.ai/inference/go/openai/v1/chat/completions');
+  });
+
+  it("keeps ordinary Zen requests distinct from the Go session protocol",async()=>{
+    vi.stubGlobal('fetch',vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{
+      expect((init?.headers as Record<string,string>)['x-opencode-session']).toBeUndefined();
+      return new Response(JSON.stringify({choices:[{message:{content:'你好'}}]}));
+    }));
+    await translateWithExternalEngine(config({type:'openai-compatible',baseUrl:'https://opencode.ai/inference/openai/v1',model:'fixture-model'}),{html:'Hello',sourceLanguage:'en',targetLanguage:'zh-Hans'});
+  });
+
   it("discovers DeepSeek models and keeps picker metadata", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       expect(String(url)).toBe("https://api.deepseek.com/models");
@@ -500,5 +527,28 @@ describe("external translation HTML safety", () => {
       targetLanguage: "zh-Hant",
     });
     expect(html).toBe("你好 <strong>世界</strong>");
+  });
+});
+
+describe("slow LLM translation requests",()=>{
+  afterEach(()=>{vi.clearAllTimers();vi.useRealTimers();});
+  const delayed=(milliseconds:number,payload:unknown)=>vi.fn((_url:RequestInfo|URL,init?:RequestInit)=>new Promise<Response>((resolve,reject)=>{
+    const timer=setTimeout(()=>resolve(new Response(JSON.stringify(payload))),milliseconds);
+    init?.signal?.addEventListener('abort',()=>{clearTimeout(timer);reject(new DOMException('Aborted','AbortError'));},{once:true});
+  }));
+  it("allows a real-world 31-second Go response to complete past the previous limit",async()=>{
+    vi.useFakeTimers();vi.stubGlobal('fetch',delayed(31_000,{choices:[{message:{content:'你好'}}]}));
+    const result=translateWithExternalEngine(config({type:'opencode-go',baseUrl:'',model:'longcat-2.5-free'}),{html:'Hello',sourceLanguage:'en',targetLanguage:'zh-Hans'});
+    const assertion=expect(result).resolves.toBe('你好');await vi.advanceTimersByTimeAsync(31_000);await assertion;
+  });
+  it("keeps the slower LLM request bounded at two minutes",async()=>{
+    vi.useFakeTimers();vi.stubGlobal('fetch',delayed(121_000,{choices:[{message:{content:'你好'}}]}));
+    const result=translateWithExternalEngine(config({type:'openai-compatible',baseUrl:'https://example.invalid/v1'}),{html:'Hello',sourceLanguage:'en',targetLanguage:'zh-Hans'});
+    const assertion=expect(result).rejects.toThrow(/超时/);await vi.advanceTimersByTimeAsync(120_000);await assertion;
+  });
+  it("retains the 30-second deadline for ordinary translation APIs",async()=>{
+    vi.useFakeTimers();vi.stubGlobal('fetch',delayed(31_000,[{translations:[{text:'你好'}]}]));
+    const result=translateWithExternalEngine(config({type:'microsoft',baseUrl:''}),{html:'Hello',sourceLanguage:'en',targetLanguage:'zh-Hans'});
+    const assertion=expect(result).rejects.toThrow(/超时/);await vi.advanceTimersByTimeAsync(30_000);await assertion;
   });
 });
