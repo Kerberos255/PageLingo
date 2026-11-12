@@ -495,7 +495,7 @@ export class PageTranslator {
         if (this.#disposed || !root.isConnected || sourceFingerprint(root, {excludeNestedRoots: this.#wholeSentenceContext}) !== segment.fingerprint)
             return;
         if (this.#wholeSentenceContext) {
-            const record = prepareFixedTextRecord(root, segment.textSlots, translatedHtml);
+            const record = prepareFixedTextRecord(root, segment.textSlots, translatedHtml, this.#targetLanguage);
             if (!applyFixedTextRecord(root, record, this.#displayMode, this.#targetLanguage)) return;
             this.#fixedRecords.set(root, record);
             for (const edit of record.edits) this.#fixedOwners.set(edit.node, record);

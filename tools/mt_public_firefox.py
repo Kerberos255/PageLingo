@@ -11,7 +11,7 @@ from selenium.webdriver.firefox.service import Service
 
 
 @contextmanager
-def public_firefox(firefox, geckodriver, log, *, system_access=False):
+def public_firefox(firefox, geckodriver, log, *, system_access=False, load_images=False):
     with tempfile.TemporaryDirectory(prefix='pagelingo-public-firefox-') as profile:
         subprocess.run(['certutil', '-N', '-d', 'sql:' + profile, '--empty-password'], check=True, stdout=subprocess.DEVNULL)
         for i, cert in enumerate(Path('/usr/local/share/ca-certificates').glob('*.crt')):
@@ -23,7 +23,7 @@ def public_firefox(firefox, geckodriver, log, *, system_access=False):
         for key, value in {'network.proxy.type': 1, 'network.proxy.http': proxy.hostname, 'network.proxy.http_port': proxy.port,
                            'network.proxy.ssl': proxy.hostname, 'network.proxy.ssl_port': proxy.port,
                            'network.proxy.no_proxies_on': '127.0.0.1,localhost', 'browser.cache.disk.enable': False,
-                           'permissions.default.image': 2, 'dom.ipc.processCount': 2}.items(): options.set_preference(key, value)
+                           'permissions.default.image': 1 if load_images else 2, 'dom.ipc.processCount': 2}.items(): options.set_preference(key, value)
         service_args = ['--allow-system-access'] if system_access else []
         driver = webdriver.Firefox(options=options, service=Service(str(geckodriver.resolve()), service_args=service_args, log_output=str(log)))
         try:

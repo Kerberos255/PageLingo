@@ -9,6 +9,7 @@ import {
   type DisplayMode,
 } from "./shared/settings";
 import { sendRuntimeMessage } from "./shared/runtime-message";
+import {sendMainFrameMessage} from "./shared/main-frame-message";
 
 const statusEl = document.querySelector<HTMLElement>("#status");
 const detectedEl = document.querySelector<HTMLElement>("#detected-language");
@@ -74,7 +75,7 @@ async function routeSupported(source: string, target: string): Promise<boolean> 
 async function refreshLanguage(): Promise<void> {
   try {
     const tab = await activeTab();
-    const response = await browser.tabs.sendMessage(tab.id!, { type: "get-page-language" }) as LanguageResponse;
+    const response = await sendMainFrameMessage<LanguageResponse>(tab.id!, { type: "get-page-language" });
     const info = response?.language;
     detectedCode = info?.effectiveLanguage ?? info?.detectedLanguage ?? null;
     const confidence = info?.percentage ? ` · ${info.percentage}%` : "";
@@ -96,14 +97,14 @@ async function refreshLanguage(): Promise<void> {
 }
 
 async function send(type: "translate-page" | "restore-page"): Promise<void> {
-  if (statusEl) statusEl.textContent = type === "translate-page" ? "准备本地模型并翻译…" : "恢复中…";
+  if (statusEl) statusEl.textContent = type === "translate-page" ? "正在翻译…" : "恢复中…";
   try {
     const tab = await activeTab();
-    const response = await browser.tabs.sendMessage(tab.id!, {
+    const response = await sendMainFrameMessage<{ok?: boolean; count?: number; failedCount?: number; error?: string}>(tab.id!, {
       type,
       sourceLanguage: sourceSelect?.value ?? "auto",
       targetLanguage: targetSelect?.value ?? "zh-Hans",
-    }) as { ok?: boolean; count?: number; failedCount?: number; error?: string };
+    });
     if (!response?.ok) throw new Error(response?.error ?? "操作失败");
     if (statusEl) statusEl.textContent = type === "translate-page"
       ? `已翻译 ${response.count ?? 0} 个段落${response.failedCount ? `；${response.failedCount} 个未完成，已保留原文` : ""}`

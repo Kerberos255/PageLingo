@@ -2,6 +2,7 @@ import { mountTranslation } from "./render";
 import { isOptionalEnglishArticle } from "./translation-quality";
 import { isElementEffectivelyHidden, isTranslationRootElement } from "./dom-policy";
 import {canCollapseProseWhitespace, canWriteFrozenProseGap, isAsciiWhitespace, isAsciiWhitespaceOrEmpty} from "./collapsible-whitespace";
+import {cjkSpacingBoundaryUnchanged, cjkSpacingContextUnchanged, normalizeCjkSpacing} from "./cjk-spacing";
 
 export interface SourceTextSlot { id: number; node: Text; parent: Node; source: string; writePolicy?: "collapsible-whitespace" | "frozen-prose-gap" }
 interface TextEdit extends SourceTextSlot { translated: string }
@@ -15,6 +16,7 @@ export interface FixedTextRecord {
 export interface FrozenProseWitness {target: string; readProjected: (edits: ReadonlyMap<Text, string>) => string}
 const frozenSourceAuthority = new WeakSet<SourceTextSlot>();
 const frozenRecordAuthority = new WeakMap<FixedTextRecord, FrozenProseWitness>();
+const spacingAuthority = new WeakMap<FixedTextRecord, {nodes: readonly Text[]; boundaries: readonly (readonly [Text, Text])[]}>();
 
 function sourceNodes(root: HTMLElement): Node[] {
   const nodes: Node[] = [];
@@ -28,7 +30,7 @@ function sourceNodes(root: HTMLElement): Node[] {
   return nodes;
 }
 
-export function prepareFixedTextRecord(root: HTMLElement, slots: SourceTextSlot[], html: string): FixedTextRecord {
+export function prepareFixedTextRecord(root: HTMLElement, slots: SourceTextSlot[], html: string, language = ""): FixedTextRecord {
   const body = new DOMParser().parseFromString(html, "text/html").body;
   const targets = Array.from(body.querySelectorAll("[data-flt-text-id]"));
   if (targets.length !== slots.length) throw new Error("MT text-node mapping count mismatch");
@@ -53,7 +55,12 @@ export function prepareFixedTextRecord(root: HTMLElement, slots: SourceTextSlot[
     edits.push({...slot, translated});
   }
   const snapshot = sourceNodes(root).map(node => ({node, text: node.nodeType === Node.TEXT_NODE ? node.textContent : null}));
-  return {root, edits, snapshot, mode: "bilingual", translationNode: null};
+  const originalTranslations = edits.map(edit => edit.translated);
+  const boundaries = normalizeCjkSpacing(root, edits, language);
+  const record: FixedTextRecord = {root, edits, snapshot, mode: "bilingual", translationNode: null};
+  const spacingNodes = edits.filter((edit, i) => edit.translated !== originalTranslations[i]).map(edit => edit.node);
+  if (spacingNodes.length) spacingAuthority.set(record, {nodes: spacingNodes, boundaries});
+  return record;
 }
 
 // The caller owns and verifies semantic ranges. This separate API only admits
@@ -127,6 +134,9 @@ function bilingualFragment(root: HTMLElement, record: FixedTextRecord): Document
 export function applyFixedTextRecord(root: HTMLElement, record: FixedTextRecord, mode: "translation" | "bilingual", language: string): boolean {
   const unchanged = fixedTextRecordUnchanged(record);
   clearFixedTextRecord(record);
+  const spacing = spacingAuthority.get(record);
+  if (spacing && (spacing.nodes.some(node => !cjkSpacingContextUnchanged(node))
+    || spacing.boundaries.some(([left, right]) => !cjkSpacingBoundaryUnchanged(left, right, root)))) return false;
   if (!unchanged || record.edits.some(edit => edit.writePolicy === "collapsible-whitespace"
     && !canCollapseProseWhitespace(edit.node) || edit.writePolicy === "frozen-prose-gap"
     && !canWriteFrozenProseGap(edit.node, edit.source))) return false;

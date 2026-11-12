@@ -71,7 +71,7 @@ describe("research sentence alignment onto original Text nodes", () => {
     link.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true}));
     expect(clicks).toBe(1);
     expect(root.querySelector("code")!.textContent).toBe("cancel()");
-    expect(root.textContent).toBe("阅读 指南 并使用 cancel().");
+    expect(root.textContent).toBe("阅读指南并使用 cancel().");
     translator.setDisplayMode("bilingual"); translator.setDisplayMode("translation"); translator.restore();
     expect(root.outerHTML).toBe(before);
   });
