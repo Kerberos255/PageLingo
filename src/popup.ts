@@ -103,9 +103,11 @@ async function send(type: "translate-page" | "restore-page"): Promise<void> {
       type,
       sourceLanguage: sourceSelect?.value ?? "auto",
       targetLanguage: targetSelect?.value ?? "zh-Hans",
-    }) as { ok?: boolean; count?: number; error?: string };
+    }) as { ok?: boolean; count?: number; failedCount?: number; error?: string };
     if (!response?.ok) throw new Error(response?.error ?? "操作失败");
-    if (statusEl) statusEl.textContent = type === "translate-page" ? `已翻译 ${response.count ?? 0} 个段落` : "已恢复原文";
+    if (statusEl) statusEl.textContent = type === "translate-page"
+      ? `已翻译 ${response.count ?? 0} 个段落${response.failedCount ? `；${response.failedCount} 个未完成，已保留原文` : ""}`
+      : "已恢复原文";
   } catch (error) {
     if (statusEl) statusEl.textContent = error instanceof Error ? error.message : String(error);
   }

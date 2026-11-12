@@ -9,6 +9,7 @@ export interface TranslationQualityAssessment {
   repeatedOutput: boolean;
   targetLanguageMismatch: boolean;
   suspiciouslyShort: boolean;
+  incompleteAgentClause: boolean;
 }
 
 // Chinese can omit a standalone English article. Do not extend this exception
@@ -71,6 +72,16 @@ export function assessTranslationQuality(input: {
     translatedChars > 0 &&
     expansionRatio < 0.12;
 
+  // A narrow English -> Chinese omission signal: a passive predicate became
+  // "由 <Latin name>, 并且 ..." with no Chinese predicate. This does not require
+  // a preferred translation, and must not treat ordinary names/lists as errors.
+  const incompleteAgentClause =
+    /^zh(?:-|$)/i.test(targetLanguage) &&
+    (!input.sourceLanguage || /^(?:en(?:-|$)|auto$)/iu.test(input.sourceLanguage)) &&
+    /\b(?:described|defined|specified|documented|written|provided|maintained|developed|created)\s+by\b/iu.test(source) &&
+    /[,;]\s*(?:and|but)\s+(?:requires?|needs?|depends?|supports?|provides?|uses?)\b/iu.test(source) &&
+    /由\s*[A-Za-z0-9][^\u3400-\u9fff,，;；。!?！？“”"「」]{0,120}[,，;；。](?=\s*(?:并且|而且|同时|此外|$))/u.test(translated);
+
   const reasons: string[] = [];
   if (sourceChars >= 8 && expansionRatio > 4) reasons.push("expansion_ratio_gt_4");
   if (unexpectedKana) reasons.push("unexpected_kana");
@@ -78,6 +89,7 @@ export function assessTranslationQuality(input: {
   if (hasRepeatedOutput) reasons.push("repeated_output");
   if (targetLanguageMismatch) reasons.push("target_language_mismatch");
   if (suspiciouslyShort) reasons.push("suspiciously_short");
+  if (incompleteAgentClause) reasons.push("incomplete_agent_clause");
 
   return {
     accepted: reasons.length === 0,
@@ -90,5 +102,6 @@ export function assessTranslationQuality(input: {
     repeatedOutput: hasRepeatedOutput,
     targetLanguageMismatch,
     suspiciouslyShort,
+    incompleteAgentClause,
   };
 }

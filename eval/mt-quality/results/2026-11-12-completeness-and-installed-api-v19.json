@@ -1,0 +1,542 @@
+{
+  "protocol": "completeness-installed-api-v19",
+  "date": "2026-11-12",
+  "parent_sha": "12b4c82920c13740b18565f78468b992bb71d343",
+  "controlled_http_cases": 12,
+  "controlled_http_calls": 13,
+  "controlled_responses_are_new_model_inference": false,
+  "controlled_cases": [
+    {
+      "mode": "slow-success",
+      "engine_type": "openai-compatible",
+      "width_requested": 1440,
+      "wall_s": 31.17994661200646,
+      "response": {
+        "count": 1,
+        "failedCount": 0,
+        "ok": true
+      },
+      "checks": {
+        "actual_width": 1440,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": false,
+        "text": "请阅读 API指南 ，运行 npm test 后再继续。",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [
+        2
+      ],
+      "keepalive_cleaned_up": true,
+      "screenshot": "slow-success.png",
+      "source_url": "http://127.0.0.1:40963/case/slow-success",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "length",
+      "engine_type": "openai-compatible",
+      "width_requested": 1440,
+      "wall_s": 0.2671802539989585,
+      "response": {
+        "error": "模型未完整结束生成，已拒绝写入页面",
+        "ok": false
+      },
+      "checks": {
+        "actual_width": 1440,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": true,
+        "text": "Read the API guide and run npm test before continuing.",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [],
+      "keepalive_cleaned_up": true,
+      "screenshot": null,
+      "source_url": "http://127.0.0.1:40963/case/length",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "incomplete",
+      "engine_type": "openai-compatible",
+      "width_requested": 1440,
+      "wall_s": 0.21516153199627297,
+      "response": {
+        "error": "译文句子可能不完整，已保留原文",
+        "ok": false
+      },
+      "checks": {
+        "actual_width": 1440,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": true,
+        "text": "The sqlite3 module was written by Gerhard Häring.  It provides an SQL interface\ncompliant with the DB-API 2.0 specification described by PEP 249, and\nrequires the third-party SQLite library.",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [],
+      "keepalive_cleaned_up": true,
+      "screenshot": null,
+      "source_url": "http://127.0.0.1:40963/case/incomplete",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "gemini-truncated",
+      "engine_type": "gemini",
+      "width_requested": 1440,
+      "wall_s": 0.2141385619979701,
+      "response": {
+        "error": "模型未完整结束生成，已拒绝写入页面",
+        "ok": false
+      },
+      "checks": {
+        "actual_width": 1440,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": true,
+        "text": "Read the API guide and run npm test before continuing.",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [],
+      "keepalive_cleaned_up": true,
+      "screenshot": null,
+      "source_url": "http://127.0.0.1:40963/case/gemini-truncated",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "partial",
+      "engine_type": "openai-compatible",
+      "width_requested": 1440,
+      "wall_s": 0.21275690200127428,
+      "response": {
+        "count": 1,
+        "failedCount": 1,
+        "ok": true
+      },
+      "checks": {
+        "actual_width": 1440,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": false,
+        "text": "请阅读 API指南 ，运行 npm test 后再继续。The sqlite3 module was written by Gerhard Häring.  It provides an SQL interface\ncompliant with the DB-API 2.0 specification described by PEP 249, and\nrequires the third-party SQLite library.",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [],
+      "keepalive_cleaned_up": true,
+      "screenshot": "partial.png",
+      "source_url": "http://127.0.0.1:40963/case/partial",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "http-error",
+      "engine_type": "openai-compatible",
+      "width_requested": 1440,
+      "wall_s": 0.21400758899835637,
+      "response": {
+        "error": "翻译服务请求失败：HTTP 503 · Controlled service unavailable",
+        "ok": false
+      },
+      "checks": {
+        "actual_width": 1440,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": true,
+        "text": "Read the API guide and run npm test before continuing.",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [],
+      "keepalive_cleaned_up": true,
+      "screenshot": null,
+      "source_url": "http://127.0.0.1:40963/case/http-error",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "timeout",
+      "engine_type": "openai-compatible",
+      "width_requested": 1440,
+      "wall_s": 120.04868439400161,
+      "response": {
+        "error": "翻译服务请求超时，请稍后重试",
+        "ok": false
+      },
+      "checks": {
+        "actual_width": 1440,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": true,
+        "text": "Read the API guide and run npm test before continuing.",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [
+        2
+      ],
+      "keepalive_cleaned_up": true,
+      "screenshot": null,
+      "source_url": "http://127.0.0.1:40963/case/timeout",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "normal-narrow",
+      "engine_type": "openai-compatible",
+      "width_requested": 500,
+      "wall_s": 0.2095322879977175,
+      "response": {
+        "count": 1,
+        "failedCount": 0,
+        "ok": true
+      },
+      "checks": {
+        "actual_width": 500,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": false,
+        "text": "请阅读 API指南 ，运行 npm test 后再继续。",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [],
+      "keepalive_cleaned_up": true,
+      "screenshot": "normal-narrow.png",
+      "source_url": "http://127.0.0.1:40963/case/normal-narrow",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "length-narrow",
+      "engine_type": "openai-compatible",
+      "width_requested": 500,
+      "wall_s": 0.21055191200139234,
+      "response": {
+        "error": "模型未完整结束生成，已拒绝写入页面",
+        "ok": false
+      },
+      "checks": {
+        "actual_width": 500,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": true,
+        "text": "Read the API guide and run npm test before continuing.",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [],
+      "keepalive_cleaned_up": true,
+      "screenshot": null,
+      "source_url": "http://127.0.0.1:40963/case/length-narrow",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "incomplete-narrow",
+      "engine_type": "openai-compatible",
+      "width_requested": 500,
+      "wall_s": 0.21288156200171215,
+      "response": {
+        "error": "译文句子可能不完整，已保留原文",
+        "ok": false
+      },
+      "checks": {
+        "actual_width": 500,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": true,
+        "text": "The sqlite3 module was written by Gerhard Häring.  It provides an SQL interface\ncompliant with the DB-API 2.0 specification described by PEP 249, and\nrequires the third-party SQLite library.",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [],
+      "keepalive_cleaned_up": true,
+      "screenshot": null,
+      "source_url": "http://127.0.0.1:40963/case/incomplete-narrow",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "microsoft",
+      "engine_type": "microsoft",
+      "width_requested": 500,
+      "wall_s": 0.21150390399998287,
+      "response": {
+        "count": 1,
+        "failedCount": 0,
+        "ok": true
+      },
+      "checks": {
+        "actual_width": 500,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": false,
+        "text": "请阅读 API指南 ，运行 npm test 后再继续。",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [],
+      "keepalive_cleaned_up": true,
+      "screenshot": "microsoft.png",
+      "source_url": "http://127.0.0.1:40963/case/microsoft",
+      "fresh_upstream_request": false
+    },
+    {
+      "mode": "google",
+      "engine_type": "google",
+      "width_requested": 500,
+      "wall_s": 0.2101971490046708,
+      "response": {
+        "count": 1,
+        "failedCount": 0,
+        "ok": true
+      },
+      "checks": {
+        "actual_width": 500,
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": false,
+        "text": "请阅读 API指南 ，运行 npm test 后再继续。",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [],
+      "keepalive_cleaned_up": true,
+      "screenshot": "google.png",
+      "source_url": "http://127.0.0.1:40963/case/google",
+      "fresh_upstream_request": false
+    }
+  ],
+  "live_mdn": {
+    "source_url": "https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_shadow_DOM",
+    "row": {
+      "mode": "fresh-go",
+      "engine_type": "opencode-go",
+      "width_requested": 500,
+      "wall_s": 95.46550943600596,
+      "response": {
+        "count": 1,
+        "failedCount": 122,
+        "ok": true
+      },
+      "checks": {
+        "actual_width": 500,
+        "ancestor_differences": [],
+        "ancestor_structure_unchanged": true,
+        "code_unchanged": true,
+        "horizontal_overflow": false,
+        "link_targets_and_handlers_unchanged": true,
+        "nonnavigation_listeners_preserved": true,
+        "original_structure_unchanged": true,
+        "source_untouched": false,
+        "text": "Shadow DOM 允许将隐藏的 DOM 树附加到常规 DOM 树中的元素上——该 shadow DOM 树以 shadow root 为起点，在其下可以以与普通 DOM 相同的方式附加任意元素。",
+        "restored_exact": true,
+        "restored_source_text_nodes": true
+      },
+      "keepalive_pulses_at_12s": [
+        2
+      ],
+      "keepalive_cleaned_up": true,
+      "screenshot": "fresh-go.png",
+      "source_url": "https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_shadow_DOM",
+      "fresh_upstream_request": true,
+      "recorded_response_replay": false,
+      "site_readiness": {
+        "wait_s": 0.22273927000060212,
+        "initial_code_example_divs": 25,
+        "hydrated_code_examples": 5,
+        "no_translation_requests_during_readiness": true
+      }
+    },
+    "actual_upstream_requests": 1,
+    "local_scope_refusals": 122,
+    "other_paragraphs_sent_to_model": 0,
+    "transport": "Installed Firefox -> local HTTP relay -> MCP -> Windows HTTPS Go -> production parser/DOM",
+    "direct_firefox_to_go_with_real_key_tested": false
+  },
+  "new_go_requests": [
+    {
+      "phase": "installed-browser-final",
+      "http_status": 200,
+      "service_wall_s": 12.964085900224745,
+      "request_body_sha256": "1d0cdbad350c98770f789779f5ee3684b09aac2ac9f2cfa5bcadac456c1dbafa",
+      "usage": {
+        "prompt_tokens": 181,
+        "completion_tokens": 603,
+        "total_tokens": 784,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0,
+          "cache_write_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 529
+        },
+        "cost": 0,
+        "opencode": {
+          "billing_source": "go",
+          "list_cost": 0,
+          "allowance": 0,
+          "tokens": {
+            "input": 181,
+            "output": 603,
+            "reasoning": 529,
+            "cache_read": 0,
+            "cache_write_5m": 0,
+            "cache_write_1h": 0
+          }
+        }
+      },
+      "final_html": "<em><span data-flt-text-id=\"0\">Shadow</span></em><span data-flt-text-id=\"1\"> DOM 允许将隐藏的 DOM 树附加到常规 DOM 树中的元素上——该影子 DOM 树以影子根为起点，在其下方可以像常规 DOM 那样附加任意元素。</span>"
+    },
+    {
+      "phase": "mdn-fresh-automated",
+      "http_status": 200,
+      "service_wall_s": 14.541896799579263,
+      "request_body_sha256": "1d0cdbad350c98770f789779f5ee3684b09aac2ac9f2cfa5bcadac456c1dbafa",
+      "usage": {
+        "prompt_tokens": 181,
+        "completion_tokens": 662,
+        "total_tokens": 843,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 128,
+          "cache_write_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 587
+        },
+        "cost": 0,
+        "opencode": {
+          "billing_source": "go",
+          "list_cost": 0,
+          "allowance": 0,
+          "tokens": {
+            "input": 53,
+            "output": 662,
+            "reasoning": 587,
+            "cache_read": 128,
+            "cache_write_5m": 0,
+            "cache_write_1h": 0
+          }
+        }
+      },
+      "final_html": "<em><span data-flt-text-id=\"0\">Shadow</span></em><span data-flt-text-id=\"1\"> DOM 允许将隐藏的 DOM 树附加到常规 DOM 树中的元素上——该 shadow DOM 树以 shadow root 为起点，在其下可以以与普通 DOM 相同的方式附加任意元素。</span>"
+    }
+  ],
+  "total_new_go_requests": 2,
+  "first_new_request_browser_outcome": "Relay result arrived after 115s deadline; selected paragraph remained original. Retained as failed integration attempt.",
+  "painted_screenshot_proof": {
+    "phase": "mdn-painted-proof",
+    "recorded_actual_response_replay": true,
+    "new_api_calls": 0,
+    "target_visible": true,
+    "screenshot": "mdn-painted-proof/fresh-go.png",
+    "target_screenshot": "mdn-painted-proof/fresh-go-target.png"
+  },
+  "verification": {
+    "command": "npm run verify",
+    "exit_code": 0,
+    "test_files": 44,
+    "js_tests": 479,
+    "prod_audit_vulnerabilities": 0,
+    "addon_lint_errors": 0,
+    "addon_lint_existing_warnings": 1
+  },
+  "ci_recovery": {
+    "old_queued_runs": [
+      43096607298,
+      43096607257
+    ],
+    "jobs_allocated": 0,
+    "normal_cancel_http": 409,
+    "force_cancel_http": 409,
+    "billing_read_http": 403,
+    "concrete_internal_cause": null,
+    "same_old_commit_manual_run": 43132240147,
+    "same_old_commit_manual_conclusion": "success",
+    "same_old_commit_manual_created_utc": "2026-11-12T01:07:12Z",
+    "same_old_commit_manual_updated_success_utc": "2026-11-12T01:09:18Z",
+    "new_commit_checks_recorded_separately": true
+  },
+  "source_and_packages": {
+    "review_binding_sha256": "67f4b41703fbc6dd93c603a553560ef364f4fdbb0c209d9ca03ba7ab13222a2e",
+    "package_audit_sha256": "3dd28be128991da2bcf48d58e0378460e6d0319821e73e92a84b4cc9e73fb87e",
+    "same_production_assets_across_control_live_and_painted_proof": true
+  },
+  "browser": {
+    "version": "158.0.1",
+    "accept_insecure_certs": false,
+    "actual_widths": [
+      1440,
+      500
+    ],
+    "structure_checks": [
+      "original_structure_unchanged",
+      "ancestor_structure_unchanged",
+      "code_unchanged",
+      "link_targets_and_handlers_unchanged",
+      "nonnavigation_listeners_preserved",
+      "restored_exact",
+      "restored_source_text_nodes"
+    ],
+    "real_user_key_in_browser": false,
+    "surrogate_key_cleared": true
+  },
+  "limits": [
+    "Completion metadata absent on legacy services remains unknown",
+    "Predicate omission check is narrow, not a general semantic proof",
+    "No independent blind quality evaluation",
+    "Microsoft and Google use local HTTP fixtures; official services not tested",
+    "Go free model invocation cost is not Go subscription price; documented coding-agent scope remains",
+    "One selected real MDN paragraph; remaining page paragraphs deliberately blocked locally",
+    "The combined control/live attempt exited nonzero after its 12 completed controlled cases; final live and screenshot replay ran separately with exit0"
+  ],
+  "training_or_weights_changed": false,
+  "default_engine_changed": false
+}

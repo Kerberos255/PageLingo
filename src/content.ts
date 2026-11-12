@@ -31,7 +31,7 @@ function ensureStyle() {
     .flt-source-list-hidden > :not(.flt-translation) { display: none !important; }
     .flt-source-list-hidden > .flt-translation { display: inline !important; margin: 0 !important; padding: 0 !important; font-size: var(--pagelingo-source-font-size) !important; line-height: var(--pagelingo-source-line-height) !important; vertical-align: baseline !important; }
   `;
-    document.documentElement.append(style);
+    (document.head ?? document.documentElement).append(style);
 }
 function pageTextSample() {
     const root = document.querySelector("article, main, [role='main']") ?? document.body;
@@ -265,6 +265,9 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         // translation DOM across the document and could erase replacement results.
         if (stale() || translator !== pageTranslator) {
             return 0;
+        }
+        if (count === 0 && pageTranslator.failedCount > 0) {
+            throw new Error(pageTranslator.firstFailure ?? "翻译未完成，已保留原文");
         }
         pageTranslator.observe();
         pageTranslator.observeTooltips();
@@ -792,7 +795,7 @@ browser.runtime.onMessage.addListener(async (message) => {
         try {
             const settings = await loadSettings();
             const count = await translatePage(message.sourceLanguage ?? "auto", message.targetLanguage ?? settings.targetLanguage, null, true);
-            return { ok: true, count };
+            return { ok: true, count, failedCount: translator?.failedCount ?? 0 };
         }
         catch (error) {
             return { ok: false, error: error instanceof Error ? error.message : String(error) };

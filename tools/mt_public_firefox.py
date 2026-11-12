@@ -11,7 +11,7 @@ from selenium.webdriver.firefox.service import Service
 
 
 @contextmanager
-def public_firefox(firefox, geckodriver, log):
+def public_firefox(firefox, geckodriver, log, *, system_access=False):
     with tempfile.TemporaryDirectory(prefix='pagelingo-public-firefox-') as profile:
         subprocess.run(['certutil', '-N', '-d', 'sql:' + profile, '--empty-password'], check=True, stdout=subprocess.DEVNULL)
         for i, cert in enumerate(Path('/usr/local/share/ca-certificates').glob('*.crt')):
@@ -24,7 +24,8 @@ def public_firefox(firefox, geckodriver, log):
                            'network.proxy.ssl': proxy.hostname, 'network.proxy.ssl_port': proxy.port,
                            'network.proxy.no_proxies_on': '127.0.0.1,localhost', 'browser.cache.disk.enable': False,
                            'permissions.default.image': 2, 'dom.ipc.processCount': 2}.items(): options.set_preference(key, value)
-        driver = webdriver.Firefox(options=options, service=Service(str(geckodriver.resolve()), log_output=str(log)))
+        service_args = ['--allow-system-access'] if system_access else []
+        driver = webdriver.Firefox(options=options, service=Service(str(geckodriver.resolve()), service_args=service_args, log_output=str(log)))
         try:
             assert driver.capabilities['acceptInsecureCerts'] is False
             driver.set_page_load_timeout(40); driver.set_script_timeout(40); driver.set_window_size(1440, 1000)

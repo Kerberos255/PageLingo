@@ -1,0 +1,22 @@
+{
+  "provenance": "Actual 2026-11-11 OpenCode Go smoke response; no new inference",
+  "model": "longcat-2.5-free",
+  "source_url": "https://docs.python.org/3/library/sqlite3.html",
+  "request_body_sha256": "abc0d7a94f57bdbae7061455dbb1fb6c0382afa9b166931f094c254f2e06325f",
+  "source_html": "<span data-flt-text-id=\"0\">The </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> module was written by Gerhard Häring.  It provides an SQL interface\ncompliant with the DB-API 2.0 specification described by </span><span></span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><strong><span data-flt-text-id=\"2\">PEP 249</span></strong><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"3\">, and\nrequires the third-party </span><a data-flt-link-id=\"1\" href=\"https://pagelingo.invalid/__link/1\"><code>__FLT_LINK_START_1__</code><span data-flt-text-id=\"4\">SQLite</span><code>__FLT_LINK_END_1__</code></a><span data-flt-text-id=\"5\"> library.</span>",
+  "response": {
+    "choices": [
+      {
+        "index": 0,
+        "finish_reason": "stop",
+        "logprobs": null,
+        "message": {
+          "role": "assistant",
+          "content": "<span data-flt-text-id=\"0\">该 </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> 模块由 Gerhard Häring 编写。它提供了一个 SQL 接口，\n符合 DB-API 2.0 规范，该规范由 </span><span></span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><strong><span data-flt-text-id=\"2\">PEP 249</span></strong><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"3\">，并且需要第三方 </span><a data-flt-link-id=\"1\" href=\"https://pagelingo.invalid/__link/1\"><code>__FLT_LINK_START_1__</code><span data-flt-text-id=\"4\">SQLite</span><code>__FLT_LINK_END_1__</code></a><span data-flt-text-id=\"5\"> 库。</span>"
+        }
+      }
+    ]
+  },
+  "expected_rejection": "incomplete_agent_clause",
+  "original_html": "<p>The <code class=\"xref py py-mod docutils literal notranslate\"><span class=\"pre\">sqlite3</span></code> module was written by Gerhard Häring.  It provides an SQL interface\ncompliant with the DB-API 2.0 specification described by <span class=\"target\" id=\"index-0\"></span><a class=\"pep reference external\" href=\"https://peps.python.org/pep-0249/\"><strong>PEP 249</strong></a>, and\nrequires the third-party <a class=\"reference external\" href=\"https://sqlite.org/\">SQLite</a> library.</p>"
+}

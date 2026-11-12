@@ -2,6 +2,7 @@ import { languageLabel } from "../shared/settings";
 import { isLoopbackHostname } from "../shared/network-endpoint";
 import { OPENCODE_GO_BASE_URL, type TranslationEngineConfig } from "../shared/translation-engine-settings";
 import {restoreFixedHtmlTransport} from "../core/fixed-html-transport";
+import {assessTranslationQuality} from "../core/translation-quality";
 
 export interface ExternalTranslationTerminologyEntry {
   source: string;
@@ -285,8 +286,13 @@ async function translateOpenAiCompatible(config: TranslationEngineConfig, reques
       ],
       temperature: 0,
     }),
-  }, LLM_REQUEST_TIMEOUT_MS) as { choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> };
-  const content = result.choices?.[0]?.message?.content;
+  }, LLM_REQUEST_TIMEOUT_MS) as { choices?: Array<{ finish_reason?: string | null; message?: { refusal?: unknown; content?: string | Array<{ type?: string; text?: string }> } }> };
+  const choice = result.choices?.[0];
+  if (choice && Object.prototype.hasOwnProperty.call(choice, "finish_reason") && choice.finish_reason !== "stop") {
+    throw new Error("模型未完整结束生成，已拒绝写入页面");
+  }
+  if (choice?.message?.refusal) throw new Error("模型拒绝生成译文，已保留原文");
+  const content = choice?.message?.content;
   if (typeof content === "string") return stripCodeFence(content);
   if (Array.isArray(content)) {
     const text = content.map((part) => typeof part.text === "string" ? part.text : "").join("").trim();
@@ -305,8 +311,12 @@ async function translateGemini(config: TranslationEngineConfig, request: Externa
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: `${renderPrompt(config, request)}\n\nHTML:\n${request.html}` }] }],
     }),
-  }, LLM_REQUEST_TIMEOUT_MS) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const text = result.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
+  }, LLM_REQUEST_TIMEOUT_MS) as { candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }> };
+  const candidate = result.candidates?.[0];
+  if (candidate && Object.prototype.hasOwnProperty.call(candidate, "finishReason") && candidate.finishReason !== "STOP") {
+    throw new Error("模型未完整结束生成，已拒绝写入页面");
+  }
+  const text = candidate?.content?.parts?.map((part) => part.text ?? "").join("").trim();
   if (!text) throw new Error("Gemini 返回格式异常");
   return stripCodeFence(text);
 }
@@ -471,5 +481,18 @@ export async function translateWithExternalEngine(
     case "custom-rest": translated = await translateCustomRest(config, request); break;
   }
   if (/<span\b[^>]*\bdata-flt-text-id\s*=/iu.test(request.html)) translated = restoreFixedHtmlTransport(request.html, translated);
-  return validateTranslatedHtml(request.html, translated);
+  const validated = validateTranslatedHtml(request.html, translated);
+  const plain = (html: string) => {
+    const body = new DOMParser().parseFromString(html, "text/html").body;
+    for (const atom of body.querySelectorAll("code, [data-flt-fixed]")) atom.remove();
+    return body.textContent ?? "";
+  };
+  const quality = assessTranslationQuality({sourceText: plain(request.html), translatedText: plain(validated), sourceLanguage: request.sourceLanguage, targetLanguage: request.targetLanguage});
+  if (!quality.accepted) {
+    const detail = quality.incompleteAgentClause ? "译文句子可能不完整"
+      : quality.suspiciouslyShort ? "译文内容明显过少"
+        : "译文完整性检查未通过";
+    throw new Error(`${detail}，已保留原文`);
+  }
+  return validated;
 }

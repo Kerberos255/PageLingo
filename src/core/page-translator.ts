@@ -222,6 +222,7 @@ export class PageTranslator {
     #displayMode;
     #terminology;
     #records = new Map();
+    #failures = new Map();
     #pending = new Set();
     #inFlight = new Set();
     #rerun = new Set();
@@ -254,6 +255,12 @@ export class PageTranslator {
     }
     get translatedCount() {
         return this.#records.size + this.#fixedRecords.size;
+    }
+    get failedCount() {
+        return Array.from(this.#failures.keys()).filter(root => root.isConnected).length;
+    }
+    get firstFailure() {
+        return Array.from(this.#failures).find(([root]) => root.isConnected)?.[1] ?? null;
     }
     #clearFixedRecord(root, record) {
         clearFixedTextRecord(record); this.#fixedRecords.delete(root);
@@ -317,6 +324,7 @@ export class PageTranslator {
             return;
         }
         this.#inFlight.add(root);
+        this.#failures.delete(root);
         try {
         await this.#loadContextMode();
         const fixedPrevious = this.#fixedRecords.get(root);
@@ -497,6 +505,9 @@ export class PageTranslator {
         const translationNode = mountTranslation(root, fragment, this.#targetLanguage);
         this.#records.set(root, { translationNode, fingerprint: segment.fingerprint });
         this.#applyDisplayMode(root, translationNode);
+        } catch (error) {
+            this.#failures.set(root, error instanceof Error ? error.message : String(error));
+            throw error;
         } finally {
             this.#inFlight.delete(root);
             if (this.#rerun.delete(root) && !this.#disposed && root.isConnected) this.#queue(root);
@@ -581,6 +592,7 @@ export class PageTranslator {
         return true;
     }
     restore() {
+        this.#failures.clear();
         this.#disposed = true;
         this.#observer?.disconnect();
         this.#observer = null;
