@@ -21,8 +21,13 @@ function checkFixedTextHtml(sourceHtml: string, translatedHtml: string, restoreA
     }
     const from = a as Element, to = b as Element;
     if (from.tagName !== to.tagName || JSON.stringify(attributes(from)) !== JSON.stringify(attributes(to))) fail();
-    if (restoreAtoms && !from.childElementCount && !to.childElementCount) {
+    if (restoreAtoms && !from.childElementCount && !to.childElementCount
+      && [...from.childNodes, ...to.childNodes].every(n => n.nodeType === Node.TEXT_NODE)) {
       const original = from.textContent ?? "", received = to.textContent ?? "";
+      // The fixed payload stays exact. HTML MT may only collapse ASCII padding
+      // around it (e.g. " | " -> "|"); restore that source-owned padding locally.
+      const trimAscii = (value: string) => value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/gu, "");
+      if (from.hasAttribute("data-flt-fixed") && trimAscii(original) === trimAscii(received)) to.textContent = original;
       // Some HTML MT engines omit non-linguistic markers. The original atom
       // belongs to the application; a different marker or a translated word
       // still fails. No source node or model text is rewritten here.

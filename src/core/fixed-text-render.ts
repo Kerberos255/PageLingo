@@ -1,6 +1,6 @@
 import { mountTranslation } from "./render";
 import { isOptionalEnglishArticle } from "./translation-quality";
-import { isElementEffectivelyHidden, isTranslationRootElement } from "./dom-policy";
+import { isElementEffectivelyHidden, isTranslationRootElement, isTranslationDisabled } from "./dom-policy";
 import {canCollapseProseWhitespace, canWriteFrozenProseGap, isAsciiWhitespace, isAsciiWhitespaceOrEmpty} from "./collapsible-whitespace";
 import {cjkSpacingBoundaryUnchanged, cjkSpacingContextUnchanged, normalizeCjkSpacing} from "./cjk-spacing";
 
@@ -134,6 +134,7 @@ function bilingualFragment(root: HTMLElement, record: FixedTextRecord): Document
 export function applyFixedTextRecord(root: HTMLElement, record: FixedTextRecord, mode: "translation" | "bilingual", language: string): boolean {
   const unchanged = fixedTextRecordUnchanged(record);
   clearFixedTextRecord(record);
+  if (record.edits.some(edit => isTranslationDisabled(edit.node.parentElement))) return false;
   const spacing = spacingAuthority.get(record);
   if (spacing && (spacing.nodes.some(node => !cjkSpacingContextUnchanged(node))
     || spacing.boundaries.some(([left, right]) => !cjkSpacingBoundaryUnchanged(left, right, root)))) return false;

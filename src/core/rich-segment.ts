@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { isElementEffectivelyHidden, isTranslationRootElement, isEligibleTextNode, isEligibleTextContext } from "./dom-policy";
+import { isElementEffectivelyHidden, isTranslationRootElement, isEligibleTextNode, isEligibleTextContext, isTranslationDisabled, isProtectedTranslationSubtree } from "./dom-policy";
 import type { SourceTextSlot } from "./fixed-text-render";
 import { normalizeGlossaryEntry } from "../shared/settings";
 
@@ -11,7 +11,7 @@ export type SerializedSourcePart =
     | {kind:"text"; node:Text; source:string; slotId:number|null; editableContext:boolean}
     | {kind:"opaque"; node:HTMLElement; source:string; opaqueIndex:number}
     | {kind:"element"; node:HTMLElement; tagName:string; inline:boolean; children:SerializedSourcePart[]; fallbackText?:string}
-    | {kind:"boundary"; node:HTMLElement; reason:"generated"|"time"|"hidden"|"nested-root"|"br"|"wbr"};
+    | {kind:"boundary"; node:HTMLElement; reason:"generated"|"time"|"hidden"|"nested-root"|"br"|"wbr"|"protected"};
 export interface SerializedSourceTrace { parts:SerializedSourcePart[]; trimStart:number; trimEnd:number }
 export interface RichSegment { html:string; links:LinkSnapshot[]; opaque:OpaqueSnapshot[]; linkGaps:string[]; fingerprint:string; textSlots?:SourceTextSlot[]; sourceTrace?:SerializedSourceTrace }
 
@@ -59,6 +59,13 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
     let html = "";
     for (const node of parent.childNodes) {
         if (node.nodeType === Node.TEXT_NODE) {
+            if (textSlots && isTranslationDisabled(node.parentElement)) {
+                const index = opaque.length;
+                opaque.push({tagName: "SPAN", text: node.data});
+                html += `<code>__FLT_OPAQUE_${index}__</code>`;
+                trace?.push({kind: "text", node, source: node.data, slotId: null, editableContext: false});
+                continue;
+            }
             const text = escapeHtml(node.textContent ?? "");
             let slotId = null;
             if (textSlots && (node.textContent ?? "").trim()) {
@@ -92,6 +99,21 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
             continue;
         }
         const tag = element.tagName;
+        if (textSlots && !OPAQUE_TAGS.has(tag) && isTranslationDisabled(element)
+            && !element.querySelector('[translate="yes" i],[translate=""]')) {
+            const index = opaque.length;
+            const source = element.textContent ?? "";
+            opaque.push({tagName: tag, text: source});
+            html += `<code>__FLT_OPAQUE_${index}__</code>`;
+            trace?.push({kind: "opaque", node: element, source, opaqueIndex: index});
+            continue;
+        }
+        // Controls, SVG and other excluded subtrees remain source-owned. Do not
+        // leak their labels/options into a fixed HTML request as editable prose.
+        if (textSlots && !OPAQUE_TAGS.has(tag) && isProtectedTranslationSubtree(element)) {
+            trace?.push({kind: "boundary", node: element, reason: "protected"});
+            continue;
+        }
         if (!INLINE_TAGS.has(tag)) {
             const children = trace ? [] : undefined;
             html += serializeChildren(element, root, links, opaque, textSlots, children);
@@ -111,6 +133,11 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
             // each original text node to a fixed slot; link topology is application-owned.
             const children = trace ? [] : undefined;
             const serializedLabel = serializeChildren(element, root, links, opaque, textSlots, children);
+            if (textSlots && !serializedLabel.replace(/<[^>]*>/gu, "").trim()) {
+                links.pop();
+                trace?.push({kind: "boundary", node: element, reason: "protected"});
+                continue;
+            }
             const labelHtml = serializedLabel || escapeHtml(element.textContent ?? "");
             html += `<a data-flt-link-id="${linkIndex}" href="${LINK_TRANSPORT_PREFIX}${linkIndex}"><code>__FLT_LINK_START_${linkIndex}__</code>${labelHtml}<code>__FLT_LINK_END_${linkIndex}__</code></a>`;
             trace?.push({kind: "element", node: element, tagName: tag, inline: true, children,

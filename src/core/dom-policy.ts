@@ -61,6 +61,17 @@ export function isGeneratedNode(node) {
 export function isTranslationRootElement(element) {
   return ROOT_TAGS.has(element.tagName);
 }
+export function isTranslationDisabled(element) {
+  for (let current = element; current; current = current.parentElement) {
+    const value = current.getAttribute("translate")?.toLowerCase();
+    if (value === "no") return true;
+    if (value === "yes" || value === "") return false;
+  }
+  return false;
+}
+export function isProtectedTranslationSubtree(element) {
+  return element.matches(SKIP_SELECTOR);
+}
 function safeDecodePathSegment(value) {
   try {
     return decodeURIComponent(value);
@@ -196,7 +207,7 @@ export function isElementEffectivelyHidden(element) {
 export function isEligibleTextContext(node) {
   if (isProtectedGitHubIdentifierText(node)) return false;
   const parent = node.parentElement;
-  return Boolean(parent && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent));
+  return Boolean(parent && !isTranslationDisabled(parent) && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent));
 }
 export function isEligibleTextNode(node) {
   if (!node.data.trim() || !isEligibleTextContext(node)) return false;

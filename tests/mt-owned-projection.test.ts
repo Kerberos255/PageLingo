@@ -80,10 +80,12 @@ describe("production-owned frozen projection", () => {
     const text = "阅读此段。", c = compileOwnedProjection(s, candidate(text), flows(s, text)); c.apply();
     expect(c.readOwnedText()).toBe(text); expect(p.lastChild!.textContent).toBe("\n"); c.restore(); expect(p.outerHTML).toBe(before);
   });
-  it("handles the production link fallback without inventing an editable hidden text slot", () => {
-    const p = root('<p>Read <a href="/guide"><span hidden>guide</span></a> now.</p>'), s = captureOwnedSource(p);
-    expect(s.sourceText).toBe("Read guide now."); expect(s.slots).toHaveLength(2);
-    expect(s.annotations.find(a => a.tag === "A")?.immutable).toBe(true);
+  it("omits a hidden-only link from model context without gaining an editable hidden slot", () => {
+    const p = root('<p>Read <a href="/guide"><span hidden>guide</span></a> now.</p>'), before=p.outerHTML, link=p.querySelector('a')!, hidden=link.firstChild!, s = captureOwnedSource(p);
+    expect(s.sourceText).toBe("Read  now."); expect(s.slots).toHaveLength(2);
+    expect(s.segment.html).not.toContain('guide'); expect(s.slots.some(slot=>hidden.contains(slot.node))).toBe(false);
+    expect(p.querySelector('a')).toBe(link);expect(link.firstChild).toBe(hidden);expect(hidden.textContent).toBe('guide');
+    expect(p.outerHTML).toBe(before);
   });
   it("uses only production-owned slots and refuses changing readonly punctuation", () => {
     const p = root('<p>Call <code>x()</code>.</p>'), s = captureOwnedSource(p), before = p.outerHTML;

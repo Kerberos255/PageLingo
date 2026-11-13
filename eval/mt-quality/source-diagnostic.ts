@@ -61,7 +61,7 @@ export async function replaySourceDiagnostic(sample: SourceDiagnosticCase, compl
       }}, {displayMode: "translation", concurrency: 1, sourceLanguage: "en", targetLanguage: "zh-Hans"});
     await translator.translateAll(p.scope);
     if (failure || !checked || checked.accepted && index !== completions.length) throw new Error(failure ?? "Incomplete recorded replay");
-    const result = {id: sample.id, displayed: translator.translatedCount === 1, reason: checked.reason ?? null,
+    const result = {id: sample.id, displayed: translator.translatedCount === 1, reason: checked.reason ?? translator.firstFailure,
       translated_text: p.scope.textContent, translated_html: p.scope.innerHTML,
       original_structure_unchanged: nodes.every(x => x.node.isConnected && x.attrs === JSON.stringify([...x.node.attributes].map(a => [a.name, a.value]))
         && x.children.length === x.node.childNodes.length && x.children.every((n, i) => n === x.node.childNodes[i])),

@@ -78,6 +78,11 @@ export function captureOwnedSource(root: HTMLElement, {punctuationPolicy = "stri
   punctuationPolicy?: "strict" | "prose-v1"; whitespacePolicy?: "literal" | "collapse-v1"; allocationPolicy?: "fixed" | "prose-gaps-v1"; scopePolicy?: "alignment-v1" | "source-constraints-v1" | "source-constraints-v2"} = {}): OwnedSource {
   if (!root.isConnected || isProtectedApiSignature(root)) throw new Error("Owned projection source detached or protected API declaration");
   const before = snapshot(root), ancestors: Snapshot[] = [];
+  // Exclusions no longer become model slots. Check the original snapshot so
+  // omitted no-translate descendants cannot silently enter this research path.
+  if (before.some(s => s.node.nodeType === Node.TEXT_NODE && /\p{L}/u.test(s.text ?? "") && declaredNoTranslate(s.node as Text))) {
+    throw new Error("Owned projection refuses an explicit no-translate source slot");
+  }
   for (let n = root.parentElement; n; n = n.parentElement) ancestors.push({node: n, children: [...n.childNodes], attributes: attributes(n), text: null});
   const segment = serializeRichSegment(root, {fixedTextSlots: true, captureOwnership: true});
   if (allocationPolicy === "prose-gaps-v1" && (punctuationPolicy !== "prose-v1" || whitespacePolicy !== "collapse-v1")) throw new Error("Frozen prose gaps require explicit punctuation and whitespace policies");
