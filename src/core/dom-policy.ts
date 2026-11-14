@@ -263,12 +263,14 @@ function isInsideCodeWidgetFallback(element) {
     let current = element.parentElement;
     for (let depth = 0; current && current !== current.ownerDocument.body && depth < 4; depth += 1) {
         if (current.matches("pre,code,kbd,samp,var")) return true;
+        // A list item or blockquote can contain both prose and a code example.
+        // Its structural boundary owns the prose before code-widget heuristics.
+        if (isTranslationRootElement(current)) return false;
         // Only treat a compact wrapper with its own direct <pre> as a code widget.
         // The old descendant search (:scope > div > pre / div > div > pre) made an
         // entire article look like a code widget whenever any sibling code block existed.
         const directPre = current.querySelector(":scope > pre");
         if (directPre && current.children.length <= 8) return true;
-        if (isTranslationRootElement(current)) return false;
         current = current.parentElement;
     }
     return false;
