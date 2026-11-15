@@ -20,6 +20,7 @@ import {
 } from "./opfs-backend";
 import {inferMtHtml} from "./inference";
 import {MT_CONTEXT_TOKENS} from "./sentence-plan";
+import {MtTranslationQueue} from "./translation-queue";
 
 export const PAGELINGO_MT_ENGINE_ID = "pagelingo-mt";
 export const PAGELINGO_MT_MODEL_REPO = "kerberos255/PageLingo-Translate-1.8B";
@@ -60,7 +61,7 @@ export class PageLingoMtClient implements TranslationProvider {
 
   #wllama: Wllama | null = null;
   #loadPromise: Promise<Wllama> | null = null;
-  #tail: Promise<unknown> = Promise.resolve();
+  readonly #translations = new MtTranslationQueue(PAGELINGO_MT_MODEL_SHA256, request => this.#translateSerial(request));
   #downloading = false;
   #loadedBytes = 0;
   #totalBytes = PAGELINGO_MT_MODEL_SIZE;
@@ -118,6 +119,7 @@ export class PageLingoMtClient implements TranslationProvider {
   }
 
   async download(): Promise<PageLingoMtStatus> {
+    this.#translations.clear();
     this.#lastError = "";
     this.#downloading = true;
     this.#loadedBytes = 0;
@@ -177,12 +179,11 @@ export class PageLingoMtClient implements TranslationProvider {
     if (!mtRouteSupported(request)) {
       return { html: request.html, accepted: false, reason: "PageLingo MT currently supports English → Simplified Chinese only" };
     }
-    const run = this.#tail.then(() => this.#translateSerial(request));
-    this.#tail = run.then(() => undefined, () => undefined);
-    return run;
+    return this.#translations.translate(request);
   }
 
   async close(): Promise<void> {
+    this.#translations.clear();
     const current = this.#wllama;
     this.#wllama = null;
     this.#loadPromise = null;

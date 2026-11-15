@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "evaluation_only": true,
+  "optimizer_inputs_approved": false,
+  "source_commit": "e24a79733509ecd8ae4af9d659e199c94b0b6fb4",
+  "preregister": {
+    "protocol": "protected-literal-inline-v24",
+    "source_commit": "e24a79733509ecd8ae4af9d659e199c94b0b6fb4",
+    "evaluation_only": true,
+    "optimizer_inputs_approved": false,
+    "production_enabled": false,
+    "hypothesis": "Opaque protected tokens hide API names and predicate arguments. Showing the original protected value at its source position, while requiring exact literal copying and retaining all text-node positions, may reduce omission without introducing a second full-sentence context.",
+    "candidate": "Replace each protected token by its original token immediately followed by a JSON string literal of the source-owned original text, for example ⟪P0⟫\"fetch()\". The grammar forces every literal byte-equivalent string in its original position. Decode the exact expanded frame back to the original token before calling the existing production decoder. No reference target text is used. Preserve existing context/terminology and text slot rules; add one sentence explaining the protected string literal. Reject incomplete/changed/missing/duplicated literals. Same max_tokens as baseline. Reject oversized experiment inputs, not truncate their original protected values.",
+    "sites": [
+      {
+        "id": "mdn-stream-reader",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream/getReader",
+        "selector": "main p"
+      },
+      {
+        "id": "postgres-constraints",
+        "url": "https://www.postgresql.org/docs/current/ddl-constraints.html",
+        "selector": "main p, #docContent p"
+      },
+      {
+        "id": "node-errors",
+        "url": "https://nodejs.org/api/errors.html",
+        "selector": "main p, #apicontent p"
+      }
+    ],
+    "selection": {
+      "per_site": 2,
+      "source_only": true,
+      "normalized_characters": [
+        60,
+        420
+      ],
+      "minimum_english_words": 12,
+      "text_slots": [
+        2,
+        10
+      ],
+      "minimum_inline_link_code_or_emphasis": 1,
+      "production_fixed_calls": 1,
+      "ordering": "Use the v23 relation-first source-only rule in DOM order, excluding normalized known project/previous-capture sources. Retain failures; no source replacement after model output."
+    },
+    "diagnostic_cases": {
+      "v23": "All ten registered primary/confirmation source paragraphs",
+      "v22": [
+        "rust-lifetimes-v17-1",
+        "rust-lifetimes-v17-2",
+        "shadow-dom-v17-1",
+        "w3c-accordion-v17-1"
+      ]
+    },
+    "arms": [
+      "production-fixed",
+      "inline-protected-literals",
+      "natural-visible (new sources only)"
+    ],
+    "reuse_policy": "Reuse prior production-fixed/natural generations only when the complete request messages, grammar, max_tokens and formal model hash are identical. Label reuse explicitly and do not count it as new generation.",
+    "promotion": "Require original-node/code/link/restore checks and source-to-output semantic/ownership review on the independent six and prior fourteen. No automatic promotion or prompt tuning after observing these outputs. Keep old negation, while-condition, duplicate-code and No ARIA cases. Candidate remaining research-only if regressions persist."
+  },
+  "duplicate_check": {
+    "known_local_files": 61,
+    "known_normalized_source_hashes": 1291,
+    "selected_overlap": 0,
+    "normalization": "NFKC/lowercase/collapsed whitespace UTF-8 SHA256",
+    "limits": "Visible project material only; foundation pretraining and unavailable original main-PC corpus unknown."
+  },
+  "sources": [
+    {
+      "id": "mdn-stream-reader-v24-1",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream/getReader",
+      "html": "<p>The <strong><code>getReader()</code></strong> method of the <a href=\"/en-US/docs/Web/API/ReadableStream\"><code>ReadableStream</code></a> interface creates a reader and locks the stream to it.\nWhile the stream is locked, no other reader can be acquired until this one is released.</p>",
+      "locator": "#content > div:nth-child(1) > section:nth-child(5) > p:nth-child(2)",
+      "source_text": "The getReader() method of the ReadableStream interface creates a reader and locks the stream to it.\nWhile the stream is locked, no other reader can be acquired until this one is released.",
+      "source_sha256": "2db2e59d743cd10c09e40ed90ee2ef7870bbadf55b505dbabe32924352374101",
+      "text_slots": 3
+    },
+    {
+      "id": "mdn-stream-reader-v24-2",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream/getReader",
+      "html": "<p>Thrown if the stream you are trying to create a reader for is already locked, or not a <a href=\"/en-US/docs/Web/API/ReadableStream\"><code>ReadableStream</code></a>.\nThis is also thrown if a BYOB reader is requested and the stream controller is not a <a href=\"/en-US/docs/Web/API/ReadableByteStreamController\"><code>ReadableByteStreamController</code></a> (the stream was not <a href=\"/en-US/docs/Web/API/ReadableStream/ReadableStream\">constructed</a> as an underlying source with <a href=\"/en-US/docs/Web/API/ReadableStream/ReadableStream#type\"><code>type=\"bytes\"</code></a>).</p>",
+      "locator": "#content > div:nth-child(3) > section:nth-child(4) > dl:nth-child(2) > dd:nth-child(4) > p:nth-child(1)",
+      "source_text": "Thrown if the stream you are trying to create a reader for is already locked, or not a ReadableStream.\nThis is also thrown if a BYOB reader is requested and the stream controller is not a ReadableByteStreamController (the stream was not constructed as an underlying source with type=\"bytes\").",
+      "source_sha256": "f4256d1b5f66daf98c6a5edf39197d7ca66177394fdb190296e378cf0196d2cd",
+      "text_slots": 5
+    },
+    {
+      "id": "postgres-constraints-v24-1",
+      "context_url": "https://www.postgresql.org/docs/current/ddl-constraints.html",
+      "html": "<p>As you see, the constraint definition comes after the data type, just like default value definitions. Default values and constraints can be listed in any order. A check constraint consists of the key word <code class=\"literal\">CHECK</code> followed by an expression in parentheses. The check constraint expression should involve the column thus constrained, otherwise the constraint would not make too much sense.</p>",
+      "locator": "#DDL-CONSTRAINTS-CHECK-CONSTRAINTS > p:nth-child(6)",
+      "source_text": "As you see, the constraint definition comes after the data type, just like default value definitions. Default values and constraints can be listed in any order. A check constraint consists of the key word CHECK followed by an expression in parentheses. The check constraint expression should involve the column thus constrained, otherwise the constraint would not make too much sense.",
+      "source_sha256": "d909c38693e476adcc7191e75fad374723ac7d45c4f3c5e84d44ec153abedc50",
+      "text_slots": 2
+    },
+    {
+      "id": "postgres-constraints-v24-2",
+      "context_url": "https://www.postgresql.org/docs/current/ddl-constraints.html",
+      "html": "<p>So, to specify a named constraint, use the key word <code class=\"literal\">CONSTRAINT</code> followed by an identifier followed by the constraint definition. (If you don't specify a constraint name in this way, the system chooses a name for you.)</p>",
+      "locator": "#DDL-CONSTRAINTS-CHECK-CONSTRAINTS > p:nth-child(10)",
+      "source_text": "So, to specify a named constraint, use the key word CONSTRAINT followed by an identifier followed by the constraint definition. (If you don't specify a constraint name in this way, the system chooses a name for you.)",
+      "source_sha256": "6ae4432a581fff1e2a36234f90d87f0eba8d6fce11386cc04c7f8f13e2deb9e7",
+      "text_slots": 2
+    },
+    {
+      "id": "node-errors-v24-1",
+      "context_url": "https://nodejs.org/api/errors.html",
+      "html": "<p>Node.js supports several mechanisms for propagating and handling errors that\noccur while an application is running. How these errors are reported and\nhandled depends entirely on the type of <code>Error</code> and the style of the API that is\ncalled.</p>",
+      "locator": "#apicontent > section:nth-child(2) > p:nth-child(3)",
+      "source_text": "Node.js supports several mechanisms for propagating and handling errors that\noccur while an application is running. How these errors are reported and\nhandled depends entirely on the type of Error and the style of the API that is\ncalled.",
+      "source_sha256": "c321deb09ba832f85f41b329e435b3ad9c95809b161c57442c0996f48124a8e8",
+      "text_slots": 2
+    },
+    {
+      "id": "node-errors-v24-2",
+      "context_url": "https://nodejs.org/api/errors.html",
+      "html": "<p>Any use of the JavaScript <code>throw</code> mechanism will raise an exception that\n<em>must</em> be handled or the Node.js process will exit immediately.</p>",
+      "locator": "#apicontent > section:nth-child(2) > p:nth-child(6)",
+      "source_text": "Any use of the JavaScript throw mechanism will raise an exception that\nmust be handled or the Node.js process will exit immediately.",
+      "source_sha256": "1db4ee015b065921be9361b720ba71f3f4962bc0db4c7e16720ad8aec4f6776e",
+      "text_slots": 4
+    }
+  ],
+  "attribution": {
+    "mdn": "MDN contributors; original source URLs above; https://developer.mozilla.org/en-US/docs/MDN/Writing_guidelines/Attrib_copyright_license",
+    "postgresql": "PostgreSQL Global Development Group; https://www.postgresql.org/about/licence/",
+    "nodejs": "Node.js contributors; https://github.com/nodejs/node/blob/main/LICENSE. Quoted source content retains its original terms, separately from the software license."
+  }
+}
