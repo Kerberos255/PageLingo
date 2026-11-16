@@ -78,7 +78,7 @@ describe("MT protocol echoes and misplaced passages", () => {
   });
 });
 
-describe("standalone obligation ownership", () => {
+describe("standalone modal ownership", () => {
   it.each(["必须", "务必", "须得", "需要", "应当", "一定要", "不得不", "强制", "must"])("allows an obligation paraphrase: %s", value => {
     const encoded = encodeFixedMtText('Errors <em>must</em> be handled.');
     expect(decodeFixedMtText(encoded, `⟦0⟧错误⟦/0⟧⟦1⟧${value}⟦/1⟧⟦2⟧得到处理。⟦/2⟧`)).toContain(`<em>${value}</em>`);
@@ -86,5 +86,13 @@ describe("standalone obligation ownership", () => {
   it("does not classify a longer label or a proper name as a standalone operator", () => {
     expect(decodeFixedMtText(encodeFixedMtText('Read <a>must-read stories</a>.'), '⟦0⟧阅读⟦/0⟧⟦1⟧推荐故事⟦/1⟧⟪P0⟫')).toContain("推荐故事");
     expect(decodeFixedMtText(encodeFixedMtText('Visit <a>Must</a>.'), '⟦0⟧访问⟦/0⟧⟦1⟧穆斯特⟦/1⟧⟪P0⟫')).toContain("穆斯特");
+  });
+  it.each(["肯定", "一定", "无疑", "想必"])("allows epistemic must without imposing obligation wording: %s", value => {
+    expect(decodeFixedMtText(encodeFixedMtText('The reader <em>must</em> be active.'), `⟦0⟧读取器⟦/0⟧⟦1⟧${value}⟦/1⟧⟦2⟧处于活动状态。⟦/2⟧`))
+      .toContain(`<em>${value}</em>`);
+  });
+  it.each(["不能不", "不可不"])("allows a double-negative obligation paraphrase: %s", value => {
+    expect(decodeFixedMtText(encodeFixedMtText('Errors <em>must</em> be handled.'), `⟦0⟧错误⟦/0⟧⟦1⟧${value}⟦/1⟧⟦2⟧处理。⟦/2⟧`))
+      .toContain(`<em>${value}</em>`);
   });
 });

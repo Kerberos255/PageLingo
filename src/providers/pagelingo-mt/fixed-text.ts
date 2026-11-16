@@ -23,8 +23,10 @@ const markerLookalike = /[〈〉《》⟬⟭【】〔〕「」\[\](]\s*(?:\/\s*(
 const standaloneNegation = /^(?:no|not|never|none|neither|without|cannot|can't|do not|does not|did not|is not|are not|was not|were not)$/iu;
 const translatedNegation = /[不没無无未非别勿否莫毋零]|\b(?:no|not|never|none|neither|without|cannot|can't|don't|doesn't|didn't|isn't|aren't)\b/iu;
 // Title-case "Must" can be a proper name; do not infer an operator from it.
-const standaloneObligation = /^(?:must|MUST|has to|have to)$/u;
-const translatedObligation = /[须需应要得必]|强制|不可或缺|有必要|\bmust\b/iu;
+const standaloneModal = /^(?:must|MUST|has to|have to)$/u;
+// Modal words also express inference ("must" -> "肯定"). Check an observed
+// scope expansion, not a whitelist of preferred obligation translations.
+const expandedModalClause = /[,，;；]\s*(?:否则|不然|要不|那么|因而|因此|所以|如果|若|除非|而且|并且|同时|otherwise\b|if\b|unless\b|because\b)|[。！？!?]\s*[\p{L}\p{N}]/iu;
 const lineLabel = /(?:^|[\r\n\u2028\u2029])\s*(中文|译文|翻译|translation|chinese)\s*[:：]/giu;
 function translationLabels(text: string): Map<string, number> {
   const counts = new Map<string, number>();
@@ -164,8 +166,8 @@ export function decodeFixedMtText(encoded: FixedMtText, output: string): string 
     if (isLabel && standaloneNegation.test(part.text.source.trim()) && !translatedNegation.test(value)) {
       throw new Error("MT standalone link/emphasis negation was lost; original paragraph retained");
     }
-    if (isLabel && standaloneObligation.test(part.text.source.trim()) && !translatedObligation.test(value)) {
-      throw new Error("MT standalone link/emphasis obligation was lost; original paragraph retained");
+    if (isLabel && standaloneModal.test(part.text.source.trim()) && expandedModalClause.test(value)) {
+      throw new Error("MT standalone link/emphasis operator expanded into a clause; original paragraph retained");
     }
     if ((!value && !isOptionalEnglishArticle(part.text.source)) || reserved.test(value) || markerLookalike.test(value) || /[<>]/u.test(value)) throw new Error("MT invalid text-slot content");
     const sourceLabels = translationLabels(part.text.source);

@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "evaluation_only": true,
+  "optimizer_inputs_approved": false,
+  "protocol": "framework-modal-scope-confirmation-v27",
+  "source_commit": "71cfece65a294e22ea259c8edbaf968e8fa06340",
+  "preregister": {
+    "protocol": "framework-modal-scope-confirmation-v27",
+    "evaluation_only": true,
+    "optimizer_inputs_approved": false,
+    "training_executed": false,
+    "source_commit": "71cfece65a294e22ea259c8edbaf968e8fa06340",
+    "candidate": "Working tree on v26 commit; replace lexical obligation check with narrow modal clause-boundary check. Exact source hashes frozen before new inference.",
+    "new_sites": [
+      {
+        "id": "mdn-abortsignal",
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal",
+        "selector": "main p"
+      },
+      {
+        "id": "python-futures",
+        "url": "https://docs.python.org/3/library/concurrent.futures.html",
+        "selector": "main p, .body p"
+      },
+      {
+        "id": "rust-arc",
+        "url": "https://doc.rust-lang.org/std/sync/struct.Arc.html",
+        "selector": "main p"
+      }
+    ],
+    "selection": {
+      "per_site": 2,
+      "normalized_characters": [
+        60,
+        420
+      ],
+      "minimum_english_words": 12,
+      "text_slots": [
+        2,
+        10
+      ],
+      "minimum_inline_link_code_or_emphasis": 1,
+      "production_fixed_calls": 1,
+      "ordering": "Relation-first DOM order, source-only; exclude project/training and prior evaluation source hashes; retain site/preparation failures and never replace sources after seeing model output. This confirmation excludes all six v26 selected sources as well; select the next two eligible paragraphs per same site."
+    },
+    "model": {
+      "key": "formal",
+      "id": "kerberos255/PageLingo-Translate-1.8B",
+      "family": "hymt",
+      "filename": "PageLingo-Translate-1.8B-v0.2.2-Q5_K_M.gguf",
+      "bytes": 1298755616,
+      "sha256": "8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc",
+      "path": "/workspace/scratch/pagelingo-cpu-test/models/PageLingo-Translate-1.8B-v0.2.2-Q5_K_M.gguf",
+      "jobs": []
+    },
+    "inference": {
+      "threads": 2,
+      "gpu_layers": 0,
+      "context": 3072,
+      "temperature": 0,
+      "top_k": 1,
+      "seed": 42,
+      "cache_prompt": false,
+      "arms": [
+        "unchanged-production-fixed-prompt"
+      ],
+      "expected_generations": 6,
+      "purpose": "Verify normal translations are not newly refused; not a model or prompt quality improvement benchmark."
+    },
+    "known_regression": "Replay v25 raw generations unchanged through the new decoder; old fixtures are not independent results.",
+    "wasm": "Reuse v26 actual production-helper/File evidence only if model-runtime.ts and client.ts SHA remain identical; replay its one actual raw generation through final decoder. Do not count reused output as new inference.",
+    "browser": "Same six confirmation paragraphs at 1440/500; before screenshot, await fonts, two paints and 500ms for initial fallback, then recenter and measure settled overflow. No CSS changes."
+  },
+  "capture_sha256": "5cc07e26efc6f3b33149ec37c59a877b0c95267d42406b399ad6e4847213e6f8",
+  "cases": [
+    {
+      "id": "mdn-abortsignal-v27-1",
+      "html": "<p>Returns an <code>AbortSignal</code> instance that will automatically abort after a specified time.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal",
+      "source_text": "Returns an AbortSignal instance that will automatically abort after a specified time.",
+      "source_sha256": "a49dfac17d74eb46a0309ca574fc5f4958619210d0ba69cebcc8ab149145edce",
+      "locator": "#content > div:nth-child(3) > section:nth-child(2) > dl:nth-child(3) > dd:nth-child(6) > p:nth-child(1)",
+      "site_id": "mdn-abortsignal",
+      "split": "diagnostic"
+    },
+    {
+      "id": "mdn-abortsignal-v27-2",
+      "html": "<p>Throws the signal's abort <a href=\"/en-US/docs/Web/API/AbortSignal/reason\" title=\"reason\"><code>reason</code></a> if the signal has been aborted; otherwise it does nothing.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal",
+      "source_text": "Throws the signal's abort reason if the signal has been aborted; otherwise it does nothing.",
+      "source_sha256": "f7a2466912e2ba13eea0ba68172cadc2c45febaca37890ba0b720ad0a3a555d7",
+      "locator": "#content > div:nth-child(3) > section:nth-child(3) > dl:nth-child(3) > dd:nth-child(2) > p:nth-child(1)",
+      "site_id": "mdn-abortsignal",
+      "split": "diagnostic"
+    },
+    {
+      "id": "python-futures-v27-1",
+      "html": "<p>The <em>iterables</em> are collected immediately rather than lazily, unless a\n<em>buffersize</em> is specified to limit the number of submitted tasks whose\nresults have not yet been yielded. If the buffer is full, iteration over\nthe <em>iterables</em> pauses until a result is yielded from the buffer.</p>",
+      "context_url": "https://docs.python.org/3/library/concurrent.futures.html",
+      "source_text": "The iterables are collected immediately rather than lazily, unless a\nbuffersize is specified to limit the number of submitted tasks whose\nresults have not yet been yielded. If the buffer is full, iteration over\nthe iterables pauses until a result is yielded from the buffer.",
+      "source_sha256": "b1997b95ccb1e914bb9a561c0b77d5f03fdca3682e65b46853d439ac93ad08c2",
+      "locator": "#executor-objects > dl:nth-child(2) > dd:nth-child(2) > dl:nth-child(3) > dd:nth-child(2) > ul:nth-child(2) > li:nth-child(1) > p:nth-child(1)",
+      "site_id": "python-futures",
+      "split": "diagnostic"
+    },
+    {
+      "id": "python-futures-v27-2",
+      "html": "<p>The returned iterator raises a <a class=\"reference internal\" href=\"../builtins/exceptions.html#TimeoutError\" title=\"TimeoutError\"><code class=\"xref py py-exc docutils literal notranslate\"><span class=\"pre\">TimeoutError</span></code></a>\nif <a class=\"reference internal\" href=\"../builtins/stdtypes.html#iterator.__next__\" title=\"iterator.__next__\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">__next__()</span></code></a> is called and the result isn’t available\nafter <em>timeout</em> seconds from the original call to <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">Executor.map()</span></code>.\n<em>timeout</em> can be an int or a float.  If <em>timeout</em> is not specified or\n<code class=\"docutils literal notranslate\"><span class=\"pre\">None</span></code>, there is no limit to the wait time.</p>",
+      "context_url": "https://docs.python.org/3/library/concurrent.futures.html",
+      "source_text": "The returned iterator raises a TimeoutError\nif __next__() is called and the result isn’t available\nafter timeout seconds from the original call to Executor.map().\ntimeout can be an int or a float.  If timeout is not specified or\nNone, there is no limit to the wait time.",
+      "source_sha256": "9c28a023649f55ed98b7c8ba96e9a354d57279c6e5e6f8f5a0802887ab625730",
+      "locator": "#executor-objects > dl:nth-child(2) > dd:nth-child(2) > dl:nth-child(3) > dd:nth-child(2) > p:nth-child(3)",
+      "site_id": "python-futures",
+      "split": "diagnostic"
+    },
+    {
+      "id": "rust-arc-v27-1",
+      "html": "<p>Use clone-on-write semantics with <a href=\"struct.Arc.html#method.make_mut\" title=\"associated function std::sync::Arc::make_mut\"><code>Arc::make_mut</code></a> which provides efficient mutation\nwithout requiring interior mutability. This approach clones the data only when\nneeded (when there are multiple references) and can be more efficient when mutations\nare infrequent.</p>",
+      "context_url": "https://doc.rust-lang.org/std/sync/struct.Arc.html",
+      "source_text": "Use clone-on-write semantics with Arc::make_mut which provides efficient mutation\nwithout requiring interior mutability. This approach clones the data only when\nneeded (when there are multiple references) and can be more efficient when mutations\nare infrequent.",
+      "source_sha256": "e446503ccb60035461fdee6cdbb48dca4f9c7de9ce26f68f2badae32267ed432",
+      "locator": "#main-content > details:nth-child(3) > div:nth-child(2) > ol:nth-child(4) > li:nth-child(2) > p:nth-child(1)",
+      "site_id": "rust-arc",
+      "split": "diagnostic"
+    },
+    {
+      "id": "rust-arc-v27-2",
+      "html": "<p>Use <a href=\"struct.Arc.html#method.get_mut\" title=\"associated function std::sync::Arc::get_mut\"><code>Arc::get_mut</code></a> when you know your <code>Arc</code> is not shared (has a reference count of 1),\nwhich provides direct mutable access to the inner value without any cloning.</p>",
+      "context_url": "https://doc.rust-lang.org/std/sync/struct.Arc.html",
+      "source_text": "Use Arc::get_mut when you know your Arc is not shared (has a reference count of 1),\nwhich provides direct mutable access to the inner value without any cloning.",
+      "source_sha256": "ef7aca56bb23f1980bbe7290db6921f711f0d16ab84d0c688e338c9daf242ee7",
+      "locator": "#main-content > details:nth-child(3) > div:nth-child(2) > ol:nth-child(4) > li:nth-child(3) > p:nth-child(1)",
+      "site_id": "rust-arc",
+      "split": "diagnostic"
+    }
+  ]
+}
