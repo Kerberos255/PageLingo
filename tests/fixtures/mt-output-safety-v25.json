@@ -1,0 +1,45 @@
+{
+  "evaluation_only": true,
+  "optimizer_inputs_approved": false,
+  "cases": [
+    {
+      "id": "mdn-stream-reader-v24-1-index-native-fixed",
+      "origin": "Actual native CPU generation in preregistered v25 comparison, 2026-11-16; diagnostic replay, not fresh inference.",
+      "model_sha256": "2a869b5e374ff6121ee5191629fba8ff4a081951d56eec90d89771d7971465ee",
+      "v25_plan_sha256": "be4db3f5985809e2ede1fb2444bec695fc5b20ffbc843d2a417a07eae3c72a05",
+      "request_sha256": "d22bc94a515b04f713e5b9bedaac7aa66059b5e87389614fb1a4f6a2f0dd5c9b",
+      "html": "<span data-flt-text-id=\"0\">The </span><strong><code>__FLT_OPAQUE_0__</code></strong><span data-flt-text-id=\"1\"> method of the </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><code>__FLT_OPAQUE_1__</code><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"2\"> interface creates a reader and locks the stream to it.\nWhile the stream is locked, no other reader can be acquired until this one is released.</span>",
+      "original_html": "<p>The <strong><code>getReader()</code></strong> method of the <a href=\"/en-US/docs/Web/API/ReadableStream\"><code>ReadableStream</code></a> interface creates a reader and locks the stream to it.\nWhile the stream is locked, no other reader can be acquired until this one is released.</p>",
+      "text": "⟦0⟧⟦/0⟧⟪P0⟫⟦1⟧ 接口的方法会创建一个读者并锁定流到该读者。\n在流被锁定期间，直到此读者被释放，其他读者都无法被获取。⟦/1⟧\n\n⟪P1⟫⟦2⟧ 接口的方法会创建一个读者并锁定流到该读者。\n在流被锁定期间，直到此读者被释放，其他读者都无法被获取。⟦/2⟧",
+      "text_sha256": "5c6514561297828ef2b029f9f6b7f94cb0d74e2dbb6b299580ce159a4b0c010a",
+      "finish_reason": "stop",
+      "expected_rejection": "repeated a whole passage"
+    },
+    {
+      "id": "mdn-promise-any-v25-1-plamo2-production-fixed-control",
+      "origin": "Actual native CPU generation in preregistered v25 comparison, 2026-11-16; diagnostic replay, not fresh inference.",
+      "model_sha256": "1ffd9073afcc70e35ccc942428aa2b73d7aa2b9ea779bf504b775369e0276c13",
+      "v25_plan_sha256": "be4db3f5985809e2ede1fb2444bec695fc5b20ffbc843d2a417a07eae3c72a05",
+      "request_sha256": "829177b9e1405f3cce0c0b313c73ec65cbb5bf33087605de053b59057a88947c",
+      "html": "<span data-flt-text-id=\"0\">The </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> method is one of the </span><a data-flt-link-id=\"0\" href=\"https://pagelingo.invalid/__link/0\"><code>__FLT_LINK_START_0__</code><span data-flt-text-id=\"2\">promise concurrency</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id=\"3\"> methods. This method is useful for returning the first promise that fulfills. It short-circuits after a promise fulfills, so it does not wait for the other promises to complete once it finds one.</span>",
+      "original_html": "<p>The <code>Promise.any()</code> method is one of the <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise#promise_concurrency\">promise concurrency</a> methods. This method is useful for returning the first promise that fulfills. It short-circuits after a promise fulfills, so it does not wait for the other promises to complete once it finds one.</p>",
+      "text": "\t\t\t ⟦0⟧领域：JavaScript 编程。\n参考以下翻译：\npromise 翻译为 Promise\npromises 翻译为 Promise\n\n将以下文本从英文翻译成简体中文。\n规则：\n1. 每个编号对 ⟦/0⟧⟪P0⟫⟦1⟧ 是一个固定文本节点。以整个句子为上下文翻译其文本。每个对恰好出现一次，按原顺序排列。不要在对之间移动单词。\n2. 将每个受保护的标记 ⟮Pn⟥ 原样复制一次，置于对之间的原位置。不要将受保护的标记放在对中。\n3. 将所有翻译后的单词放入原编号对中。仅输出带有这些标记的翻译。不要添加 HTML、解释、标签或注释。\n英文：\n⟦/1⟧⟦2⟧promise 并发⟦/2⟧⟦3⟧ 方法之一是 ⟦/3⟧",
+      "text_sha256": "94869853c900810616baaa3300bb9cb37ceae4bcd8739695737338014d556809",
+      "finish_reason": "stop",
+      "expected_rejection": "introduced protocol instructions"
+    },
+    {
+      "id": "node-errors-v24-2-index-native-fixed",
+      "origin": "Actual native CPU generation in preregistered v25 comparison, 2026-11-16; diagnostic replay, not fresh inference.",
+      "model_sha256": "2a869b5e374ff6121ee5191629fba8ff4a081951d56eec90d89771d7971465ee",
+      "v25_plan_sha256": "be4db3f5985809e2ede1fb2444bec695fc5b20ffbc843d2a417a07eae3c72a05",
+      "request_sha256": "d682ed538bed472578ac941cecb55c506b2cbb89f4ddfc99c20927b7f16b7fa2",
+      "html": "<span data-flt-text-id=\"0\">Any use of the JavaScript </span><code>__FLT_OPAQUE_0__</code><span data-flt-text-id=\"1\"> mechanism will raise an exception that\n</span><em><span data-flt-text-id=\"2\">must</span></em><span data-flt-text-id=\"3\"> be handled or the Node.js process will exit immediately.</span>",
+      "original_html": "<p>Any use of the JavaScript <code>throw</code> mechanism will raise an exception that\n<em>must</em> be handled or the Node.js process will exit immediately.</p>",
+      "text": "⟦0⟧任何使用 JavaScript ⟦/0⟧⟪P0⟫⟦1⟧ 机制的操作都会引发异常，该异常必须由⟦/1⟧⟦2⟧处理，否则 Node.js 进程将立即退出。⟦/2⟧\n\n⟦3⟧\n\n【约束要求】\n1. 将英文完整译为简体中文，保留参与者、否定、条件、先后关系和所有谓语。\n2. 每对⟦/3⟧",
+      "text_sha256": "17c8e25bc7b84b7fe5fb490ac2cbafe6345aed183a67d722644d230a3d6d9344",
+      "finish_reason": "stop",
+      "expected_rejection": "obligation was lost"
+    }
+  ]
+}

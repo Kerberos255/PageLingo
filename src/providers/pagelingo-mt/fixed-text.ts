@@ -2,6 +2,7 @@ import type { TranslationRequest } from "../../core/provider";
 import { mtPrompt } from "./protocol";
 import { isOptionalEnglishArticle } from "../../core/translation-quality";
 import { MT_WORD_CHAR_RANGES } from "./word-ranges";
+import { assertMtOutputSafety } from "./output-safety";
 
 interface TextSlot { id: number; node: Text; source: string }
 interface FixedPart { token: string; text?: TextSlot }
@@ -21,6 +22,9 @@ const reserved = /[⟦⟧⟪⟫⟨⟩]/u;
 const markerLookalike = /[〈〉《》⟬⟭【】〔〕「」\[\](]\s*(?:\/\s*(?:P\s*)?\d+|P\s*(?:\d+|n)(?=\s*[〈〉《》⟬⟭【】〔〕「」\[\])]))/u;
 const standaloneNegation = /^(?:no|not|never|none|neither|without|cannot|can't|do not|does not|did not|is not|are not|was not|were not)$/iu;
 const translatedNegation = /[不没無无未非别勿否莫毋零]|\b(?:no|not|never|none|neither|without|cannot|can't|don't|doesn't|didn't|isn't|aren't)\b/iu;
+// Title-case "Must" can be a proper name; do not infer an operator from it.
+const standaloneObligation = /^(?:must|MUST|has to|have to)$/u;
+const translatedObligation = /[须需应要得必]|强制|不可或缺|有必要|\bmust\b/iu;
 const lineLabel = /(?:^|[\r\n\u2028\u2029])\s*(中文|译文|翻译|translation|chinese)\s*[:：]/giu;
 function translationLabels(text: string): Map<string, number> {
   const counts = new Map<string, number>();
@@ -160,6 +164,9 @@ export function decodeFixedMtText(encoded: FixedMtText, output: string): string 
     if (isLabel && standaloneNegation.test(part.text.source.trim()) && !translatedNegation.test(value)) {
       throw new Error("MT standalone link/emphasis negation was lost; original paragraph retained");
     }
+    if (isLabel && standaloneObligation.test(part.text.source.trim()) && !translatedObligation.test(value)) {
+      throw new Error("MT standalone link/emphasis obligation was lost; original paragraph retained");
+    }
     if ((!value && !isOptionalEnglishArticle(part.text.source)) || reserved.test(value) || markerLookalike.test(value) || /[<>]/u.test(value)) throw new Error("MT invalid text-slot content");
     const sourceLabels = translationLabels(part.text.source);
     if ([...translationLabels(value)].some(([kind, count]) => count > (sourceLabels.get(kind) ?? 0))) {
@@ -169,6 +176,7 @@ export function decodeFixedMtText(encoded: FixedMtText, output: string): string 
   }
   if (output.slice(cursor).trim()) throw new Error("MT unassigned text or malformed marker");
   rejectIntroducedUnbalancedBrackets(encoded, values);
+  assertMtOutputSafety(encoded.texts, values);
   for (const [index, slot] of encoded.texts.entries()) {
     const leading = slot.source.match(/^\s*/u)?.[0] ?? "";
     const trailing = slot.source.match(/\s*$/u)?.[0] ?? "";

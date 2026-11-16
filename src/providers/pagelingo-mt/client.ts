@@ -21,6 +21,7 @@ import {
 import {inferMtHtml} from "./inference";
 import {MT_CONTEXT_TOKENS} from "./sentence-plan";
 import {MtTranslationQueue} from "./translation-queue";
+import {loadMtModel} from "./model-runtime";
 
 export const PAGELINGO_MT_ENGINE_ID = "pagelingo-mt";
 export const PAGELINGO_MT_MODEL_REPO = "kerberos255/PageLingo-Translate-1.8B";
@@ -72,6 +73,7 @@ export class PageLingoMtClient implements TranslationProvider {
   #lastInferenceMs = 0;
   #runtimePhase: PageLingoMtRuntimePhase = "idle";
   #runtimeSince = Date.now();
+  #runtimeEpoch = 0;
 
   async status(): Promise<PageLingoMtStatus> {
     try {
@@ -184,9 +186,13 @@ export class PageLingoMtClient implements TranslationProvider {
 
   async close(): Promise<void> {
     this.#translations.clear();
+    this.#runtimeEpoch++;
     const current = this.#wllama;
     this.#wllama = null;
     this.#loadPromise = null;
+    this.#actualThreads = 0;
+    this.#lastError = "";
+    this.#setRuntimePhase("idle");
     if (current) {
       try {
         await current.exit();
@@ -216,44 +222,70 @@ export class PageLingoMtClient implements TranslationProvider {
     if (this.#wllama?.isModelLoaded()) return this.#wllama;
     if (this.#loadPromise) return this.#loadPromise;
 
-    this.#loadPromise = (async () => {
+    const epoch = this.#runtimeEpoch;
+    const assertActive = () => {
+      if (epoch !== this.#runtimeEpoch) throw new DOMException("PageLingo MT 模型加载已取消", "AbortError");
+    };
+    const pending = (async () => {
       const model = await this.#findModel(false);
+      assertActive();
       if (!model) throw new Error("PageLingo MT 模型尚未下载");
       await this.#assertExpectedModel(model);
+      assertActive();
 
       this.#setRuntimePhase("opening-cache");
       const blobs = await model.open();
+      assertActive();
       this.#setRuntimePhase("loading-wasm");
+      this.#actualThreads = 0;
+      this.#lastLoadMs = 0;
+      const loadErrors: string[] = [];
+      let loading = true;
       const engine = new Wllama(
         { default: browser.runtime.getURL("vendor/wllama/wllama.wasm") },
         {
-          logger: LoggerWithoutDebug,
+          logger: {...LoggerWithoutDebug, error: (...args: any[]) => {
+            LoggerWithoutDebug.error(...args);
+            if (loading && loadErrors.length < 4) loadErrors.push(args.map(String).join(" ").slice(0, 500));
+          }},
           modelManager: this.#modelManager,
         },
       );
       const threads = Math.max(1, Math.min(8, Math.floor((navigator.hardwareConcurrency || 2) / 2) || 1));
       this.#requestedThreads = threads;
       const loadStarted = performance.now();
-      await engine.loadModel(blobs, {
-        n_ctx: MT_CONTEXT_TOKENS,
-        n_threads: threads,
-        n_gpu_layers: 0,
-      });
-      this.#lastLoadMs = performance.now() - loadStarted;
+      try {
+        await loadMtModel(engine, blobs, {
+          n_ctx: MT_CONTEXT_TOKENS,
+          n_threads: threads,
+          n_gpu_layers: 0,
+        }, () => loadErrors.join("\n"));
+      } finally {
+        loading = false;
+        if (epoch === this.#runtimeEpoch) this.#lastLoadMs = performance.now() - loadStarted;
+      }
+      if (epoch !== this.#runtimeEpoch) {
+        try { await engine.exit(); } catch {}
+        throw new DOMException("PageLingo MT 模型加载已取消", "AbortError");
+      }
       this.#actualThreads = engine.getNumThreads();
       this.#wllama = engine;
+      this.#lastError = "";
       this.#setRuntimePhase("ready");
       return engine;
     })();
+    this.#loadPromise = pending;
 
     try {
-      return await this.#loadPromise;
+      return await pending;
     } catch (error) {
-      this.#lastError = describeMtError(error);
-      this.#setRuntimePhase("error");
+      if (epoch === this.#runtimeEpoch) {
+        this.#lastError = describeMtError(error);
+        this.#setRuntimePhase("error");
+      }
       throw error;
     } finally {
-      this.#loadPromise = null;
+      if (this.#loadPromise === pending) this.#loadPromise = null;
     }
   }
 
