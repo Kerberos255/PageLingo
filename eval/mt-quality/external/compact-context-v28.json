@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "protocol": "compact-readonly-context-v28",
+  "evaluation_only": true,
+  "optimizer_inputs_approved": false,
+  "purpose": "Source excerpts and exact frozen scope-map prompt hashes. No targets, model outputs or training approval. Original markup, protected code and link scopes remain renderer-owned.",
+  "baseline_commit": "27eb7978bc96a30247827bbe8853e67de6872d2c",
+  "selection_freeze_sha256": "0ccba8d83b6a5d480396addf87e12272a2d8dcd40665685f568cf12138e4e678",
+  "cases": [
+    {
+      "id": "rust-arc-v26-1",
+      "group": "known_development",
+      "split": "diagnostic",
+      "html": "<p>The type <code>Arc&lt;T&gt;</code> provides shared ownership of a value of type <code>T</code>,\nallocated in the heap. Invoking <a href=\"../clone/trait.Clone.html#tymethod.clone\" title=\"method std::clone::Clone::clone\"><code>clone</code></a> on <code>Arc</code> produces\na new <code>Arc</code> instance, which points to the same allocation on the heap as the\nsource <code>Arc</code>, while increasing a reference count. When the last <code>Arc</code>\npointer to a given allocation is destroyed, the value stored in that allocation (often\nreferred to as “inner value”) is also dropped.</p>",
+      "context_url": "https://doc.rust-lang.org/std/sync/struct.Arc.html",
+      "source_text": "The type Arc<T> provides shared ownership of a value of type T,\nallocated in the heap. Invoking clone on Arc produces\na new Arc instance, which points to the same allocation on the heap as the\nsource Arc, while increasing a reference count. When the last Arc\npointer to a given allocation is destroyed, the value stored in that allocation (often\nreferred to as “inner value”) is also dropped.",
+      "expected_scope_prompt_sha256": "05bf8f257b8fbec4d8ea2fd64ecec555169219d203e3663d24606b6ecda2151b",
+      "expected_max_tokens": 530,
+      "expected_grammar_sha256": "22ce6064bceceff39b8a83e4a38140caf6c8f0f1f1b8db68f437712acb23bd74"
+    },
+    {
+      "id": "python-futures-v27-2",
+      "group": "known_development",
+      "split": "diagnostic",
+      "html": "<p>The returned iterator raises a <a class=\"reference internal\" href=\"../builtins/exceptions.html#TimeoutError\" title=\"TimeoutError\"><code class=\"xref py py-exc docutils literal notranslate\"><span class=\"pre\">TimeoutError</span></code></a>\nif <a class=\"reference internal\" href=\"../builtins/stdtypes.html#iterator.__next__\" title=\"iterator.__next__\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">__next__()</span></code></a> is called and the result isn’t available\nafter <em>timeout</em> seconds from the original call to <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">Executor.map()</span></code>.\n<em>timeout</em> can be an int or a float.  If <em>timeout</em> is not specified or\n<code class=\"docutils literal notranslate\"><span class=\"pre\">None</span></code>, there is no limit to the wait time.</p>",
+      "context_url": "https://docs.python.org/3/library/concurrent.futures.html",
+      "source_text": "The returned iterator raises a TimeoutError\nif __next__() is called and the result isn’t available\nafter timeout seconds from the original call to Executor.map().\ntimeout can be an int or a float.  If timeout is not specified or\nNone, there is no limit to the wait time.",
+      "expected_scope_prompt_sha256": "998433af8131495b873392261a05d15ea6207ae0779057d9d20eed8e1ac9fceb",
+      "expected_max_tokens": 496,
+      "expected_grammar_sha256": "8fb48b22ccec8203a08a693a0d0467be44425b5c32a81feddb9efef25d68a1f5"
+    },
+    {
+      "id": "rust-arc-v27-2",
+      "group": "known_development",
+      "split": "diagnostic",
+      "html": "<p>Use <a href=\"struct.Arc.html#method.get_mut\" title=\"associated function std::sync::Arc::get_mut\"><code>Arc::get_mut</code></a> when you know your <code>Arc</code> is not shared (has a reference count of 1),\nwhich provides direct mutable access to the inner value without any cloning.</p>",
+      "context_url": "https://doc.rust-lang.org/std/sync/struct.Arc.html",
+      "source_text": "Use Arc::get_mut when you know your Arc is not shared (has a reference count of 1),\nwhich provides direct mutable access to the inner value without any cloning.",
+      "expected_scope_prompt_sha256": "70e55e3f26f211f79d22e884524164b16fa6c0ba84724eba91d6057687bc7ce1",
+      "expected_max_tokens": 284,
+      "expected_grammar_sha256": "56944b46d8f07db9af023c29830295188c276f97b0919e3b714115bf965f0bc9"
+    },
+    {
+      "id": "python-contextlib-v25-1",
+      "group": "known_development",
+      "split": "diagnostic",
+      "html": "<p>An <a class=\"reference internal\" href=\"../glossary.html#term-abstract-base-class\"><span class=\"xref std std-term\">abstract base class</span></a> for classes that implement\n<a class=\"reference internal\" href=\"../reference/datamodel.html#object.__enter__\" title=\"object.__enter__\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">__enter__()</span></code></a> and <a class=\"reference internal\" href=\"../reference/datamodel.html#object.__exit__\" title=\"object.__exit__\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">__exit__()</span></code></a>. A default\nimplementation for <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">__enter__()</span></code> is provided which returns\n<code class=\"docutils literal notranslate\"><span class=\"pre\">self</span></code> while <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">__exit__()</span></code> is an abstract method which by default\nreturns <code class=\"docutils literal notranslate\"><span class=\"pre\">None</span></code>. See also the definition of <a class=\"reference internal\" href=\"../builtins/stdtypes.html#typecontextmanager\"><span class=\"std std-ref\">Context Manager Types</span></a>.</p>",
+      "context_url": "https://docs.python.org/3/library/contextlib.html",
+      "source_text": "An abstract base class for classes that implement\n__enter__() and __exit__(). A default\nimplementation for __enter__() is provided which returns\nself while __exit__() is an abstract method which by default\nreturns None. See also the definition of Context Manager Types.",
+      "expected_scope_prompt_sha256": "b5334df63b987bac515bbebf1c2d213561bdd413ae5143338a98a99973062d2b",
+      "expected_max_tokens": 493,
+      "expected_grammar_sha256": "b72e4235e07db62d2030d2f5ac18574a5c70fbaafcb6c6a31e89361846132759"
+    },
+    {
+      "id": "python-contextlib-v25-2",
+      "group": "known_development",
+      "split": "diagnostic",
+      "html": "<p>An <a class=\"reference internal\" href=\"../glossary.html#term-abstract-base-class\"><span class=\"xref std std-term\">abstract base class</span></a> for classes that implement\n<a class=\"reference internal\" href=\"../reference/datamodel.html#object.__aenter__\" title=\"object.__aenter__\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">__aenter__()</span></code></a> and <a class=\"reference internal\" href=\"../reference/datamodel.html#object.__aexit__\" title=\"object.__aexit__\"><code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">__aexit__()</span></code></a>. A default\nimplementation for <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">__aenter__()</span></code> is provided which returns\n<code class=\"docutils literal notranslate\"><span class=\"pre\">self</span></code> while <code class=\"xref py py-meth docutils literal notranslate\"><span class=\"pre\">__aexit__()</span></code> is an abstract method which by default\nreturns <code class=\"docutils literal notranslate\"><span class=\"pre\">None</span></code>. See also the definition of\n<a class=\"reference internal\" href=\"../reference/datamodel.html#async-context-managers\"><span class=\"std std-ref\">Asynchronous Context Managers</span></a>.</p>",
+      "context_url": "https://docs.python.org/3/library/contextlib.html",
+      "source_text": "An abstract base class for classes that implement\n__aenter__() and __aexit__(). A default\nimplementation for __aenter__() is provided which returns\nself while __aexit__() is an abstract method which by default\nreturns None. See also the definition of\nAsynchronous Context Managers.",
+      "expected_scope_prompt_sha256": "581c862e87a9952f51611a4b9860d3ecf5c3b51d9af13995f0a4163dea8930aa",
+      "expected_max_tokens": 505,
+      "expected_grammar_sha256": "b72e4235e07db62d2030d2f5ac18574a5c70fbaafcb6c6a31e89361846132759"
+    },
+    {
+      "id": "mdn-createimagebitmap-v23-1",
+      "group": "known_development",
+      "split": "diagnostic",
+      "html": "<p>The <strong><code>createImageBitmap()</code></strong> method of the <a href=\"/en-US/docs/Web/API/Window\"><code>Window</code></a> interface creates a bitmap from a given source, optionally cropped to contain only a portion of that source.\nIt accepts a variety of different image sources, and returns a <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise\"><code>Promise</code></a> which resolves to an <a href=\"/en-US/docs/Web/API/ImageBitmap\"><code>ImageBitmap</code></a>.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/createImageBitmap",
+      "source_text": "The createImageBitmap() method of the Window interface creates a bitmap from a given source, optionally cropped to contain only a portion of that source.\nIt accepts a variety of different image sources, and returns a Promise which resolves to an ImageBitmap.",
+      "expected_scope_prompt_sha256": "a80011b9b40ee0f8fc0254aeafa5a2d2b2734cead165fdf6d13955cfa92eea69",
+      "expected_max_tokens": 415,
+      "expected_grammar_sha256": "c6bd8e3d3d5a6cb4ca1b14561e064a72486dc169b1e24f5e78a1dd91998964bc"
+    },
+    {
+      "id": "rust-lifetimes-v17-2",
+      "group": "known_development",
+      "split": "diagnostic",
+      "html": "<p>Here, <code class=\"hljs\">x</code> has the lifetime <code class=\"hljs\">'b</code>, which in this case is larger than <code class=\"hljs\">'a</code>. This\nmeans <code class=\"hljs\">r</code> can reference <code class=\"hljs\">x</code> because Rust knows that the reference in <code class=\"hljs\">r</code> will\nalways be valid while <code class=\"hljs\">x</code> is valid.</p>",
+      "context_url": "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html",
+      "source_text": "Here, x has the lifetime 'b, which in this case is larger than 'a. This\nmeans r can reference x because Rust knows that the reference in r will\nalways be valid while x is valid.",
+      "expected_scope_prompt_sha256": "31146f215167db6a2e9fda439b51b438357aff0862ccab78c2f4d41387453887",
+      "expected_max_tokens": 398,
+      "expected_grammar_sha256": "22ce6064bceceff39b8a83e4a38140caf6c8f0f1f1b8db68f437712acb23bd74"
+    },
+    {
+      "id": "mdn-stream-reader-v24-1",
+      "group": "known_development",
+      "split": "diagnostic",
+      "html": "<p>The <strong><code>getReader()</code></strong> method of the <a href=\"/en-US/docs/Web/API/ReadableStream\"><code>ReadableStream</code></a> interface creates a reader and locks the stream to it.\nWhile the stream is locked, no other reader can be acquired until this one is released.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream/getReader",
+      "source_text": "The getReader() method of the ReadableStream interface creates a reader and locks the stream to it.\nWhile the stream is locked, no other reader can be acquired until this one is released.",
+      "expected_scope_prompt_sha256": "6bb2eabf5110417afe91586e74d2fb433247832bcc0b39821499a25ef22ba284",
+      "expected_max_tokens": 309,
+      "expected_grammar_sha256": "b0accd316bf0af4bb979c90b35567d0cbfe836571a7beebe19a173f1c5b83cc8"
+    },
+    {
+      "id": "python-asyncio-task-v28-1",
+      "group": "frozen_confirmation",
+      "split": "diagnostic",
+      "html": "<p>The task is executed in the loop returned by <a class=\"reference internal\" href=\"asyncio-eventloop.html#asyncio.get_running_loop\" title=\"asyncio.get_running_loop\"><code class=\"xref py py-func docutils literal notranslate\"><span class=\"pre\">get_running_loop()</span></code></a>,\n<a class=\"reference internal\" href=\"../builtins/exceptions.html#RuntimeError\" title=\"RuntimeError\"><code class=\"xref py py-exc docutils literal notranslate\"><span class=\"pre\">RuntimeError</span></code></a> is raised if there is no running loop in\ncurrent thread.</p>",
+      "context_url": "https://docs.python.org/3/library/asyncio-task.html",
+      "source_text": "The task is executed in the loop returned by get_running_loop(),\nRuntimeError is raised if there is no running loop in\ncurrent thread.",
+      "expected_scope_prompt_sha256": "ea3c2f5aa629db6b096f354755bb36d8522ab5c462f95e005514e24dc130d445",
+      "expected_max_tokens": 215,
+      "expected_grammar_sha256": "46ce703ab1b9b4e3a1bf8d3618b8a7d018258303cc9b304e629c25ca82f239ce"
+    },
+    {
+      "id": "python-asyncio-task-v28-2",
+      "group": "frozen_confirmation",
+      "split": "diagnostic",
+      "html": "<p>It is recommended that coroutines use <code class=\"docutils literal notranslate\"><span class=\"pre\">try/finally</span></code> blocks to robustly\nperform clean-up logic. In case <a class=\"reference internal\" href=\"asyncio-exceptions.html#asyncio.CancelledError\" title=\"asyncio.CancelledError\"><code class=\"xref py py-exc docutils literal notranslate\"><span class=\"pre\">asyncio.CancelledError</span></code></a>\nis explicitly caught, it should generally be propagated when\nclean-up is complete. <code class=\"xref py py-exc docutils literal notranslate\"><span class=\"pre\">asyncio.CancelledError</span></code> directly subclasses\n<a class=\"reference internal\" href=\"../builtins/exceptions.html#BaseException\" title=\"BaseException\"><code class=\"xref py py-exc docutils literal notranslate\"><span class=\"pre\">BaseException</span></code></a> so most code will not need to be aware of it.</p>",
+      "context_url": "https://docs.python.org/3/library/asyncio-task.html",
+      "source_text": "It is recommended that coroutines use try/finally blocks to robustly\nperform clean-up logic. In case asyncio.CancelledError\nis explicitly caught, it should generally be propagated when\nclean-up is complete. asyncio.CancelledError directly subclasses\nBaseException so most code will not need to be aware of it.",
+      "expected_scope_prompt_sha256": "7575513ac02ca1f821a13af67f5b7ae77ba08c56f0921489f883243163ae8102",
+      "expected_max_tokens": 460,
+      "expected_grammar_sha256": "896d3693b334866c8538d9eb5a2d4cc9b0b3eb275e18083bd28d71f0a7009211"
+    },
+    {
+      "id": "rust-option-v28-1",
+      "group": "frozen_confirmation",
+      "split": "diagnostic",
+      "html": "<p>Returns <code>true</code> if the option is a <a href=\"enum.Option.html#variant.Some\" title=\"variant std::option::Option::Some\"><code>Some</code></a> and the value inside of it matches a predicate.</p>",
+      "context_url": "https://doc.rust-lang.org/std/option/enum.Option.html",
+      "source_text": "Returns true if the option is a Some and the value inside of it matches a predicate.",
+      "expected_scope_prompt_sha256": "f0b535191741adeb2434bc7912b6a45959c1526e4f10e54f06924590776d30cf",
+      "expected_max_tokens": 180,
+      "expected_grammar_sha256": "56944b46d8f07db9af023c29830295188c276f97b0919e3b714115bf965f0bc9"
+    },
+    {
+      "id": "rust-option-v28-2",
+      "group": "frozen_confirmation",
+      "split": "diagnostic",
+      "html": "<p>Returns <code>true</code> if the option is a <a href=\"enum.Option.html#variant.None\" title=\"variant std::option::Option::None\"><code>None</code></a> or the value inside of it matches a predicate.</p>",
+      "context_url": "https://doc.rust-lang.org/std/option/enum.Option.html",
+      "source_text": "Returns true if the option is a None or the value inside of it matches a predicate.",
+      "expected_scope_prompt_sha256": "5e41e53c69d0f8445ec5b36de06420c6bcfe40dbd29f43d916defbd68aa231f0",
+      "expected_max_tokens": 179,
+      "expected_grammar_sha256": "56944b46d8f07db9af023c29830295188c276f97b0919e3b714115bf965f0bc9"
+    },
+    {
+      "id": "mdn-promise-v28-1",
+      "group": "frozen_confirmation",
+      "split": "diagnostic",
+      "html": "<p>These methods attach handlers to each input promise using <a href=\"/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/then\"><code>then()</code></a>. Even when the resulting promise has settled early (such as when one input in <code>Promise.race()</code> settles), the other handlers are not removed. Repeatedly passing the same pending promise to concurrency methods can accumulate handlers even when those handlers are never used:</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise",
+      "source_text": "These methods attach handlers to each input promise using then(). Even when the resulting promise has settled early (such as when one input in Promise.race() settles), the other handlers are not removed. Repeatedly passing the same pending promise to concurrency methods can accumulate handlers even when those handlers are never used:",
+      "expected_scope_prompt_sha256": "50b72ec7bc163bd6f9b04d2368ee9162440a0c95baf85cb4ed87982158658369",
+      "expected_max_tokens": 450,
+      "expected_grammar_sha256": "56944b46d8f07db9af023c29830295188c276f97b0919e3b714115bf965f0bc9"
+    },
+    {
+      "id": "mdn-promise-v28-2",
+      "group": "frozen_confirmation",
+      "split": "diagnostic",
+      "html": "<p>Returns a <code>Promise</code> object that is resolved with the given value. If the value is a thenable (i.e., has a <code>then</code> method), the returned promise will \"follow\" that thenable, adopting its eventual state; otherwise, the returned promise will be fulfilled with the value.</p>",
+      "context_url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise",
+      "source_text": "Returns a Promise object that is resolved with the given value. If the value is a thenable (i.e., has a then method), the returned promise will \"follow\" that thenable, adopting its eventual state; otherwise, the returned promise will be fulfilled with the value.",
+      "expected_scope_prompt_sha256": "3658c29a043de20ee6afa12bf1e31edca51bd458c35d0990d00c3483374f4112",
+      "expected_max_tokens": 443,
+      "expected_grammar_sha256": "56944b46d8f07db9af023c29830295188c276f97b0919e3b714115bf965f0bc9"
+    }
+  ]
+}
