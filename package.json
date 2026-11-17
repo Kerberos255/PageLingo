@@ -7,7 +7,7 @@
     "build": "node tools/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm test && npm run eval:mt-data && npm run eval:mt-targeted && npm run eval:mt-curriculum && npm run eval:mt-semantic && npm run eval:mt-corrective && npm run eval:mt-preference && npm run eval:mt-mining && npm run audit:prod && npm run build && npm run lint:addon",
+    "verify": "npm run typecheck && npm test && npm run eval:mt-data && npm run eval:mt-targeted && npm run eval:mt-curriculum && npm run eval:mt-semantic && npm run eval:mt-corrective && npm run eval:mt-preference && npm run eval:mt-mining && npm run eval:mt-paraphrase && npm run audit:prod && npm run build && npm run lint:addon",
     "eval:mt-data": "node tools/mt-quality-data.mjs",
     "eval:mt-targeted": "node tools/mt-targeted-data.mjs && node tools/mt-research-plan.mjs",
     "eval:mt-curriculum": "node tools/mt-curriculum-data.mjs",
@@ -17,7 +17,8 @@
     "eval:mt-mining": "node tools/mt-mining-plan.mjs",
     "lint:addon": "web-ext lint --source-dir dist",
     "package": "npm run build && web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest",
-    "audit:prod": "npm audit --omit=dev --audit-level=high"
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "eval:mt-paraphrase": "node tools/mt-paraphrase-data.mjs && node tools/mt-paraphrase-plan.mjs --web eval/mt-quality/external/paraphrase-web-v29.json"
   },
   "dependencies": {
     "@wllama/wllama": "3.6.1",

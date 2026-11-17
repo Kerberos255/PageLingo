@@ -38,10 +38,11 @@ manifest = json.loads((args.data / "manifest.json").read_text())
 semantic = manifest.get("corpus") == "semantic-rewrite-v4"
 corrective = manifest.get("corpus") == "corrective-fixed-v5"
 scope_choice = manifest.get("corpus") in ["scope-choice-v1", "scope-choice-v2", "scope-choice-v3"]
-paired = semantic or corrective
+paraphrase = manifest.get("corpus") == "fixed-paraphrase-v29"
+paired = semantic or corrective or paraphrase
 if manifest.get("protocol") != ("frozen-scope-choice-v1" if scope_choice else "semantic-rewrite-multitask-v1" if semantic else "production-fixed-text-v1"):
     raise ValueError("Training data must be exported with the production fixed-text protocol")
-if args.synthetic_candidate and manifest.get("corpus") not in ["targeted-synthetic-v2", "targeted-synthetic-v3", "semantic-rewrite-v4", "corrective-fixed-v5", "scope-choice-v1", "scope-choice-v2", "scope-choice-v3"]:
+if args.synthetic_candidate and manifest.get("corpus") not in ["targeted-synthetic-v2", "targeted-synthetic-v3", "semantic-rewrite-v4", "corrective-fixed-v5", "scope-choice-v1", "scope-choice-v2", "scope-choice-v3", "fixed-paraphrase-v29"]:
     raise ValueError("Synthetic candidate mode requires a separate audited curriculum, not the old seed or an evaluation set")
 if manifest.get("corpus") == "targeted-synthetic-v3" and config.get("checkpoint_selection") != "final":
     raise ValueError("v3 compares both fixed final checkpoints; total validation loss must not silently select one")
@@ -68,6 +69,13 @@ if scope_choice:
         from scope_choice_contract import validate_count_balance
         validate_count_balance({split: [json.loads(line) for line in (args.data / manifest['files'][split]['file']).read_text().splitlines() if line.strip()]
                                for split in ['train', 'validation']})
+if paraphrase:
+    if not args.synthetic_candidate: raise ValueError("Paraphrase data requires explicit bounded research mode")
+    from paraphrase_contract import validate_config, validate_row, validate_splits, scope_trainer_class
+    from validation_metrics import target_kinds
+    validate_config(config, manifest)
+    validate_splits({split: [json.loads(line) for line in (args.data / manifest['files'][split]['file']).read_text().splitlines() if line.strip()]
+                     for split in ['train', 'validation']}, manifest)
 if args.expected_initial_sha256 and (not (paired or scope_choice) or not re.fullmatch(r"[a-f0-9]{64}", args.expected_initial_sha256)):
     raise ValueError("Expected initialization digest must identify an explicit paired curriculum")
 
@@ -151,6 +159,8 @@ for split in ["train", "validation"]:  # Evaluation/diagnostic files can never e
             raise ValueError("v4 requires an explicit task and paired source identity")
         if corrective:
             validate_corrective_row(row, manifest)
+        if paraphrase:
+            validate_row(row, manifest)
         prompt = tokenizer.apply_chat_template(messages[:1], tokenize=False, add_generation_prompt=True)
         prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
         target_tokens = tokenizer(messages[1]["content"], add_special_tokens=False, **({"return_offsets_mapping": True} if paired else {}))
@@ -206,10 +216,10 @@ if semantic:
 elif corrective:
     stats["loss_definition"] = {"kind": "trainer_default_causal_cross_entropy", "content_weight": 1., "marker_weight": 1.,
         "eos_weight": 1., "prompt_and_padding_masked": True, "validation_loss_is_weighted": False}
-elif scope_choice:
+elif scope_choice or paraphrase:
     stats["loss_definition"] = {"kind": "batch1_sequence_mean_target_ce", "prompt_and_padding_masked": True,
         "eos_supervised": True, "token_count_across_accumulation_passed_to_model": False,
-        "note": "Choice/EOS examples and translation examples each contribute their sequence mean; no automatic checkpoint winner."}
+        "note": "Fixed and natural sequences each contribute their sequence mean; no automatic checkpoint winner." if paraphrase else "Choice/EOS examples and translation examples each contribute their sequence mean; no automatic checkpoint winner."}
 stats["review_status"] = "assistant_audited_synthetic" if args.synthetic_candidate and unreviewed else "assistant_authored_needs_human_review" if unreviewed else "human_reviewed"
 stats["run_kind"] = "synthetic_research_candidate" if args.synthetic_candidate else "pipeline_probe" if unreviewed or args.probe else "fine_tuning_candidate"
 resume_adapter = None
@@ -262,6 +272,12 @@ else:
     model = get_peft_model(model, LoraConfig(task_type="CAUSAL_LM", r=config["lora_r"], lora_alpha=config["lora_alpha"],
         lora_dropout=config["lora_dropout"], target_modules=config["target_modules"], bias="none"))
 model.enable_input_require_grads()
+if paraphrase:
+    for module in model.modules():
+        if isinstance(module, torch.nn.Dropout): module.p = 0.0
+        if hasattr(module, "attention_dropout") and isinstance(module.attention_dropout, (int, float)): module.attention_dropout = 0.0
+    for options in model.peft_config.values(): options.lora_dropout = 0.0
+    stats["dropout_disabled"] = True
 stats["model_and_adapter_load_wall_s"] = time.perf_counter() - load_started
 stats["parameters"] = {"total": sum(p.numel() for p in model.parameters()), "trainable": sum(p.numel() for p in model.parameters() if p.requires_grad)}
 if paired or scope_choice:
@@ -284,7 +300,7 @@ class FiniteMetrics(TrainerCallback):
             if key in (logs or {}) and not math.isfinite(float(logs[key])):
                 raise FloatingPointError("Non-finite training metric: " + key)
 
-TrainerType = scope_trainer_class(Trainer) if scope_choice else semantic_trainer_class(Trainer) if semantic else Trainer
+TrainerType = scope_trainer_class(Trainer) if scope_choice or paraphrase else semantic_trainer_class(Trainer) if semantic else Trainer
 trainer = TrainerType(model=model, args=arguments, train_dataset=datasets["train"], eval_dataset=datasets["validation"], data_collator=collate, callbacks=[FiniteMetrics()])
 start = time.perf_counter()
 before = trainer.evaluate()

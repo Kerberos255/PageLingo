@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "protocol": "fixed-paraphrase-v29",
+  "stage": "preparation_only",
+  "registered_at_utc": "2026-11-17T18:29:44.123215+00:00",
+  "previous_source_commit": "b3d0a6a355b54f7689923b3e3c4a255104d706eb",
+  "model_generations": 0,
+  "optimizer_steps_executed": 0,
+  "production_source_changed": false,
+  "release_approved": false,
+  "upload_executed": false,
+  "data": {
+    "cases": {
+      "train": 128,
+      "validation": 32,
+      "holdout": 32
+    },
+    "training_rows_each": 256,
+    "validation_rows_each": 64,
+    "categories": 8,
+    "template_families": 32,
+    "review_status": "assistant_authored_and_audited_not_independent_human_review",
+    "prior_sources": 1195,
+    "prior_wires": 1193,
+    "manifest_sha256": "791f0dc1fb4639a529ddc265afdd3fdbf7d39d86b1166f668aeddfcbb38a2ac1",
+    "maximum_conservative_context_bound": {
+      "legacy": 1105,
+      "compact": 1458,
+      "natural": 816
+    }
+  },
+  "evaluation": {
+    "cases": 84,
+    "jobs_each": 168,
+    "max_generations": 504,
+    "new_web_sources": 6,
+    "sites": 3,
+    "grammar_applied_on_gpu": false,
+    "plan_sha256": "2cda63d4c3c4820b7775bac967039c774ab532ce362980c272796537af8627a2",
+    "new_web_fixture_sha256": "3c94a3d83d0753e3ebacc3913690ebde42eb4d1ea34466ba6701d3e049dcf647",
+    "real_web_sources_in_optimizer": false
+  },
+  "private_original_source_audit": {
+    "inventory_collected": true,
+    "files": 24,
+    "canonical_sources": 6429,
+    "delexicalized_sources": 6429,
+    "inventory_sha256": "65662f1be53a370e55fab5c86605c164ae2e3ceb85a60fcc71f0f8eea28430a7",
+    "comparison_completed_in_cloud": false,
+    "required_before_model_load": true,
+    "collision_action": "stop_before_model_load"
+  },
+  "verification": {
+    "npm_verify_exit_code": 0,
+    "js_test_files": 53,
+    "js_tests_passed": 605,
+    "training_guard_tests_run": 122,
+    "training_guard_tests_passed": 107,
+    "training_guard_tests_skipped": 15,
+    "new_stdlib_tests": 6,
+    "production_dependency_vulnerabilities": 0,
+    "addon_lint_errors": 0,
+    "addon_lint_existing_warnings": 1,
+    "logs": {
+      "verify-final.log": "ec77e3875ebb99bf1c2c972f06659051ecaf111aa88b4b5d22a92abfcd74bf0f",
+      "training-tests-final.log": "b398ad5785077514028c69e0232587ce09da94dd27e25a2ee66885a24a4e052f",
+      "paraphrase-tests.log": "bf54d02485e22f80012a938a699e0e742c4daebfbf3b16d87b04e914833bf570"
+    },
+    "simulated_stages_are_gpu_execution": false
+  },
+  "delivery_at_source_preparation": {
+    "installed": false,
+    "blocking_observation": "UNKNOWN realpath/stat/open on share; TCP 445 timeout from MCP host",
+    "training_started_via_mcp": false,
+    "root_entries": [
+      "PageLingo-MT.cmd",
+      "x.cmd"
+    ]
+  },
+  "limitations": [
+    "Private exact source comparison is mandatory at runtime and has not yet passed.",
+    "Source exclusions do not prove semantic or pretraining novelty.",
+    "No v29 model quality, performance or Firefox improvement is measured during preparation.",
+    "No automatic checkpoint winner or release by loss."
+  ]
+}

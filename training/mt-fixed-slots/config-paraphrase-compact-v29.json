@@ -1,0 +1,32 @@
+{
+  "base_model": "tencent/Hy-MT2-1.8B",
+  "base_revision": "9a341cd1b679d3efd23b46e847b01745a71ed792",
+  "base_weight_file": "model.safetensors",
+  "base_weight_sha256": "29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5",
+  "max_length": 3072,
+  "seed": 42,
+  "epochs": 2,
+  "learning_rate": 5e-06,
+  "batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "warmup_ratio": 0.05,
+  "weight_decay": 0.01,
+  "lora_r": 32,
+  "lora_alpha": 64,
+  "lora_dropout": 0.0,
+  "target_modules": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj"
+  ],
+  "probe_max_steps": 12,
+  "purpose": "v29 paired final32-step fixed-order paraphrase and natural replay from the verified formal v0.2.2 r32; no winner, upload or release by loss",
+  "candidate_max_steps": 32,
+  "initialization": "resume_verified_v022",
+  "initial_adapter_directory": "outputs/pagelingo-hymt-1.8b-v0.2.2-micro-repair/final",
+  "initial_adapter_sha256": "28a0bd981feab75390ec045a9b97b02401e8a5ab973118d7e54da7b9e77cf859",
+  "initial_adapter_config_sha256": "1e55f31f99fc13ea21a25bc4f4b8c60f1b5a6b3d52ff6497ab778b1f4a4efa10",
+  "checkpoint_selection": "final",
+  "paraphrase_prompt_variant": "compact"
+}
