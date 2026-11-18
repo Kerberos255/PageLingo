@@ -1,5 +1,6 @@
 import { loadModelPair } from "./model-cache";
 import { ShortTranslationCache } from "./translation-cache";
+import { prepareBergamotFixedHtml, repairBergamotFixedHtml } from "./fixed-html";
 import type { TranslationRoute } from "./model-manifest";
 import type { BergamotWorkerRequest, BergamotWorkerResponse, WorkerModelBundle } from "./protocol";
 
@@ -212,14 +213,15 @@ export class BergamotClient {
       session = new RouteSession(route);
       this.#sessions.set(route.key, session);
     }
-    const translated = await session.translateHtmlBatch(unique.map((item) => item.html));
+    const prepared = unique.map(({html}) => prepareBergamotFixedHtml(html));
+    const translated = await session.translateHtmlBatch(prepared);
     if (translated.length !== unique.length) {
       throw new Error(`Bergamot batch result length mismatch: expected ${unique.length}, got ${translated.length}`);
     }
 
     for (let index = 0; index < unique.length; index += 1) {
       const item = unique[index]!;
-      const output = translated[index] ?? item.html;
+      const output = repairBergamotFixedHtml(item.html, translated[index] ?? item.html, prepared[index] !== item.html);
       this.#cache.set(route.key, item.html, output);
       for (const outputIndex of item.indexes) results[outputIndex] = output;
     }
@@ -236,7 +238,8 @@ export class BergamotClient {
       session = new RouteSession(route);
       this.#sessions.set(route.key, session);
     }
-    const translated = await session.translateHtml(html);
+    const prepared = prepareBergamotFixedHtml(html);
+    const translated = repairBergamotFixedHtml(html, await session.translateHtml(prepared), prepared !== html);
     this.#cache.set(route.key, html, translated);
     return translated;
   }

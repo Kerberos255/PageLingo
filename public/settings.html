@@ -3,66 +3,80 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="preferences-theme.css" />
     <link rel="stylesheet" href="settings.css" />
     <title>PageLingo 设置</title>
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="brand"><div class="brand-mark">P</div><div><strong>PageLingo</strong><span>本地沉浸式翻译</span></div></div>
+        <div class="brand"><img src="icons/pagelingo.svg" alt="" width="40" height="40" /><div><strong>PageLingo</strong><span>设置</span></div></div>
         <nav aria-label="设置导航">
-          <a class="nav-item active" data-settings-page="translation" href="#translation">网页翻译</a>
+          <a class="nav-item active" data-settings-page="translation" href="#translation" aria-current="page">网页翻译</a>
           <a class="nav-item" data-settings-page="image-translation" href="#image-translation">图片翻译</a>
           <a class="nav-item" data-settings-page="glossary" href="#glossary">术语库</a>
           <a class="nav-item" data-settings-page="languages" href="#languages">语言包</a>
           <a class="nav-item" data-settings-page="engine" href="#engine">翻译引擎</a>
         </nav>
-        <div class="local-badge">Firefox 本地引擎可完全离线运行 · 外部引擎需授权后才会发送待翻译内容</div>
       </aside>
       <main class="content">
-        <header class="page-header"><div><p class="eyebrow">PAGELINGO</p><h1>设置</h1><p>配置网页翻译、图片翻译、术语库、离线语言包和翻译引擎。</p></div></header>
         <section id="translation" class="section settings-page active">
           <div class="section-heading"><h2>网页翻译</h2></div>
-          <div class="setting-card stack-card">
-            <label class="setting-row"><span><strong>自动翻译</strong><small>开启后自动识别网页语言并翻译为目标语言。</small></span><span class="switch"><input id="auto-translate-enabled" type="checkbox" /><i></i></span></label>
-            <div class="target-row"><span class="rule-label">自动翻译为</span><select id="target-language"></select></div>
+          <div class="setting-card behavior-card">
+            <label class="setting-row">
+              <span><strong>自动翻译</strong><small>打开网页时自动翻译为目标语言</small></span>
+              <span class="switch"><input id="auto-translate-enabled" type="checkbox" /><i aria-hidden="true"></i></span>
+            </label>
+            <label class="setting-row" for="target-language"><strong>目标语言</strong><select id="target-language"></select></label>
+            <div class="setting-row">
+              <strong>显示模式</strong>
+              <fieldset class="segmented" aria-label="翻译显示模式">
+                <label><input type="radio" name="display-mode" value="translation" /><span>仅译文</span></label>
+                <label><input type="radio" name="display-mode" value="bilingual" /><span>双语对照</span></label>
+              </fieldset>
+            </div>
           </div>
-          <div class="setting-card rule-card">
-            <div class="setting-copy"><div><strong>不自动翻译的网址</strong><span>当网站为下列域名时，将不会自动进行翻译。此规则优先于语言设置。</span></div></div>
-            <div class="exception-add"><input id="never-site-input" type="text" inputmode="url" placeholder="例如：github.com" /><button id="never-site-add" type="button">添加</button></div>
-            <div id="never-site-list" class="exception-list"></div>
+          <div class="rules-grid">
+            <section class="rule-group" aria-labelledby="site-rules-title">
+              <h3 id="site-rules-title">网站规则</h3>
+              <div class="setting-card">
+                <div class="rule-block">
+                  <label for="always-site-input">总是翻译</label>
+                  <div class="exception-add"><input id="always-site-input" type="text" inputmode="url" placeholder="例如 docs.example.com" /><button id="always-site-add" type="button">添加</button></div>
+                  <div id="always-site-list" class="exception-list"></div>
+                </div>
+                <div class="rule-block">
+                  <label for="never-site-input">不自动翻译</label>
+                  <div class="exception-add"><input id="never-site-input" type="text" inputmode="url" placeholder="例如 github.com" /><button id="never-site-add" type="button">添加</button></div>
+                  <div id="never-site-list" class="exception-list"></div>
+                </div>
+              </div>
+            </section>
+            <section class="rule-group" aria-labelledby="language-rules-title">
+              <h3 id="language-rules-title">语言规则</h3>
+              <div class="setting-card">
+                <div class="rule-block">
+                  <label for="always-language-select">总是翻译</label>
+                  <div class="exception-add"><select id="always-language-select"></select><button id="always-language-add" type="button">添加</button></div>
+                  <div id="always-language-list" class="exception-list"></div>
+                </div>
+                <div class="rule-block">
+                  <label for="never-language-select">跳过翻译</label>
+                  <div class="exception-add"><select id="never-language-select"></select><button id="never-language-add" type="button">添加</button></div>
+                  <div id="never-language-list" class="exception-list"></div>
+                </div>
+              </div>
+            </section>
           </div>
-          <div class="setting-card rule-card">
-            <div class="setting-copy"><div><strong>总是翻译的网址</strong><span>当网站为下列域名时，会自动翻译为目标语言。</span></div></div>
-            <div class="exception-add"><input id="always-site-input" type="text" inputmode="url" placeholder="例如：docs.example.com" /><button id="always-site-add" type="button">添加</button></div>
-            <div id="always-site-list" class="exception-list"></div>
-          </div>
-          <div class="setting-card rule-card">
-            <div class="setting-copy"><div><strong>永不翻译的语言</strong><span>当页面中某一段落的语言为下列语言时，将跳过翻译。</span></div></div>
-            <div class="exception-add"><select id="never-language-select"></select><button id="never-language-add" type="button">添加</button></div>
-            <div id="never-language-list" class="exception-list"></div>
-          </div>
-          <div class="setting-card rule-card">
-            <div class="setting-copy"><div><strong>总是翻译的语言</strong><span>当页面语言为下列语言时，会自动翻译为目标语言。注意：如果“不自动翻译的网址”与此设置冲突，将优先按网址规则执行。</span></div></div>
-            <div class="exception-add"><select id="always-language-select"></select><button id="always-language-add" type="button">添加</button></div>
-            <div id="always-language-list" class="exception-list"></div>
-          </div>
-          <div class="setting-card">
-            <div class="setting-copy"><div><strong>显示模式</strong><span>“仅译文”只隐藏原文的视觉呈现，原始 DOM、链接与事件仍保留。</span></div></div>
-            <fieldset class="segmented" aria-label="翻译显示模式">
-              <label><input type="radio" name="display-mode" value="translation" /><span><b>仅译文</b><small>只显示译文</small></span></label>
-              <label><input type="radio" name="display-mode" value="bilingual" /><span><b>双语对照</b><small>原文 + 译文</small></span></label>
-            </fieldset>
-          </div>
+          <p class="hint rule-priority">网站的“不自动翻译”规则优先于语言规则。</p>
         </section>
         <section id="glossary" class="section settings-page">
           <div class="section-heading glossary-heading"><div><h2>术语库</h2><p>管理品牌、技术词和项目专属术语。多个术语库可以同时启用。</p></div><button id="create-glossary" type="button" class="primary-inline">新建术语库</button></div>
-          <div class="glossary-note"><strong>术语规则</strong><span>“保留原文”按大小写精确匹配，适合品牌和专有名词；“指定译法”用于你明确要求的固定译法。外部 LLM 引擎会同时收到当前句子命中的术语规则。</span></div>
+          <div class="glossary-note">只写原词可保留品牌和专有名词。写“原词 = 译法”可固定用词。</div>
           <div class="glossary-grid">
             <article class="glossary-card builtin">
-              <div class="glossary-card-top"><div><strong>PageLingo 默认术语库</strong><span class="glossary-handle">@pagelingo</span></div><label class="switch"><input id="builtin-glossary-enabled" type="checkbox" checked /><i></i></label></div>
-              <p>随 PageLingo 维护的专有名词库，保护常见品牌、机构、产品、平台和项目名称。默认开启。</p>
-              <div class="glossary-tags"><span>内置</span><span>自动更新</span></div>
+              <div class="glossary-card-top"><strong>默认术语库</strong><label class="switch"><input id="builtin-glossary-enabled" aria-label="启用默认术语库" type="checkbox" checked /><i aria-hidden="true"></i></label></div>
+              <p>保留常见品牌、机构和项目名的原文。</p>
             </article>
             <div id="glossary-collection-list" class="glossary-collection-list"></div>
           </div>
@@ -85,39 +99,37 @@
             <div id="language-pack-list" class="pack-list"><div class="empty-state">正在读取语言包…</div></div>
           </div>
           <div class="setting-card stack-card">
-            <div class="setting-row"><span><strong>模型更新</strong><small>只更新模型数据；PageLingo 代码与 Bergamot WASM 仍随扩展版本更新。</small></span><select id="model-update-policy" aria-label="模型更新策略"><option value="auto">自动更新（推荐）</option><option value="notify">仅提醒我</option><option value="manual">手动更新</option></select></div>
+            <div class="setting-row"><strong>语言包更新</strong><select id="model-update-policy" aria-label="语言包更新策略"><option value="auto">自动更新（推荐）</option><option value="notify">仅提醒我</option><option value="manual">手动更新</option></select></div>
             <div class="model-update-row"><button id="check-model-updates" type="button">检查更新</button><span id="model-update-status">尚未检查更新</span></div>
           </div>
         </section>
         <section id="image-translation" class="section settings-page">
           <div class="section-heading"><h2>图片翻译</h2><p>右键网页中的图片可翻译；翻译完成后再次右键可还原图片</p></div>
           <div class="setting-card stack-card">
-            <label class="setting-row"><span><strong>启用图片翻译</strong><small>默认关闭。开启后图片右键菜单会根据当前状态显示“PageLingo · 翻译图片”或“PageLingo · 还原图片”。</small></span><span class="switch"><input id="image-translation-enabled" type="checkbox" /><i></i></span></label>
-            <div class="ocr-status-row"><div><span class="meta-label">文字识别</span><strong>PP-OCRv5 Mobile · WASM Worker</strong><small id="image-ocr-status">正在读取 OCR 状态…</small></div><button id="delete-image-ocr-models" type="button" disabled>删除 OCR 模型</button></div>
+            <label class="setting-row"><strong>启用图片翻译</strong><span class="switch"><input id="image-translation-enabled" type="checkbox" /><i aria-hidden="true"></i></span></label>
+            <div class="ocr-status-row"><div><strong>本地文字识别模型</strong><small id="image-ocr-status">正在读取模型状态…</small></div><button id="delete-image-ocr-models" type="button" disabled>删除模型</button></div>
             <div class="hint">当前默认模型支持简中、繁中、英语和日语</div>
           </div>
         </section>
         <section id="engine" class="section settings-page">
-          <div class="section-heading"><h2>翻译引擎</h2><p>默认使用 Firefox 本地模型；也可以添加翻译 API、LLM 或自建服务。</p></div>
+          <div class="section-heading"><h2>翻译引擎</h2></div>
           <div class="setting-card stack-card">
-            <div class="setting-row"><span><strong>当前翻译引擎</strong><small>外部引擎会把需要翻译的文本发送给对应服务商。</small></span><select id="active-engine-select"></select></div>
-            <div class="hint">Firefox 本地引擎不需要 API Key，也不会上传网页文本。首次使用外部引擎时 Firefox 会请求数据传输权限；公网 Endpoint 必须使用 HTTPS，本机 localhost 可使用 HTTP。服务商的数据策略以其当前规则为准。</div>
+            <div class="setting-row"><label for="active-engine-select"><strong>当前引擎</strong><small>本地引擎在 Firefox 内翻译。使用外部引擎时，待译文字会发送给对应服务。</small></label><select id="active-engine-select"></select></div>
           </div>
           <div class="setting-card stack-card">
-            <div class="setting-copy"><div><strong>PageLingo MT <span class="experimental-badge">Experimental</span></strong><span>PageLingo 自训 1.8B 英→简中模型，约 1.21 GiB。模型下载后保存在 Firefox 本地；网页文本不会因使用该模型上传到外部服务。</span></div></div>
+            <div class="setting-copy"><strong>PageLingo MT <small class="experimental-badge">实验功能</small></strong><span>支持英语 → 简体中文，下载后可离线使用。模型约 1.21 GiB。</span></div>
             <div class="mt-status-row">
               <div><span class="meta-label">本地模型</span><strong>PageLingo-Translate-1.8B v0.2.2 · Q5_K_M</strong><small id="pagelingo-mt-status">正在读取模型状态…</small></div>
               <div class="mt-actions"><button id="download-pagelingo-mt" type="button">下载模型</button><button id="delete-pagelingo-mt" type="button" class="danger-button" disabled>删除模型</button></div>
             </div>
             <progress id="pagelingo-mt-progress" class="mt-progress" max="100" value="0" hidden></progress>
-            <div class="hint">当前仅支持 English → 简体中文。MT 输出会经过 marker / nesting / slot / 语言质量校验；校验失败自动回退 Firefox/Bergamot，不把异常译文写入页面。</div>
           </div>
           <div class="setting-card">
-            <div class="setting-copy"><div><strong>已添加引擎</strong><span>API Key 仅保存在 Firefox 的 <code>browser.storage.local</code>，不会写入项目文件或日志。</span></div></div>
+            <div class="setting-copy"><strong>外部引擎</strong><span>API 密钥保存在当前 Firefox 配置中。</span></div>
             <div id="translation-engine-list" class="engine-list"></div>
           </div>
           <div class="setting-card engine-form-card">
-            <div class="setting-copy"><div><strong>添加翻译引擎</strong><span>选择预设后可继续修改地址、模型和提示词。自定义 REST 只支持声明式 JSON 模板，不执行脚本。</span></div></div>
+            <div class="setting-copy"><div><strong>添加翻译引擎</strong><span>选择服务后填写连接信息。</span></div></div>
             <div class="engine-form-grid">
               <label><span>类型</span><select id="engine-type"><option value="microsoft">Microsoft Translator</option><option value="google">Google Cloud Translation</option><option value="deepl">DeepL API</option><option value="gemini">Gemini API</option><option value="openrouter">OpenRouter</option><option value="opencode-go">OpenCode Go</option><option value="deepseek">DeepSeek</option><option value="openai-compatible">OpenAI Compatible</option><option value="libretranslate">LibreTranslate</option><option value="custom-rest">自定义 REST</option></select></label>
               <label><span>名称</span><input id="engine-name" type="text" /></label>
@@ -153,7 +165,7 @@
               </div>
             </div>
           </dialog>
-        <div id="save-status" class="save-toast" role="status">设置会自动保存并立即生效</div>
+        <div id="save-status" class="save-toast" role="status"></div>
       </main>
     </div>
     <script src="options.js"></script>

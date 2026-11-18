@@ -148,7 +148,7 @@ function showSaved(message = "已保存", timeout = 1600): void {
     status.textContent = message;
     window.setTimeout(() => {
         if (status.textContent === message)
-            status.textContent = "设置会自动保存并立即生效";
+            status.textContent = "";
     }, timeout);
 }
 
@@ -463,11 +463,11 @@ function renderMtStatus(current: PageLingoMtStatus): void {
     if (current.downloading) {
         mtStatus.textContent = `正在下载 · ${formatBytes(loaded)} / ${formatBytes(total)} · ${percent}%`;
     } else if (current.installed && current.valid) {
-        mtStatus.textContent = `已下载并校验 · ${formatBytes(current.modelBytes)} · SHA256 ${current.modelSha256.slice(0, 12)}…`;
+        mtStatus.textContent = "已下载，可离线使用";
     } else if (current.error) {
         mtStatus.textContent = `未就绪 · ${current.error}`;
     } else {
-        mtStatus.textContent = `未下载 · 约 ${formatBytes(current.totalBytes)}`;
+        mtStatus.textContent = "未下载";
     }
 }
 
@@ -597,8 +597,12 @@ function selectSettingsPage(pageId: string): void {
     const next = pages.some((page) => page.id === pageId) ? pageId : "translation";
     for (const page of pages)
         page.classList.toggle("active", page.id === next);
-    for (const item of navItems)
-        item.classList.toggle("active", item.dataset.settingsPage === next);
+    for (const item of navItems) {
+        const active = item.dataset.settingsPage === next;
+        item.classList.toggle("active", active);
+        if (active) item.setAttribute("aria-current", "page");
+        else item.removeAttribute("aria-current");
+    }
 }
 
 function addSiteRule(kind: "never" | "always"): void {

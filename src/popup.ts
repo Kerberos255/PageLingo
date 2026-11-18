@@ -63,7 +63,11 @@ function fillSelect(select: HTMLSelectElement | null, languages: LanguageOption[
 }
 
 function setMode(mode: DisplayMode): void {
-  for (const button of modeButtons) button.classList.toggle("active", button.dataset.displayMode === mode);
+  for (const button of modeButtons) {
+    const active = button.dataset.displayMode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
 }
 
 async function routeSupported(source: string, target: string): Promise<boolean> {
@@ -73,8 +77,11 @@ async function routeSupported(source: string, target: string): Promise<boolean> 
 }
 
 async function refreshLanguage(): Promise<void> {
+  currentHostname = "";
   try {
     const tab = await activeTab();
+    const url = tab.url ? new URL(tab.url) : null;
+    currentHostname = url && (url.protocol === "http:" || url.protocol === "https:") ? url.hostname : "";
     const response = await sendMainFrameMessage<LanguageResponse>(tab.id!, { type: "get-page-language" });
     const info = response?.language;
     detectedCode = info?.effectiveLanguage ?? info?.detectedLanguage ?? null;
@@ -85,8 +92,8 @@ async function refreshLanguage(): Promise<void> {
     const target = targetSelect?.value;
     if (source && target && !await routeSupported(source, target)) {
       if (statusEl) statusEl.textContent = source === target ? "当前页面已经是目标语言" : `暂不支持 ${languageLabel(source)} → ${languageLabel(target)}`;
-    } else if (statusEl && statusEl.textContent?.startsWith("暂不支持")) {
-      statusEl.textContent = "就绪";
+    } else if (statusEl && (statusEl.textContent?.startsWith("暂不支持") || statusEl.textContent === "当前页面已经是目标语言")) {
+      statusEl.textContent = "";
     }
     refreshSiteAuto();
   } catch {
@@ -122,7 +129,7 @@ function refreshSiteAuto(): void {
   const neverLanguage = Boolean(detectedCode && neverTranslateLanguages.includes(detectedCode));
   const alwaysLanguage = Boolean(detectedCode && alwaysTranslateLanguages.includes(detectedCode));
   siteAuto.checked = Boolean(currentHostname) && !neverSite && (alwaysSite || alwaysLanguage || (globalAutoEnabled && !neverLanguage));
-  siteAutoHint.textContent = "此网站";
+  siteAutoHint.textContent = currentHostname;
 }
 
 translate?.addEventListener("click", () => void send("translate-page"));
@@ -175,13 +182,6 @@ void (async () => {
   alwaysTranslateSites = [...stored.alwaysTranslateSites];
   neverTranslateLanguages = [...stored.neverTranslateLanguages];
   alwaysTranslateLanguages = [...stored.alwaysTranslateLanguages];
-  try {
-    const tab = await activeTab();
-    if (tab.url) currentHostname = new URL(tab.url).hostname;
-  } catch {
-    currentHostname = "";
-  }
-  refreshSiteAuto();
   await refreshLanguage();
 })();
 

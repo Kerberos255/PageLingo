@@ -3,22 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="preferences-theme.css" />
     <link rel="stylesheet" href="popup.css" />
     <title>PageLingo</title>
   </head>
   <body>
     <main>
       <header class="title-row">
-        <div>
+        <div class="popup-brand">
+          <img src="icons/pagelingo.svg" alt="" width="32" height="32" />
           <h1>PageLingo</h1>
-          <p class="sub">本地网页翻译</p>
         </div>
-        <button id="settings" class="icon-button" type="button" aria-label="打开设置" title="设置">⚙</button>
+        <button id="settings" class="settings-button" type="button" aria-label="打开设置">设置</button>
       </header>
 
       <section class="language-pair" aria-label="翻译语言">
         <label class="language-box">
-          <span>原文语言</span>
+          <span>原文</span>
           <select id="source-language">
             <option value="auto">自动检测</option>
             <option value="en">English</option>
@@ -27,11 +28,10 @@
         </label>
         <div class="arrow" aria-hidden="true">→</div>
         <label class="language-box">
-          <span>目标语言</span>
+          <span>译文</span>
           <select id="target-language">
             <option value="zh-Hans">简体中文</option>
           </select>
-          <small>本地模型</small>
         </label>
       </section>
 
@@ -40,19 +40,23 @@
         <button type="button" data-display-mode="bilingual">双语对照</button>
       </div>
 
-      <button id="translate" class="primary" type="button">翻译本页</button>
-      <button id="restore" class="secondary" type="button">显示原文</button>
+      <div class="page-actions">
+        <button id="translate" class="primary" type="button">翻译本页</button>
+        <button id="restore" class="secondary" type="button">显示原文</button>
+      </div>
 
       <label class="site-auto-row">
         <span>
-          <strong>自动翻译</strong>
-          <small id="site-auto-hint">此网站</small>
+          <strong>在此网站自动翻译</strong>
+          <small id="site-auto-hint"></small>
         </span>
-        <input id="site-auto" type="checkbox" />
-        <i aria-hidden="true"></i>
+        <span class="switch">
+          <input id="site-auto" type="checkbox" disabled />
+          <i aria-hidden="true"></i>
+        </span>
       </label>
 
-      <p id="status" role="status">就绪</p>
+      <p id="status" role="status"></p>
     </main>
     <script src="popup.js"></script>
   </body>

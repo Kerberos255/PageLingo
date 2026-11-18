@@ -188,7 +188,7 @@ function renderActiveSelect(): void {
   activeSelect.replaceChildren();
   const local = document.createElement("option");
   local.value = LOCAL_TRANSLATION_ENGINE_ID;
-  local.textContent = "Firefox 本地 · Bergamot WASM";
+  local.textContent = "Firefox 本地翻译";
   activeSelect.append(local);
   const mt = document.createElement("option");
   mt.value = PAGELINGO_MT_ENGINE_ID;

@@ -13,7 +13,7 @@ globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ = Object.freeze({
     "GitHub", "GitHub Actions", "GitHub Copilot", "GitLab", "Bitbucket", "Git",
     "Docker", "Kubernetes", "npm", "pnpm", "bun", "Nix",
     "Node.js", "TypeScript", "JavaScript", "Python", "React", "Vue", "Svelte",
-    "Next.js", "Vite", "Playwright", "Selenium", "Bergamot", "Marian",
+    "Next.js", "Vite", "Playwright", "Selenium", "Bergamot", "Marian", "MIT",
     "JetBrains", "HashiCorp", "Terraform", "DigitalOcean", "Heroku", "Akamai",
 
     // Messaging, collaboration, and social communication products.
