@@ -93,7 +93,15 @@ def write_json(path, value):
     # Checkpoints after each generation make partial failures reviewable.
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    for attempt in range(9):
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError as error:
+            # Windows readers and scanners can briefly deny replace/delete sharing.
+            if getattr(error, "winerror", None) not in (5, 32, 33) or attempt == 8:
+                raise
+            time.sleep(min(0.05 * 2 ** attempt, 1.0))
 
 
 def write_preview(plan, results, out):

@@ -59,6 +59,8 @@ def evidence(out,here,package,plan):
     for file in out.glob('*.log'):files['logs/'+file.name]=file
     for name in ['package-manifest.json','evaluation-plan.json','preregister.json','private-exclusion-plan.json','candidate-source-fingerprints.json','config-paraphrase-legacy-v29.json','config-paraphrase-compact-v29.json']:
         files['kit/'+name]=here/name
+    if 'baseline-recovery.json' in package['files']:
+        files['kit/baseline-recovery.json']=here/'baseline-recovery.json'
     for name in ['manifest.json','template-review.md','evaluation-cases.json']:
         files['data/'+name]=here/'data'/name
     for stage,labels in [('baseline',['v022']),('comparison',['legacy_v29','compact_v29'])]:
@@ -115,9 +117,11 @@ def main():
         for variant in ['legacy','compact']:
             run('preflight-'+variant,[sys.executable,'-u',HERE/'train.py','--data',HERE/'data'/variant,'--base',base,'--output',out/('preflight-'+variant),'--config',HERE/('config-paraphrase-'+variant+'-v29.json'),'--project-root',root,'--synthetic-candidate'])
         eval_args=['--root',root,'--plan',HERE/'evaluation-plan.json']
-        run('preflight-evaluation',[sys.executable,'-u',HERE/'evaluate_paraphrase.py',*eval_args,'--models',out/'baseline-models.json','--output',out/'evaluation-check','--phase','baseline','--check-only'])
+        baseline_args=eval_args.copy()
+        if 'baseline-recovery.json' in package['files']:baseline_args+=['--baseline-recovery',HERE/'baseline-recovery.json']
+        run('preflight-evaluation',[sys.executable,'-u',HERE/'evaluate_paraphrase.py',*baseline_args,'--models',out/'baseline-models.json','--output',out/'evaluation-check','--phase','baseline','--check-only'])
         if a.mode=='check':status['preflight_completed']=True;write_json(out/'workflow-result.json',status);return 0
-        run('baseline-bf16',[sys.executable,'-u',HERE/'evaluate_paraphrase.py',*eval_args,'--models',out/'baseline-models.json','--output',out/'baseline','--phase','baseline'])
+        run('baseline-bf16',[sys.executable,'-u',HERE/'evaluate_paraphrase.py',*baseline_args,'--models',out/'baseline-models.json','--output',out/'baseline','--phase','baseline'])
         initial=None
         for variant in ['legacy','compact']:
             label=variant+'_v29';folder=out/label;data=HERE/'data'/variant;config_file=HERE/('config-paraphrase-'+variant+'-v29.json')

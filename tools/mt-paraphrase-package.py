@@ -14,7 +14,7 @@ from paraphrase_workflow import verify_pair
 from evaluate_gpu import sha256
 
 
-def build(out,data,plan_file,web,private_plan,registration):
+def build(out,data,plan_file,web,private_plan,registration,baseline_recovery=None):
     if out.exists():raise ValueError('Use a new package output; preserve previous kits')
     commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=W,text=True).strip()
     if subprocess.check_output(['git','status','--porcelain'],cwd=W,text=True).strip():raise ValueError('Commit and verify the source before freezing a GPU kit')
@@ -24,11 +24,12 @@ def build(out,data,plan_file,web,private_plan,registration):
     if audit.get('mode')!='verify_on_gpu_host_before_model_load':raise ValueError('A mandatory original-source check must run before loading models')
     relative='.pagelingo-kits/paraphrase-v29-'+commit[:12];folder=out/relative;folder.mkdir(parents=True)
     runtime=['train.py','training_options.py','paraphrase_contract.py','paraphrase_workflow.py','evaluate_paraphrase.py','evaluate_gpu.py',
-        'evaluate_matrix.py','evaluate_semantic.py','validation_metrics.py','curriculum_workflow.py','scope_choice_contract.py','handoff_archive.py','private_exclusions.py',
+        'evaluate_matrix.py','evaluate_semantic.py','validation_metrics.py','curriculum_workflow.py','scope_choice_contract.py','handoff_archive.py','private_exclusions.py','paraphrase_recovery.py',
         'config-paraphrase-legacy-v29.json','config-paraphrase-compact-v29.json']
     for name in runtime:shutil.copyfile(T/name,folder/name)
     shutil.copytree(data,folder/'data')
     for source,name in [(plan_file,'evaluation-plan.json'),(web,'web-sources.json'),(private_plan,'private-exclusion-plan.json'),(private_plan.parent/'candidate-source-fingerprints.json','candidate-source-fingerprints.json'),(registration,'preregister.json')]:shutil.copyfile(source,folder/name)
+    if baseline_recovery:shutil.copyfile(baseline_recovery,folder/'baseline-recovery.json')
     (folder/'research_v2.py').write_text('from paraphrase_workflow import main\nif __name__ == "__main__":\n    raise SystemExit(main())\n')
     verify_pair(folder)
     records={p.relative_to(folder).as_posix():{'bytes':p.stat().st_size,'sha256':sha256(p)} for p in folder.rglob('*') if p.is_file()}
@@ -64,4 +65,5 @@ def build(out,data,plan_file,web,private_plan,registration):
 if __name__=='__main__':
     p=argparse.ArgumentParser()
     for name in ['out','data','plan','web','private-plan','registration']:p.add_argument('--'+name,type=Path,required=True)
-    a=p.parse_args();print(json.dumps(build(a.out.resolve(),a.data.resolve(),a.plan.resolve(),a.web.resolve(),a.private_plan.resolve(),a.registration.resolve()),indent=2))
+    p.add_argument('--baseline-recovery',type=Path)
+    a=p.parse_args();print(json.dumps(build(a.out.resolve(),a.data.resolve(),a.plan.resolve(),a.web.resolve(),a.private_plan.resolve(),a.registration.resolve(),a.baseline_recovery),indent=2))

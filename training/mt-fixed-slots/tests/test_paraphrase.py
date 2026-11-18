@@ -14,6 +14,7 @@ from evaluate_paraphrase import validate_plan
 from paraphrase_contract import validate_config,validate_splits
 import paraphrase_workflow as workflow
 from private_exclusions import fingerprint,check_private_exclusions
+from paraphrase_recovery import checked_baseline
 
 TRAIN=Path(__file__).resolve().parents[1];DIGEST='a'*64
 
@@ -45,6 +46,63 @@ def plan():
 
 
 class ParaphraseGuards(unittest.TestCase):
+    def test_checkpoint_retries_windows_sharing_conflict(self):
+        with tempfile.TemporaryDirectory() as name:
+            file = Path(name) / 'progress.json'
+            write_json(file, {'completed': 148})
+            replace = Path.replace
+            attempts = []
+
+            def windows_replace(source, target):
+                attempts.append(source)
+                if len(attempts) < 3:
+                    self.assertEqual(json.loads(target.read_text()), {'completed': 148})
+                    error = PermissionError('Sharing conflict while replacing progress')
+                    error.winerror = 5
+                    raise error
+                return replace(source, target)
+
+            with patch.object(Path, 'replace', windows_replace), patch('evaluate_gpu.time.sleep'):
+                write_json(file, {'completed': 149})
+            self.assertEqual(json.loads(file.read_text()), {'completed': 149})
+            self.assertFalse(file.with_suffix('.json.tmp').exists())
+
+    def test_recovery_requires_real_prefix_and_matching_token_identity(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            run = root / 'outputs/paraphrase-v29-run-fixture'
+            baseline = run / 'baseline'
+            baseline.mkdir(parents=True)
+            evaluation = plan()
+            job = evaluation['jobs'][0]
+            evaluation['jobs'].append(dict(job, key='held/compact', mode='compact'))
+            plan_file = root / 'plan.json'
+            write_json(plan_file, evaluation)
+            identities = {'base': {'sha256': 'f' * 64}, 'adapters': {'v022': {'sha256': 'e' * 64}}}
+            write_json(run / 'workflow-result.json', {'source_commit': 'f' * 40, 'source_exclusion_completed': True,
+                'stages': [{'name': 'baseline-bf16', 'exit_code': 1}], 'error': 'sharing conflict'})
+            write_json(baseline / 'runs.json', {'protocol': evaluation['protocol'], 'phase': 'baseline',
+                'identities': identities, 'grammar_applied': False, 'plan_sha256': sha256(plan_file),
+                'planned_generations': 2, 'files': {}, 'versions': {}, 'gpu': {}})
+            result = {'model': 'v022', 'identity': identities['adapters']['v022'],
+                      'grammar_applied': False, 'training_executed': False, 'generations': []}
+            write_json(baseline / 'v022.json', result)
+            hashes = {'prompt_sha256': '1' * 64, 'input_ids_sha256': '2' * 64, 'prompt_tokens': 48}
+            generation = {k: job[k] for k in ['key', 'case_id', 'mode', 'request_sha256']}
+            generation.update(hashes, max_tokens=48, text='译文', new_tokens=3, wall_s=1.0,
+                              finish_reason='stop', last_token_id=120020)
+            write_json(baseline / 'v022.json.tmp', dict(result, generations=[generation]))
+            spec = root / 'spec.json'
+            records = {file.relative_to(run).as_posix(): sha256(file) for file in run.rglob('*.json*')}
+            write_json(spec, {'run_directory': run.relative_to(root).as_posix(), 'source_commit': 'f' * 40,
+                              'prefix_count': 1, 'files': records})
+            recovered, metadata = checked_baseline(root, spec, plan_file, evaluation, identities, {job['key']: (None, hashes)})
+            self.assertEqual(recovered, [generation])
+            self.assertEqual(metadata['remaining_generations'], 1)
+            with self.assertRaisesRegex(ValueError, 'request or token identity differs'):
+                checked_baseline(root, spec, plan_file, evaluation, identities,
+                                 {job['key']: (None, dict(hashes, prompt_tokens=49))})
+
     def test_configuration_pins_formal_lineage_and_bounded_steps(self):
         manifest={'corpus':'fixed-paraphrase-v29','protocol':'production-fixed-text-v1','prompt_variant':'legacy'}
         validate_config(config('legacy'),manifest)

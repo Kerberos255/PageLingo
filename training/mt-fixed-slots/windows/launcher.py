@@ -138,13 +138,16 @@ def launch_lock(root):
 def dispatch(root, action, run_child=subprocess.run):
     task, package = task_spec(root)
     run, status = latest_run(root, task["run_prefix"])
-    show_status(task, run, status)
     state = run_state(status)
+    same_task = status is not None and status.get("source_commit") == task["source_commit"]
+    if state in ("failed", "complete") and not same_task:
+        show_status(task, None, None)
+    else:
+        show_status(task, run, status)
     if action == "status":
         return 0
     if state == "running":
         return 10
-    same_task = status is not None and status.get("source_commit") == task["source_commit"]
     if action == "auto" and same_task:
         return 10 if state == "complete" else 1
     if os.name == "nt":

@@ -37,6 +37,8 @@ Keep the existing `PageLingo-MT.cmd` environment entry. Open it on the GPU PC at
 
 The launcher uses the existing environment and places caches, temporary files and output on the project drive. It performs private-source exclusion, file/tokenizer/EOS checks, formal BF16 baseline, two training runs, candidate BF16 evaluation, and a model-free `gpu-handoff.zip`. It installs nothing and runs no Firefox, CPU conversion or upload. It preserves original models and prior results. `x.cmd status` is read-only; `x.cmd check` performs preflight without training and does not consume the actual run. Repeating a completed task does not start another training process.
 
+The first baseline run encountered Windows error 5 while replacing its progress JSON. Its saved file contains 148 generations, and the complete temporary checkpoint contains the same 148 followed by one more. The recovery package pins both files and the failed run metadata. It verifies every recovered prompt and tokenizer ID hash against the frozen plan, then generates the last 19 baseline outputs before starting the two candidates. The original run remains available for diagnosis. Checkpoint replacement retries transient Windows sharing errors. During an active run, monitor the append-only stage logs and open the progress JSON after its writer has stopped.
+
 After return of the handoff, Cloud performs semantic review, quantization, native regression, and actual Firefox/wllama tests. Adapters remain on the main PC until needed for conversion. No GPU training is started through MCP.
 
 ## Acceptance

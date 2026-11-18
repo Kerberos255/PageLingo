@@ -7,6 +7,7 @@ from pathlib import Path
 from evaluate_gpu import generate_one, request_hash, sha256, write_json
 from evaluate_matrix import pinned
 from evaluate_semantic import encoded_request
+from paraphrase_recovery import checked_baseline
 
 
 def validate_plan(plan):
@@ -34,7 +35,8 @@ def validate_plan(plan):
 def main():
     p=argparse.ArgumentParser()
     for n in ['root','output','models','plan']:p.add_argument('--'+n,type=Path,required=True)
-    p.add_argument('--phase',choices=['baseline','candidates'],required=True);p.add_argument('--check-only',action='store_true');a=p.parse_args()
+    p.add_argument('--phase',choices=['baseline','candidates'],required=True);p.add_argument('--check-only',action='store_true')
+    p.add_argument('--baseline-recovery',type=Path);a=p.parse_args()
     root=a.root.resolve();out=a.output.resolve()
     if not out.is_relative_to(root) or out.exists():raise ValueError('Use a new output directory inside the project')
     plan=json.loads(a.plan.read_text(encoding='utf-8'));validate_plan(plan);identities=json.loads(a.models.read_text(encoding='utf-8'))
@@ -47,6 +49,11 @@ def main():
     tokenizer=AutoTokenizer.from_pretrained(base,local_files_only=True,trust_remote_code=False)
     if not tokenizer.is_fast or tokenizer.eos_token_id!=120020:raise ValueError('Original fast tokenizer/EOS required')
     encoded={j['key']:encoded_request(tokenizer,j['request']) for j in plan['jobs']}
+    recovered=[];recovery=None
+    if a.baseline_recovery:
+        if a.phase!='baseline':raise ValueError('Recovery only applies to the formal baseline')
+        recovered,recovery=checked_baseline(root,a.baseline_recovery,a.plan,plan,identities,encoded)
+        print(json.dumps({'event':'verified_baseline_recovery',**recovery}),flush=True)
     print(json.dumps({'event':'paraphrase_evaluation_preflight','jobs_per_model':len(encoded),'models':labels,'model_weights_loaded':False}),flush=True)
     if a.check_only:return 0
     if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():raise RuntimeError('BF16 CUDA required; no model loaded')
@@ -55,6 +62,11 @@ def main():
         'created_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'planned_generations':len(encoded)*len(labels),'files':{},'automatic_selection':False,
         'versions':{'torch':torch.__version__,'transformers':transformers.__version__,'peft':peft.__version__},
         'gpu':{'name':torch.cuda.get_device_name(0),'total_memory_bytes':torch.cuda.get_device_properties(0).total_memory}}
+    if recovery:
+        if record['versions']!=recovery['previous_versions'] or record['gpu']!=recovery['previous_gpu']:
+            raise ValueError('Baseline recovery GPU and library versions must match')
+        record['recovery']=recovery
+    record['new_generation_calls']=len(encoded)*len(labels)-len(recovered)
     write_json(out/'runs.json',record)
     model=AutoModelForCausalLM.from_pretrained(base,local_files_only=True,trust_remote_code=False,dtype=torch.bfloat16,attn_implementation='sdpa').to('cuda').eval()
     generation=GenerationConfig(do_sample=False,num_beams=1,use_cache=True,repetition_penalty=1.0,bos_token_id=tokenizer.bos_token_id,eos_token_id=tokenizer.eos_token_id,pad_token_id=tokenizer.pad_token_id)
@@ -64,8 +76,8 @@ def main():
             else:model.load_adapter(folders[label],adapter_name=label,is_trainable=False)
             model.set_adapter(label);model.eval();model.requires_grad_(False)
             if list(model.active_adapters)!=[label] or any(t.requires_grad for t in model.parameters()):raise RuntimeError('Evaluation adapter activation/freezing failed')
-            torch.cuda.reset_peak_memory_stats();result={'model':label,'identity':identities['adapters'][label],'grammar_applied':False,'training_executed':False,'generations':[]}
-            for job in plan['jobs']:
+            torch.cuda.reset_peak_memory_stats();result={'model':label,'identity':identities['adapters'][label],'grammar_applied':False,'training_executed':False,'generations':list(recovered)}
+            for job in plan['jobs'][len(recovered):]:
                 tokens,hashes=encoded[job['key']];result['generations'].append({'key':job['key'],'case_id':job['case_id'],'mode':job['mode'],'request_sha256':job['request_sha256'],
                     'max_tokens':job['request']['max_tokens'],**hashes,**generate_one(model,tokenizer,tokens,job['request']['max_tokens'],generation,'cuda')})
                 write_json(out/(label+'.json'),result);print(json.dumps({'event':'paraphrase_generation','model':label,'key':job['key']}),flush=True)
