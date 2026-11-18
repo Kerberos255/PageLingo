@@ -1,0 +1,967 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-11-18",
+  "training_source_commit": "f29d5700e61ae52a8983318baa1276ac28e32fe8",
+  "ci_for_training_source": [
+    {
+      "conclusion": "success",
+      "head_sha": "f29d5700e61ae52a8983318baa1276ac28e32fe8",
+      "html_url": "https://github.com/Kerberos255/PageLingo/actions/runs/44304993782",
+      "id": 44304993782,
+      "run_attempt": 1,
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "head_sha": "f29d5700e61ae52a8983318baa1276ac28e32fe8",
+      "html_url": "https://github.com/Kerberos255/PageLingo/actions/runs/44304994034",
+      "id": 44304994034,
+      "run_attempt": 2,
+      "status": "completed"
+    }
+  ],
+  "recovery": {
+    "failure": "WinError 5 while atomically replacing BF16 progress JSON",
+    "first_checkpoint_saved_generations": 148,
+    "first_checkpoint_tmp_generations": 149,
+    "new_baseline_calls": 19,
+    "monitor": "append-only stage logs during active evaluation"
+  },
+  "gpu": {
+    "actual_generations": 504,
+    "case_count": 84,
+    "initial_trainable_sha256": "dc8076fa16cd9aa3eea087fe20fec689f7a0e52d983852df8989ac7c4116c705",
+    "recovered_baseline_generations": 149,
+    "new_generation_calls_in_recovery_run": 355,
+    "training": {
+      "legacy": {
+        "optimizer_steps": 32,
+        "training_wall_s": 70.21677749999799,
+        "trainer_runtime_s": 62.8793,
+        "eval_loss_before": 1.5070079565048218,
+        "eval_loss_after": 1.2645652294158936,
+        "cuda_peak_allocated_bytes": 4358349312,
+        "cuda_peak_reserved_bytes": 5213519872
+      },
+      "compact": {
+        "optimizer_steps": 32,
+        "training_wall_s": 68.65378469997086,
+        "trainer_runtime_s": 61.6839,
+        "eval_loss_before": 1.4899470806121826,
+        "eval_loss_after": 1.2480477094650269,
+        "cuda_peak_allocated_bytes": 4507876352,
+        "cuda_peak_reserved_bytes": 6824132608
+      }
+    },
+    "archive_sha256": "6736da03f6c907ead3d957c9c4852289970d786b79bc188a3af90668a3a3b40b",
+    "archive_verification": {
+      "members": 32,
+      "all_member_sha256_passed": true,
+      "legacy_windows_paths_normalized": 0
+    },
+    "evaluation_plan_sha256": "2cda63d4c3c4820b7775bac967039c774ab532ce362980c272796537af8627a2",
+    "stop_counts": {
+      "v022": {
+        "stop": 168
+      },
+      "legacy_v29": {
+        "stop": 168
+      },
+      "compact_v29": {
+        "stop": 168
+      }
+    },
+    "private_source_exclusion": {
+      "all_checked": true,
+      "cases_checked": 192,
+      "new_web_cases_checked": 6,
+      "inventory_sha256": "65662f1be53a370e55fab5c86605c164ae2e3ceb85a60fcc71f0f8eea28430a7",
+      "original_files_verified": 24,
+      "canonical_sources": 6429,
+      "delexicalized_sources": 6429,
+      "collisions": [],
+      "model_weights_loaded": false,
+      "training_executed": false
+    },
+    "baseline_and_candidate_request_token_ids_match": true,
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 4070 Ti",
+      "total_memory_bytes": 12878086144
+    },
+    "versions": {
+      "torch": "2.14.0+cu130",
+      "transformers": "5.17.0",
+      "peft": "0.21.0"
+    },
+    "stages": [
+      {
+        "name": "preflight-legacy",
+        "exit_code": 0,
+        "wall_s": 21.452996500011068
+      },
+      {
+        "name": "preflight-compact",
+        "exit_code": 0,
+        "wall_s": 8.27523349999683
+      },
+      {
+        "name": "preflight-evaluation",
+        "exit_code": 0,
+        "wall_s": 7.503041799995117
+      },
+      {
+        "name": "baseline-bf16",
+        "exit_code": 0,
+        "wall_s": 36.934174600057304
+      },
+      {
+        "name": "train-legacy",
+        "exit_code": 0,
+        "wall_s": 81.62280630000168
+      },
+      {
+        "name": "train-compact",
+        "exit_code": 0,
+        "wall_s": 80.0308398999623
+      },
+      {
+        "name": "candidate-bf16",
+        "exit_code": 0,
+        "wall_s": 860.8230225000298
+      }
+    ]
+  },
+  "bf16_replays": {
+    "fixed": 408,
+    "natural_generation_records": 96,
+    "displayed": 296,
+    "retained_source": 112,
+    "fixed_node_code_restore_verified": 408,
+    "aggregates": [
+      {
+        "model": "v022",
+        "cohort": "synthetic-v29-holdout",
+        "mode": "legacy",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 32,
+        "median_first_token_s": 0.044766749982954934,
+        "displayed": 21,
+        "checked_original_nodes_code_and_restore": 32,
+        "rejections": {
+          "Error: MT fixed text-slot order or count mismatch": 3,
+          "Error: MT unclosed text slot": 4,
+          "Error: MT invalid text-slot content": 4
+        }
+      },
+      {
+        "model": "legacy_v29",
+        "cohort": "synthetic-v29-holdout",
+        "mode": "legacy",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 11,
+        "median_first_token_s": 0.044086000008974224,
+        "displayed": 24,
+        "checked_original_nodes_code_and_restore": 32,
+        "rejections": {
+          "Error: MT fixed text-slot order or count mismatch": 4,
+          "Error: MT invalid text-slot content": 4
+        }
+      },
+      {
+        "model": "compact_v29",
+        "cohort": "synthetic-v29-holdout",
+        "mode": "legacy",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 12,
+        "median_first_token_s": 0.04377739998744801,
+        "displayed": 24,
+        "checked_original_nodes_code_and_restore": 32,
+        "rejections": {
+          "Error: MT fixed text-slot order or count mismatch": 4,
+          "Error: MT invalid text-slot content": 4
+        }
+      },
+      {
+        "model": "v022",
+        "cohort": "synthetic-v29-holdout",
+        "mode": "compact",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 32,
+        "median_first_token_s": 0.045538450009189546,
+        "displayed": 28,
+        "checked_original_nodes_code_and_restore": 32,
+        "rejections": {
+          "Error: MT invalid text-slot content": 4
+        }
+      },
+      {
+        "model": "legacy_v29",
+        "cohort": "synthetic-v29-holdout",
+        "mode": "compact",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 17,
+        "median_first_token_s": 0.044977999990805984,
+        "displayed": 28,
+        "checked_original_nodes_code_and_restore": 32,
+        "rejections": {
+          "Error: MT invalid text-slot content": 4
+        }
+      },
+      {
+        "model": "compact_v29",
+        "cohort": "synthetic-v29-holdout",
+        "mode": "compact",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 8,
+        "median_first_token_s": 0.044397200021194294,
+        "displayed": 28,
+        "checked_original_nodes_code_and_restore": 32,
+        "rejections": {
+          "Error: MT invalid text-slot content": 4
+        }
+      },
+      {
+        "model": "v022",
+        "cohort": "synthetic-v29-holdout",
+        "mode": "natural",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 32,
+        "median_first_token_s": 0.044246449979254976
+      },
+      {
+        "model": "legacy_v29",
+        "cohort": "synthetic-v29-holdout",
+        "mode": "natural",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 25,
+        "median_first_token_s": 0.042847099975915626
+      },
+      {
+        "model": "compact_v29",
+        "cohort": "synthetic-v29-holdout",
+        "mode": "natural",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 22,
+        "median_first_token_s": 0.04250175002380274
+      },
+      {
+        "model": "v022",
+        "cohort": "new-web-v29",
+        "mode": "legacy",
+        "count": 6,
+        "terminal_reasons": {
+          "stop": 6
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 6,
+        "median_first_token_s": 0.04482149999239482,
+        "displayed": 1,
+        "checked_original_nodes_code_and_restore": 6,
+        "rejections": {
+          "Error: MT invalid text-slot content": 4,
+          "Error: MT unassigned text or malformed marker": 1
+        }
+      },
+      {
+        "model": "legacy_v29",
+        "cohort": "new-web-v29",
+        "mode": "legacy",
+        "count": 6,
+        "terminal_reasons": {
+          "stop": 6
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 2,
+        "median_first_token_s": 0.044205350015545264,
+        "displayed": 1,
+        "checked_original_nodes_code_and_restore": 6,
+        "rejections": {
+          "Error: MT invalid text-slot content": 3,
+          "Error: MT unclosed text slot": 1,
+          "Error: MT unassigned text or malformed marker": 1
+        }
+      },
+      {
+        "model": "compact_v29",
+        "cohort": "new-web-v29",
+        "mode": "legacy",
+        "count": 6,
+        "terminal_reasons": {
+          "stop": 6
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 2,
+        "median_first_token_s": 0.04378259996883571,
+        "displayed": 1,
+        "checked_original_nodes_code_and_restore": 6,
+        "rejections": {
+          "Error: MT invalid text-slot content": 3,
+          "Error: MT unclosed text slot": 1,
+          "Error: MT unassigned text or malformed marker": 1
+        }
+      },
+      {
+        "model": "v022",
+        "cohort": "new-web-v29",
+        "mode": "compact",
+        "count": 6,
+        "terminal_reasons": {
+          "stop": 6
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 6,
+        "median_first_token_s": 0.04529579996597022,
+        "displayed": 1,
+        "checked_original_nodes_code_and_restore": 6,
+        "rejections": {
+          "Error: MT invalid text-slot content": 3,
+          "Error: MT unassigned text or malformed marker": 1,
+          "Error: MT unclosed text slot": 1
+        }
+      },
+      {
+        "model": "legacy_v29",
+        "cohort": "new-web-v29",
+        "mode": "compact",
+        "count": 6,
+        "terminal_reasons": {
+          "stop": 6
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 4,
+        "median_first_token_s": 0.04417229996761307,
+        "displayed": 2,
+        "checked_original_nodes_code_and_restore": 6,
+        "rejections": {
+          "Error: MT invalid text-slot content": 3,
+          "Error: MT unassigned text or malformed marker": 1
+        }
+      },
+      {
+        "model": "compact_v29",
+        "cohort": "new-web-v29",
+        "mode": "compact",
+        "count": 6,
+        "terminal_reasons": {
+          "stop": 6
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 2,
+        "median_first_token_s": 0.043919799994910136,
+        "displayed": 3,
+        "checked_original_nodes_code_and_restore": 6,
+        "rejections": {
+          "Error: MT invalid text-slot content": 2,
+          "Error: MT unassigned text or malformed marker": 1
+        }
+      },
+      {
+        "model": "v022",
+        "cohort": "known-v28-regression",
+        "mode": "legacy",
+        "count": 14,
+        "terminal_reasons": {
+          "stop": 14
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 14,
+        "median_first_token_s": 0.0447155500005465,
+        "displayed": 6,
+        "checked_original_nodes_code_and_restore": 14,
+        "rejections": {
+          "Error: MT invalid text-slot content": 5,
+          "Error: MT unassigned text or malformed marker": 3
+        }
+      },
+      {
+        "model": "legacy_v29",
+        "cohort": "known-v28-regression",
+        "mode": "legacy",
+        "count": 14,
+        "terminal_reasons": {
+          "stop": 14
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 7,
+        "median_first_token_s": 0.04370779998134822,
+        "displayed": 6,
+        "checked_original_nodes_code_and_restore": 14,
+        "rejections": {
+          "Error: MT invalid text-slot content": 5,
+          "Error: MT unassigned text or malformed marker": 3
+        }
+      },
+      {
+        "model": "compact_v29",
+        "cohort": "known-v28-regression",
+        "mode": "legacy",
+        "count": 14,
+        "terminal_reasons": {
+          "stop": 14
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 10,
+        "median_first_token_s": 0.04409100001794286,
+        "displayed": 6,
+        "checked_original_nodes_code_and_restore": 14,
+        "rejections": {
+          "Error: MT invalid text-slot content": 5,
+          "Error: MT unassigned text or malformed marker": 3
+        }
+      },
+      {
+        "model": "v022",
+        "cohort": "known-v28-regression",
+        "mode": "compact",
+        "count": 14,
+        "terminal_reasons": {
+          "stop": 14
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 14,
+        "median_first_token_s": 0.0459606500226073,
+        "displayed": 7,
+        "checked_original_nodes_code_and_restore": 14,
+        "rejections": {
+          "Error: MT invalid text-slot content": 5,
+          "Error: MT unassigned text or malformed marker": 2
+        }
+      },
+      {
+        "model": "legacy_v29",
+        "cohort": "known-v28-regression",
+        "mode": "compact",
+        "count": 14,
+        "terminal_reasons": {
+          "stop": 14
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 5,
+        "median_first_token_s": 0.04403235000791028,
+        "displayed": 6,
+        "checked_original_nodes_code_and_restore": 14,
+        "rejections": {
+          "Error: MT invalid text-slot content": 5,
+          "Error: MT unassigned text or malformed marker": 2,
+          "Error: MT unclosed text slot": 1
+        }
+      },
+      {
+        "model": "compact_v29",
+        "cohort": "known-v28-regression",
+        "mode": "compact",
+        "count": 14,
+        "terminal_reasons": {
+          "stop": 14
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 7,
+        "median_first_token_s": 0.044523549993755296,
+        "displayed": 7,
+        "checked_original_nodes_code_and_restore": 14,
+        "rejections": {
+          "Error: MT invalid text-slot content": 5,
+          "Error: MT unassigned text or malformed marker": 2
+        }
+      },
+      {
+        "model": "v022",
+        "cohort": "frozen-natural-regression",
+        "mode": "legacy",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 32,
+        "median_first_token_s": 0.045077649992890656,
+        "displayed": 32,
+        "checked_original_nodes_code_and_restore": 32,
+        "rejections": {}
+      },
+      {
+        "model": "legacy_v29",
+        "cohort": "frozen-natural-regression",
+        "mode": "legacy",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 21,
+        "median_first_token_s": 0.042853649967582896,
+        "displayed": 32,
+        "checked_original_nodes_code_and_restore": 32,
+        "rejections": {}
+      },
+      {
+        "model": "compact_v29",
+        "cohort": "frozen-natural-regression",
+        "mode": "legacy",
+        "count": 32,
+        "terminal_reasons": {
+          "stop": 32
+        },
+        "identical_raw_outputs_to_formal_same_prompt": 22,
+        "median_first_token_s": 0.043237850011792034,
+        "displayed": 32,
+        "checked_original_nodes_code_and_restore": 32,
+        "rejections": {}
+      }
+    ]
+  },
+  "frozen_web_semantic_review": [
+    {
+      "id": "mdn-promise-then-v29-1",
+      "source": "One of the onFulfilled and onRejected handlers will be executed to handle the current promise's fulfillment or rejection. The call always happens asynchronously, even when the current promise is already settled. The behavior of the promise returned by then() (referred to as p in the following list) depends on the handler's execution result, following a specific set of rules. If the handler function:",
+      "runs": [
+        {
+          "profile": "v022/legacy",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧⟦/0⟧⟪P0⟫⟦1⟧和⟦/1⟧⟪P1⟫⟦2⟧中的某个处理器将被执行，以处理当前 Promise 的完成或拒绝。即使当前 Promise 已经解决，调用也总是以异步方式进行。⟦/2⟧⟪P2⟫⟦3⟧返回的 Promise（在下面的列表中称为⟦/3⟧⟪P3⟫⟦4⟧）的行为取决于处理器的执行结果，遵循特定的规则集。如果处理器函数：⟦/4⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "legacy_v29/legacy",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧⟦/0⟧中的⟪P0⟫⟦1⟧和⟦/1⟧⟪P1⟫⟦2⟧处理器之一将被执行，以处理当前 Promise 的完成或拒绝。即使当前 Promise 已经解决，调用也总是以异步方式进行。⟦/2⟧⟪P2⟫⟦3⟧返回的 Promise（在下面的列表中称为⟦/3⟧⟪P3⟫⟦4⟧）的行为取决于处理器的执行结果，遵循特定的规则集。如果处理器函数：⟦/4⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "v022/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧⟦/0⟧⟪P0⟫⟦1⟧和⟦/1⟧⟪P1⟫⟦2⟧中的某个处理器将被执行，以处理当前 Promise 的完成或拒绝。即使当前 Promise 已经解决，调用也总是以异步方式进行。⟦/2⟧⟪P2⟫⟦3⟧返回的 Promise（在下面的列表中称为⟦/3⟧⟪P3⟫⟦4⟧）的行为取决于处理器的执行结果，遵循特定的规则集。如果处理器函数：⟦/4⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "compact_v29/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧⟦/0⟧⟪P0⟫⟦1⟧和⟦/1⟧⟪P1⟫⟦2⟧中的某个处理器将被执行，以处理当前 Promise 的完成或拒绝。即使当前 Promise 已经解决，调用也总是以异步方式进行。⟦/2⟧⟪P2⟫⟦3⟧返回的 Promise（在下面的列表中称为⟦/3⟧⟪P3⟫⟦4⟧）的行为取决于处理器的执行结果，并遵循特定的规则集。如果处理器函数：⟦/4⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "legacy_v29/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧⟦/0⟧⟪P0⟫⟦1⟧和⟦/1⟧⟪P1⟫⟦2⟧中的某个处理器将被执行，以处理当前 Promise 的完成或拒绝。即使当前 Promise 已经解决，调用也总是以异步方式进行。⟦/2⟧⟪P2⟫⟦3⟧返回的 Promise（在下面的列表中称为⟦/3⟧⟪P3⟫⟦4⟧）的行为取决于处理器的执行结果，遵循特定的规则集。如果处理器函数：⟦/4⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        }
+      ]
+    },
+    {
+      "id": "mdn-promise-then-v29-2",
+      "source": "If the function passed as handler to then returns a Promise, an equivalent Promise will be exposed to the subsequent then in the method chain. The below snippet simulates asynchronous code with the setTimeout function.",
+      "runs": [
+        {
+          "profile": "v022/legacy",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果作为处理器传递的函数⟦/0⟧⟪P0⟫⟦1⟧返回了一个⟦/1⟧⟪P1⟫⟦2⟧，则方法链中后续的⟦/3⟧⟪P3⟫⟦4⟧将暴露出一个等效的⟦/2⟧⟪P2⟫⟦3⟧。下面的代码片段使用⟦/4⟧⟪P4⟫⟦5⟧函数模拟了异步代码。⟦/5⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "legacy_v29/legacy",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果作为处理器传递的函数⟦/0⟧⟪P0⟫⟦1⟧返回了一个⟦/1⟧⟪P1⟫⟦2⟧，则方法链中后续的⟦/2⟧⟪P2⟫⟦3⟧将暴露一个等效的⟦/2⟧⟪P2⟫⟦3⟧。下面的代码片段使用⟦/4⟧⟪P4⟫⟦5⟧函数模拟了异步代码。⟦/5⟧",
+          "reason_if_rejected": "Error: MT unclosed text slot"
+        },
+        {
+          "profile": "v022/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果作为⟦/0⟧⟪P0⟫⟦1⟧处理函数的返回值为⟦/1⟧⟪P1⟫⟦2⟧，则方法链中后续的⟦/3⟧⟪P3⟫⟦4⟧将暴露出一个等效的⟦/2⟧⟪P2⟫⟦3⟧。下面的代码片段使用⟦/4⟧⟪P4⟫⟦5⟧函数模拟了异步代码。⟦/5⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "compact_v29/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果作为⟦/0⟧⟪P0⟫⟦1⟧处理函数的返回值为⟦/1⟧⟪P1⟫⟦2⟧，则方法链中后续的⟦/3⟧⟪P3⟫⟦4⟧将暴露出一个等效的⟦/2⟧⟪P2⟫⟦3⟧。下面的代码片段使用⟦/4⟧⟪P4⟫⟦5⟧函数模拟了异步代码。⟦/5⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "legacy_v29/compact",
+          "displayed": true,
+          "review": "complete_repair_on_cross_prompt",
+          "text": "如果作为 then 处理函数的返回值为 Promise，则等效的 Promise 将在方法链中的后续 then 中被暴露。下面的代码片段使用 setTimeout 函数模拟了异步代码。",
+          "reason_if_rejected": null
+        }
+      ]
+    },
+    {
+      "id": "python-asyncio-sync-v29-1",
+      "source": "If the event is set, return True immediately.\nOtherwise block until another task calls set().",
+      "runs": [
+        {
+          "profile": "v022/legacy",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果事件已设置，立即返回⟦/0⟧⟪P0⟫⟦1⟧。\n否则，进入阻塞状态，直到其他任务调用⟦/1⟧⟪P1⟫⟪P2⟫。",
+          "reason_if_rejected": "Error: MT unassigned text or malformed marker"
+        },
+        {
+          "profile": "legacy_v29/legacy",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果事件已设置，则立即返回⟦/0⟧⟪P0⟫⟦1⟧。\n否则，进入阻塞状态，直到其他任务调用⟦/1⟧⟪P1⟫⟪P2⟫。",
+          "reason_if_rejected": "Error: MT unassigned text or malformed marker"
+        },
+        {
+          "profile": "v022/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果事件已设置，则立即返回⟦/0⟧⟪P0⟫⟦1⟧。\n否则，会阻塞，直到其他任务调用⟦/1⟧⟪P1⟫⟪P2⟫。",
+          "reason_if_rejected": "Error: MT unassigned text or malformed marker"
+        },
+        {
+          "profile": "compact_v29/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果事件已设置，则立即返回⟦/0⟧⟪P0⟫⟦1⟧。\n否则，会阻塞，直到其他任务调用⟦/1⟧⟪P1⟫⟪P2⟫。",
+          "reason_if_rejected": "Error: MT unassigned text or malformed marker"
+        },
+        {
+          "profile": "legacy_v29/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果事件已设置，则立即返回⟦/0⟧⟪P0⟫⟦1⟧。\n否则，会阻塞，直到其他任务调用⟦/1⟧⟪P1⟫⟪P2⟫。",
+          "reason_if_rejected": "Error: MT unassigned text or malformed marker"
+        }
+      ]
+    },
+    {
+      "id": "python-asyncio-sync-v29-2",
+      "source": "The optional lock argument must be a Lock object or\nNone.  In the latter case a new Lock object is created\nautomatically.",
+      "runs": [
+        {
+          "profile": "v022/legacy",
+          "displayed": true,
+          "review": "material_meaning_preserved",
+          "text": "可选的锁参数必须是一个 Lock 对象或\nNone。 如果是后者，将自动创建一个新的锁对象。",
+          "reason_if_rejected": null
+        },
+        {
+          "profile": "legacy_v29/legacy",
+          "displayed": true,
+          "review": "material_meaning_preserved",
+          "text": "可选的锁参数必须是一个 Lock 对象或\nNone。如果是后者，将自动创建一个新的锁对象。",
+          "reason_if_rejected": null
+        },
+        {
+          "profile": "v022/compact",
+          "displayed": true,
+          "review": "material_meaning_preserved",
+          "text": "可选的锁参数必须是 Lock 对象或\nNone。如果是后者，将自动创建一个新的锁对象。",
+          "reason_if_rejected": null
+        },
+        {
+          "profile": "compact_v29/compact",
+          "displayed": true,
+          "review": "material_meaning_preserved",
+          "text": "可选的锁参数必须是一个 Lock 对象或\nNone。如果是后者，将自动创建一个新的锁对象。",
+          "reason_if_rejected": null
+        },
+        {
+          "profile": "legacy_v29/compact",
+          "displayed": true,
+          "review": "material_meaning_preserved",
+          "text": "可选的锁参数必须是 Lock 对象或\nNone。如果是后者，将自动创建一个新的锁对象。",
+          "reason_if_rejected": null
+        }
+      ]
+    },
+    {
+      "id": "rust-result-v29-1",
+      "source": "Returns true if the result is Ok and the value inside of it matches a predicate.",
+      "runs": [
+        {
+          "profile": "v022/legacy",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果结果为⟦/1⟧⟪P1⟫⟦2⟧且其中的值与谓词匹配，则返回⟦/0⟧⟪P0⟫⟦1⟧。⟦/2⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "legacy_v29/legacy",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果结果为⟦/1⟧⟪P1⟫⟦2⟧且其中的值与谓词匹配，则返回⟦/0⟧⟪P0⟫⟦1⟧。⟦/2⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "v022/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果结果为⟦/1⟧⟪P1⟫⟦2⟧且其中的值与谓词匹配，则返回⟦/0⟧⟪P0⟫⟦1⟧。⟦/2⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "compact_v29/compact",
+          "displayed": true,
+          "review": "critical_return_and_condition_roles_reversed",
+          "text": "如果结果为 true 且其中的值与谓词匹配，则返回 Ok。",
+          "reason_if_rejected": null
+        },
+        {
+          "profile": "legacy_v29/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果结果为⟦/1⟧⟪P1⟫⟦2⟧且其中的值与谓词匹配，则返回⟦/0⟧⟪P0⟫⟦1⟧。⟦/2⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        }
+      ]
+    },
+    {
+      "id": "rust-result-v29-2",
+      "source": "Returns true if the result is Err and the value inside of it matches a predicate.",
+      "runs": [
+        {
+          "profile": "v022/legacy",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果结果为⟦/1⟧⟪P1⟫⟦2⟧且其中的值与谓词匹配，则返回⟦/0⟧⟪P0⟫⟦1⟧。⟦/2⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "legacy_v29/legacy",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果结果为⟦/1⟧⟪P1⟫⟦2⟧且其中的值与谓词匹配，则返回⟦/0⟧⟪P0⟫⟦1⟧。⟦/2⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        },
+        {
+          "profile": "v022/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果结果为⟦/0⟧⟪P0⟫⟦1⟧且其中的值与谓词匹配，则返回⟦/2⟧",
+          "reason_if_rejected": "Error: MT unclosed text slot"
+        },
+        {
+          "profile": "compact_v29/compact",
+          "displayed": true,
+          "review": "critical_return_and_condition_roles_reversed",
+          "text": "如果结果为 true 且其中的值与谓词匹配，则返回 Err。",
+          "reason_if_rejected": null
+        },
+        {
+          "profile": "legacy_v29/compact",
+          "displayed": false,
+          "review": "rejected_frame",
+          "text": "⟦0⟧如果结果为⟦/1⟧⟪P1⟫⟦2⟧且其中的值与谓词匹配，则返回⟦/0⟧⟪P0⟫⟦1⟧。⟦/2⟧",
+          "reason_if_rejected": "Error: MT invalid text-slot content"
+        }
+      ]
+    }
+  ],
+  "flores_character_overlap": {
+    "v022": {
+      "cases": 32,
+      "displayed": 32,
+      "chrf2_with_retained_english": 37.375507824482554,
+      "common_displayed_cases": 32,
+      "chrf2_common_displayed": 37.375507824482554
+    },
+    "legacy_v29": {
+      "cases": 32,
+      "displayed": 32,
+      "chrf2_with_retained_english": 38.25822131161498,
+      "common_displayed_cases": 32,
+      "chrf2_common_displayed": 38.25822131161498
+    },
+    "compact_v29": {
+      "cases": 32,
+      "displayed": 32,
+      "chrf2_with_retained_english": 37.76573623422014,
+      "common_displayed_cases": 32,
+      "chrf2_common_displayed": 37.76573623422014
+    }
+  },
+  "natural_code_identity": {
+    "v022": {
+      "exact_count": 28,
+      "sources": 32,
+      "mismatches": [
+        "v29-holdout-result-condition-4-0",
+        "v29-holdout-result-condition-4-1",
+        "v29-holdout-result-condition-4-2",
+        "v29-holdout-result-condition-4-3"
+      ]
+    },
+    "legacy_v29": {
+      "exact_count": 28,
+      "sources": 32,
+      "mismatches": [
+        "v29-holdout-result-condition-4-0",
+        "v29-holdout-result-condition-4-1",
+        "v29-holdout-result-condition-4-2",
+        "v29-holdout-result-condition-4-3"
+      ]
+    },
+    "compact_v29": {
+      "exact_count": 28,
+      "sources": 32,
+      "mismatches": [
+        "v29-holdout-result-condition-4-0",
+        "v29-holdout-result-condition-4-1",
+        "v29-holdout-result-condition-4-2",
+        "v29-holdout-result-condition-4-3"
+      ]
+    }
+  },
+  "formal_q5": {
+    "model": {
+      "key": "v022",
+      "filename": "PageLingo-Translate-1.8B-v0.2.2-Q5_K_M.gguf",
+      "sha256": "8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc",
+      "bytes": 1298755616
+    },
+    "firefox": {
+      "version": "158.0.1",
+      "wllama": "3.6.1",
+      "generations": 6,
+      "load_s": 5.31758,
+      "first_visible_s": [
+        81.61364,
+        74.62498000000001,
+        50.29544,
+        62.01457999999996,
+        56.94684000000002,
+        52.45734000000007
+      ],
+      "first_visible_median_s": 59.480709999999995,
+      "decode_tokens_per_second": [
+        2.438606783716351,
+        2.4339567118622085,
+        2.791084661552376,
+        2.4281541605276447,
+        2.5621384884398783,
+        2.7861906614709913
+      ],
+      "reviewed_critical_relation_errors": 3,
+      "inference_scope": "production WASM loader with local File input"
+    },
+    "firefox_memory_repeat": {
+      "case": "mdn-promise-then-v29-1",
+      "max_sampled_pss_bytes": 2684550144,
+      "max_sampled_rss_bytes": 3251609600,
+      "sampled_process_counts": [
+        10,
+        11,
+        12
+      ],
+      "samples": 80,
+      "scope": "Firefox process-tree PSS/RSS sampled from /proc after browser launch",
+      "initial_sampler_missed_children_and_is_excluded": true
+    },
+    "native": {
+      "generations": 12,
+      "load_to_ready_s": 1.3862385090033058,
+      "memory": {
+        "proc_status": [
+          "VmHWM:\t 1774612 kB",
+          "VmRSS:\t 1774612 kB"
+        ]
+      },
+      "first_output_s": [
+        2.4756536560016684,
+        2.9879907479917165,
+        2.331973990003462,
+        3.1851521029893775,
+        1.61266594499466,
+        1.9106174890039256,
+        2.2983266249939334,
+        3.3285162300016964,
+        2.253386872005649,
+        2.097712634000345,
+        1.7102272969932528,
+        1.7781704679946415
+      ],
+      "decode_tokens_per_second": [
+        16.525723555283854,
+        16.27682259417326,
+        16.142606913852504,
+        14.941636510071026,
+        17.175618408140785,
+        16.528758919926847,
+        12.762185907202186,
+        12.791643767340101,
+        13.9417097116954,
+        16.267020822948584,
+        16.95369371033101,
+        17.298275083966136
+      ],
+      "reviewed_critical_errors_legacy": 3,
+      "reviewed_critical_errors_compact": 3
+    },
+    "live_page_replay": {
+      "page_count": 3,
+      "widths": [
+        1440,
+        500
+      ],
+      "checks": 12,
+      "all_node_code_link_and_restore_checks_passed": true,
+      "horizontal_overflow": 0,
+      "sources_changed": 0
+    },
+    "visual_review": {
+      "mdn_first_wide_capture_cjk_boxes": true,
+      "mdn_first_wide_cjk_boxes_reproduced": true,
+      "same_translated_html_readable_five_seconds_later": true,
+      "same_translated_html_each_width": true,
+      "site_font_css_override": false
+    }
+  },
+  "adapter_identity": {
+    "v022": {
+      "sha256": "28a0bd981feab75390ec045a9b97b02401e8a5ab973118d7e54da7b9e77cf859",
+      "config_sha256": "1e55f31f99fc13ea21a25bc4f4b8c60f1b5a6b3d52ff6497ab778b1f4a4efa10"
+    },
+    "legacy_v29": {
+      "sha256": "46d53a1e78edbedbf83b8b16e4270b7de8250ab436fd388c751d7aef5c820726",
+      "config_sha256": "1deeb5bfa59a62b0f44eccfed94b501a5f5a4638aab3b51f25a925e53f4b76b2"
+    },
+    "compact_v29": {
+      "sha256": "4896958dbfac624bb101bfc13cb094ede1cbc356acdaacdf1cac6a5fbb9cd0f8",
+      "config_sha256": "72a495f50a482fe12b49799e3f43d0db4244f1321ec0bf0f452b3e16dd0e3794"
+    }
+  },
+  "artifact_hashes": {
+    "recovery-verification.json": "36c1249dd795c1436ee6509dc8381267ad53b6c36be956240a9c1c63bf43792f",
+    "gpu-comparison-summary.json": "70b31f8b91c39acd79c2e712096be5eaec345fe683065f83eca72507a983a8f0",
+    "gpu-replay.json": "00dd22ea881a0d274f5f14bc3c5d0b92d97c537e81c772def81d7e05a7137a95",
+    "firefox-v022/result.json": "412a82c7a648bbda531fb099d9a11cc9be38c32793eba25f6bf8a1446e7ccc92",
+    "firefox-v022-memory/result.json": "e6646b19e200b5db0057653201104f968fc7323747f57c8bbce0a75ab1ef8f91",
+    "firefox-real-web-v022/result.json": "c894ff59f082a1f5246ef9bca2c24067c415aedf81f6c5beafd8af800280987f",
+    "native-v022/v022.json": "875292d75211b59ff4f4735e0bc51723aaa4f4132ba06b54e41e495421f23106",
+    "mdn-paint-review/result.json": "e1fd085852bab979de7e8bebc695097751435e12db12e865167d8812e909ec5a"
+  },
+  "disposition": {
+    "production_model": "PageLingo-Translate-1.8B-v0.2.2-Q5_K_M.gguf",
+    "pilot_adapters_retained": true,
+    "candidate_weights_uploaded": false,
+    "candidate_q5_converted": false,
+    "candidate_firefox_executed": false,
+    "reason": "Matched BF16 candidates did not add a complete preservation-and-meaning repair on the frozen web set. A cross-prompt arm repaired one MDN relation. Increased display in the compact arm covered two critical Rust reversals.",
+    "production_src_modified_by_v29": false,
+    "release_approved": false
+  }
+}
