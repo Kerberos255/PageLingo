@@ -2,9 +2,11 @@ import type {CheckedTranslationResult, TranslationRequest} from "../../core/prov
 import {assessTranslationQuality} from "../../core/translation-quality";
 import {richHtmlStructureCompatible} from "../../core/rich-segment-splitter";
 import {decodeFixedMtText, encodeFixedMtText, fixedMtGrammar, fixedMtMaxTokens, fixedMtPrompt} from "./fixed-text";
-import {assembleMtSentences, planMtSentences} from "./sentence-plan";
+import {assembleMtSentences, MT_CONTEXT_TOKENS, planMtSentences} from "./sentence-plan";
+import {clarifyReturnCondition} from "./return-condition";
 
-export async function inferMtHtml(request: TranslationRequest, complete: (options: any) => Promise<any>): Promise<CheckedTranslationResult> {
+export async function inferMtHtml(request: TranslationRequest, complete: (options: any) => Promise<any>,
+  options: {clarifyReturnConditions?: boolean} = {}): Promise<CheckedTranslationResult> {
   const reject = (reason: string): CheckedTranslationResult => ({html: request.html, accepted: false, reason});
   let units: string[];
   try { units = planMtSentences(request); } catch (error) { return reject(String(error)); }
@@ -12,7 +14,12 @@ export async function inferMtHtml(request: TranslationRequest, complete: (option
   for (const html of units) {
     const encoded = encodeFixedMtText(html);
     if (!encoded.texts.length) { translations.push(html); continue; }
-    const response = await complete({messages: [{role: "user", content: fixedMtPrompt(encoded, request)}], grammar: fixedMtGrammar(encoded), max_tokens: fixedMtMaxTokens(encoded), temperature: 0, top_k: 1, stream: false});
+    const budget = fixedMtMaxTokens(encoded);
+    // Fit a clarified prompt in the existing one-call plan, including the role template reserve.
+    const clarified = options.clarifyReturnConditions && units.length === 1
+      ? clarifyReturnCondition(encoded, request, MT_CONTEXT_TOKENS - budget - 8) : undefined;
+    const response = await complete({messages: [{role: "user", content: clarified ?? fixedMtPrompt(encoded, request)}],
+      grammar: fixedMtGrammar(encoded), max_tokens: budget, temperature: 0, top_k: 1, stream: false});
     const choice = response?.choices?.[0];
     if (choice?.finish_reason !== "stop") return reject("MT generation did not finish normally; original paragraph retained");
     const raw = String(choice.message?.content ?? "").trim();

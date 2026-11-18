@@ -206,7 +206,7 @@ export class PageLingoMtClient implements TranslationProvider {
     const inferenceStarted = performance.now();
     let response: any;
     try {
-      response = await inferMtHtml(request, options => engine.createChatCompletion(options));
+      response = await inferMtHtml(request, options => engine.createChatCompletion(options), {clarifyReturnConditions: true});
       this.#lastInferenceMs = performance.now() - inferenceStarted;
       this.#lastError = "";
       this.#setRuntimePhase("ready");
