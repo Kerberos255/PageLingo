@@ -26,15 +26,15 @@
     "open_in_tab": true
   },
   "icons": {
-    "48": "icons/pagelingo.svg",
-    "96": "icons/pagelingo.svg"
+    "48": "icons/pagelingo-48.png",
+    "96": "icons/pagelingo-96.png"
   },
   "action": {
     "default_title": "PageLingo",
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icons/pagelingo.svg",
-      "32": "icons/pagelingo.svg"
+      "16": "icons/pagelingo-16.png",
+      "32": "icons/pagelingo-32.png"
     }
   },
   "content_scripts": [
