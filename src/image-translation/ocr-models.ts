@@ -15,6 +15,8 @@ export interface OcrProfile {
   dictionary: OcrModelAsset;
 }
 
+export const MAX_OCR_IMAGE_SIDE = 2200;
+
 export const DEFAULT_OCR_PROFILE: OcrProfile = {
   id: "pp-ocrv5-mobile",
   label: "PP-OCRv5 Mobile",

@@ -79,15 +79,27 @@ function safeDecodePathSegment(value) {
     return value;
   }
 }
-function isProtectedGitHubIdentifierText(node) {
-  const doc = node.ownerDocument;
-  const view = doc.defaultView;
-  const parent = node.parentElement;
-  if (!view || !parent || view.location.hostname.toLowerCase() !== "github.com") return false;
+const FILE_PATH_LABEL = /^(?:\.\/|\/)?(?:[\p{L}\p{N}._@+~-]+\/)*[\p{L}\p{N}._@+~-]+\.[A-Za-z][A-Za-z0-9]{0,10}$/u;
+
+export function isProtectedFilePathLink(anchor) {
+  if (!(anchor instanceof HTMLAnchorElement) || !anchor.hasAttribute("href")) return false;
+  // Documentation often links a literal file path without a code element.
+  // A complete label matching the target path also protects labels split across spans.
+  const label = (anchor.textContent ?? "").trim();
+  if (!FILE_PATH_LABEL.test(label) || (anchor.protocol !== "https:" && anchor.protocol !== "http:")) return false;
+  const path = anchor.pathname.split("/").map(safeDecodePathSegment).join("/");
+  return path.endsWith(`/${label.replace(/^\.?\//u, "")}`);
+}
+
+function isProtectedLinkIdentifierText(node) {
+  const anchor = node.parentElement?.closest("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement)) return false;
   const text = node.data.trim();
   if (!text) return false;
-  const anchor = parent.closest("a[href]");
-  if (!(anchor instanceof HTMLAnchorElement)) return false;
+  if (isProtectedFilePathLink(anchor)) return true;
+
+  const view = node.ownerDocument.defaultView;
+  if (!view || view.location.hostname.toLowerCase() !== "github.com") return false;
   let target;
   try {
     target = new URL(anchor.href, view.location.href);
@@ -205,7 +217,7 @@ export function isElementEffectivelyHidden(element) {
   return false;
 }
 export function isEligibleTextContext(node) {
-  if (isProtectedGitHubIdentifierText(node)) return false;
+  if (isProtectedLinkIdentifierText(node)) return false;
   const parent = node.parentElement;
   return Boolean(parent && !isTranslationDisabled(parent) && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent));
 }
@@ -315,7 +327,7 @@ function wrapTextNodesInside(container, doc) {
     for (const child of Array.from(current.childNodes)) {
       if (child.nodeType !== Node.TEXT_NODE) continue;
       const text = child.textContent ?? "";
-      if (!text.trim() || !/\p{L}/u.test(text) || isProtectedGitHubIdentifierText(child)) continue;
+      if (!text.trim() || !/\p{L}/u.test(text) || isProtectedLinkIdentifierText(child)) continue;
       const wrapper = doc.createElement("span");
       wrapper.dataset.fltSourceTextWrapper = "true";
       child.replaceWith(wrapper);

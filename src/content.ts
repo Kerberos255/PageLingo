@@ -12,6 +12,7 @@ import {
 } from "./shared/automatic-translation-state";
 import { relativeTimeElements } from "./shared/relative-time";
 import { sourceTextSample } from "./shared/source-text-sample";
+import { MAX_OCR_IMAGE_SIDE } from "./image-translation/ocr-models";
 var translator = null;
 var imageOverlays = new Map();
 var activeImageOverlay = null;
@@ -300,13 +301,21 @@ function positionImageOverlay(image, overlay) {
     overlay.style.setProperty("width", `${rect.width}px`, "important");
     overlay.style.setProperty("height", `${rect.height}px`, "important");
 }
+function imageLayer(image) {
+    let layer = "0";
+    for (let element = image; element && element !== document.body; element = element.parentElement) {
+        const { position, zIndex } = window.getComputedStyle(element);
+        if (position !== "static" && zIndex !== "auto") layer = zIndex;
+    }
+    return layer;
+}
 function createImageOverlay(image) {
     imageOverlays.get(image)?.remove();
     const overlay = document.createElement("div");
     overlay.dataset.pagelingoImageOverlay = "true";
     setImportantStyle(overlay, {
         position: "absolute",
-        "z-index": "2147483646",
+        "z-index": imageLayer(image),
         "pointer-events": "none",
         overflow: "hidden",
         "box-sizing": "border-box",
@@ -399,14 +408,19 @@ function sampleImageRegionBackground(pixels, imageWidth, imageHeight, box) {
             add(x1 + d, y);
         }
     }
-    if (valuesR.length < 4) return { background: "rgb(245, 245, 245)", color: "#111" };
+    if (valuesR.length < 4) return null;
     const median = (values) => {
-        values.sort((a, b) => a - b);
-        return values[Math.floor(values.length / 2)] ?? 245;
+        const sorted = [...values].sort((a, b) => a - b);
+        return sorted[Math.floor(sorted.length / 2)];
     };
     const r = median(valuesR);
     const g = median(valuesG);
     const b = median(valuesB);
+    // A solid fill would cover details where the local colors vary, such as
+    // the lettering OCR can pick up inside an application icon.
+    const flatSamples = valuesR.filter((value, index) =>
+        Math.max(Math.abs(value - r), Math.abs(valuesG[index] - g), Math.abs(valuesB[index] - b)) <= 35);
+    if (flatSamples.length * 4 < valuesR.length * 3) return null;
     const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     return {
         background: `rgb(${r}, ${g}, ${b})`,
@@ -470,8 +484,7 @@ function fitCanvasTranslation(context, text, box, maxFontSize, minFontSize = 6) 
             return { fontSize, lineHeight, lines };
         }
     }
-    context.font = `500 ${minFontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-    return { fontSize: minFontSize, lineHeight: minFontSize * 1.15, lines: canvasTextLines(context, text, width) };
+    return null;
 }
 function renderTranslatedRegions(image, overlay, regions, ocrWidth, ocrHeight, pixels) {
     overlay.replaceChildren();
@@ -506,21 +519,11 @@ function renderTranslatedRegions(image, overlay, regions, ocrWidth, ocrHeight, p
         showImageStatus(overlay, "无法创建图片画布");
         return;
     }
-    // Firefox content scripts can reject ImageData created in the extension realm when
-    // it is passed into a canvas living in the page realm. drawImage does not cross that
-    // typed-array boundary, and we already retain the OCR pixel buffer separately for
-    // background-colour sampling.
-    try {
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    }
-    catch (error) {
-        console.warn("[PageLingo] Could not paint source image onto translation canvas", error);
-    }
-
+    // Keep the canvas transparent outside translated text boxes so the original
+    // image, and site elements displayed above it, remain visible.
     const sourceLineHeights = regions.map((region) => Number(region._lineHeight) || region.box.height);
     const medianLineHeight = medianNumber(sourceLineHeights, 18);
-    const uniformBaseFont = Math.max(7, Math.min(22, medianLineHeight * 0.78));
-    const prepared = regions.map((region) => {
+    const prepared = regions.flatMap((region) => {
         const lineHeight = Math.max(1, Number(region._lineHeight) || medianLineHeight);
         const padX = Math.max(3, Math.min(10, lineHeight * 0.28));
         const padY = Math.max(2, Math.min(7, lineHeight * 0.22));
@@ -529,9 +532,16 @@ function renderTranslatedRegions(image, overlay, regions, ocrWidth, ocrHeight, p
         const right = Math.min(ocrWidth, region.box.x + region.box.width + padX);
         const bottom = Math.min(ocrHeight, region.box.y + region.box.height + padY);
         const box = { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
+        const layout = fitCanvasTranslation(context, region.text, box, lineHeight * 0.78);
+        if (!layout) return [];
         const palette = sampleImageRegionBackground(pixels, ocrWidth, ocrHeight, box);
-        return { region, box, palette, lineHeight };
+        if (!palette) return [];
+        return [{ box, palette, lineHeight, layout }];
     });
+    if (!prepared.length) {
+        showImageStatus(overlay, "没有可覆盖的译文区域");
+        return;
+    }
 
     // Erase every source text area first, then draw all translations. Doing this in
     // two passes means an adjacent erase box can never paint over translated text.
@@ -547,8 +557,7 @@ function renderTranslatedRegions(image, overlay, regions, ocrWidth, ocrHeight, p
     }
 
     for (const entry of prepared) {
-        const maxFont = Math.min(uniformBaseFont, Math.max(7, entry.lineHeight * 0.88));
-        const layout = fitCanvasTranslation(context, entry.region.text, entry.box, maxFont, 6);
+        const { layout } = entry;
         context.save();
         context.fillStyle = entry.palette.color;
         context.font = `500 ${layout.fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
@@ -574,8 +583,7 @@ async function imagePixels(srcUrl) {
     const blob = new Blob([response.bytes], { type: response.contentType || "application/octet-stream" });
     const bitmap = await createImageBitmap(blob);
     try {
-        const maxSide = 2200;
-        const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+        const scale = Math.min(1, MAX_OCR_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
         const width = Math.max(1, Math.round(bitmap.width * scale));
         const height = Math.max(1, Math.round(bitmap.height * scale));
         const canvas = document.createElement("canvas");

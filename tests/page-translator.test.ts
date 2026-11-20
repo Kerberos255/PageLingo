@@ -63,6 +63,42 @@ describe("PageTranslator DOM preservation", () => {
     expect(provider.requests[0]?.html).toContain("__FLT_OPAQUE_0__");
   });
 
+  it("keeps a literal file path link while translating its neighboring prose and descriptive links", async () => {
+    const href = "https://github.com/python/cpython/blob/main/Lib/async%69o/queues.py?plain=1#L55";
+    document.body.innerHTML = `<p>Source code: <a id="file" href="${href}"><span>Lib/</span>asyncio/queues.py</a>. Read the <a id="guide" href="${href}">queue implementation</a>.</p>`;
+    const before = document.body.innerHTML;
+    const file = document.querySelector<HTMLAnchorElement>("#file")!;
+    const originalChildren = [...file.childNodes];
+    const requests: string[] = [];
+    const provider: TranslationProvider = {
+      prefersWholeSentenceHtml: async () => true,
+      translateHtml: async ({ html }) => {
+        requests.push(html);
+        const { body } = new DOMParser().parseFromString(html, "text/html");
+        for (const slot of body.querySelectorAll("[data-flt-text-id]")) {
+          slot.textContent = slot.textContent!.replace("Source code", "源代码").replace("Read the", "阅读").replace("queue implementation", "队列实现");
+        }
+        return body.innerHTML;
+      },
+    };
+    const translator = new PageTranslator(document, provider, { targetLanguage: "zh-Hans" });
+    await translator.translateAll();
+
+    const { body } = new DOMParser().parseFromString(requests[0]!, "text/html");
+    expect(body.querySelector("code")?.textContent).toBe("__FLT_OPAQUE_0__");
+    expect(requests[0]).not.toContain("asyncio/queues.py");
+    expect(file.textContent).toBe("Lib/asyncio/queues.py");
+    expect([...file.childNodes]).toEqual(originalChildren);
+    expect(file.getAttribute("href")).toBe(href);
+    expect(document.body.textContent).toContain("源代码");
+    expect(document.querySelector("#guide")?.textContent).toBe("队列实现");
+
+    translator.setDisplayMode("bilingual");
+    expect(file.textContent).toBe("Lib/asyncio/queues.py");
+    translator.restore();
+    expect(document.body.innerHTML).toBe(before);
+  });
+
   it("marks generated translations with the actual target language", async () => {
     document.body.innerHTML = `<p>Hello world.</p>`;
     const translator = new PageTranslator(document, new FakeHtmlProvider(), { targetLanguage: "es" });

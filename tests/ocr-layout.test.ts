@@ -19,4 +19,17 @@ describe("mergeOcrRegions", () => {
     ]);
     expect(merged.map((item) => item.text)).toEqual(["FIRST", "SECOND"]);
   });
+
+  it("keeps a gateway setup heading separate from the smaller nearby description", () => {
+    const merged = mergeOcrRegions([
+      { text: "Choose your Gateway", confidence: 0.99, box: { x: 355, y: 353, width: 549, height: 59 } },
+      { text: "OpenClaw uses a single Gateway that stays running.", confidence: 0.99, box: { x: 127, y: 426, width: 977, height: 28 } },
+      { text: "Discover a gateway nearby.", confidence: 0.99, box: { x: 323, y: 462, width: 616, height: 28 } },
+    ]);
+    expect(merged.map((item) => item.text)).toEqual([
+      "Choose your Gateway",
+      "OpenClaw uses a single Gateway that stays running.\nDiscover a gateway nearby.",
+    ]);
+    expect(merged[0]?.box).toEqual({ x: 355, y: 353, width: 549, height: 59 });
+  });
 });

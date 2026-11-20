@@ -1,5 +1,6 @@
 import { getImageOcrBundle, getImageOcrStatus, deleteImageOcrModels, type ImageOcrBundle } from "./ocr-cache";
 import { mergeOcrRegions, type OcrRegion } from "./ocr-layout";
+import { MAX_OCR_IMAGE_SIDE } from "./ocr-models";
 import { loadSettings } from "../shared/settings";
 
 const IMAGE_MENU_ID = "pagelingo-translate-image";
@@ -153,6 +154,31 @@ function isAllowedImageUrl(value: string): boolean {
   }
 }
 
+async function rasterizeSvg(svg: Blob): Promise<Blob> {
+  const url = URL.createObjectURL(svg);
+  try {
+    // Firefox can display SVG in an image element even when createImageBitmap
+    // rejects the same SVG bytes. Decode here, outside the site's image CSP.
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const { naturalWidth, naturalHeight } = image;
+    if (!naturalWidth || !naturalHeight) throw new Error("SVG 图片尺寸无效");
+    const scale = Math.min(1, MAX_OCR_IMAGE_SIDE / Math.max(naturalWidth, naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("无法创建 SVG 图片画布");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob((png) => png ? resolve(png) : reject(new Error("无法读取 SVG 图片像素")), "image/png");
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export async function handleImageRuntimeMessage(
   rawMessage: unknown,
   sender: browser.runtime.MessageSender,
@@ -175,10 +201,12 @@ export async function handleImageRuntimeMessage(
     try {
       const response = await fetch(message.url, { cache: "force-cache", credentials: "omit" });
       if (!response.ok) throw new Error(`图片读取失败：HTTP ${response.status}`);
+      const source = await response.blob();
+      const image = source.type.split(";", 1)[0] === "image/svg+xml" ? await rasterizeSvg(source) : source;
       return {
         ok: true,
-        bytes: await response.arrayBuffer(),
-        contentType: response.headers.get("content-type") ?? "application/octet-stream",
+        bytes: await image.arrayBuffer(),
+        contentType: image.type || "application/octet-stream",
       };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };

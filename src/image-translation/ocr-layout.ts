@@ -100,6 +100,8 @@ function sameTextBlock(upper: LayoutOcrRegion, lower: LayoutOcrRegion): boolean 
   const upperLine = Number(upper._lineHeight) || upper.box.height;
   const lowerLine = Number(lower._lineHeight) || lower.box.height;
   const lineHeight = Math.max(1, Math.min(upperLine, lowerLine));
+  // Large headings and small descriptions keep independent paint boxes.
+  if (Math.max(upperLine, lowerLine) > lineHeight * 1.4) return false;
   const gap = lower.box.y - (upper.box.y + upper.box.height);
   if (gap < -lineHeight * 0.35 || gap > Math.max(8, lineHeight * 0.72)) return false;
   const overlap = horizontalOverlapRatio(upper, lower);

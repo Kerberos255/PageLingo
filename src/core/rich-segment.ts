@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { isElementEffectivelyHidden, isTranslationRootElement, isEligibleTextNode, isEligibleTextContext, isTranslationDisabled, isProtectedTranslationSubtree } from "./dom-policy";
+import { isElementEffectivelyHidden, isTranslationRootElement, isEligibleTextNode, isEligibleTextContext, isTranslationDisabled, isProtectedTranslationSubtree, isProtectedFilePathLink } from "./dom-policy";
 import type { SourceTextSlot } from "./fixed-text-render";
 import { normalizeGlossaryEntry } from "../shared/settings";
 
@@ -99,8 +99,8 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
             continue;
         }
         const tag = element.tagName;
-        if (textSlots && !OPAQUE_TAGS.has(tag) && isTranslationDisabled(element)
-            && !element.querySelector('[translate="yes" i],[translate=""]')) {
+        if (textSlots && !OPAQUE_TAGS.has(tag) && (isProtectedFilePathLink(element)
+            || (isTranslationDisabled(element) && !element.querySelector('[translate="yes" i],[translate=""]')))) {
             const index = opaque.length;
             const source = element.textContent ?? "";
             opaque.push({tagName: tag, text: source});
