@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { collectTranslationRoots, findTranslationRoot, isGeneratedNode, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
+import { collectTranslationRoots, findTranslationRoot, isElementEffectivelyHidden, isGeneratedNode, isNavigationRegion, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./navigation-layout";
@@ -517,9 +517,16 @@ export class PageTranslator {
         if (this.#observer || !this.#doc.body)
             return;
         this.#observer = new MutationObserver((mutations) => {
+            const revealed = new Set();
             for (const mutation of mutations) {
                 if (isGeneratedNode(mutation.target))
                     continue;
+                if (mutation.type === "attributes") {
+                    const region = mutation.target;
+                    if (isNavigationRegion(region) && (mutation.attributeName !== "open" || region.hasAttribute("open"))
+                        && !region.closest("[hidden],[inert],[aria-hidden='true']")) revealed.add(region);
+                    continue;
+                }
                 if (mutation.type === "characterData" && mutation.target.nodeType === Node.TEXT_NODE) {
                     const parent = mutation.target.parentElement;
                     if (parent) {
@@ -546,8 +553,28 @@ export class PageTranslator {
                     }
                 }
             }
+            for (const region of revealed) {
+                if ([...revealed].some(parent => parent !== region && parent.contains(region))) continue;
+                if (!isElementEffectivelyHidden(region)) {
+                    this.#queueVisibleNavigation(region);
+                    continue;
+                }
+                // Accessibility state can change before a CSS fade makes a panel visible.
+                const fades = region.getAnimations?.().filter(animation => animation.transitionProperty === "opacity");
+                if (fades?.length) void Promise.allSettled(fades.map(animation => animation.finished))
+                    .then(() => this.#queueVisibleNavigation(region));
+            }
         });
-        this.#observer.observe(this.#doc.body, { childList: true, subtree: true, characterData: true });
+        this.#observer.observe(this.#doc.body, {
+            childList: true, subtree: true, characterData: true, attributes: true,
+            attributeFilter: ["hidden", "aria-hidden", "inert", "open"],
+        });
+    }
+    #queueVisibleNavigation(region) {
+        if (this.#disposed || !region.isConnected || isElementEffectivelyHidden(region)) return;
+        for (const root of collectTranslationRoots(region, {preserveInlineContext: this.#wholeSentenceContext})) {
+            this.#queue(root);
+        }
     }
     observeTooltips() {
         if (this.#disposed || this.#tooltipController)

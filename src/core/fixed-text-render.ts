@@ -1,6 +1,6 @@
 import { mountTranslation } from "./render";
 import { isOptionalEnglishArticle } from "./translation-quality";
-import { isElementEffectivelyHidden, isTranslationRootElement, isTranslationDisabled } from "./dom-policy";
+import { isElementEffectivelyHidden, isNavigationButton, isTranslationRootElement, isTranslationDisabled } from "./dom-policy";
 import {canCollapseProseWhitespace, canWriteFrozenProseGap, isAsciiWhitespace, isAsciiWhitespaceOrEmpty} from "./collapsible-whitespace";
 import {cjkSpacingBoundaryUnchanged, cjkSpacingContextUnchanged, normalizeCjkSpacing} from "./cjk-spacing";
 
@@ -147,6 +147,20 @@ export function applyFixedTextRecord(root: HTMLElement, record: FixedTextRecord,
   if (mode === "translation") {
     // Validate the entire paragraph before the first write; only existing Text.data changes.
     for (const edit of record.edits) edit.node.data = edit.translated;
+  } else if (isNavigationButton(root)) {
+    if (record.edits.every(edit => edit.translated.trim() === edit.source.trim())) return true;
+    // A second row inside the original label keeps the entire disclosure clickable.
+    const node = root.ownerDocument.createElement("span");
+    node.className = "flt-translation";
+    node.dataset.fltGenerated = "translation";
+    node.lang = language;
+    node.setAttribute("aria-hidden", "true");
+    node.style.setProperty("display", "block", "important");
+    node.style.setProperty("margin", "0", "important");
+    node.textContent = record.edits.map(edit => edit.translated.trim()).filter(Boolean).join(" ");
+    const parent = record.edits[0]?.node.parentElement;
+    (parent && record.edits.every(edit => parent.contains(edit.node)) ? parent : root).append(node);
+    record.translationNode = node;
   } else {
     record.translationNode = mountTranslation(root, bilingualFragment(root, record), language, true);
   }

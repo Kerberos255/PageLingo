@@ -524,6 +524,83 @@ describe("PageTranslator display modes", () => {
     expect(summary.isConnected).toBe(true);
   });
 
+  it("translates navigation button labels in place and keeps other controls source-owned", async () => {
+    document.body.innerHTML = `<nav aria-label="Documentation"><ul><li id="entry">
+      <button id="section" type="button" aria-expanded="false" aria-controls="guide"><span>Get started</span><svg aria-hidden="true"></svg></button>
+      </li></ul><button id="submit" form="search">Run search</button><button id="search-action" form="search" type="button">Clear filters</button>
+      </nav><form id="search"></form><button id="copy" type="button">Copy code</button>`;
+    const section = document.querySelector<HTMLButtonElement>("#section")!;
+    const label = section.querySelector("span")!;
+    const text = label.firstChild;
+    const icon = section.querySelector("svg");
+    const original = document.body.innerHTML;
+    const requests: string[] = [];
+    const provider: TranslationProvider = {
+      prefersWholeSentenceHtml: async () => true,
+      translateHtml: async ({ html }) => {
+        requests.push(html);
+        return html.replace("Get started", "开始使用");
+      },
+    };
+    section.addEventListener("click", () => section.setAttribute("aria-expanded", section.getAttribute("aria-expanded") === "true" ? "false" : "true"));
+    const translator = new PageTranslator(document, provider, {targetLanguage: "zh-Hans"});
+    await translator.translateAll();
+
+    expect(requests).toEqual(['<span><span data-flt-text-id="0">Get started</span></span>']);
+    expect(label.textContent).toBe("开始使用");
+    expect(label.firstChild).toBe(text);
+    expect(section.querySelector("svg")).toBe(icon);
+    section.click();
+    expect(section.getAttribute("aria-expanded")).toBe("true");
+
+    translator.setDisplayMode("bilingual");
+    expect(text?.textContent).toBe("Get started");
+    expect(label.querySelector(".flt-translation")?.textContent).toBe("开始使用");
+    expect(document.querySelectorAll("#entry button")).toHaveLength(1);
+    section.click();
+    expect(section.getAttribute("aria-expanded")).toBe("false");
+    translator.restore();
+    expect(document.body.innerHTML).toBe(original);
+  });
+
+  it.each([false, true])("translates existing navigation links when the sidebar reveals them (fading: %s)", async (fading) => {
+    document.body.innerHTML = `<aside><div id="panel" aria-hidden="true">
+      <button type="button"><span>Get started</span></button><nav><a href="/guide">Read the guide</a></nav>
+    </div></aside>`;
+    const panel = document.querySelector<HTMLElement>("#panel")!;
+    const link = panel.querySelector("a")!;
+    const provider: TranslationProvider = {
+      prefersWholeSentenceHtml: async () => true,
+      translateHtml: async ({ html }) => html.replace("Get started", "开始使用").replace("Read the guide", "阅读指南"),
+    };
+    const translator = new PageTranslator(document, provider, {targetLanguage: "zh-Hans"});
+    await translator.translateAll();
+    translator.observe();
+    expect(link.textContent).toBe("Read the guide");
+
+    let finish = () => {};
+    if (fading) {
+      const opacityFinished = new Promise<void>(resolve => { finish = resolve; });
+      Object.defineProperty(panel, "getAnimations", {
+        value: () => [{transitionProperty: "opacity", finished: opacityFinished}],
+      });
+      panel.style.opacity = "0";
+    }
+    panel.setAttribute("aria-hidden", "false");
+    if (fading) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(link.textContent).toBe("Read the guide");
+      panel.style.opacity = "1";
+      finish();
+    }
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(link.textContent).toBe("阅读指南");
+    expect(link.getAttribute("href")).toBe("/guide");
+    expect(panel.querySelector("button")?.textContent).toBe("开始使用");
+    translator.restore();
+    expect(link.textContent).toBe("Read the guide");
+  });
+
   it("keeps paragraph icons and form controls when translating nearby text", async () => {
     document.body.innerHTML = `
       <p id="status"><svg id="status-icon" aria-hidden="true"></svg>Status ready</p>

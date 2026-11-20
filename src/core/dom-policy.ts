@@ -16,6 +16,9 @@ var ROOT_TAGS = /* @__PURE__ */ new Set([
   "H6",
   "SUMMARY"
 ]);
+const FIXED_ROOT_SELECTOR = [...Array.from(ROOT_TAGS, tag => tag.toLowerCase()), "button"].join(",");
+const NAVIGATION_LANDMARK = "nav,[role='navigation']";
+const SIDEBAR_LANDMARK = "aside,[role='complementary']";
 var SKIP_SELECTOR = [
   "script",
   "style",
@@ -25,7 +28,6 @@ var SKIP_SELECTOR = [
   "input",
   "select",
   "option",
-  "button",
   "pre",
   "code",
   "kbd",
@@ -58,8 +60,17 @@ export function isGeneratedNode(node) {
   const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   return Boolean(element?.closest("[data-flt-generated]"));
 }
+export function isNavigationButton(element) {
+  return element.tagName === "BUTTON" && element.getAttribute("type")?.toLowerCase() === "button"
+    && !element.form && !element.closest("[role='form']")
+    && Boolean(element.closest(NAVIGATION_LANDMARK)
+      || (element.nextElementSibling?.matches(NAVIGATION_LANDMARK) && element.closest(SIDEBAR_LANDMARK)));
+}
+export function isNavigationRegion(element) {
+  return Boolean(element.closest(`${NAVIGATION_LANDMARK},${SIDEBAR_LANDMARK}`));
+}
 export function isTranslationRootElement(element) {
-  return ROOT_TAGS.has(element.tagName);
+  return ROOT_TAGS.has(element.tagName) || isNavigationButton(element);
 }
 export function isTranslationDisabled(element) {
   for (let current = element; current; current = current.parentElement) {
@@ -70,7 +81,7 @@ export function isTranslationDisabled(element) {
   return false;
 }
 export function isProtectedTranslationSubtree(element) {
-  return element.matches(SKIP_SELECTOR);
+  return element.tagName === "BUTTON" || element.matches(SKIP_SELECTOR);
 }
 function safeDecodePathSegment(value) {
   try {
@@ -225,13 +236,16 @@ export function isElementEffectivelyHidden(element) {
 export function isEligibleTextContext(node) {
   if (isProtectedLinkIdentifierText(node) || isProtectedCodeLabelText(node)) return false;
   const parent = node.parentElement;
-  return Boolean(parent && !isTranslationDisabled(parent) && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent));
+  const button = parent?.closest("button");
+  return Boolean(parent && (!button || isNavigationButton(button)) && !isTranslationDisabled(parent)
+    && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent));
 }
 export function isEligibleTextNode(node) {
-  if (!node.data.trim() || !isEligibleTextContext(node)) return false;
-  // Pure counters/dates/numeric badges do not need translation and duplicating them can
+  const text = node.data.trim();
+  if (!text || !isEligibleTextContext(node)) return false;
+  // Pure counters/dates/version badges do not need translation and duplicating them can
   // surface otherwise hidden UI state (for example GitHub's hidden "0" tab counters).
-  return /\p{L}/u.test(node.data);
+  return /\p{L}/u.test(text) && !/^v\d+(?:\.\d+)+(?:[-+][\w.-]+)?$/i.test(text);
 }
 var FALLBACK_STRUCTURAL_SELECTOR = [
   "a", "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "section",
@@ -240,7 +254,7 @@ var FALLBACK_STRUCTURAL_SELECTOR = [
 ].join(",");
 function isFallbackLeafContainer(element) {
   if (!["DIV", "SPAN", "LABEL"].includes(element.tagName)) return false;
-  if (element.closest(SKIP_SELECTOR)) return false;
+  if (element.closest(SKIP_SELECTOR) || element.closest("button")) return false;
   if (element.tagName === "DIV" && element.children.length > 0) return false;
   if (element.querySelector(FALLBACK_STRUCTURAL_SELECTOR)) return false;
   return Boolean((element.textContent ?? "").trim());
@@ -297,7 +311,7 @@ export function findTranslationRoot(node) {
   let current = node.parentElement;
   let fallback = null;
   while (current && current !== current.ownerDocument.body) {
-    if (current.matches(SKIP_SELECTOR)) return null;
+    if (isProtectedTranslationSubtree(current)) return null;
     // Text wrappers are deliberately inserted inside structural UI (links, tabs, file
     // rows) so translating a short label never replaces the surrounding icon/badge/flex
     // container. Once we reach one, it is the authoritative translation root.
@@ -328,7 +342,7 @@ function wrapTextNodesInside(container, doc) {
       skipTags.has(current.tagName) ||
       current.matches?.(SKIP_SELECTOR) ||
       current.hasAttribute("data-flt-source-text-wrapper") ||
-      current.closest("[data-flt-generated]")
+      current.closest("button,[data-flt-generated]")
     ) continue;
     for (const child of Array.from(current.childNodes)) {
       if (child.nodeType !== Node.TEXT_NODE) continue;
@@ -405,7 +419,7 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false }
       if (!isEligibleTextNode(node)) continue;
       // The fixed renderer keeps controls/icons in place, so an inline fallback
       // inside a paragraph must not become a second, overlapping translation root.
-      const structural = node.parentElement?.closest(Array.from(ROOT_TAGS, tag => tag.toLowerCase()).join(","));
+      const structural = node.parentElement?.closest(FIXED_ROOT_SELECTOR);
       let root = structural && !isInsideCodeWidgetFallback(structural)
         ? structural : findTranslationRoot(node) ?? node.parentElement?.closest("a,label");
       if (!structural) {
