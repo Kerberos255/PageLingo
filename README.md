@@ -43,6 +43,8 @@ Restoring the page removes PageLingo-generated translation nodes and source wrap
 
 The optional PageLingo MT engine uses wllama on the CPU for English → Simplified Chinese. It translates a paragraph with numbered text slots while PageLingo owns the HTML template. A decoding grammar fixes slot order and protected tokens; independent validation rejects malformed or incomplete output.
 
+On Windows x64, the [native launcher](tools/native-mt-windows) can run the same model through llama.cpp. Put the v0.2.2 Q5_K_M GGUF beside `start.cmd`, then run `start.cmd`. The launcher tries Vulkan and falls back to native CPU. Use `start.cmd -Cpu` to choose CPU directly. In PageLingo's translation-engine settings, add **PageLingo MT · 本机加速**, enter the connection code from `data/connection-code.txt` and select the saved engine. The service listens on the local machine and needs to stay running while you translate.
+
 In translation-only mode, MT updates existing text nodes without replacing elements, attributes, code, or event listeners. Bilingual mode restores the source text and adds a removable translation layer cloned from the source markup. Ordinary link clicks in that layer forward to the original link.
 
 MT retains the entire source paragraph when inference or validation fails, without retrying isolated words or silently switching engines. Oversized content is split only at complete sentence boundaries that preserve the template; an indivisible sentence or text slot exceeding the context budget stays in English. A standalone English article may be omitted in Chinese, but arbitrary empty text slots are rejected.

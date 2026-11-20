@@ -2,6 +2,8 @@ import { isLoopbackHostname } from "./network-endpoint";
 
 export const LOCAL_TRANSLATION_ENGINE_ID = "firefox-local";
 export const PAGELINGO_MT_ENGINE_ID = "pagelingo-mt";
+export const NATIVE_MT_BASE_URL = "http://127.0.0.1:18731/v1";
+export const NATIVE_MT_MODEL_ID = "pagelingo-mt-v0.2.2-q5km";
 export const OPENCODE_GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1";
 
 export type ExternalTranslationEngineType =
@@ -13,6 +15,7 @@ export type ExternalTranslationEngineType =
   | "opencode-go"
   | "deepseek"
   | "openai-compatible"
+  | "pagelingo-mt-native"
   | "libretranslate"
   | "custom-rest";
 
@@ -45,6 +48,7 @@ const ENGINE_TYPES = new Set<ExternalTranslationEngineType>([
   "opencode-go",
   "deepseek",
   "openai-compatible",
+  "pagelingo-mt-native",
   "libretranslate",
   "custom-rest",
 ]);
@@ -82,14 +86,17 @@ export function normalizeTranslationEngineConfig(value: unknown): TranslationEng
   const rawBaseUrl = cleanString(raw.baseUrl, 2048);
   const baseUrl = cleanUrl(rawBaseUrl);
   if (rawBaseUrl && !baseUrl) return null;
+  const native = type === "pagelingo-mt-native";
+  const apiKey = cleanString(raw.apiKey, 8192);
+  if (native && (!apiKey || (baseUrl && baseUrl !== NATIVE_MT_BASE_URL))) return null;
   return {
     id: cleanId(raw.id),
     name,
     type,
     enabled: raw.enabled !== false,
-    baseUrl,
-    apiKey: cleanString(raw.apiKey, 8192),
-    model: cleanString(raw.model, 240),
+    baseUrl: native ? NATIVE_MT_BASE_URL : baseUrl,
+    apiKey,
+    model: native ? NATIVE_MT_MODEL_ID : cleanString(raw.model, 240),
     region: cleanString(raw.region, 160),
     prompt: cleanString(raw.prompt, 6000),
     headersJson: cleanString(raw.headersJson, 6000),

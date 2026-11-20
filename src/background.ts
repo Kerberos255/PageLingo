@@ -42,6 +42,7 @@ import {
 } from "./shared/translation-engine-settings";
 import { PageLingoMtClient } from "./providers/pagelingo-mt/client";
 import { mtRouteSupported } from "./providers/pagelingo-mt/protocol";
+import { checkNativeMt } from "./providers/pagelingo-mt/native-client";
 import { validTranslationContext } from "./core/translation-context";
 import { keepEventPageAlive } from "./shared/event-page-keepalive";
 
@@ -135,7 +136,7 @@ async function translationEngineStateForUi() {
   return {
     activeEngineId: state.activeEngineId,
     structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
-      || Boolean(activeExternal && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
+      || Boolean(activeExternal && activeExternal.type !== "pagelingo-mt-native" && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
     // Every backend returns text for an application-owned template. Provider
     // markup never replaces source nodes or supplies event handlers/styles.
     prefersWholeSentenceHtml: true,
@@ -444,7 +445,9 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
           throw new Error("外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权");
         }
-        const html = await keepEventPageAlive(translateWithExternalEngine(external, { html: request.html, sourceLanguage, targetLanguage, terminology }), "external-translate");
+        const html = await keepEventPageAlive(translateWithExternalEngine(external, {
+          html: request.html, sourceLanguage, targetLanguage, terminology, context: validTranslationContext(request.context),
+        }), "external-translate");
         return { ok: true, html };
       }
       const overrides = await currentOverrides();
@@ -507,6 +510,12 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const externalReady = external
         ? await hasExternalTranslationConsent(Boolean(external.apiKey))
         : false;
+      if (external?.type === "pagelingo-mt-native") {
+        const supported = externalReady && Boolean(sourceLanguage && targetLanguage
+          && mtRouteSupported({html:"", sourceLanguage, targetLanguage}));
+        if (supported) await checkNativeMt(external.apiKey);
+        return {ok:true, supported};
+      }
       const overrides = external ? null : await currentOverrides();
       return {
         ok: true,
@@ -540,6 +549,12 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const externalReady = external
         ? await hasExternalTranslationConsent(Boolean(external.apiKey))
         : false;
+      if (external?.type === "pagelingo-mt-native") {
+        const ready = externalReady && Boolean(sourceLanguage && targetLanguage
+          && mtRouteSupported({html:"", sourceLanguage, targetLanguage}));
+        if (ready) await checkNativeMt(external.apiKey);
+        return {ok:true, ready};
+      }
       return {
         ok: true,
         ready: Boolean(
@@ -581,6 +596,13 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         const mt = await pagelingoMt.status();
         if (!mt.installed) throw new Error("请先下载 PageLingo MT 模型");
       }
+      const native = (await currentTranslationEngineState()).engines.find(
+        engine => engine.id === message.id && engine.enabled && engine.type === "pagelingo-mt-native",
+      );
+      if (native) {
+        if (!await hasExternalTranslationConsent(true)) throw new Error("请授权向本机 MT 服务发送数据");
+        await checkNativeMt(native.apiKey);
+      }
       await setActiveTranslationEngine(message.id);
       await refreshTranslationEngineState();
       return { ok: true, state: await translationEngineStateForUi() };
@@ -599,8 +621,9 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       if (!await hasExternalTranslationConsent(Boolean(config.apiKey))) {
         throw new Error("未授权向外部翻译服务发送数据");
       }
+      if (config.type === "pagelingo-mt-native") await checkNativeMt(config.apiKey);
       const html = await keepEventPageAlive(translateWithExternalEngine(config, {
-        html: "<strong>Hello</strong> world",
+        html: config.type === "pagelingo-mt-native" ? "Hello, how are you?" : "<strong>Hello</strong> world",
         sourceLanguage: "en",
         targetLanguage: "zh-Hans",
       }), "external-test");

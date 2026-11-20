@@ -3,6 +3,8 @@ import { isLoopbackHostname } from "../shared/network-endpoint";
 import { OPENCODE_GO_BASE_URL, type TranslationEngineConfig } from "../shared/translation-engine-settings";
 import {restoreFixedHtmlTransport} from "../core/fixed-html-transport";
 import {assessTranslationQuality} from "../core/translation-quality";
+import type {TranslationContext} from "../core/translation-context";
+import {translateNativeMt} from "./pagelingo-mt/native-client";
 
 export interface ExternalTranslationTerminologyEntry {
   source: string;
@@ -15,6 +17,7 @@ export interface ExternalTranslationRequest {
   sourceLanguage: string;
   targetLanguage: string;
   terminology?: ExternalTranslationTerminologyEntry[];
+  context?: TranslationContext | undefined;
 }
 
 const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. If numbered data-flt-text-id spans are present, translate their text with the whole paragraph as context, keep each ID exactly once in its original parent and order, and put all translated words inside their original spans. Keep data-flt-fixed content and code placeholders exactly unchanged. Output only the translated HTML. Do not use Markdown or add explanations.";
@@ -467,6 +470,7 @@ export async function translateWithExternalEngine(
   config: TranslationEngineConfig,
   request: ExternalTranslationRequest,
 ): Promise<string> {
+  if (config.type === "pagelingo-mt-native") return translateNativeMt(config.apiKey, request);
   let translated: string;
   switch (config.type) {
     case "microsoft": translated = await translateMicrosoft(config, request); break;

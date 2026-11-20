@@ -90,6 +90,7 @@ async function resolveSourceLanguage(sourceLanguage) {
 }
 async function canTranslate(sourceLanguage, targetLanguage) {
     const response = await sendRuntimeMessage({ type: "can-translate", sourceLanguage, targetLanguage });
+    if (response?.ok === false && typeof response.error === "string") throw new Error(response.error);
     return response?.ok === true && response.supported === true;
 }
 async function translationRouteReady(sourceLanguage, targetLanguage) {

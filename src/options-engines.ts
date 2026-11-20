@@ -3,6 +3,8 @@ import { requestExternalAuthenticationConsent, requestExternalTranslationConsent
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
   PAGELINGO_MT_ENGINE_ID,
+  NATIVE_MT_BASE_URL,
+  NATIVE_MT_MODEL_ID,
   OPENCODE_GO_BASE_URL,
   type ExternalTranslationEngineType,
   type TranslationEngineConfig,
@@ -61,6 +63,7 @@ const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
   "opencode-go": { name: "OpenCode Go", baseUrl: OPENCODE_GO_BASE_URL, model: "deepseek-v4.1-flash" },
   deepseek: { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
   "openai-compatible": { name: "OpenAI Compatible", baseUrl: "", model: "" },
+  "pagelingo-mt-native": { name: "PageLingo MT", baseUrl: NATIVE_MT_BASE_URL, model: NATIVE_MT_MODEL_ID },
   libretranslate: { name: "LibreTranslate", baseUrl: "https://libretranslate.com" },
   "custom-rest": {
     name: "Custom REST",
@@ -80,6 +83,7 @@ const TYPE_LABELS: Record<ExternalTranslationEngineType, string> = {
   "opencode-go": "OpenCode Go",
   deepseek: "DeepSeek",
   "openai-compatible": "OpenAI Compatible",
+  "pagelingo-mt-native": "本机加速",
   libretranslate: "LibreTranslate",
   "custom-rest": "自定义 REST",
 };
@@ -90,6 +94,7 @@ const typeSelect = document.querySelector<HTMLSelectElement>("#engine-type");
 const nameInput = document.querySelector<HTMLInputElement>("#engine-name");
 const baseUrlInput = document.querySelector<HTMLInputElement>("#engine-base-url");
 const apiKeyInput = document.querySelector<HTMLInputElement>("#engine-api-key");
+const apiKeyLabel = document.querySelector<HTMLElement>("#engine-api-key-label");
 const modelInput = document.querySelector<HTMLInputElement>("#engine-model");
 const regionInput = document.querySelector<HTMLInputElement>("#engine-region");
 const promptInput = document.querySelector<HTMLTextAreaElement>("#engine-prompt");
@@ -136,6 +141,9 @@ function supportsModelDiscovery(type: ExternalTranslationEngineType): boolean {
 
 function updateConditionalFields(): void {
   const type = currentType();
+  const native = type === "pagelingo-mt-native";
+  if (baseUrlInput) baseUrlInput.readOnly = native;
+  if (apiKeyLabel) apiKeyLabel.textContent = native ? "连接码" : "API Key";
   const llm = type === "gemini" || type === "openrouter" || type === "opencode-go" || type === "deepseek" || type === "openai-compatible";
   for (const field of conditionalFields) {
     const kind = field.dataset.engineField;
@@ -167,13 +175,15 @@ function collectConfig(): TranslationEngineConfig {
   const name = nameInput?.value.trim() ?? "";
   if (!name) throw new Error("请填写引擎名称");
   const type = currentType();
+  const apiKey = apiKeyInput?.value.trim() ?? "";
+  if (type === "pagelingo-mt-native" && !apiKey) throw new Error("请填写本机 MT 的连接码");
   return {
     id: `engine-${crypto.randomUUID()}`,
     name,
     type,
     enabled: true,
     baseUrl: baseUrlInput?.value.trim() ?? "",
-    apiKey: apiKeyInput?.value.trim() ?? "",
+    apiKey,
     model: modelInput?.value.trim() ?? "",
     region: regionInput?.value.trim() ?? "",
     prompt: promptInput?.value.trim() ?? "",
@@ -225,8 +235,9 @@ function renderEngineList(): void {
     const title = document.createElement("strong");
     title.textContent = engine.name;
     const detail = document.createElement("small");
-    const model = engine.model ? ` · ${engine.model}` : "";
-    const keyState = engine.hasApiKey ? " · Key 已配置" : "";
+    const native = engine.type === "pagelingo-mt-native";
+    const model = !native && engine.model ? ` · ${engine.model}` : "";
+    const keyState = engine.hasApiKey ? (native ? " · 已设置连接码" : " · Key 已配置") : "";
     detail.textContent = `${TYPE_LABELS[engine.type]}${model}${keyState}`;
     copy.append(title, detail);
 
@@ -285,10 +296,7 @@ async function setActive(id: string): Promise<void> {
       const engine = engineState.engines.find((item) => item.id === id);
       if (!engine) throw new Error("找不到翻译引擎");
       const granted = await requestExternalTranslationConsent(engine.hasApiKey);
-      if (!granted) {
-        renderActiveSelect();
-        throw new Error("未授权向外部翻译服务发送网页内容");
-      }
+      if (!granted) throw new Error("未授权向外部翻译服务发送网页内容");
     }
     await requestState({ type: "set-active-translation-engine", id });
     notify(id === LOCAL_TRANSLATION_ENGINE_ID
@@ -297,6 +305,7 @@ async function setActive(id: string): Promise<void> {
         ? "已切换到 PageLingo MT"
         : "翻译引擎已切换");
   } catch (error) {
+    renderActiveSelect();
     notify(error instanceof Error ? error.message : String(error), 5000);
   }
 }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { listExternalTranslationModels, translateWithExternalEngine, validateTranslatedHtml } from "../src/providers/external-translation";
-import type { TranslationEngineConfig } from "../src/shared/translation-engine-settings";
+import { NATIVE_MT_BASE_URL, NATIVE_MT_MODEL_ID, normalizeTranslationEngineConfig, type TranslationEngineConfig } from "../src/shared/translation-engine-settings";
+import { checkNativeMt } from "../src/providers/pagelingo-mt/native-client";
 
 function config(overrides: Partial<TranslationEngineConfig> = {}): TranslationEngineConfig {
   return {
@@ -21,6 +22,42 @@ function config(overrides: Partial<TranslationEngineConfig> = {}): TranslationEn
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe("PageLingo MT native runtime", () => {
+  const native = config({type: "pagelingo-mt-native", baseUrl: NATIVE_MT_BASE_URL});
+
+  it("requires a connection code and fixes the endpoint and model", () => {
+    expect(normalizeTranslationEngineConfig({...native, apiKey: ""})).toBeNull();
+    expect(normalizeTranslationEngineConfig({...native, baseUrl: "https://example.invalid/v1"})).toBeNull();
+    expect(normalizeTranslationEngineConfig(native)).toMatchObject({baseUrl: NATIVE_MT_BASE_URL, model: NATIVE_MT_MODEL_ID});
+  });
+
+  it("uses authenticated loopback and validates native fixed-slot output before returning it", async () => {
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      expect(init).toMatchObject({headers: {Authorization: "Bearer test-key"}, credentials: "omit", redirect: "error"});
+      if (url === `${NATIVE_MT_BASE_URL}/models`) return Response.json({data: [{id: NATIVE_MT_MODEL_ID}]});
+      expect(url).toBe(`${NATIVE_MT_BASE_URL}/chat/completions`);
+      expect(JSON.parse(String(init.body))).toMatchObject({model: NATIVE_MT_MODEL_ID, grammar: expect.stringContaining("root ::="), stream: false});
+      const content = fetchMock.mock.calls.length === 2 ? "⟦0⟧重启服务器。⟦/0⟧" : "⟦1⟧重启服务器。⟦/1⟧";
+      return Response.json({model: NATIVE_MT_MODEL_ID, choices: [{finish_reason: "stop", message: {content}}]});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const request = {html: '<span data-flt-text-id="0">Restart the server.</span>', sourceLanguage: "en", targetLanguage: "zh-Hans"};
+    await checkNativeMt(native.apiKey);
+    await expect(translateWithExternalEngine(native, request)).resolves.toBe('<span data-flt-text-id="0">重启服务器。</span>');
+    await expect(translateWithExternalEngine(native, request)).rejects.toThrow(/slot|marker/);
+  });
+
+  it("distinguishes an unavailable service, incorrect code and model mismatch", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockRejectedValueOnce(new TypeError("network error"))
+      .mockResolvedValueOnce(new Response(null, {status: 401}))
+      .mockResolvedValueOnce(Response.json({data: [{id: "different-model"}]})));
+    await expect(checkNativeMt(native.apiKey)).rejects.toThrow(/服务已启动/);
+    await expect(checkNativeMt(native.apiKey)).rejects.toThrow(/连接码无效/);
+    await expect(checkNativeMt(native.apiKey)).rejects.toThrow(/没有加载/);
+  });
+});
 
 describe("external translation HTML safety", () => {
   it("accepts translations that preserve the HTML skeleton and opaque placeholders", () => {
