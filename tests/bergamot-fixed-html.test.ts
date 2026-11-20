@@ -4,7 +4,7 @@ import {PageTranslator} from "../src/core/page-translator";
 import {restoreTerminologyHtml} from "../src/core/rich-segment";
 import {restoreFixedHtmlTransport} from "../src/core/fixed-html-transport";
 import {prepareBergamotFixedHtml, repairBergamotFixedHtml} from "../src/providers/bergamot/fixed-html";
-import {prepareBergamotFixedRetry} from "../src/providers/bergamot/fixed-retry";
+import {prepareBergamotFixedRetry, restoreBergamotSentenceLines} from "../src/providers/bergamot/fixed-retry";
 
 const slot = (id: number, contents: string) => `<span data-flt-text-id="${id}">${contents}</span>`;
 const term = (id: number, contents: string) => `<span data-flt-term-id="${id}">${contents}</span>`;
@@ -82,6 +82,19 @@ describe("Bergamot fixed HTML", () => {
 });
 
 describe("Bergamot inline-phrase retry", () => {
+  it("restores each sentence to its original sibling span after Bergamot merges independent lines", () => {
+    const lines = (first: string, last: string) => `<span>${slot(0, first)}</span><span>${slot(1, last)}</span>`;
+    const source = lines("The AI that really does things.", "Any OS. Any Platform. The lobster way. 🦞");
+    const initial = lines("", "真正能做事情的人工智能。任何操作系统。任何平台。龙虾的方式。🦞");
+    expect(restoreBergamotSentenceLines(source, initial)).toBe(
+      lines("真正能做事情的人工智能。", "任何操作系统。任何平台。龙虾的方式。🦞"),
+    );
+    expect(restoreBergamotSentenceLines(source, initial.replace("任何平台。", ""))).toBeUndefined();
+    expect(restoreBergamotSentenceLines(source, initial.replace("🦞", ""))).toBeUndefined();
+    expect(restoreBergamotSentenceLines(source, initial.replace('<span><span data-flt-text-id="0">', '<span class="changed"><span data-flt-text-id="0">'))).toBeUndefined();
+    expect(restoreBergamotSentenceLines(source.replace("does things.", "does things"), initial)).toBeUndefined();
+  });
+
   it("reassembles swallowed bold phrases around an unchanged code atom", () => {
     const command = "<code>__FLT_OPAQUE_0__</code>";
     const html = (values: string[], code = command) => slot(0, values[0]!) + `<strong>${slot(1, values[1]!)}</strong>`

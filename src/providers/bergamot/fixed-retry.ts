@@ -18,6 +18,62 @@ interface FixedRetry {
   restore(translatedHtml: string): string | undefined;
 }
 
+/** Bergamot can coalesce consecutive standalone lines into the last span. */
+export function restoreBergamotSentenceLines(sourceHtml: string, translatedHtml: string): string | undefined {
+  if (!sourceHtml.startsWith('<span><span data-flt-text-id="') || sourceHtml.length > 900
+      || !/<span data-flt-text-id="\d+">\s*<\/span>/u.test(translatedHtml)) return;
+  const parser = new DOMParser();
+  const source = parser.parseFromString(sourceHtml, "text/html");
+  const target = parser.parseFromString(translatedHtml, "text/html");
+  if (source.head.childNodes.length || target.head.childNodes.length) return;
+
+  const slots = (body: HTMLElement) => [...body.children].map(wrapper => {
+    const slot = wrapper.firstElementChild;
+    if (wrapper.matches("span") && !wrapper.attributes.length && wrapper.childNodes.length === 1
+      && slot?.matches(slotSelector) && slot.attributes.length === 1
+      && [...slot.childNodes].every(node => node.nodeType === Node.TEXT_NODE)) return slot;
+  });
+  const from = slots(source.body), to = slots(target.body);
+  if (from.length < 2 || from.length > 4 || from.length !== to.length
+      || from.some((slot, i) => !slot || !to[i]
+        || slot.getAttribute("data-flt-text-id") !== to[i]!.getAttribute("data-flt-text-id"))
+      || to.slice(0, -1).some(slot => slot!.textContent?.trim())) return;
+
+  const sourceSegmenter = new Intl.Segmenter("en", {granularity: "sentence"});
+  const counts = from.map(slot => {
+    const text = (slot!.textContent ?? "").trim();
+    return /[.!?][^\p{L}\p{N}]*$/u.test(text)
+      ? [...sourceSegmenter.segment(text)].filter(({segment}) => /\p{Script=Latin}/u.test(segment)).length
+      : 0;
+  });
+  if (counts.some(count => count === 0)) return;
+
+  const sentences: string[] = [];
+  const combined = (to.at(-1)!.textContent ?? "").trim();
+  if (!combined || combined.includes("\uFFFD")) return;
+  for (const {segment} of new Intl.Segmenter("zh-Hans", {granularity: "sentence"}).segment(combined)) {
+    if (/\p{L}/u.test(segment)) sentences.push(segment);
+    else if (sentences.length) sentences[sentences.length - 1] += segment;
+    else return;
+  }
+  if (sentences.length !== counts.reduce((sum, count) => sum + count, 0)) return;
+
+  let offset = 0;
+  for (const [i, count] of counts.entries()) {
+    const value = sentences.slice(offset, offset + count).join("");
+    const symbols = /\p{Extended_Pictographic}/gu;
+    if (!/\p{Script=Han}/u.test(value)
+      || JSON.stringify(value.match(symbols)) !== JSON.stringify(from[i]!.textContent?.match(symbols))) return;
+    to[i]!.textContent = value;
+    offset += count;
+  }
+  try {
+    return restoreFixedHtmlTransport(sourceHtml, target.body.innerHTML);
+  } catch {
+    return;
+  }
+}
+
 function translatedParts(text: string): Array<{text: string; quoted: boolean}> {
   const parts: Array<{text: string; quoted: boolean}> = [];
   let end = 0;

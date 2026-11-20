@@ -1,7 +1,7 @@
 import { loadModelPair } from "./model-cache";
 import { ShortTranslationCache } from "./translation-cache";
 import { prepareBergamotFixedHtml, repairBergamotFixedHtml } from "./fixed-html";
-import { prepareBergamotFixedRetry } from "./fixed-retry";
+import { prepareBergamotFixedRetry, restoreBergamotSentenceLines } from "./fixed-retry";
 import type { TranslationRoute } from "./model-manifest";
 import type { BergamotWorkerRequest, BergamotWorkerResponse, WorkerModelBundle } from "./protocol";
 
@@ -250,8 +250,12 @@ export class BergamotClient {
   async #repairTranslations(
     sources: string[], prepared: string[], translations: string[], route: TranslationRoute, session: RouteSession,
   ): Promise<string[]> {
-    const outputs = sources.map((html, index) => repairBergamotFixedHtml(html, translations[index] ?? html, prepared[index] !== html));
-    if (route.sourceLanguage !== "en" || route.targetLanguage !== "zh-Hans") return outputs;
+    const canRecoverChinese = route.sourceLanguage === "en" && route.targetLanguage === "zh-Hans";
+    const outputs = sources.map((html, index) => {
+      const output = repairBergamotFixedHtml(html, translations[index] ?? html, prepared[index] !== html);
+      return canRecoverChinese ? restoreBergamotSentenceLines(html, output) ?? output : output;
+    });
+    if (!canRecoverChinese) return outputs;
 
     const retries = sources.flatMap((html, index) => {
       const plan = prepareBergamotFixedRetry(html, outputs[index]!);
