@@ -63,6 +63,21 @@ describe("PageTranslator DOM preservation", () => {
     expect(provider.requests[0]?.html).toContain("__FLT_OPAQUE_0__");
   });
 
+  it("keeps code language captions while translating neighboring prose", async () => {
+    document.body.innerHTML = `<figure data-code-label="powershell"><figcaption><span>powershell</span><button>Copy code</button></figcaption><div><pre><code>Get-Location</code></pre></div></figure><p>Start the shell.</p>`;
+    const figure = document.querySelector("figure")!;
+    const source = figure.outerHTML;
+    const provider = new FakeHtmlProvider();
+    const translator = new PageTranslator(document, provider, { targetLanguage: "zh-Hans" });
+
+    await translator.translateAll();
+
+    expect(figure.outerHTML).toBe(source);
+    expect(provider.requests.map(({ html }) => html)).toEqual(["Start the shell."]);
+    translator.restore();
+    expect(figure.outerHTML).toBe(source);
+  });
+
   it("keeps a literal file path link while translating its neighboring prose and descriptive links", async () => {
     const href = "https://github.com/python/cpython/blob/main/Lib/async%69o/queues.py?plain=1#L55";
     document.body.innerHTML = `<p>Source code: <a id="file" href="${href}"><span>Lib/</span>asyncio/queues.py</a>. Read the <a id="guide" href="${href}">queue implementation</a>.</p>`;

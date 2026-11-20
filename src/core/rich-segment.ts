@@ -296,6 +296,13 @@ export function protectTerminologyHtml(doc, html, entries) {
     const protectedEntries = (entries ?? []).filter((entry) => entry.mode === "protect");
     if (!protectedEntries.length) return { html, replacements: [] };
     const content = parseHtmlFragment(doc, html);
+    const replacements = protectTerminologyInFragment(content, protectedEntries);
+    const holder = doc.createElement("div");
+    holder.append(content.cloneNode(true));
+    return { html: holder.innerHTML, replacements };
+}
+export function protectTerminologyInFragment(content, protectedEntries) {
+    const doc = content.ownerDocument;
     const replacements = [];
     const walker = doc.createTreeWalker(content, NodeFilter.SHOW_TEXT);
     const nodes = [];
@@ -341,9 +348,7 @@ export function protectTerminologyHtml(doc, html, entries) {
         if (offset < raw.length) fragment.append(doc.createTextNode(raw.slice(offset)));
         textNode.replaceWith(fragment);
     }
-    const holder = doc.createElement("div");
-    holder.append(content.cloneNode(true));
-    return { html: holder.innerHTML, replacements };
+    return replacements;
 }
 export function restoreTerminology(container, replacements) {
     for (const span of Array.from(container.querySelectorAll("span[data-flt-term-id]"))) {

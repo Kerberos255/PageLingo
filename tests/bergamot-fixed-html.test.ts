@@ -2,7 +2,9 @@ import {afterEach, describe, expect, it} from "vitest";
 import type {TranslationRequest} from "../src/core/provider";
 import {PageTranslator} from "../src/core/page-translator";
 import {restoreTerminologyHtml} from "../src/core/rich-segment";
+import {restoreFixedHtmlTransport} from "../src/core/fixed-html-transport";
 import {prepareBergamotFixedHtml, repairBergamotFixedHtml} from "../src/providers/bergamot/fixed-html";
+import {prepareBergamotFixedRetry} from "../src/providers/bergamot/fixed-retry";
 
 const slot = (id: number, contents: string) => `<span data-flt-text-id="${id}">${contents}</span>`;
 const term = (id: number, contents: string) => `<span data-flt-term-id="${id}">${contents}</span>`;
@@ -76,5 +78,39 @@ describe("Bergamot fixed HTML", () => {
     [label("Self-hosted", ": runs on your hardware"), label("自托管", ":使用你的硬件")],
   ])("retains the original validation path outside the clear label shape", (source, result) => {
     expect(repairBergamotFixedHtml(source, result)).toBe(result);
+  });
+});
+
+describe("Bergamot inline-phrase retry", () => {
+  it("reassembles swallowed bold phrases around an unchanged code atom", () => {
+    const command = "<code>__FLT_OPAQUE_0__</code>";
+    const html = (values: string[], code = command) => slot(0, values[0]!) + `<strong>${slot(1, values[1]!)}</strong>`
+      + slot(2, values[2]!) + `<strong>${slot(3, values[3]!)}</strong>` + slot(4, values[4]!) + code + slot(5, values[5]!);
+    const source = html(["Choose ", "Quick start", " or ", "Custom setup", ". Run ", " to begin."]);
+    const initial = html(["", "", "", "", "选择快速开始或自定义设置。", "开始。"], "<code></code>");
+    const retry = prepareBergamotFixedRetry(source, initial)!;
+    expect(retry.html).toBe(`Choose «Quick start» or «Custom setup». Run ${command} to begin.`);
+    expect(retry.restore("选择“快速开始”。运行<code></code>即可开始。")).toBeUndefined();
+    expect(retry.restore("选择“快速开始”或“自定义设置”。运行<code>WRONG</code>即可开始。")).toBeUndefined();
+
+    const translated = retry.restore("选择“快速开始”或“自定义设置”。运行<code></code>即可开始。")!;
+    expect(restoreFixedHtmlTransport(source, translated)).toBe(
+      html(["选择 ", "快速开始", " 或 ", "自定义设置", "。运行 ", " 即可开始。"]),
+    );
+    expect(prepareBergamotFixedRetry(source, translated)).toBeUndefined();
+  });
+
+  it("keeps a link label and every protected name when recovering unbalanced prose", () => {
+    const link = (value: string) => '<a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0">'
+      + `<code>__FLT_LINK_START_0__</code>${slot(1, value)}<code>__FLT_LINK_END_0__</code></a>`;
+    const source = slot(0, `Install dependencies if needed,\nthen proceed. Tools (${term(0, "npm")},\n${term(1, "Docker")}) are listed on the `) + link("Install") + slot(2, " page.");
+    const initial = slot(0, "工具（npm、Docker 位于") + link("安装") + slot(2, "页面。");
+    const retry = prepareBergamotFixedRetry(source, initial)!;
+    expect(retry.html).toBe("Install dependencies if needed,\nthen proceed. Tools (npm, Docker) are listed on the «Install» page.");
+    expect(retry.restore("工具（Docker）列于“Install”页面。")).toBeUndefined();
+    expect(retry.restore("工具（npm、Docker 列于“Install”页面。")).toBeUndefined();
+    expect(retry.restore("工具（Docker、npm）列于“Install”页面。")).toBe(
+      slot(0, `工具（${term(1, "Docker")}、${term(0, "npm")}）列于`) + link("安装") + slot(2, "页面。"),
+    );
   });
 });

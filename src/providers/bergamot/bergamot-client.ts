@@ -1,6 +1,7 @@
 import { loadModelPair } from "./model-cache";
 import { ShortTranslationCache } from "./translation-cache";
 import { prepareBergamotFixedHtml, repairBergamotFixedHtml } from "./fixed-html";
+import { prepareBergamotFixedRetry } from "./fixed-retry";
 import type { TranslationRoute } from "./model-manifest";
 import type { BergamotWorkerRequest, BergamotWorkerResponse, WorkerModelBundle } from "./protocol";
 
@@ -213,15 +214,17 @@ export class BergamotClient {
       session = new RouteSession(route);
       this.#sessions.set(route.key, session);
     }
-    const prepared = unique.map(({html}) => prepareBergamotFixedHtml(html));
+    const sources = unique.map(({html}) => html);
+    const prepared = sources.map(prepareBergamotFixedHtml);
     const translated = await session.translateHtmlBatch(prepared);
     if (translated.length !== unique.length) {
       throw new Error(`Bergamot batch result length mismatch: expected ${unique.length}, got ${translated.length}`);
     }
 
+    const outputs = await this.#repairTranslations(sources, prepared, translated, route, session);
     for (let index = 0; index < unique.length; index += 1) {
       const item = unique[index]!;
-      const output = repairBergamotFixedHtml(item.html, translated[index] ?? item.html, prepared[index] !== item.html);
+      const output = outputs[index]!;
       this.#cache.set(route.key, item.html, output);
       for (const outputIndex of item.indexes) results[outputIndex] = output;
     }
@@ -239,9 +242,34 @@ export class BergamotClient {
       this.#sessions.set(route.key, session);
     }
     const prepared = prepareBergamotFixedHtml(html);
-    const translated = repairBergamotFixedHtml(html, await session.translateHtml(prepared), prepared !== html);
-    this.#cache.set(route.key, html, translated);
-    return translated;
+    const [translated] = await this.#repairTranslations([html], [prepared], [await session.translateHtml(prepared)], route, session);
+    this.#cache.set(route.key, html, translated!);
+    return translated!;
+  }
+
+  async #repairTranslations(
+    sources: string[], prepared: string[], translations: string[], route: TranslationRoute, session: RouteSession,
+  ): Promise<string[]> {
+    const outputs = sources.map((html, index) => repairBergamotFixedHtml(html, translations[index] ?? html, prepared[index] !== html));
+    if (route.sourceLanguage !== "en" || route.targetLanguage !== "zh-Hans") return outputs;
+
+    const retries = sources.flatMap((html, index) => {
+      const plan = prepareBergamotFixedRetry(html, outputs[index]!);
+      return plan ? [{index, plan}] : [];
+    });
+    if (!retries.length) return outputs;
+    let candidates: string[];
+    try {
+      candidates = await session.translateHtmlBatch(retries.map(({plan}) => plan.html));
+    } catch {
+      return outputs;
+    }
+    for (const [index, {index: outputIndex, plan}] of retries.entries()) {
+      const candidate = candidates[index];
+      if (candidate === undefined) continue;
+      outputs[outputIndex] = plan.restore(candidate) ?? outputs[outputIndex]!;
+    }
+    return outputs;
   }
 
   performanceStats(): BergamotPerformanceStats {

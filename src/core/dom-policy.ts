@@ -91,6 +91,12 @@ export function isProtectedFilePathLink(anchor) {
   return path.endsWith(`/${label.replace(/^\.?\//u, "")}`);
 }
 
+function isProtectedCodeLabelText(node) {
+  const figure = node.parentElement?.closest("figcaption")?.parentElement;
+  const label = figure?.getAttribute("data-code-label");
+  return Boolean(label && figure.tagName === "FIGURE" && node.data.trim().toLowerCase() === label.toLowerCase() && figure.querySelector("pre"));
+}
+
 function isProtectedLinkIdentifierText(node) {
   const anchor = node.parentElement?.closest("a[href]");
   if (!(anchor instanceof HTMLAnchorElement)) return false;
@@ -217,7 +223,7 @@ export function isElementEffectivelyHidden(element) {
   return false;
 }
 export function isEligibleTextContext(node) {
-  if (isProtectedLinkIdentifierText(node)) return false;
+  if (isProtectedLinkIdentifierText(node) || isProtectedCodeLabelText(node)) return false;
   const parent = node.parentElement;
   return Boolean(parent && !isTranslationDisabled(parent) && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent));
 }
@@ -327,7 +333,7 @@ function wrapTextNodesInside(container, doc) {
     for (const child of Array.from(current.childNodes)) {
       if (child.nodeType !== Node.TEXT_NODE) continue;
       const text = child.textContent ?? "";
-      if (!text.trim() || !/\p{L}/u.test(text) || isProtectedLinkIdentifierText(child)) continue;
+      if (!text.trim() || !/\p{L}/u.test(text) || isProtectedLinkIdentifierText(child) || isProtectedCodeLabelText(child)) continue;
       const wrapper = doc.createElement("span");
       wrapper.dataset.fltSourceTextWrapper = "true";
       child.replaceWith(wrapper);
