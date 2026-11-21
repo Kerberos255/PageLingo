@@ -117,12 +117,12 @@ class ImageOcrWorkerClient {
         width,
         height,
         pixels,
-        detectionModel: initialize ? bundle.detectionModel : undefined,
-        recognitionModel: initialize ? bundle.recognitionModel : undefined,
+        detectionModel: initialize ? bundle.detectionModel.slice(0) : undefined,
+        recognitionModel: initialize ? bundle.recognitionModel.slice(0) : undefined,
         dictionary: initialize ? bundle.dictionary : undefined,
       };
       const transfer: Transferable[] = [pixels];
-      if (initialize) transfer.push(bundle.detectionModel, bundle.recognitionModel);
+      if (message.detectionModel && message.recognitionModel) transfer.push(message.detectionModel, message.recognitionModel);
       worker.postMessage(message, transfer);
       if (initialize) this.initializedProfileId = bundle.profile.id;
     });
@@ -187,6 +187,18 @@ export async function handleImageRuntimeMessage(
   const message = rawMessage as ImageRuntimeMessage;
   if (message.type === "get-image-ocr-status") {
     return { ok: true, status: await getImageOcrStatus() };
+  }
+
+  if (message.type === "download-image-ocr-models") {
+    try {
+      const status = await getImageOcrStatus();
+      if (!status.runtimeSupported) throw new Error("当前 Firefox 环境不支持本地文字识别");
+      if (status.installed) return { ok: true, status };
+      await getImageOcrBundle();
+      return { ok: true, status: await getImageOcrStatus() };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   if (message.type === "delete-image-ocr-models") {

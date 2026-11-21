@@ -419,7 +419,8 @@ initializeImageTranslation();
 
 browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) => {
   const imageTask = handleImageRuntimeMessage(message, sender);
-  const imageResponse = await (message.type === "recognize-image" ? keepEventPageAlive(imageTask, "image-ocr") : imageTask);
+  const busyImageTask = message.type === "recognize-image" || message.type === "download-image-ocr-models";
+  const imageResponse = await (busyImageTask ? keepEventPageAlive(imageTask, "image-ocr") : imageTask);
   if (imageResponse !== undefined) return imageResponse;
 
   if (message.type === "ping-backend") return { ok: true };
@@ -582,7 +583,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const overrides = await currentOverrides();
       const pairs = modelPairsForLanguage(language, overrides);
       if (pairs.length === 0) throw new Error("No stable Firefox model is available for this language");
-      for (const pair of pairs) await installLatestPair(pair);
+      for (const pair of pairs) if (!await isModelPairCached(pair)) await installLatestPair(pair);
       return { ok: true, pack: await packInfo(language) };
     }
 

@@ -40,8 +40,6 @@ interface LanguagePackDirection {
 interface LanguagePackInfo {
     language: string;
     label: string;
-    canTranslateFromEnglish: boolean;
-    canTranslateToEnglish: boolean;
     totalBytes: number;
     installedBytes: number;
     installed: boolean;
@@ -107,7 +105,7 @@ const cancelGlossaryButton = document.querySelector<HTMLButtonElement>("#cancel-
 const closeGlossaryEditorButton = document.querySelector<HTMLButtonElement>("#close-glossary-editor");
 const deleteGlossaryButton = document.querySelector<HTMLButtonElement>("#delete-glossary");
 const imageStatus = document.querySelector<HTMLElement>("#image-ocr-status");
-const deleteOcrModels = document.querySelector<HTMLButtonElement>("#delete-image-ocr-models");
+const imageOcrAction = document.querySelector<HTMLButtonElement>("#image-ocr-action");
 const navItems = Array.from(document.querySelectorAll<HTMLElement>("[data-settings-page]"));
 const pages = Array.from(document.querySelectorAll<HTMLElement>(".settings-page"));
 
@@ -117,6 +115,7 @@ let neverTranslateLanguages: string[] = [];
 let alwaysTranslateLanguages: string[] = [];
 let sourceLanguages: LanguageOption[] = [];
 let packs: LanguagePackInfo[] = [];
+let currentImageOcrStatus: ImageOcrStatus | undefined;
 let glossaryCollections: GlossaryCollection[] = [];
 let editingGlossaryId: string | null = null;
 
@@ -221,12 +220,9 @@ function renderRuleLists(): void {
     });
 }
 
-function packRouteLabel(pack: LanguagePackInfo): string {
-    if (pack.canTranslateFromEnglish && pack.canTranslateToEnglish)
-        return `English ↔ ${pack.label}`;
-    if (pack.canTranslateFromEnglish)
-        return `English → ${pack.label}`;
-    return `${pack.label} → English`;
+function packRouteLabel(label: string, directions: readonly LanguagePackDirection[]): string {
+    if (directions.length > 1) return `English ↔ ${label}`;
+    return directions[0]?.sourceLanguage === "en" ? `English → ${label}` : `${label} → English`;
 }
 
 function renderPackPicker(): void {
@@ -269,13 +265,14 @@ function renderPacks(): void {
         copy.className = "pack-copy";
         const title = document.createElement("strong");
         title.textContent = pack.label;
-        const versions = Array.from(new Set(pack.directions.map((direction) => direction.version))).map((version) => `v${version}`).join(" / ");
+        const installed = pack.directions.filter(direction => direction.installed);
+        const versions = Array.from(new Set(installed.map(direction => direction.version))).map(version => `v${version}`).join(" / ");
         const detail = document.createElement("small");
-        detail.textContent = `${packRouteLabel(pack)} · ${formatBytes(pack.totalBytes)}${versions ? ` · ${versions}` : ""}`;
+        detail.textContent = `${packRouteLabel(pack.label, installed)} · ${formatBytes(pack.installedBytes)}${versions ? ` · ${versions}` : ""}`;
         copy.append(title, detail);
         const state = document.createElement("span");
         state.className = `pack-state ${pack.updateAvailable && pack.installed ? "update" : pack.installed ? "installed" : pack.partial ? "partial" : ""}`;
-        state.textContent = pack.updateAvailable && pack.installed ? "有更新" : pack.installed ? "已下载" : pack.partial ? "部分已下载" : "未下载";
+        state.textContent = pack.updateAvailable && pack.installed ? "有更新" : pack.installed ? "已下载" : "单向可用";
         const actions = document.createElement("div");
         actions.className = "pack-actions";
         if (pack.installed && pack.updateAvailable) {
@@ -295,7 +292,11 @@ function renderPacks(): void {
             const action = document.createElement("button");
             action.type = "button";
             action.className = pack.installed ? "pack-action danger" : "pack-action";
-            action.textContent = pack.installed ? "删除" : pack.partial ? "补全" : "下载";
+            action.textContent = pack.installed ? "删除" : "下载反向";
+            if (pack.partial) {
+                const route = packRouteLabel(pack.label, pack.directions.filter(direction => !direction.installed));
+                action.title = `下载 ${route} · ${formatBytes(pack.totalBytes - pack.installedBytes)}`;
+            }
             action.addEventListener("click", () => void changePack(pack, action));
             actions.append(action);
         }
@@ -305,10 +306,11 @@ function renderPacks(): void {
 }
 
 async function changePack(pack: LanguagePackInfo, button: HTMLButtonElement): Promise<void> {
+    const actionLabel = button.textContent;
     button.disabled = true;
     const deleting = pack.installed;
     button.textContent = deleting ? "删除中…" : "下载中…";
-    showSaved(deleting ? `正在删除 ${pack.label}` : `正在下载 ${pack.label} · ${formatBytes(pack.totalBytes)}`, 30_000);
+    showSaved(deleting ? `正在删除 ${pack.label}` : `正在下载 ${pack.label} · ${formatBytes(pack.totalBytes - pack.installedBytes)}`, 30_000);
     try {
         const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: deleting ? "delete-language-pack" : "download-language-pack", language: pack.language });
         if (!response?.ok || !response.pack)
@@ -320,7 +322,7 @@ async function changePack(pack: LanguagePackInfo, button: HTMLButtonElement): Pr
     }
     catch (error) {
         button.disabled = false;
-        button.textContent = deleting ? "删除" : "下载";
+        button.textContent = actionLabel;
         showSaved(error instanceof Error ? error.message : String(error), 5000);
     }
 }
@@ -432,23 +434,46 @@ async function deleteEditingGlossary(): Promise<void> {
 }
 
 async function refreshImageOcrStatus(): Promise<void> {
-    if (!imageStatus || !deleteOcrModels)
-        return;
+    if (!imageStatus || !imageOcrAction) return;
     try {
         const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "get-image-ocr-status" });
         if (!response?.ok || !response.status)
             throw new Error(response?.error ?? "无法读取 OCR 状态");
-        const current = response.status;
-        imageStatus.textContent = !current.runtimeSupported
-            ? "当前 Firefox 环境不支持本地 WASM OCR"
-            : current.installed
-                ? `PP-OCRv5 Mobile · 已缓存 ${formatBytes(current.totalBytes)}`
-                : `PP-OCRv5 Mobile · 首次使用下载约 ${formatBytes(current.totalBytes)}`;
-        deleteOcrModels.disabled = !current.installed;
+        renderImageOcrStatus(response.status);
     }
     catch (error) {
         imageStatus.textContent = error instanceof Error ? error.message : String(error);
-        deleteOcrModels.disabled = true;
+        imageOcrAction.disabled = true;
+    }
+}
+
+function renderImageOcrStatus(current: ImageOcrStatus): void {
+    if (!imageStatus || !imageOcrAction) return;
+    currentImageOcrStatus = current;
+    imageStatus.textContent = !current.runtimeSupported
+        ? "当前 Firefox 环境不支持本地文字识别"
+        : `PP-OCRv5 Mobile · ${current.installed ? "已下载" : "可下载"} ${formatBytes(current.totalBytes)}`;
+    imageOcrAction.textContent = current.installed ? "删除模型" : "下载模型";
+    imageOcrAction.disabled = !current.installed && !current.runtimeSupported;
+}
+
+async function changeImageOcrModels(): Promise<void> {
+    if (!imageStatus || !imageOcrAction || !currentImageOcrStatus) return;
+    const deleting = currentImageOcrStatus.installed;
+    const type = deleting ? "delete-image-ocr-models" : "download-image-ocr-models";
+    imageOcrAction.disabled = true;
+    imageOcrAction.textContent = deleting ? "删除中…" : "下载中…";
+    imageStatus.textContent = deleting ? "正在删除模型…" : "正在下载文字识别模型…";
+    try {
+        const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type });
+        if (!response?.ok || !response.status || response.status.installed === deleting)
+            throw new Error(response?.error ?? (deleting ? "删除模型失败" : "下载模型失败"));
+        renderImageOcrStatus(response.status);
+        showSaved(deleting ? "文字识别模型已删除" : "文字识别模型已下载");
+    }
+    catch (error) {
+        await refreshImageOcrStatus();
+        showSaved(error instanceof Error ? error.message : String(error), 5000);
     }
 }
 
@@ -601,25 +626,7 @@ if (downloadPackButton) {
     });
 }
 
-if (deleteOcrModels) {
-    deleteOcrModels.addEventListener("click", () => {
-        void (async () => {
-            deleteOcrModels.disabled = true;
-            showSaved("正在删除 OCR 模型…", 30_000);
-            try {
-                const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "delete-image-ocr-models" });
-                if (!response?.ok)
-                    throw new Error(response?.error ?? "删除 OCR 模型失败");
-                await refreshImageOcrStatus();
-                showSaved("OCR 模型已删除");
-            }
-            catch (error) {
-                showSaved(error instanceof Error ? error.message : String(error), 5000);
-                await refreshImageOcrStatus();
-            }
-        })();
-    });
-}
+imageOcrAction?.addEventListener("click", () => void changeImageOcrModels());
 if (updatePolicy) {
     updatePolicy.addEventListener("change", () => {
         const value = updatePolicy.value;
