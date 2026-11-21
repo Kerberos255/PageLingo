@@ -3,8 +3,6 @@ import { isLoopbackHostname } from "../shared/network-endpoint";
 import { OPENCODE_GO_BASE_URL, type TranslationEngineConfig } from "../shared/translation-engine-settings";
 import {restoreFixedHtmlTransport} from "../core/fixed-html-transport";
 import {assessTranslationQuality} from "../core/translation-quality";
-import type {TranslationContext} from "../core/translation-context";
-import {translateNativeMt} from "./pagelingo-mt/native-client";
 
 export interface ExternalTranslationTerminologyEntry {
   source: string;
@@ -17,13 +15,21 @@ export interface ExternalTranslationRequest {
   sourceLanguage: string;
   targetLanguage: string;
   terminology?: ExternalTranslationTerminologyEntry[];
-  context?: TranslationContext | undefined;
 }
 
 const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. If numbered data-flt-text-id spans are present, translate their text with the whole paragraph as context, keep each ID exactly once in its original parent and order, and put all translated words inside their original spans. Keep data-flt-fixed content and code placeholders exactly unchanged. Output only the translated HTML. Do not use Markdown or add explanations.";
 const EXTERNAL_REQUEST_TIMEOUT_MS = 30_000;
 const LLM_REQUEST_TIMEOUT_MS = 120_000;
 const OPENCODE_GO_SESSION_ID = "pagelingo";
+const MAX_ACTIVE_REQUESTS = 6;
+let activeRequests = 0;
+const waitingRequests: Array<() => void> = [];
+
+export function externalBatchSize(config: TranslationEngineConfig): number {
+  if (["microsoft", "google", "deepl"].includes(config.type)) return 16;
+  if (!config.prompt && ["openai-compatible", "opencode-go", "deepseek", "openrouter", "gemini"].includes(config.type)) return 8;
+  return 1;
+}
 
 function trimSlash(value: string): string {
   return value.replace(/\/+$/, "");
@@ -75,7 +81,7 @@ export function validateTranslatedHtml(sourceHtml: string, translatedHtml: strin
 
 function stripCodeFence(value: string): string {
   const trimmed = value.trim();
-  const match = trimmed.match(/^```(?:html)?\s*([\s\S]*?)\s*```$/i);
+  const match = trimmed.match(/^```(?:html|json)?\s*([\s\S]*?)\s*```$/i);
   return match?.[1]?.trim() ?? trimmed;
 }
 
@@ -124,6 +130,8 @@ function responseErrorDetail(raw: string): string {
 }
 
 async function jsonRequest(url: string, init: RequestInit, timeoutMs = EXTERNAL_REQUEST_TIMEOUT_MS): Promise<unknown> {
+  if (activeRequests >= MAX_ACTIVE_REQUESTS) await new Promise<void>((resolve) => waitingRequests.push(resolve));
+  else activeRequests += 1;
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -142,6 +150,9 @@ async function jsonRequest(url: string, init: RequestInit, timeoutMs = EXTERNAL_
     throw error;
   } finally {
     globalThis.clearTimeout(timeout);
+    const next = waitingRequests.shift();
+    if (next) next();
+    else activeRequests -= 1;
   }
 }
 
@@ -168,7 +179,8 @@ function requireModel(config: TranslationEngineConfig): string {
   return config.model;
 }
 
-async function translateMicrosoft(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
+async function translateMicrosoft(config: TranslationEngineConfig, requests: ExternalTranslationRequest[]): Promise<Array<string | undefined>> {
+  const request = requests[0]!;
   const base = requireBaseUrl(config, "https://api.cognitive.microsofttranslator.com");
   const key = requireApiKey(config);
   const to = encodeURIComponent(apiLanguage(request.targetLanguage, config.type));
@@ -179,32 +191,33 @@ async function translateMicrosoft(config: TranslationEngineConfig, request: Exte
   const result = await jsonRequest(`${base}/translate?api-version=3.0${from}&to=${to}&textType=html`, {
     method: "POST",
     headers,
-    body: JSON.stringify([{ Text: request.html }]),
+    body: JSON.stringify(requests.map(({html}) => ({Text: html}))),
   }) as Array<{ translations?: Array<{ text?: string }> }>;
-  const html = result[0]?.translations?.[0]?.text;
-  if (typeof html !== "string") throw new Error("Microsoft Translator 返回格式异常");
-  return html;
+  if (!Array.isArray(result) || result.length !== requests.length) throw new Error("Microsoft Translator 返回格式异常");
+  return result.map(item => item?.translations?.[0]?.text);
 }
 
-async function translateGoogle(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
+async function translateGoogle(config: TranslationEngineConfig, requests: ExternalTranslationRequest[]): Promise<Array<string | undefined>> {
+  const request = requests[0]!;
   const endpoint = requireBaseUrl(config, "https://translation.googleapis.com/language/translate/v2");
   const result = await jsonRequest(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": requireApiKey(config) },
     body: JSON.stringify({
-      q: request.html,
+      q: requests.length === 1 ? request.html : requests.map(({html}) => html),
       ...(request.sourceLanguage && request.sourceLanguage !== "auto"
         ? {source: apiLanguage(request.sourceLanguage, config.type)} : {}),
       target: apiLanguage(request.targetLanguage, config.type),
       format: "html",
     }),
   }) as { data?: { translations?: Array<{ translatedText?: string }> } };
-  const html = result.data?.translations?.[0]?.translatedText;
-  if (typeof html !== "string") throw new Error("Google Cloud Translation 返回格式异常");
-  return html;
+  const translations = result.data?.translations;
+  if (!Array.isArray(translations) || translations.length !== requests.length) throw new Error("Google Cloud Translation 返回格式异常");
+  return translations.map(item => item?.translatedText);
 }
 
-async function translateDeepL(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
+async function translateDeepL(config: TranslationEngineConfig, requests: ExternalTranslationRequest[]): Promise<Array<string | undefined>> {
+  const request = requests[0]!;
   const key = requireApiKey(config);
   const configuredBase = trimSlash(config.baseUrl);
   const defaultBase = key.endsWith(":fx") ? "https://api-free.deepl.com/v2" : "https://api.deepl.com/v2";
@@ -216,7 +229,7 @@ async function translateDeepL(config: TranslationEngineConfig, request: External
     : requireBaseUrl(config, defaultBase);
   const endpoint = base.endsWith("/translate") ? base : `${base}/translate`;
   const body: Record<string, unknown> = {
-    text: [request.html],
+    text: requests.map(({html}) => html),
     target_lang: deepLLanguage(request.targetLanguage, "target"),
     tag_handling: "html",
   };
@@ -231,9 +244,9 @@ async function translateDeepL(config: TranslationEngineConfig, request: External
     },
     body: JSON.stringify(body),
   }) as { translations?: Array<{ text?: string }> };
-  const html = result.translations?.[0]?.text;
-  if (typeof html !== "string") throw new Error("DeepL API 返回格式异常");
-  return html;
+  const translations = result.translations;
+  if (!Array.isArray(translations) || translations.length !== requests.length) throw new Error("DeepL API 返回格式异常");
+  return translations.map(item => item?.text);
 }
 
 async function translateLibre(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
@@ -264,7 +277,8 @@ function isOpenCodeGoUrl(value: string): boolean {
   }
 }
 
-async function translateOpenAiCompatible(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
+async function translateOpenAiCompatible(config: TranslationEngineConfig, request: ExternalTranslationRequest,
+  batch?: {instructions: string; input: string}): Promise<string> {
   const fallback = config.type === "openrouter"
     ? "https://openrouter.ai/api/v1"
     : config.type === "opencode-go"
@@ -284,8 +298,8 @@ async function translateOpenAiCompatible(config: TranslationEngineConfig, reques
     body: JSON.stringify({
       model: requireModel(config),
       messages: [
-        { role: "system", content: renderPrompt(config, request) },
-        { role: "user", content: request.html },
+        { role: "system", content: batch?.instructions ?? renderPrompt(config, request) },
+        { role: "user", content: batch?.input ?? request.html },
       ],
       temperature: 0,
     }),
@@ -304,7 +318,8 @@ async function translateOpenAiCompatible(config: TranslationEngineConfig, reques
   throw new Error("LLM 返回格式异常");
 }
 
-async function translateGemini(config: TranslationEngineConfig, request: ExternalTranslationRequest): Promise<string> {
+async function translateGemini(config: TranslationEngineConfig, request: ExternalTranslationRequest,
+  batch?: {instructions: string; input: string}): Promise<string> {
   const base = requireBaseUrl(config, "https://generativelanguage.googleapis.com/v1beta");
   const model = encodeURIComponent(requireModel(config));
   const endpoint = `${base}/models/${model}:generateContent`;
@@ -312,7 +327,8 @@ async function translateGemini(config: TranslationEngineConfig, request: Externa
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": requireApiKey(config) },
     body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: `${renderPrompt(config, request)}\n\nHTML:\n${request.html}` }] }],
+      contents: [{ role: "user", parts: [{ text: batch
+        ? `${batch.instructions}\n\n${batch.input}` : `${renderPrompt(config, request)}\n\nHTML:\n${request.html}` }] }],
     }),
   }, LLM_REQUEST_TIMEOUT_MS) as { candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }> };
   const candidate = result.candidates?.[0];
@@ -470,12 +486,11 @@ export async function translateWithExternalEngine(
   config: TranslationEngineConfig,
   request: ExternalTranslationRequest,
 ): Promise<string> {
-  if (config.type === "pagelingo-mt-native") return translateNativeMt(request, config.apiKey);
-  let translated: string;
+  let translated: string | undefined;
   switch (config.type) {
-    case "microsoft": translated = await translateMicrosoft(config, request); break;
-    case "google": translated = await translateGoogle(config, request); break;
-    case "deepl": translated = await translateDeepL(config, request); break;
+    case "microsoft": [translated] = await translateMicrosoft(config, [request]); break;
+    case "google": [translated] = await translateGoogle(config, [request]); break;
+    case "deepl": [translated] = await translateDeepL(config, [request]); break;
     case "libretranslate": translated = await translateLibre(config, request); break;
     case "gemini": translated = await translateGemini(config, request); break;
     case "openrouter":
@@ -484,6 +499,11 @@ export async function translateWithExternalEngine(
     case "openai-compatible": translated = await translateOpenAiCompatible(config, request); break;
     case "custom-rest": translated = await translateCustomRest(config, request); break;
   }
+  return validateExternalTranslation(request, translated);
+}
+
+function validateExternalTranslation(request: ExternalTranslationRequest, translated: string | undefined): string {
+  if (typeof translated !== "string") throw new Error("翻译服务返回格式异常");
   if (/<span\b[^>]*\bdata-flt-text-id\s*=/iu.test(request.html)) translated = restoreFixedHtmlTransport(request.html, translated);
   const validated = validateTranslatedHtml(request.html, translated);
   const plain = (html: string) => {
@@ -499,4 +519,37 @@ export async function translateWithExternalEngine(
     throw new Error(`${detail}，已保留原文`);
   }
   return validated;
+}
+
+async function translateLlmBatch(config: TranslationEngineConfig, requests: ExternalTranslationRequest[]): Promise<Array<string | undefined>> {
+  const first = requests[0]!;
+  const instructions = `Translate each HTML fragment independently from ${languageLabel(first.sourceLanguage)} to ${languageLabel(first.targetLanguage)}. Keep the tags, attributes, links, code, and every numbered text slot exactly as supplied in each fragment. Apply that fragment's terminology. Return only a JSON array with one {"id":number,"html":"translated HTML"} object for each input id.`;
+  const input = JSON.stringify(requests.map(({html, terminology}, id) => ({id, html, terminology})));
+  const result = config.type === "gemini"
+    ? await translateGemini(config, first, {instructions, input})
+    : await translateOpenAiCompatible(config, first, {instructions, input});
+  let values: unknown;
+  try { values = JSON.parse(result); } catch { return []; }
+  if (!Array.isArray(values)) return [];
+  const byId = new Map<number, string | undefined>();
+  for (const row of values) {
+    if (!Number.isInteger(row?.id) || row.id < 0 || row.id >= requests.length) continue;
+    byId.set(row.id, byId.has(row.id) || typeof row.html !== "string" ? undefined : row.html);
+  }
+  return requests.map((_, id) => byId.get(id));
+}
+
+export async function translateExternalBatch(config: TranslationEngineConfig, requests: ExternalTranslationRequest[]) {
+  let translated: Array<string | undefined>;
+  switch (config.type) {
+    case "microsoft": translated = await translateMicrosoft(config, requests); break;
+    case "google": translated = await translateGoogle(config, requests); break;
+    case "deepl": translated = await translateDeepL(config, requests); break;
+    default: translated = await translateLlmBatch(config, requests); break;
+  }
+  // Independently validate each result. A damaged fragment can retry on its own.
+  return requests.map((request, index) => {
+    try { return validateExternalTranslation(request, translated[index]); }
+    catch { return null; }
+  });
 }

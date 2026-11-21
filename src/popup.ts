@@ -28,7 +28,6 @@ let neverTranslateLanguages: string[] = [];
 let alwaysTranslateLanguages: string[] = [];
 let globalAutoEnabled = false;
 let detectedCode: string | null = null;
-let routeNotice = "";
 
 interface LanguageOption { code: string; label: string }
 interface CatalogResponse {
@@ -71,11 +70,10 @@ function setMode(mode: DisplayMode): void {
   }
 }
 
-async function routeProblem(source: string, target: string): Promise<string> {
-  if (source === target) return "当前页面已经是目标语言";
-  const response = await sendRuntimeMessage<{ ok?: boolean; supported?: boolean; error?: string }>({ type: "can-translate", sourceLanguage: source, targetLanguage: target });
-  if (response?.ok === true && response.supported === true) return "";
-  return response?.error ?? `暂不支持 ${languageLabel(source)} → ${languageLabel(target)}`;
+async function routeSupported(source: string, target: string): Promise<boolean> {
+  if (source === target) return false;
+  const response = await sendRuntimeMessage<{ ok?: boolean; supported?: boolean }>({ type: "can-translate", sourceLanguage: source, targetLanguage: target });
+  return response?.ok === true && response.supported === true;
 }
 
 async function refreshLanguage(): Promise<void> {
@@ -92,9 +90,11 @@ async function refreshLanguage(): Promise<void> {
 
     const source = sourceSelect?.value === "auto" ? detectedCode : sourceSelect?.value;
     const target = targetSelect?.value;
-    const notice = source && target ? await routeProblem(source, target) : "";
-    if (statusEl && (!statusEl.textContent || statusEl.textContent === routeNotice)) statusEl.textContent = notice;
-    routeNotice = notice;
+    if (source && target && !await routeSupported(source, target)) {
+      if (statusEl) statusEl.textContent = source === target ? "当前页面已经是目标语言" : `暂不支持 ${languageLabel(source)} → ${languageLabel(target)}`;
+    } else if (statusEl && (statusEl.textContent?.startsWith("暂不支持") || statusEl.textContent === "当前页面已经是目标语言")) {
+      statusEl.textContent = "";
+    }
     refreshSiteAuto();
   } catch {
     detectedCode = null;

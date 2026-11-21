@@ -2,9 +2,6 @@ import { sendRuntimeMessage } from "./shared/runtime-message";
 import { requestExternalAuthenticationConsent, requestExternalTranslationConsent } from "./shared/data-consent";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
-  PAGELINGO_MT_ENGINE_ID,
-  NATIVE_MT_ENGINE_ID,
-  NATIVE_MT_MESSAGING_PERMISSION,
   OPENCODE_GO_BASE_URL,
   type ExternalTranslationEngineType,
   type TranslationEngineConfig,
@@ -22,11 +19,6 @@ interface EngineView {
 interface EngineUiState {
   activeEngineId: string;
   engines: EngineView[];
-  mt?: {
-    installed?: boolean;
-    downloading?: boolean;
-    modelBytes?: number;
-  };
 }
 
 interface ModelInfo {
@@ -54,8 +46,7 @@ interface EnginePreset {
   responsePath?: string;
 }
 
-type AddableEngineType = Exclude<ExternalTranslationEngineType, "pagelingo-mt-native">;
-const PRESETS: Record<AddableEngineType, EnginePreset> = {
+const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
   microsoft: { name: "Microsoft Translator", baseUrl: "https://api.cognitive.microsofttranslator.com" },
   google: { name: "Google Cloud Translation", baseUrl: "https://translation.googleapis.com/language/translate/v2" },
   deepl: { name: "DeepL API", baseUrl: "https://api.deepl.com/v2" },
@@ -83,14 +74,11 @@ const TYPE_LABELS: Record<ExternalTranslationEngineType, string> = {
   "opencode-go": "OpenCode Go",
   deepseek: "DeepSeek",
   "openai-compatible": "OpenAI Compatible",
-  "pagelingo-mt-native": "本机加速（旧配置）",
   libretranslate: "LibreTranslate",
   "custom-rest": "自定义 REST",
 };
 
 const activeSelect = document.querySelector<HTMLSelectElement>("#active-engine-select");
-const nativeMtStatus = document.querySelector<HTMLElement>("#native-mt-status");
-const nativeMtButton = document.querySelector<HTMLButtonElement>("#connect-native-mt");
 const engineList = document.querySelector<HTMLElement>("#translation-engine-list");
 const typeSelect = document.querySelector<HTMLSelectElement>("#engine-type");
 const nameInput = document.querySelector<HTMLInputElement>("#engine-name");
@@ -118,9 +106,6 @@ const closeModelPickerButton = document.querySelector<HTMLButtonElement>("#close
 const selectModelPickerButton = document.querySelector<HTMLButtonElement>("#select-model-picker");
 
 let engineState: EngineUiState = { activeEngineId: LOCAL_TRANSLATION_ENGINE_ID, engines: [] };
-let nativeMtReady = false;
-let nativeMtStatusCheck = 0;
-let connectingNativeMt = false;
 let modelPickerModels: ModelInfo[] = [];
 let selectedPickerModel = "";
 let modelPickerLoading = false;
@@ -130,13 +115,13 @@ function notify(message: string, timeout = 2200): void {
   if (!saveStatus) return;
   saveStatus.textContent = message;
   window.setTimeout(() => {
-    if (saveStatus.textContent === message) saveStatus.textContent = "设置会自动保存并立即生效";
+    if (saveStatus.textContent === message) saveStatus.textContent = "";
   }, timeout);
 }
 
-function currentType(): AddableEngineType {
-  const value = typeSelect?.value as AddableEngineType | undefined;
-  return value && Object.hasOwn(PRESETS, value) ? value : "microsoft";
+function currentType(): ExternalTranslationEngineType {
+  const value = typeSelect?.value as ExternalTranslationEngineType | undefined;
+  return value && value in PRESETS ? value : "microsoft";
 }
 
 function supportsModelDiscovery(type: ExternalTranslationEngineType): boolean {
@@ -176,14 +161,13 @@ function collectConfig(): TranslationEngineConfig {
   const name = nameInput?.value.trim() ?? "";
   if (!name) throw new Error("请填写引擎名称");
   const type = currentType();
-  const apiKey = apiKeyInput?.value.trim() ?? "";
   return {
     id: `engine-${crypto.randomUUID()}`,
     name,
     type,
     enabled: true,
     baseUrl: baseUrlInput?.value.trim() ?? "",
-    apiKey,
+    apiKey: apiKeyInput?.value.trim() ?? "",
     model: modelInput?.value.trim() ?? "",
     region: regionInput?.value.trim() ?? "",
     prompt: promptInput?.value.trim() ?? "",
@@ -200,17 +184,6 @@ function renderActiveSelect(): void {
   local.value = LOCAL_TRANSLATION_ENGINE_ID;
   local.textContent = "Firefox 本地翻译";
   activeSelect.append(local);
-  const mt = document.createElement("option");
-  mt.value = PAGELINGO_MT_ENGINE_ID;
-  mt.textContent = engineState.mt?.installed
-    ? "PageLingo MT · 本地 1.8B"
-    : "PageLingo MT · 未下载";
-  mt.disabled = engineState.mt?.installed !== true;
-  activeSelect.append(mt);
-  const native = document.createElement("option");
-  native.value = NATIVE_MT_ENGINE_ID;
-  native.textContent = "PageLingo MT · 本机加速";
-  activeSelect.append(native);
   for (const engine of engineState.engines.filter((item) => item.enabled)) {
     const option = document.createElement("option");
     option.value = engine.id;
@@ -239,9 +212,8 @@ function renderEngineList(): void {
     const title = document.createElement("strong");
     title.textContent = engine.name;
     const detail = document.createElement("small");
-    const native = engine.type === "pagelingo-mt-native";
-    const model = !native && engine.model ? ` · ${engine.model}` : "";
-    const keyState = engine.hasApiKey ? (native ? " · 已设置连接码" : " · Key 已配置") : "";
+    const model = engine.model ? ` · ${engine.model}` : "";
+    const keyState = engine.hasApiKey ? " · Key 已配置" : "";
     detail.textContent = `${TYPE_LABELS[engine.type]}${model}${keyState}`;
     copy.append(title, detail);
 
@@ -286,32 +258,6 @@ function applyState(state: EngineUiState): void {
   engineState = state;
   renderActiveSelect();
   renderEngineList();
-  renderNativeMtButton();
-}
-
-function renderNativeMtButton(): void {
-  if (!nativeMtButton) return;
-  const using = nativeMtReady && engineState.activeEngineId === NATIVE_MT_ENGINE_ID;
-  nativeMtButton.disabled = connectingNativeMt || using;
-  nativeMtButton.textContent = connectingNativeMt ? "正在连接…" : using ? "使用中" : nativeMtReady ? "使用" : "连接";
-}
-
-function showNativeMtStatus(ready: boolean, message: string): void {
-  nativeMtReady = ready;
-  if (nativeMtStatus) nativeMtStatus.textContent = message;
-  renderNativeMtButton();
-}
-
-async function refreshNativeMtStatus(): Promise<void> {
-  if (connectingNativeMt) return;
-  const check = ++nativeMtStatusCheck;
-  if (!await browser.permissions.contains(NATIVE_MT_MESSAGING_PERMISSION)) {
-    if (check === nativeMtStatusCheck) showNativeMtStatus(false, "启动本机组件后连接。");
-    return;
-  }
-  const reply = await sendRuntimeMessage<EngineResponse>({ type: "get-native-mt-status" });
-  if (check !== nativeMtStatusCheck) return;
-  showNativeMtStatus(reply?.ok === true, reply?.ok ? "已连接本机服务" : reply?.error ?? "暂时无法连接本机服务");
 }
 
 async function requestState(message: Record<string, unknown>): Promise<void> {
@@ -321,37 +267,22 @@ async function requestState(message: Record<string, unknown>): Promise<void> {
 }
 
 async function setActive(id: string): Promise<void> {
-  const native = id === NATIVE_MT_ENGINE_ID;
-  if (native && connectingNativeMt) return;
   try {
-    if (native) {
-      connectingNativeMt = true;
-      nativeMtStatusCheck += 1;
-      renderNativeMtButton();
-      if (!await browser.permissions.request(NATIVE_MT_MESSAGING_PERMISSION)) throw new Error("需要授权 Firefox 连接本机加速组件");
-    } else if (id !== LOCAL_TRANSLATION_ENGINE_ID && id !== PAGELINGO_MT_ENGINE_ID) {
+    if (id !== LOCAL_TRANSLATION_ENGINE_ID) {
       const engine = engineState.engines.find((item) => item.id === id);
       if (!engine) throw new Error("找不到翻译引擎");
       const granted = await requestExternalTranslationConsent(engine.hasApiKey);
-      if (!granted) throw new Error("未授权向外部翻译服务发送网页内容");
+      if (!granted) {
+        renderActiveSelect();
+        throw new Error("未授权向外部翻译服务发送网页内容");
+      }
     }
     await requestState({ type: "set-active-translation-engine", id });
-    if (native) showNativeMtStatus(true, "已连接本机服务");
-    notify(native ? "已启用本机加速" : id === LOCAL_TRANSLATION_ENGINE_ID
+    notify(id === LOCAL_TRANSLATION_ENGINE_ID
       ? "已切换到 Firefox 本地翻译"
-      : id === PAGELINGO_MT_ENGINE_ID
-        ? "已切换到 PageLingo MT"
-        : "翻译引擎已切换");
+      : "翻译引擎已切换");
   } catch (error) {
-    renderActiveSelect();
-    const message = error instanceof Error ? error.message : String(error);
-    if (native) showNativeMtStatus(false, message);
-    else notify(message, 5000);
-  } finally {
-    if (native) {
-      connectingNativeMt = false;
-      renderNativeMtButton();
-    }
+    notify(error instanceof Error ? error.message : String(error), 5000);
   }
 }
 
@@ -534,13 +465,8 @@ export async function initializeTranslationEngines(): Promise<void> {
     if (event.target === modelPickerDialog) closeModelPicker();
   });
   activeSelect?.addEventListener("change", () => void setActive(activeSelect.value));
-  nativeMtButton?.addEventListener("click", () => void setActive(NATIVE_MT_ENGINE_ID));
   testButton?.addEventListener("click", () => void testConfig());
   addButton?.addEventListener("click", () => void addConfig());
-  window.addEventListener("pagelingo-mt-changed", () => void refreshTranslationEngines().catch((error) => notify(error instanceof Error ? error.message : String(error), 5000)));
   applyPreset();
   await refreshTranslationEngines();
-  const detectNativeMt = () => void refreshNativeMtStatus().catch(() => showNativeMtStatus(false, "暂时无法连接本机服务"));
-  window.addEventListener("focus", detectNativeMt);
-  detectNativeMt();
 }

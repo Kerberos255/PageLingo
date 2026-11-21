@@ -31,6 +31,14 @@ function ensureStyle() {
     .flt-source-content-hidden > .flt-translation { margin-block-start: 0 !important; font-size: var(--pagelingo-source-font-size) !important; line-height: var(--pagelingo-source-line-height) !important; }
     .flt-source-list-hidden > :not(.flt-translation) { display: none !important; }
     .flt-source-list-hidden > .flt-translation { display: inline !important; margin: 0 !important; padding: 0 !important; font-size: var(--pagelingo-source-font-size) !important; line-height: var(--pagelingo-source-line-height) !important; vertical-align: baseline !important; }
+    [data-flt-generated="progress"] {
+      all: initial !important; position: fixed !important; z-index: 2147483646 !important; pointer-events: none !important;
+      width: 10px !important; height: 10px !important; box-sizing: border-box !important; border-radius: 50% !important;
+      border: 1.5px solid rgba(228, 111, 82, .33) !important; border-inline-end-color: #c64d32 !important;
+      animation: pagelingo-spin .75s linear infinite !important;
+    }
+    @keyframes pagelingo-spin { to { transform: rotate(1turn); } }
+    @media (prefers-reduced-motion: reduce) { [data-flt-generated="progress"] { animation: none !important; } }
   `;
     (document.head ?? document.documentElement).append(style);
 }
@@ -253,7 +261,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     const pageTranslator = new PageTranslator(document, new RuntimeMessageProvider(), {
         sourceLanguage: resolvedSource,
         targetLanguage: normalizedTarget,
-        concurrency: 4,
+        showProgress: true,
         displayMode: settings.displayMode,
         shouldTranslateRoot,
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
@@ -261,7 +269,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     translator = pageTranslator;
     let count = 0;
     try {
-        count = await pageTranslator.translateAll();
+        count = await pageTranslator.translateAll(document.body, true);
         // Cleanup belongs to the lifecycle that performed the reset/replacement.
         // A stale pass must not call restore() here because restore() sweeps generated
         // translation DOM across the document and could erase replacement results.
@@ -974,11 +982,10 @@ function softResetForRoute() {
     restoreNavigationLayout();
     document.getElementById("flt-style")?.remove();
 }
-function preserveAutomaticTranslationAcrossRoute() {
+function preserveTranslationAcrossRoute() {
     return Boolean(
         translator &&
-        activeTranslationIsAutomatic &&
-        location.hostname.toLowerCase() === "github.com"
+        (!activeTranslationIsAutomatic || location.hostname.toLowerCase() === "github.com")
     );
 }
 async function rescanAfterRouteChange(generation) {
@@ -1006,9 +1013,10 @@ async function rescanAfterRouteChange(generation) {
         ) {
             softResetForRoute();
         }
-        if (isSiteListed(location.hostname, settings.neverTranslateSites)) return;
+        const manual = translator && !activeTranslationIsAutomatic;
+        if (!manual && isSiteListed(location.hostname, settings.neverTranslateSites)) return;
         const alwaysSite = isSiteListed(location.hostname, settings.alwaysTranslateSites);
-        if (!alwaysSite && !settings.autoTranslateEnabled) return;
+        if (!manual && !alwaysSite && !settings.autoTranslateEnabled) return;
         if (!translator) {
             await maybeAutoTranslate(autoTranslateGeneration);
             return;
@@ -1044,7 +1052,7 @@ function scheduleRouteResetAndRescan() {
     // English if the later automatic pass is skipped. Keep the active automatic
     // translator alive on GitHub and let its MutationObserver + settlement rescans
     // translate only the route content that actually changed.
-    if (!preserveAutomaticTranslationAcrossRoute()) {
+    if (!preserveTranslationAcrossRoute()) {
         softResetForRoute();
     }
     // One early rebuild plus later settlement passes. The translator observer remains active

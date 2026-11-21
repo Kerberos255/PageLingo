@@ -19,6 +19,7 @@ export interface TranslationProvider {
   supportsStructuralSplitting?(): Promise<boolean>;
   /** Original-node contract: preserve transport text slots and whole-paragraph context. */
   prefersWholeSentenceHtml?(): Promise<boolean>;
+  concurrentSegments?(): Promise<number>;
 }
 
 

@@ -116,20 +116,8 @@
           <div class="setting-card stack-card">
             <div class="setting-row"><label for="active-engine-select"><strong>当前引擎</strong><small>本地引擎在 Firefox 内翻译。使用外部引擎时，待译文字会发送给对应服务。</small></label><select id="active-engine-select"></select></div>
           </div>
-          <div class="setting-card stack-card">
-            <div class="setting-copy"><strong>PageLingo MT <small class="experimental-badge">实验功能</small></strong><span>支持英语 → 简体中文，下载后可离线使用。模型约 1.21 GiB。</span></div>
-            <div class="mt-status-row">
-              <div><span class="meta-label">本地模型</span><strong>PageLingo-Translate-1.8B v0.2.2 · Q5_K_M</strong><small id="pagelingo-mt-status">正在读取模型状态…</small></div>
-              <div class="mt-actions"><button id="download-pagelingo-mt" type="button">下载模型</button><button id="delete-pagelingo-mt" type="button" class="danger-button" disabled>删除模型</button></div>
-            </div>
-            <progress id="pagelingo-mt-progress" class="mt-progress" max="100" value="0" hidden></progress>
-            <div class="mt-status-row">
-              <div><strong>本机加速</strong><small id="native-mt-status" aria-live="polite">启动本机组件后连接。</small></div>
-              <div class="mt-actions"><button id="connect-native-mt" type="button">连接</button></div>
-            </div>
-          </div>
           <div class="setting-card">
-            <div class="setting-copy"><strong>已添加的引擎</strong><span>API 密钥保存在当前 Firefox 配置中。</span></div>
+            <div class="setting-copy"><strong>外部引擎</strong><span>API 密钥保存在当前 Firefox 配置中。</span></div>
             <div id="translation-engine-list" class="engine-list"></div>
           </div>
           <div class="setting-card engine-form-card">

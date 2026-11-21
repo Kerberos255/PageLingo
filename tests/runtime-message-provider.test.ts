@@ -7,6 +7,22 @@ afterEach(() => {
 });
 
 describe("RuntimeMessageProvider batching", () => {
+  it("sends the first visible LLM fragments individually and batches the following ones", async () => {
+    const sendMessage = vi.fn(async (message) => {
+      if (message.type === "get-translation-engines") return {ok: true, state: {batchSize: 4, firstVisibleSingles: 2}};
+      if (message.type === "translate-html-batch") return {ok: true, htmls: message.requests.map(({html}: {html:string}) => html)};
+      return {ok: true, html: message.request.html};
+    });
+    vi.stubGlobal("browser", {runtime: {sendMessage}});
+    const provider = new RuntimeMessageProvider();
+    await provider.concurrentSegments();
+    const fragments = ["First", "Second", "Third", "Fourth"];
+    await expect(Promise.all(fragments.map(html => provider.translateHtml({html,sourceLanguage:"en",targetLanguage:"zh-Hans"}))))
+      .resolves.toEqual(fragments);
+    expect(sendMessage.mock.calls.map(([message]) => message.type)).toEqual([
+      "get-translation-engines", "translate-html", "translate-html", "translate-html-batch",
+    ]);
+  });
   it("coalesces same-route requests from one microtask into one runtime batch", async () => {
     const sendMessage = vi.fn(async (message: any) => {
       if (message.type === "translate-html-batch") {

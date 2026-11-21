@@ -7,9 +7,9 @@
     "storage",
     "alarms",
     "contextMenus",
+    "scripting",
     "unlimitedStorage"
   ],
-  "optional_permissions": ["nativeMessaging"],
   "host_permissions": [
     "http://*/*",
     "https://*/*"

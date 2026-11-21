@@ -16,9 +16,8 @@ var ROOT_TAGS = /* @__PURE__ */ new Set([
   "H6",
   "SUMMARY"
 ]);
-const FIXED_ROOT_SELECTOR = [...Array.from(ROOT_TAGS, tag => tag.toLowerCase()), "button"].join(",");
-const NAVIGATION_LANDMARK = "nav,[role='navigation']";
-const SIDEBAR_LANDMARK = "aside,[role='complementary']";
+const TRANSLATION_CONTROLS = "button,[role='button'],[role='tab'],[role='menuitem'],[role='menuitemcheckbox'],[role='menuitemradio'],[role='option'],[role='switch']";
+const FIXED_ROOT_SELECTOR = [...Array.from(ROOT_TAGS, tag => tag.toLowerCase()), TRANSLATION_CONTROLS].join(",");
 var SKIP_SELECTOR = [
   "script",
   "style",
@@ -60,17 +59,11 @@ export function isGeneratedNode(node) {
   const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   return Boolean(element?.closest("[data-flt-generated]"));
 }
-export function isNavigationButton(element) {
-  return element.tagName === "BUTTON" && element.getAttribute("type")?.toLowerCase() === "button"
-    && !element.form && !element.closest("[role='form']")
-    && Boolean(element.closest(NAVIGATION_LANDMARK)
-      || (element.nextElementSibling?.matches(NAVIGATION_LANDMARK) && element.closest(SIDEBAR_LANDMARK)));
-}
-export function isNavigationRegion(element) {
-  return Boolean(element.closest(`${NAVIGATION_LANDMARK},${SIDEBAR_LANDMARK}`));
+export function isTranslationControl(element) {
+  return element.matches(TRANSLATION_CONTROLS) && !element.parentElement?.closest("p,figcaption");
 }
 export function isTranslationRootElement(element) {
-  return ROOT_TAGS.has(element.tagName) || isNavigationButton(element);
+  return ROOT_TAGS.has(element.tagName) || isTranslationControl(element);
 }
 export function isTranslationDisabled(element) {
   for (let current = element; current; current = current.parentElement) {
@@ -209,16 +202,20 @@ function isScreenReaderOnlyStyle(style) {
   );
   return positioned && tinyBox && (overflowHidden || clipped);
 }
-export function isElementEffectivelyHidden(element) {
+export function isElementEffectivelyHidden(element, cache = undefined) {
   const view = element.ownerDocument.defaultView;
   if (!view) return false;
   let current = element;
+  const checked = cache ? [] : null;
+  let hidden = false;
   while (current) {
+    if (cache?.has(current)) { hidden = cache.get(current); break; }
+    checked?.push(current);
     if (
       current.hasAttribute("hidden") ||
       current.getAttribute("aria-hidden") === "true" ||
       current.matches("tool-tip,[role='tooltip'],[inert]")
-    ) return true;
+    ) { hidden = true; break; }
     const style = view.getComputedStyle(current);
     if (
       style.display === "none" ||
@@ -227,22 +224,23 @@ export function isElementEffectivelyHidden(element) {
       style.contentVisibility === "hidden" ||
       Number.parseFloat(style.opacity || "1") === 0 ||
       isScreenReaderOnlyStyle(style)
-    ) return true;
+    ) { hidden = true; break; }
     if (current === current.ownerDocument.documentElement) break;
     current = current.parentElement;
   }
-  return false;
+  for (const visited of checked ?? []) cache.set(visited, hidden);
+  return hidden;
 }
-export function isEligibleTextContext(node) {
+export function isEligibleTextContext(node, visibilityCache = undefined) {
   if (isProtectedLinkIdentifierText(node) || isProtectedCodeLabelText(node)) return false;
   const parent = node.parentElement;
-  const button = parent?.closest("button");
-  return Boolean(parent && (!button || isNavigationButton(button)) && !isTranslationDisabled(parent)
-    && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent));
+  const control = parent?.closest(TRANSLATION_CONTROLS);
+  return Boolean(parent && (!control || isTranslationControl(control)) && !isTranslationDisabled(parent)
+    && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent, visibilityCache));
 }
-export function isEligibleTextNode(node) {
+export function isEligibleTextNode(node, visibilityCache = undefined) {
   const text = node.data.trim();
-  if (!text || !isEligibleTextContext(node)) return false;
+  if (!text || !isEligibleTextContext(node, visibilityCache)) return false;
   // Pure counters/dates/version badges do not need translation and duplicating them can
   // surface otherwise hidden UI state (for example GitHub's hidden "0" tab counters).
   return /\p{L}/u.test(text) && !/^v\d+(?:\.\d+)+(?:[-+][\w.-]+)?$/i.test(text);
@@ -253,9 +251,8 @@ var FALLBACK_STRUCTURAL_SELECTOR = [
   "button", "input", "select", "textarea", "iframe"
 ].join(",");
 function isFallbackLeafContainer(element) {
-  if (!["DIV", "SPAN", "LABEL"].includes(element.tagName)) return false;
+  if (!["DIV", "SPAN", "LABEL", "STRONG", "B", "EM", "SMALL"].includes(element.tagName)) return false;
   if (element.closest(SKIP_SELECTOR) || element.closest("button")) return false;
-  if (element.tagName === "DIV" && element.children.length > 0) return false;
   if (element.querySelector(FALLBACK_STRUCTURAL_SELECTOR)) return false;
   return Boolean((element.textContent ?? "").trim());
 }
@@ -407,16 +404,26 @@ function wrapDirectAnchorTextNodes(scope) {
     wrapTextNodesInside(anchor, doc);
   }
 }
-export function collectTranslationRoots(scope, { preserveInlineContext = false } = {}) {
+export function collectTranslationRoots(scope, { preserveInlineContext = false, onHidden = undefined } = {}) {
   const doc = scope instanceof Document ? scope : scope.ownerDocument;
   if (!doc) return [];
   if (preserveInlineContext) {
     // Fixed text rendering needs no source wrappers, including inside toolbars or anchors.
     const roots = new Set();
-    const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+    const visibility = new WeakMap();
+    if (scope instanceof Element && isElementEffectivelyHidden(scope, visibility)) {
+      onHidden?.(scope);
+      return [];
+    }
+    const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, node => {
+      if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+      if (isElementEffectivelyHidden(node, visibility)) { onHidden?.(node); return NodeFilter.FILTER_REJECT; }
+      if (node.matches(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_SKIP;
+    });
     let node;
     while ((node = walker.nextNode())) {
-      if (!isEligibleTextNode(node)) continue;
+      if (!isEligibleTextNode(node, visibility)) continue;
       // The fixed renderer keeps controls/icons in place, so an inline fallback
       // inside a paragraph must not become a second, overlapping translation root.
       const structural = node.parentElement?.closest(FIXED_ROOT_SELECTOR);

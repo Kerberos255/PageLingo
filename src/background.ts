@@ -29,11 +29,9 @@ import { handleImageRuntimeMessage, initializeImageTranslation } from "./image-t
 import { languageLabel, loadSettings, normalizeDetectedLanguage } from "./shared/settings";
 import { hasExternalTranslationConsent } from "./shared/data-consent";
 import { isLoopbackTranslationEndpoint } from "./shared/network-endpoint";
-import { listExternalTranslationModels, translateWithExternalEngine } from "./providers/external-translation";
+import { externalBatchSize, listExternalTranslationModels, translateExternalBatch, translateWithExternalEngine } from "./providers/external-translation";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
-  PAGELINGO_MT_ENGINE_ID,
-  NATIVE_MT_ENGINE_ID,
   deleteTranslationEngine,
   loadTranslationEngineState,
   normalizeTranslationEngineConfig,
@@ -41,14 +39,9 @@ import {
   setActiveTranslationEngine,
   setTranslationEngineEnabled,
 } from "./shared/translation-engine-settings";
-import { PageLingoMtClient } from "./providers/pagelingo-mt/client";
-import { mtRouteSupported } from "./providers/pagelingo-mt/protocol";
-import { checkNativeMt, translateNativeMt } from "./providers/pagelingo-mt/native-client";
-import { validTranslationContext } from "./core/translation-context";
 import { keepEventPageAlive } from "./shared/event-page-keepalive";
 
 const bergamot = new BergamotClient();
-const pagelingoMt = new PageLingoMtClient();
 const MODEL_UPDATE_ALARM = "pagelingo-model-updates";
 const MODEL_UPDATE_INTERVAL_MINUTES = 24 * 60;
 let overridesPromise = loadModelOverrides();
@@ -81,6 +74,27 @@ interface RuntimeMessage {
 
 function asLanguage(value: unknown): string | null {
   return normalizeDetectedLanguage(value);
+}
+
+function parseTranslationRequest(request: RuntimeMessage["request"]) {
+  if (!request || typeof request.html !== "string") throw new Error("Invalid translation request");
+  const sourceLanguage = asLanguage(request.sourceLanguage);
+  const targetLanguage = asLanguage(request.targetLanguage);
+  if (!sourceLanguage || !targetLanguage) throw new Error("Invalid translation languages");
+  const terminology = Array.isArray(request.terminology)
+    ? request.terminology
+        .filter((entry): entry is { source: string; target: string; mode: "protect" | "replace" } =>
+          Boolean(
+            entry &&
+            typeof entry === "object" &&
+            typeof (entry as { source?: unknown }).source === "string" &&
+            typeof (entry as { target?: unknown }).target === "string" &&
+            ((entry as { mode?: unknown }).mode === "protect" || (entry as { mode?: unknown }).mode === "replace")
+          )
+        )
+        .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }))
+    : [];
+  return {html: request.html, sourceLanguage, targetLanguage, terminology};
 }
 
 async function currentOverrides(): Promise<ModelCatalogOverrides> {
@@ -130,16 +144,21 @@ async function activeExternalEngine() {
 
 async function translationEngineStateForUi() {
   const state = await currentTranslationEngineState();
-  const activeExternal = state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled);
-  const mt = await pagelingoMt.status();
+  const activeExternal = state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
+    ? null
+    : state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
+  const batchSize = activeExternal ? externalBatchSize(activeExternal) : 24;
   return {
     activeEngineId: state.activeEngineId,
+    batchSize,
+    concurrentSegments: activeExternal ? (batchSize > 1 ? Math.min(batchSize * 3, 32) : 6) : batchSize,
+    batchHtmlLimit: activeExternal && batchSize === 8 ? 3600 : 24_000,
+    firstVisibleSingles: activeExternal?.type === "opencode-go" && batchSize > 1 ? 2 : 0,
     structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
-      || Boolean(activeExternal && activeExternal.type !== "pagelingo-mt-native" && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
+      || Boolean(activeExternal && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
     // Every backend returns text for an application-owned template. Provider
     // markup never replaces source nodes or supplies event handlers/styles.
     prefersWholeSentenceHtml: true,
-    mt,
     engines: state.engines.map((engine) => ({
       id: engine.id,
       name: engine.name,
@@ -399,7 +418,8 @@ void currentUpdateState().then((state) => setUpdateState(state));
 initializeImageTranslation();
 
 browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) => {
-  const imageResponse = await handleImageRuntimeMessage(message, sender);
+  const imageTask = handleImageRuntimeMessage(message, sender);
+  const imageResponse = await (message.type === "recognize-image" ? keepEventPageAlive(imageTask, "image-ocr") : imageTask);
   if (imageResponse !== undefined) return imageResponse;
 
   if (message.type === "ping-backend") return { ok: true };
@@ -414,50 +434,18 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
 
   try {
     if (message.type === "translate-html") {
-      const request = message.request;
-      if (!request || typeof request.html !== "string") throw new Error("Invalid translation request");
-      const sourceLanguage = asLanguage(request.sourceLanguage);
-      const targetLanguage = asLanguage(request.targetLanguage);
-      if (!sourceLanguage || !targetLanguage) throw new Error("Invalid translation languages");
-      const terminology = Array.isArray(request.terminology)
-        ? request.terminology
-            .filter((entry): entry is { source: string; target: string; mode: "protect" | "replace" } =>
-              Boolean(
-                entry &&
-                typeof entry === "object" &&
-                typeof (entry as { source?: unknown }).source === "string" &&
-                typeof (entry as { target?: unknown }).target === "string" &&
-                ((entry as { mode?: unknown }).mode === "protect" || (entry as { mode?: unknown }).mode === "replace")
-              )
-            )
-            .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }))
-        : [];
-      const engineState = await currentTranslationEngineState();
-      if (engineState.activeEngineId === NATIVE_MT_ENGINE_ID) {
-        const html = await keepEventPageAlive(translateNativeMt({
-          html: request.html, sourceLanguage, targetLanguage, terminology, context: validTranslationContext(request.context),
-        }), "native-mt-translate");
-        return { ok: true, html };
-      }
-      if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
-        const mtRequest = { html: request.html, sourceLanguage, targetLanguage, terminology, context: validTranslationContext(request.context) };
-        const mtResult = await keepEventPageAlive(pagelingoMt.translateHtmlChecked(mtRequest), "mt-translate");
-        if (mtResult.accepted) return { ok: true, html: mtResult.html, engine: PAGELINGO_MT_ENGINE_ID };
-        throw new Error(mtResult.reason ?? "PageLingo MT rejected the translation; original paragraph retained");
-      }
+      const request = parseTranslationRequest(message.request);
       const external = await activeExternalEngine();
       if (external) {
         if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
           throw new Error("外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权");
         }
-        const html = await keepEventPageAlive(translateWithExternalEngine(external, {
-          html: request.html, sourceLanguage, targetLanguage, terminology, context: validTranslationContext(request.context),
-        }), "external-translate");
+        const html = await keepEventPageAlive(translateWithExternalEngine(external, request), "external-translate");
         return { ok: true, html };
       }
       const overrides = await currentOverrides();
-      const route = routeFor(sourceLanguage, targetLanguage, overrides);
-      if (!route) throw new Error(`当前本地模型不支持 ${languageLabel(sourceLanguage)} → ${languageLabel(targetLanguage)}`);
+      const route = routeFor(request.sourceLanguage, request.targetLanguage, overrides);
+      if (!route) throw new Error(`当前本地模型不支持 ${languageLabel(request.sourceLanguage)} → ${languageLabel(request.targetLanguage)}`);
       const html = await bergamot.translateHtml(request.html, route);
       return { ok: true, html };
     }
@@ -467,25 +455,26 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       if (!Array.isArray(requests) || requests.length === 0 || requests.length > 32) {
         throw new Error("Invalid translation batch");
       }
-      const normalized = requests.map((request) => {
-        if (!request || typeof request.html !== "string") throw new Error("Invalid translation request");
-        const sourceLanguage = asLanguage(request.sourceLanguage);
-        const targetLanguage = asLanguage(request.targetLanguage);
-        if (!sourceLanguage || !targetLanguage) throw new Error("Invalid translation languages");
-        return { html: request.html, sourceLanguage, targetLanguage };
-      });
+      const normalized = requests.map(parseTranslationRequest);
       const first = normalized[0]!;
       if (normalized.some((request) =>
         request.sourceLanguage !== first.sourceLanguage || request.targetLanguage !== first.targetLanguage
       )) {
         throw new Error("Translation batch must use one language route");
       }
-      const batchEngineState = await currentTranslationEngineState();
-      if (batchEngineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
-        return { ok: false, batchUnsupported: true, error: "PageLingo MT currently runs serial inference" };
-      }
-      if (batchEngineState.activeEngineId === NATIVE_MT_ENGINE_ID || await activeExternalEngine()) {
-        return { ok: false, batchUnsupported: true, error: "Batching is local-Bergamot only" };
+      const external = await activeExternalEngine();
+      if (external) {
+        const size = externalBatchSize(external);
+        if (size < 2 || normalized.length > size) return {ok:false, batchUnsupported:true};
+        if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
+          return {ok:false, retrySingles:false, error:"外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权"};
+        }
+        try {
+          const htmls = await keepEventPageAlive(translateExternalBatch(external, normalized), "external-batch");
+          return {ok:true, htmls};
+        } catch (error) {
+          return {ok:false, retrySingles:false, error:error instanceof Error ? error.message : String(error)};
+        }
       }
       const overrides = await currentOverrides();
       const route = routeFor(first.sourceLanguage, first.targetLanguage, overrides);
@@ -497,31 +486,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "can-translate") {
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
-      const engineState = await currentTranslationEngineState();
-      const native = engineState.activeEngineId === NATIVE_MT_ENGINE_ID;
-      if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
-        const mt = await pagelingoMt.status();
-        return {
-          ok: true,
-          supported: Boolean(
-            mt.installed &&
-            sourceLanguage &&
-            targetLanguage &&
-            sourceLanguage !== targetLanguage &&
-            mtRouteSupported({ html: "", sourceLanguage, targetLanguage })
-          ),
-        };
-      }
       const external = await activeExternalEngine();
       const externalReady = external
         ? await hasExternalTranslationConsent(Boolean(external.apiKey))
         : false;
-      if (native || external?.type === "pagelingo-mt-native") {
-        const supported = (native || externalReady) && Boolean(sourceLanguage && targetLanguage
-          && mtRouteSupported({html:"", sourceLanguage, targetLanguage}));
-        if (supported) await checkNativeMt(native ? undefined : external?.apiKey);
-        return {ok:true, supported};
-      }
       const overrides = external ? null : await currentOverrides();
       return {
         ok: true,
@@ -537,31 +505,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "is-translation-ready") {
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
-      const engineState = await currentTranslationEngineState();
-      const native = engineState.activeEngineId === NATIVE_MT_ENGINE_ID;
-      if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
-        const mt = await pagelingoMt.status();
-        return {
-          ok: true,
-          ready: Boolean(
-            mt.installed &&
-            sourceLanguage &&
-            targetLanguage &&
-            sourceLanguage !== targetLanguage &&
-            mtRouteSupported({ html: "", sourceLanguage, targetLanguage })
-          ),
-        };
-      }
       const external = await activeExternalEngine();
       const externalReady = external
         ? await hasExternalTranslationConsent(Boolean(external.apiKey))
         : false;
-      if (native || external?.type === "pagelingo-mt-native") {
-        const ready = (native || externalReady) && Boolean(sourceLanguage && targetLanguage
-          && mtRouteSupported({html:"", sourceLanguage, targetLanguage}));
-        if (ready) await checkNativeMt(native ? undefined : external?.apiKey);
-        return {ok:true, ready};
-      }
       return {
         ok: true,
         ready: Boolean(
@@ -575,12 +522,6 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
 
     if (message.type === "get-translation-engines") {
       return { ok: true, state: await translationEngineStateForUi() };
-    }
-
-    if (message.type === "get-native-mt-status") {
-      if (!sender.url?.startsWith(browser.runtime.getURL(""))) return undefined;
-      await checkNativeMt();
-      return { ok: true };
     }
 
     if (message.type === "save-translation-engine") {
@@ -605,21 +546,6 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
 
     if (message.type === "set-active-translation-engine") {
       if (typeof message.id !== "string") throw new Error("Invalid engine id");
-      if (message.id === NATIVE_MT_ENGINE_ID) {
-        if (!sender.url?.startsWith(browser.runtime.getURL(""))) return undefined;
-        await checkNativeMt();
-      }
-      if (message.id === PAGELINGO_MT_ENGINE_ID) {
-        const mt = await pagelingoMt.status();
-        if (!mt.installed) throw new Error("请先下载 PageLingo MT 模型");
-      }
-      const native = (await currentTranslationEngineState()).engines.find(
-        engine => engine.id === message.id && engine.enabled && engine.type === "pagelingo-mt-native",
-      );
-      if (native) {
-        if (!await hasExternalTranslationConsent(true)) throw new Error("请授权向本机 MT 服务发送数据");
-        await checkNativeMt(native.apiKey);
-      }
       await setActiveTranslationEngine(message.id);
       await refreshTranslationEngineState();
       return { ok: true, state: await translationEngineStateForUi() };
@@ -638,30 +564,12 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       if (!await hasExternalTranslationConsent(Boolean(config.apiKey))) {
         throw new Error("未授权向外部翻译服务发送数据");
       }
-      if (config.type === "pagelingo-mt-native") await checkNativeMt(config.apiKey);
       const html = await keepEventPageAlive(translateWithExternalEngine(config, {
-        html: config.type === "pagelingo-mt-native" ? "Hello, how are you?" : "<strong>Hello</strong> world",
+        html: "<strong>Hello</strong> world",
         sourceLanguage: "en",
         targetLanguage: "zh-Hans",
       }), "external-test");
-      return { ok: true, preview: html };
-    }
-
-    if (message.type === "get-pagelingo-mt-status") {
-      return { ok: true, mt: await pagelingoMt.status() };
-    }
-
-    if (message.type === "download-pagelingo-mt") {
-      return { ok: true, mt: await keepEventPageAlive(pagelingoMt.download(), "mt-download") };
-    }
-
-    if (message.type === "delete-pagelingo-mt") {
-      const state = await currentTranslationEngineState();
-      if (state.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
-        await setActiveTranslationEngine(LOCAL_TRANSLATION_ENGINE_ID);
-        await refreshTranslationEngineState();
-      }
-      return { ok: true, mt: await pagelingoMt.remove(), state: await translationEngineStateForUi() };
+      return { ok: true, preview: new DOMParser().parseFromString(html, "text/html").body.textContent?.trim() };
     }
 
     if (message.type === "get-language-catalog") {

@@ -524,7 +524,7 @@ describe("PageTranslator display modes", () => {
     expect(summary.isConnected).toBe(true);
   });
 
-  it("translates navigation button labels in place and keeps other controls source-owned", async () => {
+  it("translates navigation and form button labels without replacing the controls", async () => {
     document.body.innerHTML = `<nav aria-label="Documentation"><ul><li id="entry">
       <button id="section" type="button" aria-expanded="false" aria-controls="guide"><span>Get started</span><svg aria-hidden="true"></svg></button>
       </li></ul><button id="submit" form="search">Run search</button><button id="search-action" form="search" type="button">Clear filters</button>
@@ -546,7 +546,12 @@ describe("PageTranslator display modes", () => {
     const translator = new PageTranslator(document, provider, {targetLanguage: "zh-Hans"});
     await translator.translateAll();
 
-    expect(requests).toEqual(['<span><span data-flt-text-id="0">Get started</span></span>']);
+    expect(requests).toEqual([
+      '<span><span data-flt-text-id="0">Get started</span></span>',
+      '<span data-flt-text-id="0">Run search</span>',
+      '<span data-flt-text-id="0">Clear filters</span>',
+      '<span data-flt-text-id="0">Copy code</span>',
+    ]);
     expect(label.textContent).toBe("开始使用");
     expect(label.firstChild).toBe(text);
     expect(section.querySelector("svg")).toBe(icon);
@@ -561,6 +566,26 @@ describe("PageTranslator display modes", () => {
     expect(section.getAttribute("aria-expanded")).toBe("false");
     translator.restore();
     expect(document.body.innerHTML).toBe(original);
+  });
+
+  it("translates a panel revealed only by a tab's aria-selected state", async () => {
+    document.body.innerHTML = `<style>#tabs[aria-selected="false"] ~ #panel {display:none}</style>
+      <button id="tabs" role="tab" aria-controls="panel" aria-selected="false">Shortcuts</button>
+      <section id="panel" role="tabpanel"><p>Choose a shortcut.</p></section>`;
+    const tab = document.querySelector("#tabs")!;
+    const para = document.querySelector("#panel p")!;
+    const provider: TranslationProvider = {
+      prefersWholeSentenceHtml: async () => true,
+      translateHtml: async ({html}) => html.replace("Shortcuts", "快捷键").replace("Choose a shortcut.", "请选择快捷键。"),
+    };
+    const translator = new PageTranslator(document, provider, {targetLanguage: "zh-Hans"});
+    await translator.translateAll(document.body, true);
+    expect(para.textContent).toBe("Choose a shortcut.");
+    tab.setAttribute("aria-selected", "true");
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(para.textContent).toBe("请选择快捷键。");
+    translator.restore();
+    expect(para.textContent).toBe("Choose a shortcut.");
   });
 
   it.each([false, true])("translates existing navigation links when the sidebar reveals them (fading: %s)", async (fading) => {

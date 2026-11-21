@@ -2,6 +2,7 @@ import { getImageOcrBundle, getImageOcrStatus, deleteImageOcrModels, type ImageO
 import { mergeOcrRegions, type OcrRegion } from "./ocr-layout";
 import { MAX_OCR_IMAGE_SIDE } from "./ocr-models";
 import { loadSettings } from "../shared/settings";
+import { sendFrameMessage } from "../shared/main-frame-message";
 
 const IMAGE_MENU_ID = "pagelingo-translate-image";
 const PAGE_MENU_ID = "pagelingo-translate-page";
@@ -139,7 +140,7 @@ async function sendProgress(sender: browser.runtime.MessageSender, status: strin
   const tabId = sender.tab?.id;
   if (!tabId) return;
   try {
-    await browser.tabs.sendMessage(tabId, { type: "image-translation-progress", status });
+    await browser.tabs.sendMessage(tabId, { type: "image-translation-progress", status }, { frameId: sender.frameId ?? 0 });
   } catch {
     // The originating page may have navigated while OCR was running.
   }
@@ -305,11 +306,11 @@ export function initializeImageTranslation(): void {
   browser.contextMenus.onClicked.addListener((info, tab) => {
     if (!tab?.id) return;
     if (info.menuItemId === IMAGE_MENU_ID && typeof info.srcUrl === "string") {
-      void sendContextMessage(tab.id, info, { type: "toggle-image-translation", srcUrl: info.srcUrl }).catch(() => undefined);
+      void sendFrameMessage(tab.id, info.frameId ?? 0, { type: "toggle-image-translation", srcUrl: info.srcUrl }).catch(() => undefined);
       return;
     }
     if (info.menuItemId === PAGE_MENU_ID) {
-      void sendContextMessage(tab.id, info, { type: "toggle-page-translation" }).catch(() => undefined);
+      void sendFrameMessage(tab.id, info.frameId ?? 0, { type: "toggle-page-translation" }).catch(() => undefined);
     }
   });
   browser.contextMenus.onShown?.addListener((info, tab) => {

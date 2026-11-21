@@ -4,8 +4,9 @@ import { sendRuntimeMessage } from "../shared/runtime-message";
 interface TranslationResponse {
   ok?: boolean;
   html?: string;
-  htmls?: string[];
+  htmls?: Array<string | null>;
   batchUnsupported?: boolean;
+  retrySingles?: boolean;
   error?: string;
 }
 
@@ -14,6 +15,10 @@ interface TranslationEngineStateResponse {
   state?: {
     structuralSplittingSafe?: boolean;
     prefersWholeSentenceHtml?: boolean;
+    batchSize?: number;
+    batchHtmlLimit?: number;
+    concurrentSegments?: number;
+    firstVisibleSingles?: number;
   };
 }
 
@@ -25,34 +30,44 @@ interface PendingTranslation {
 
 export class RuntimeMessageProvider implements TranslationProvider {
   readonly #pending: PendingTranslation[] = [];
+  readonly #duplicates = new Map<string, Promise<string>>();
   #flushQueued = false;
+  #engineState: Promise<TranslationEngineStateResponse["state"]> | undefined;
+  #sentFirstGroup = false;
+
+  #state() {
+    this.#engineState ??= sendRuntimeMessage<TranslationEngineStateResponse>({type: "get-translation-engines"})
+      .then(response => response?.ok ? response.state : undefined, () => undefined);
+    return this.#engineState;
+  }
 
   async prefersWholeSentenceHtml(): Promise<boolean> {
-    try {
-      const response = await sendRuntimeMessage<TranslationEngineStateResponse>({type: "get-translation-engines"});
-      return response?.ok === true && response.state?.prefersWholeSentenceHtml === true;
-    } catch { return false; }
+    return (await this.#state())?.prefersWholeSentenceHtml === true;
+  }
+
+  async concurrentSegments(): Promise<number> {
+    return (await this.#state())?.concurrentSegments ?? 4;
   }
 
   async supportsStructuralSplitting(): Promise<boolean> {
-    try {
-      const response = await sendRuntimeMessage<TranslationEngineStateResponse>({
-        type: "get-translation-engines",
-      });
-      return response?.ok === true && response.state?.structuralSplittingSafe === true;
-    } catch {
-      return false;
-    }
+    return (await this.#state())?.structuralSplittingSafe === true;
   }
 
   translateHtml(request: TranslationRequest): Promise<string> {
     if (request.signal?.aborted) return Promise.reject(new Error("Translation aborted"));
-    return new Promise<string>((resolve, reject) => {
+    const key = request.signal ? "" : JSON.stringify(request);
+    const existing = key && this.#duplicates.get(key);
+    if (existing) return existing;
+    const pending = new Promise<string>((resolve, reject) => {
       this.#pending.push({ request, resolve, reject });
       if (this.#flushQueued) return;
       this.#flushQueued = true;
       queueMicrotask(() => void this.#flush());
     });
+    if (!key) return pending;
+    const shared = pending.finally(() => this.#duplicates.delete(key));
+    this.#duplicates.set(key, shared);
+    return shared;
   }
 
   async #flush(): Promise<void> {
@@ -72,9 +87,27 @@ export class RuntimeMessageProvider implements TranslationProvider {
   }
 
   async #flushGroup(group: PendingTranslation[]): Promise<void> {
-    for (let offset = 0; offset < group.length; offset += 32) {
-      await this.#flushChunk(group.slice(offset, offset + 32));
+    const state = await this.#engineState;
+    const maxSize = Math.max(1, Math.min(32, state?.batchSize ?? 32));
+    const maxLength = state?.batchHtmlLimit ?? 24_000;
+    const batches: Promise<void>[] = [];
+    const visibleSingles = this.#sentFirstGroup ? 0 : state?.firstVisibleSingles ?? 0;
+    this.#sentFirstGroup = true;
+    for (const item of group.splice(0, visibleSingles)) batches.push(this.#translateSingle(item));
+    let chunk: PendingTranslation[] = [];
+    let length = 0;
+    for (const item of group) {
+      const size = item.request.html.length;
+      if (chunk.length && (chunk.length >= maxSize || length + size > maxLength)) {
+        batches.push(this.#flushChunk(chunk));
+        chunk = [];
+        length = 0;
+      }
+      chunk.push(item);
+      length += size;
     }
+    if (chunk.length) batches.push(this.#flushChunk(chunk));
+    await Promise.all(batches);
   }
 
   async #flushChunk(items: PendingTranslation[]): Promise<void> {
@@ -101,9 +134,20 @@ export class RuntimeMessageProvider implements TranslationProvider {
       });
 
       if (response?.ok && Array.isArray(response.htmls) && response.htmls.length === active.length) {
+        const retries = [];
         for (let index = 0; index < active.length; index += 1) {
-          active[index]!.resolve(response.htmls[index] ?? "");
+          const item = active[index]!;
+          const html = response.htmls[index];
+          if (typeof html === "string") item.resolve(html);
+          else retries.push(this.#translateSingle(item));
         }
+        await Promise.all(retries);
+        return;
+      }
+
+      if (response?.retrySingles === false) {
+        const error = new Error(response.error ?? "Translation batch backend unavailable");
+        for (const item of active) item.reject(error);
         return;
       }
 
@@ -122,6 +166,7 @@ export class RuntimeMessageProvider implements TranslationProvider {
 
   async #translateSingle(item: PendingTranslation): Promise<void> {
     try {
+      if (item.request.signal?.aborted) throw new Error("Translation aborted");
       const { signal: _signal, ...request } = item.request;
       const response = await sendRuntimeMessage<TranslationResponse>({ type: "translate-html", request });
       if (!response?.ok || typeof response.html !== "string") {

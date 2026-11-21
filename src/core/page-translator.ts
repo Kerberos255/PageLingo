@@ -1,8 +1,8 @@
 // @ts-nocheck
-import { collectTranslationRoots, findTranslationRoot, isElementEffectivelyHidden, isGeneratedNode, isNavigationRegion, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
+import { collectTranslationRoots, findTranslationRoot, isElementEffectivelyHidden, isGeneratedNode, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
+import { TranslationProgress } from "./translation-progress";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
-import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint } from "./navigation-layout";
 import { TooltipController } from "./tooltip-controller";
 import { contextualTerminology, translationContextForUrl } from "./translation-context";
 import {prepareFixedTextRecord, fixedTextRecordUnchanged, clearFixedTextRecord, applyFixedTextRecord} from "./fixed-text-render";
@@ -15,7 +15,7 @@ import {
     translateRichHtmlTextNodesSafely,
 } from "./rich-segment-splitter";
 
-export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[] }
+export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[]; showProgress?:boolean }
 function translatedPlainText(_doc, html) {
     const parsed = new DOMParser().parseFromString(html, "text/html");
     return (parsed.body.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -223,7 +223,11 @@ export class PageTranslator {
     #terminology;
     #records = new Map();
     #failures = new Map();
-    #pending = new Set();
+    #pending = new Map();
+    #activeJobs = 0;
+    #hiddenScopes = new WeakSet();
+    #pendingProgress = new Map();
+    #progress;
     #inFlight = new Set();
     #rerun = new Set();
     #observer = null;
@@ -238,13 +242,18 @@ export class PageTranslator {
     #fixedOwners = new WeakMap();
     #contextModePromise = null;
     async #loadContextMode() {
-        if (!this.#contextModePromise) this.#contextModePromise = Promise.resolve()
-            .then(() => this.#provider.prefersWholeSentenceHtml?.() ?? false)
-            .then(value => this.#wholeSentenceContext = Boolean(value), () => false);
+        if (!this.#contextModePromise) this.#contextModePromise = Promise.all([
+            Promise.resolve().then(() => this.#provider.prefersWholeSentenceHtml?.()).catch(() => false),
+            Promise.resolve().then(() => this.#provider.concurrentSegments?.()).catch(() => undefined),
+        ]).then(([wholeSentence, concurrency]) => {
+            this.#wholeSentenceContext = Boolean(wholeSentence);
+            if (Number.isInteger(concurrency)) this.#concurrency = Math.max(1, Math.min(32, concurrency));
+        });
         return this.#contextModePromise;
     }
     constructor(doc, provider, options = {}) {
         this.#doc = doc;
+        this.#progress = options.showProgress ? new TranslationProgress(doc) : null;
         this.#provider = provider;
         this.#sourceLanguage = options.sourceLanguage ?? "en";
         this.#targetLanguage = options.targetLanguage ?? "zh";
@@ -294,27 +303,17 @@ export class PageTranslator {
             }
         }
     }
-    async translateAll(scope = this.#doc.body) {
+    async translateAll(scope = this.#doc.body, watchDuringPass = false) {
         if (this.#disposed)
             return this.translatedCount;
         await this.#loadContextMode();
-        const roots = collectTranslationRoots(scope, {preserveInlineContext: this.#wholeSentenceContext});
-        let cursor = 0;
-        const workers = Array.from({ length: Math.min(this.#concurrency, roots.length) }, async () => {
-            while (cursor < roots.length) {
-                const root = roots[cursor++];
-                if (!root)
-                    continue;
-                try {
-                    await this.translateRoot(root);
-                }
-                catch (error) {
-                    console.warn("[PageLingo] Translation root failed", error);
-                }
-            }
-        });
-        await Promise.all(workers);
+        if (watchDuringPass) this.observe();
+        await Promise.all(this.#collect(scope).map(root => this.#queue(root)));
         return this.translatedCount;
+    }
+    #collect(scope) {
+        return collectTranslationRoots(scope, {preserveInlineContext: this.#wholeSentenceContext,
+            onHidden: element => this.#hiddenScopes.add(element)});
     }
     async translateRoot(root) {
         if (this.#disposed || !root.isConnected || isGeneratedNode(root) || isProtectedApiSignature(root))
@@ -363,6 +362,8 @@ export class PageTranslator {
         if (this.#wholeSentenceContext && !segment.textSlots.length) return;
         if (!segment.html.trim())
             return;
+        const lastSlot = segment.textSlots?.at(-1);
+        if (lastSlot && this.#progress) this.#pendingProgress.set(root, this.#progress.show(root, lastSlot.node));
         const context = this.#wholeSentenceContext ? translationContextForUrl(this.#doc.URL) : undefined;
         const requestTerminology = terminologyForText(this.#terminology, segment.fingerprint);
         for (const entry of terminologyForText(contextualTerminology(context), segment.fingerprint)) {
@@ -509,10 +510,18 @@ export class PageTranslator {
             this.#failures.set(root, error instanceof Error ? error.message : String(error));
             throw error;
         } finally {
+            this.#pendingProgress.get(root)?.();
+            this.#pendingProgress.delete(root);
             this.#inFlight.delete(root);
             if (this.#rerun.delete(root) && !this.#disposed && root.isConnected) this.#queue(root);
+            this.#scheduleFlush();
         }
     }
+    #handleToggle = (event) => {
+        if (event.target instanceof Element && (event.newState === "open" || event.target.hasAttribute("open"))) {
+            this.#queueVisibleScope(event.target);
+        }
+    };
     observe() {
         if (this.#observer || !this.#doc.body)
             return;
@@ -523,14 +532,28 @@ export class PageTranslator {
                     continue;
                 if (mutation.type === "attributes") {
                     const region = mutation.target;
-                    if (isNavigationRegion(region) && (mutation.attributeName !== "open" || region.hasAttribute("open"))
+                    if (["aria-expanded", "aria-selected"].includes(mutation.attributeName)) {
+                        if (region.getAttribute(mutation.attributeName) !== "true") continue;
+                        for (const id of (region.getAttribute("aria-controls") ?? "").split(/\s+/)) {
+                            const panel = this.#doc.getElementById(id);
+                            if (panel) revealed.add(panel);
+                        }
+                        continue;
+                    }
+                    if (["class", "style"].includes(mutation.attributeName)
+                        && !this.#hiddenScopes.has(region)
+                        && !region.matches("dialog,[popover],[role='dialog'],[role='tabpanel'],[role='menu'],[role='listbox']")) continue;
+                    if ((mutation.attributeName !== "open" || region.hasAttribute("open"))
                         && !region.closest("[hidden],[inert],[aria-hidden='true']")) revealed.add(region);
                     continue;
                 }
                 if (mutation.type === "characterData" && mutation.target.nodeType === Node.TEXT_NODE) {
+                    const owner = this.#fixedOwners.get(mutation.target);
+                    const edit = owner?.edits.find(edit => edit.node === mutation.target);
+                    if (edit && mutation.target.data === (owner.mode === "translation" ? edit.translated : edit.source)) continue;
                     const parent = mutation.target.parentElement;
                     if (parent) {
-                        for (const root of collectTranslationRoots(parent, {preserveInlineContext: this.#wholeSentenceContext}))
+                        for (const root of this.#collect(parent))
                             this.#queue(root);
                     }
                     continue;
@@ -541,14 +564,14 @@ export class PageTranslator {
                     if (added.nodeType === Node.TEXT_NODE) {
                         const parent = added.parentElement;
                         if (parent) {
-                            for (const root of collectTranslationRoots(parent, {preserveInlineContext: this.#wholeSentenceContext}))
+                            for (const root of this.#collect(parent))
                                 this.#queue(root);
                         }
                     }
                     else if (added.nodeType === Node.ELEMENT_NODE) {
                         if (added.matches?.("[data-flt-source-text-wrapper]"))
                             continue;
-                        for (const root of collectTranslationRoots(added, {preserveInlineContext: this.#wholeSentenceContext}))
+                        for (const root of this.#collect(added))
                             this.#queue(root);
                     }
                 }
@@ -556,23 +579,25 @@ export class PageTranslator {
             for (const region of revealed) {
                 if ([...revealed].some(parent => parent !== region && parent.contains(region))) continue;
                 if (!isElementEffectivelyHidden(region)) {
-                    this.#queueVisibleNavigation(region);
+                    this.#queueVisibleScope(region);
                     continue;
                 }
                 // Accessibility state can change before a CSS fade makes a panel visible.
+                this.#hiddenScopes.add(region);
                 const fades = region.getAnimations?.().filter(animation => animation.transitionProperty === "opacity");
                 if (fades?.length) void Promise.allSettled(fades.map(animation => animation.finished))
-                    .then(() => this.#queueVisibleNavigation(region));
+                    .then(() => this.#queueVisibleScope(region));
             }
         });
         this.#observer.observe(this.#doc.body, {
             childList: true, subtree: true, characterData: true, attributes: true,
-            attributeFilter: ["hidden", "aria-hidden", "inert", "open"],
+            attributeFilter: ["hidden", "aria-hidden", "inert", "open", "class", "style", "data-state", "aria-expanded", "aria-selected"],
         });
+        this.#doc.addEventListener("toggle", this.#handleToggle, true);
     }
-    #queueVisibleNavigation(region) {
+    #queueVisibleScope(region) {
         if (this.#disposed || !region.isConnected || isElementEffectivelyHidden(region)) return;
-        for (const root of collectTranslationRoots(region, {preserveInlineContext: this.#wholeSentenceContext})) {
+        for (const root of this.#collect(region)) {
             this.#queue(root);
         }
     }
@@ -623,8 +648,13 @@ export class PageTranslator {
         this.#disposed = true;
         this.#observer?.disconnect();
         this.#observer = null;
+        this.#doc.removeEventListener("toggle", this.#handleToggle, true);
+        for (const stop of this.#pendingProgress.values()) stop();
+        this.#pendingProgress.clear();
+        this.#progress?.clear();
         this.#tooltipController?.dispose();
         this.#tooltipController = null;
+        for (const job of this.#pending.values()) job.resolve();
         this.#pending.clear();
         this.#rerun.clear();
         this.#inFlight.clear();
@@ -714,33 +744,39 @@ export class PageTranslator {
         root.removeAttribute("data-flt-source-link-hidden");
     }
     #queue(root) {
-        // Do not tear down an existing translation just because a mutation was observed.
-        // Our own source wrappers generate child-list mutations; translateRoot compares the
-        // source-only fingerprint and keeps the current translation when nothing actually changed.
-        this.#pending.add(root);
-        if (this.#flushQueued)
-            return;
-        this.#flushQueued = true;
-        queueMicrotask(() => void this.#flush());
+        if (this.#disposed || !root.isConnected) return Promise.resolve();
+        const existing = this.#pending.get(root);
+        if (existing) return existing.done;
+        let resolve;
+        const done = new Promise(finish => { resolve = finish; });
+        const view = this.#doc.defaultView;
+        const rect = root.getBoundingClientRect();
+        const visible = rect.bottom > 0 && rect.top < (view?.innerHeight ?? 0)
+            && rect.right > 0 && rect.left < (view?.innerWidth ?? 0);
+        this.#pending.set(root, {done, resolve, visible});
+        this.#scheduleFlush();
+        return done;
     }
-    async #flush() {
+    #scheduleFlush() {
+        if (this.#disposed || this.#flushQueued || !this.#pending.size || this.#activeJobs >= this.#concurrency) return;
+        this.#flushQueued = true;
+        queueMicrotask(() => this.#flush());
+    }
+    #flush() {
         this.#flushQueued = false;
-        const roots = Array.from(this.#pending);
-        this.#pending.clear();
-        const guardNavigation = !this.#wholeSentenceContext && this.#displayMode === "translation" && roots.length > 0;
-        const navigationHold = guardNavigation ? freezeNavigationLayout(false) : null;
-        try {
-            for (const root of roots) {
-                try {
-                    await this.translateRoot(root);
-                }
-                catch (error) {
-                    console.warn("[Local Immersive Translate] Dynamic translation failed", error);
-                }
+        // Dispatch the visible roots first. A newly revealed panel can join the queue during the first pass.
+        for (const visible of [true, false]) {
+            for (const [root, job] of this.#pending) {
+                if (this.#activeJobs >= this.#concurrency) return;
+                if (job.visible !== visible || this.#inFlight.has(root)) continue;
+                this.#pending.delete(root);
+                this.#activeJobs += 1;
+                void this.translateRoot(root).catch(error => console.warn("[PageLingo] Translation root failed", error)).finally(() => {
+                    this.#activeJobs -= 1;
+                    job.resolve();
+                    this.#scheduleFlush();
+                });
             }
-        }
-        finally {
-            if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
         }
     }
 }

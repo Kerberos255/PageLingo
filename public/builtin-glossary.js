@@ -8,7 +8,7 @@ globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ = Object.freeze({
   hardPreserve: Object.freeze([
     // AI, developer platforms, and developer tools.
     "OpenClaw", "ClawHub", "OpenCode", "Tailscale", "OpenAI", "Anthropic",
-    "ChatGPT", "GPT", "Claude", "Gemini", "DeepSeek", "Codex", "Grok",
+    "ChatGPT", "GPT", "Claude", "Gemini", "Antigravity", "DeepSeek", "Codex", "Grok",
     "Llama", "Qwen", "Mistral", "Hugging Face", "Midjourney", "Stability AI",
     "GitHub", "GitHub Actions", "GitHub Copilot", "GitLab", "Bitbucket", "Git",
     "Docker", "Kubernetes", "npm", "pnpm", "bun", "Nix",

@@ -1,14 +1,7 @@
 import { isLoopbackHostname } from "./network-endpoint";
 
 export const LOCAL_TRANSLATION_ENGINE_ID = "firefox-local";
-export const PAGELINGO_MT_ENGINE_ID = "pagelingo-mt";
-export const NATIVE_MT_ENGINE_ID = "pagelingo-mt-native";
-export const NATIVE_MT_BASE_URL = "http://127.0.0.1:18731/v1";
-export const NATIVE_MT_MODEL_ID = "pagelingo-mt-v0.2.2-q5km";
-export const NATIVE_MT_MESSAGING_PERMISSION = {permissions: ["nativeMessaging"]} satisfies browser.permissions.Permissions;
 export const OPENCODE_GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1";
-
-const BUILTIN_ENGINE_IDS = new Set([LOCAL_TRANSLATION_ENGINE_ID, PAGELINGO_MT_ENGINE_ID, NATIVE_MT_ENGINE_ID]);
 
 export type ExternalTranslationEngineType =
   | "microsoft"
@@ -19,7 +12,6 @@ export type ExternalTranslationEngineType =
   | "opencode-go"
   | "deepseek"
   | "openai-compatible"
-  | "pagelingo-mt-native"
   | "libretranslate"
   | "custom-rest";
 
@@ -52,7 +44,6 @@ const ENGINE_TYPES = new Set<ExternalTranslationEngineType>([
   "opencode-go",
   "deepseek",
   "openai-compatible",
-  "pagelingo-mt-native",
   "libretranslate",
   "custom-rest",
 ]);
@@ -86,22 +77,18 @@ export function normalizeTranslationEngineConfig(value: unknown): TranslationEng
   if (!ENGINE_TYPES.has(raw.type as ExternalTranslationEngineType)) return null;
   const type = raw.type as ExternalTranslationEngineType;
   const name = cleanString(raw.name, 120);
-  const id = cleanId(raw.id);
-  if (!name || BUILTIN_ENGINE_IDS.has(id)) return null;
+  if (!name) return null;
   const rawBaseUrl = cleanString(raw.baseUrl, 2048);
   const baseUrl = cleanUrl(rawBaseUrl);
   if (rawBaseUrl && !baseUrl) return null;
-  const native = type === "pagelingo-mt-native";
-  const apiKey = cleanString(raw.apiKey, 8192);
-  if (native && (!apiKey || (baseUrl && baseUrl !== NATIVE_MT_BASE_URL))) return null;
   return {
-    id,
+    id: cleanId(raw.id),
     name,
     type,
     enabled: raw.enabled !== false,
-    baseUrl: native ? NATIVE_MT_BASE_URL : baseUrl,
-    apiKey,
-    model: native ? NATIVE_MT_MODEL_ID : cleanString(raw.model, 240),
+    baseUrl,
+    apiKey: cleanString(raw.apiKey, 8192),
+    model: cleanString(raw.model, 240),
     region: cleanString(raw.region, 160),
     prompt: cleanString(raw.prompt, 6000),
     headersJson: cleanString(raw.headersJson, 6000),
@@ -118,7 +105,7 @@ export async function loadTranslationEngineState(): Promise<TranslationEngineSta
         .filter((engine): engine is TranslationEngineConfig => Boolean(engine))
     : [];
   const requested = cleanString(stored.activeTranslationEngineId, 96) || LOCAL_TRANSLATION_ENGINE_ID;
-  const active = BUILTIN_ENGINE_IDS.has(requested) || engines.some((engine) => engine.id === requested && engine.enabled)
+  const active = requested === LOCAL_TRANSLATION_ENGINE_ID || engines.some((engine) => engine.id === requested && engine.enabled)
     ? requested
     : LOCAL_TRANSLATION_ENGINE_ID;
   return { activeEngineId: active, engines };
@@ -154,7 +141,7 @@ export async function setTranslationEngineEnabled(id: string, enabled: boolean):
 
 export async function setActiveTranslationEngine(id: string): Promise<TranslationEngineState> {
   const state = await loadTranslationEngineState();
-  if (!BUILTIN_ENGINE_IDS.has(id) && !state.engines.some((engine) => engine.id === id && engine.enabled)) {
+  if (id !== LOCAL_TRANSLATION_ENGINE_ID && !state.engines.some((engine) => engine.id === id && engine.enabled)) {
     throw new Error("该翻译引擎未启用或不存在");
   }
   await browser.storage.local.set({ activeTranslationEngineId: id });

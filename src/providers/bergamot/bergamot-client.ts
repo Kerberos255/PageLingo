@@ -26,6 +26,7 @@ class RouteSession {
   readonly #route: TranslationRoute;
   #worker: Worker | null = null;
   #ready: Promise<void> | null = null;
+  #initialized = false;
   #nextId = 1;
   readonly #pending = new Map<number, PendingRequest>();
   readonly #pendingBatches = new Map<number, PendingBatchRequest>();
@@ -80,10 +81,13 @@ class RouteSession {
     };
   }
 
+  get initialized(): boolean { return this.#initialized; }
+
   terminate(): void {
     this.#worker?.terminate();
     this.#worker = null;
     this.#ready = null;
+    this.#initialized = false;
     const error = new Error("Bergamot session reset");
     for (const pending of this.#pending.values()) pending.reject(error);
     this.#pending.clear();
@@ -174,6 +178,7 @@ class RouteSession {
       };
       worker.postMessage(message, transfer);
       await readySignal;
+      this.#initialized = true;
     } catch (error) {
       worker.terminate();
       this.#worker = null;
@@ -186,6 +191,26 @@ class RouteSession {
 export class BergamotClient {
   readonly #sessions = new Map<string, RouteSession>();
   readonly #cache = new ShortTranslationCache();
+
+  #session(route: TranslationRoute, workerIndex = 0): RouteSession {
+    const key = `${route.key}\u0000${workerIndex}`;
+    let session = this.#sessions.get(key);
+    if (!session) {
+      session = new RouteSession(route);
+      this.#sessions.set(key, session);
+    }
+    return session;
+  }
+
+  async #translateGroup(sources: string[], route: TranslationRoute, workerIndex = 0): Promise<string[]> {
+    const session = this.#session(route, workerIndex);
+    const prepared = sources.map(prepareBergamotFixedHtml);
+    const translated = await session.translateHtmlBatch(prepared);
+    if (translated.length !== sources.length) {
+      throw new Error(`Bergamot batch result length mismatch: expected ${sources.length}, got ${translated.length}`);
+    }
+    return this.#repairTranslations(sources, prepared, translated, route, session);
+  }
 
   async translateHtmlBatch(htmls: string[], route: TranslationRoute): Promise<string[]> {
     if (route.sourceLanguage === route.targetLanguage || htmls.length === 0) return [...htmls];
@@ -209,19 +234,16 @@ export class BergamotClient {
     if (missing.size === 0) return results;
 
     const unique = Array.from(missing.values());
-    let session = this.#sessions.get(route.key);
-    if (!session) {
-      session = new RouteSession(route);
-      this.#sessions.set(route.key, session);
-    }
     const sources = unique.map(({html}) => html);
-    const prepared = sources.map(prepareBergamotFixedHtml);
-    const translated = await session.translateHtmlBatch(prepared);
-    if (translated.length !== unique.length) {
-      throw new Error(`Bergamot batch result length mismatch: expected ${unique.length}, got ${translated.length}`);
-    }
-
-    const outputs = await this.#repairTranslations(sources, prepared, translated, route, session);
+    // Large direct batches can use a second CPU worker while leaving capacity for page rendering.
+    const split = route.kind === "direct" && sources.length >= 12 && navigator.hardwareConcurrency >= 3 && this.#session(route).initialized
+      ? Math.ceil(sources.length / 2) : sources.length;
+    const outputs = split === sources.length
+      ? await this.#translateGroup(sources, route)
+      : (await Promise.all([
+        this.#translateGroup(sources.slice(0, split), route),
+        this.#translateGroup(sources.slice(split), route, 1),
+      ])).flat();
     for (let index = 0; index < unique.length; index += 1) {
       const item = unique[index]!;
       const output = outputs[index]!;
@@ -236,11 +258,7 @@ export class BergamotClient {
     const cached = this.#cache.get(route.key, html);
     if (cached !== undefined) return cached;
 
-    let session = this.#sessions.get(route.key);
-    if (!session) {
-      session = new RouteSession(route);
-      this.#sessions.set(route.key, session);
-    }
+    const session = this.#session(route);
     const prepared = prepareBergamotFixedHtml(html);
     const [translated] = await this.#repairTranslations([html], [prepared], [await session.translateHtml(prepared)], route, session);
     this.#cache.set(route.key, html, translated!);

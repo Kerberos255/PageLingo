@@ -48,6 +48,7 @@ Translated HTML is structure-checked and is then parsed through PageLingo's allo
 - `storage`: settings, terminology, engine configuration, update state.
 - `alarms`: periodic translation-model metadata/update checks.
 - `contextMenus`: page/image translation commands.
+- `scripting`: load the bundled content script in the selected page or image frame if a translation command has no receiver.
 - `unlimitedStorage`: locally cached model data.
 - HTTP/HTTPS host permissions: PageLingo is a webpage translator and its content script must operate on arbitrary user-selected sites; the background also downloads user-selected image/model data and can call user-configured translation endpoints.
 
