@@ -81,3 +81,135 @@ it("switches active translation engine from the popup without auto-retranslating
   expect(requestConsent).toHaveBeenCalledWith({ data_collection: ["websiteContent"] });
   expect(sendTabMessage.mock.calls.some(([, m]) => m.type === "translate-page")).toBe(false);
 });
+
+it("translates multi-line text inside the popup card, supports auto-pivot, swap, copy, clear, and Enter shortcut", async () => {
+  document.body.innerHTML = `
+    <div id="status"></div>
+    <div id="detected-language"></div>
+    <button id="translate">translate</button>
+    <button id="restore">restore</button>
+    <select id="source-language"></select>
+    <select id="target-language"></select>
+    <select id="active-engine"></select>
+    <input id="site-auto" type="checkbox">
+    <small id="site-auto-hint"></small>
+    <select id="text-source-language"></select>
+    <button id="text-swap-language" type="button">⇄</button>
+    <select id="text-target-language"></select>
+    <textarea id="text-translate-input"></textarea>
+    <span id="text-translate-meta"></span>
+    <button id="text-translate-clear" type="button" hidden>清空</button>
+    <button id="text-translate-submit" type="button">翻译 ↵</button>
+    <div id="text-translate-result-wrap" hidden>
+      <div id="text-translate-result"></div>
+      <span id="text-translate-result-lang"></span>
+      <button id="text-translate-copy" type="button">复制</button>
+    </div>
+  `;
+
+  const translatedRequests: Array<{ sourceLanguage: string; targetLanguage: string; html: string }> = [];
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+
+  const sendRuntime = vi.fn(async (message: {
+    type: string;
+    request?: { sourceLanguage: string; targetLanguage: string; html: string };
+    requests?: Array<{ sourceLanguage: string; targetLanguage: string; html: string }>;
+  }) => {
+    if (message.type === "get-language-catalog") {
+      return {
+        ok: true,
+        catalog: {
+          sourceLanguages: [{ code: "en", label: "English" }, { code: "zh-Hans", label: "简体中文" }],
+          targetLanguages: [{ code: "zh-Hans", label: "简体中文" }, { code: "en", label: "English" }],
+        },
+      };
+    }
+    if (message.type === "get-translation-engines") {
+      return { ok: true, state: { activeEngineId: "firefox-local", engines: [], batchSize: 16 } };
+    }
+    if (message.type === "can-translate") return { ok: true, supported: true };
+    if (message.type === "translate-html-batch" && message.requests) {
+      translatedRequests.push(...message.requests);
+      return {
+        ok: true,
+        htmls: message.requests.map((req) => `[${req.sourceLanguage}->${req.targetLanguage}] ${req.html}`),
+      };
+    }
+    if (message.type === "translate-html" && message.request) {
+      translatedRequests.push(message.request);
+      return {
+        ok: true,
+        html: `[${message.request.sourceLanguage}->${message.request.targetLanguage}] ${message.request.html}`,
+      };
+    }
+    return { ok: true };
+  });
+
+  vi.stubGlobal("browser", {
+    tabs: { query: vi.fn(async () => [{ id: 1, url: "https://example.org/" }]), sendMessage: vi.fn(async () => ({ ok: true, language: { effectiveLanguage: "en" } })) },
+    storage: { local: { get: vi.fn(async () => ({ targetLanguage: "zh-Hans", glossaryCollections: [], builtinGlossaryEnabled: true })), set: vi.fn(async () => {}) }, onChanged: { addListener: vi.fn() } },
+    runtime: { sendMessage: sendRuntime },
+    i18n: {
+      detectLanguage: vi.fn(async (sample: string) => ({
+        isReliable: true,
+        languages: [{ language: /\p{Script=Han}/u.test(sample) ? "zh-CN" : "en", percentage: 100 }],
+      })),
+    },
+  });
+
+  await import("../src/popup");
+  const input = document.querySelector<HTMLTextAreaElement>("#text-translate-input")!;
+  const submit = document.querySelector<HTMLButtonElement>("#text-translate-submit")!;
+  const resultWrap = document.querySelector<HTMLElement>("#text-translate-result-wrap")!;
+  const resultEl = document.querySelector<HTMLElement>("#text-translate-result")!;
+  const resultLang = document.querySelector<HTMLElement>("#text-translate-result-lang")!;
+  const clearBtn = document.querySelector<HTMLButtonElement>("#text-translate-clear")!;
+  const copyBtn = document.querySelector<HTMLButtonElement>("#text-translate-copy")!;
+  const swapBtn = document.querySelector<HTMLButtonElement>("#text-swap-language")!;
+  const textSrc = document.querySelector<HTMLSelectElement>("#text-source-language")!;
+  const textTgt = document.querySelector<HTMLSelectElement>("#text-target-language")!;
+
+  await vi.waitFor(() => expect(textTgt.value).toBe("zh-Hans"));
+
+  // Multi-line input translated in a single batch preserving empty line.
+  input.value = "Hello world\n\nSecond line";
+  input.dispatchEvent(new Event("input"));
+  expect(clearBtn.hidden).toBe(false);
+
+  // Shift+Enter should NOT trigger translation.
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, cancelable: true }));
+  expect(resultWrap.hidden).toBe(true);
+
+  // Plain Enter triggers translation.
+  const enterEvent = new KeyboardEvent("keydown", { key: "Enter", cancelable: true });
+  input.dispatchEvent(enterEvent);
+  expect(enterEvent.defaultPrevented).toBe(true);
+
+  await vi.waitFor(() => expect(resultWrap.hidden).toBe(false));
+  expect(resultEl.textContent).toBe("[en->zh-Hans] Hello world\n\n[en->zh-Hans] Second line");
+  expect(resultLang.textContent).toBe("English → 简体中文");
+
+  // Copy button writes result to clipboard.
+  copyBtn.click();
+  await vi.waitFor(() => expect(copyBtn.textContent).toBe("已复制"));
+  expect(writeText).toHaveBeenCalledWith("[en->zh-Hans] Hello world\n\n[en->zh-Hans] Second line");
+
+  // Auto-pivot: entering Chinese while source=auto and target=zh-Hans translates to English.
+  input.value = "你好世界";
+  input.dispatchEvent(new Event("input"));
+  submit.click();
+  await vi.waitFor(() => expect(resultEl.textContent).toBe("[zh-Hans->en] 你好世界"));
+  expect(resultLang.textContent).toBe("简体中文 → English");
+
+  // Swap switches auto+zh-Hans to explicit language pair.
+  swapBtn.click();
+  expect(textSrc.value).toBe("zh-Hans");
+  expect(textTgt.value).toBe("en");
+
+  // Clear resets input and hides result.
+  clearBtn.click();
+  expect(input.value).toBe("");
+  expect(resultWrap.hidden).toBe(true);
+  expect(clearBtn.hidden).toBe(true);
+});

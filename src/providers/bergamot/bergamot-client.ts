@@ -2,6 +2,7 @@ import { loadModelPair } from "./model-cache";
 import { ShortTranslationCache } from "./translation-cache";
 import { prepareBergamotFixedHtml, repairBergamotFixedHtml } from "./fixed-html";
 import { prepareBergamotFixedRetry, prepareBergamotSlotFallback, restoreBergamotSentenceLines } from "./fixed-retry";
+import { damagedTerms, directBergamotResult, planTermGuard, protectOnly, type TermGuardPlan } from "./term-guard";
 import type { TranslationRoute } from "./model-manifest";
 import type { BergamotWorkerRequest, BergamotWorkerResponse, WorkerModelBundle } from "./protocol";
 
@@ -214,7 +215,46 @@ export class BergamotClient {
 
   async translateHtmlBatch(htmls: string[], route: TranslationRoute): Promise<string[]> {
     if (route.sourceLanguage === route.targetLanguage || htmls.length === 0) return [...htmls];
+    const results = [...htmls];
+    const pending: number[] = [];
+    for (let index = 0; index < htmls.length; index += 1) {
+      const html = htmls[index] ?? "";
+      const direct = html.trim() ? directBergamotResult(html, route.sourceLanguage, route.targetLanguage) : html;
+      if (direct !== undefined) results[index] = direct;
+      else pending.push(index);
+    }
+    if (!pending.length) return results;
 
+    // Pass 1: plain sentences. Protection spans are unwrapped because Marian already
+    // copies most names verbatim and the extra tags damage the surrounding sentence.
+    const plans = pending.map((index) => planTermGuard(htmls[index]!));
+    const first = await this.#translateCached(pending.map((index, k) => plans[k]?.unprotected ?? htmls[index]!), route);
+    const retries: Array<{ index: number; plan: TermGuardPlan; damaged: Set<string> }> = [];
+    pending.forEach((index, k) => {
+      const plan = plans[k];
+      const output = first[k]!;
+      const damaged = plan ? damagedTerms(plan, output) : new Set<string>();
+      if (!plan || !damaged.size) results[index] = output;
+      else retries.push({ index, plan, damaged });
+    });
+    if (!retries.length) return results;
+
+    // Pass 2: protect only the names that were damaged. If that shifts another name,
+    // pass 3 falls back to the fully protected source.
+    const partial = await this.#translateCached(retries.map(({ index, damaged }) => protectOnly(htmls[index]!, damaged)), route);
+    const full: number[] = [];
+    retries.forEach(({ index, plan, damaged }, k) => {
+      if (damaged.size === plan.expected.size || !damagedTerms(plan, partial[k]!, damaged).size) results[index] = partial[k]!;
+      else full.push(index);
+    });
+    if (full.length) {
+      const protectedOutputs = await this.#translateCached(full.map((index) => htmls[index]!), route);
+      full.forEach((index, k) => { results[index] = protectedOutputs[k]!; });
+    }
+    return results;
+  }
+
+  async #translateCached(htmls: string[], route: TranslationRoute): Promise<string[]> {
     const results = [...htmls];
     const missing = new Map<string, { html: string; indexes: number[] }>();
     for (let index = 0; index < htmls.length; index += 1) {

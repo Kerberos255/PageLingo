@@ -350,6 +350,29 @@ export function protectTerminologyInFragment(content, protectedEntries) {
     }
     return replacements;
 }
+// Marian output can glue a restored Latin name to a neighbouring Latin word
+// ("Bergamot</span>WASM"). The term boundary check guarantees the source had a
+// separator there, so restore a single space only between two Latin word characters.
+function restoredTermNode(span, target, replacements = []) {
+    const latin = /[A-Za-z0-9]/;
+    // Soft alignment can pull neighbouring source words into the span
+    // ("Translator、Google Cloud"). Keep them only when the name survived exactly once
+    // and the extra text is neither Han output nor another protected name, so
+    // duplicated renderings such as "ClaudeGPT克劳德" still collapse to the target.
+    const spanText = span.textContent ?? "";
+    const at = target ? spanText.indexOf(target) : -1;
+    const extra = at >= 0 ? spanText.slice(0, at) + " " + spanText.slice(at + target.length) : "";
+    const keepSpanText = at >= 0 && spanText.trim() !== target
+        && spanText.indexOf(target, at + target.length) < 0
+        && !/\p{Script=Han}/u.test(extra)
+        && !replacements.some((other) => typeof other === "string" && other && other !== target && extra.includes(other));
+    const content = keepSpanText ? spanText : target;
+    const before = span.previousSibling?.textContent ?? "";
+    const after = span.nextSibling?.textContent ?? "";
+    const lead = latin.test(before.slice(-1)) && latin.test(content.charAt(0)) ? " " : "";
+    const trail = latin.test(content.slice(-1)) && latin.test(after.charAt(0)) ? " " : "";
+    return span.ownerDocument.createTextNode(`${lead}${content}${trail}`);
+}
 export function restoreTerminology(container, replacements) {
     const spans = Array.from(container.querySelectorAll("span[data-flt-term-id]"));
     if (!spans.length) return;
@@ -384,7 +407,7 @@ export function restoreTerminology(container, replacements) {
                 }
                 emptySpans.push({ span, target });
             } else {
-                span.replaceWith(container.ownerDocument.createTextNode(target));
+                span.replaceWith(restoredTermNode(span, target, replacements));
             }
         }
         // Pass 1: drop empty markers immediately adjacent to an already-present target.
@@ -409,7 +432,7 @@ export function restoreTerminology(container, replacements) {
                 surplusByTarget.set(target, surplus - 1);
                 span.remove();
             } else {
-                span.replaceWith(container.ownerDocument.createTextNode(target));
+                span.replaceWith(restoredTermNode(span, target, replacements));
             }
         }
     }
