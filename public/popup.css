@@ -59,11 +59,43 @@ h1 { margin: 0; font-size: 17px; font-weight: 720; letter-spacing: -.025em; }
 
 .arrow { align-self: center; padding: 0 2px; color: var(--muted); }
 
+.engine-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.engine-row > span {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.engine-row select {
+  width: 100%;
+  min-width: 0;
+  min-height: 26px;
+  padding: 1px 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
 .display-switch, .page-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  margin-top: 11px;
+  margin-top: 10px;
 }
 
 .display-switch {

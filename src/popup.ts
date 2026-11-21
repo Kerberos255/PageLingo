@@ -9,7 +9,14 @@ import {
   type DisplayMode,
 } from "./shared/settings";
 import { sendRuntimeMessage } from "./shared/runtime-message";
-import {sendMainFrameMessage} from "./shared/main-frame-message";
+import { sendMainFrameMessage } from "./shared/main-frame-message";
+import { requestExternalTranslationConsent } from "./shared/data-consent";
+import {
+  BUILTIN_GOOGLE_ENGINE_ID,
+  BUILTIN_MICROSOFT_ENGINE_ID,
+  LOCAL_TRANSLATION_ENGINE_ID,
+  isBuiltinFreeEngineId,
+} from "./shared/translation-engine-settings";
 
 const statusEl = document.querySelector<HTMLElement>("#status");
 const detectedEl = document.querySelector<HTMLElement>("#detected-language");
@@ -18,6 +25,7 @@ const restore = document.querySelector<HTMLButtonElement>("#restore");
 const settingsButton = document.querySelector<HTMLButtonElement>("#settings");
 const sourceSelect = document.querySelector<HTMLSelectElement>("#source-language");
 const targetSelect = document.querySelector<HTMLSelectElement>("#target-language");
+const engineSelect = document.querySelector<HTMLSelectElement>("#active-engine");
 const siteAuto = document.querySelector<HTMLInputElement>("#site-auto");
 const siteAutoHint = document.querySelector<HTMLElement>("#site-auto-hint");
 const modeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-display-mode]"));
@@ -34,15 +42,125 @@ interface CatalogResponse {
   ok?: boolean;
   catalog?: { sourceLanguages: LanguageOption[]; targetLanguages: LanguageOption[] };
 }
+interface EngineItemView {
+  id: string;
+  name: string;
+  enabled: boolean;
+  hasApiKey: boolean;
+}
+interface EngineStateResponse {
+  ok?: boolean;
+  state?: {
+    activeEngineId: string;
+    engines?: EngineItemView[];
+  };
+  error?: string;
+}
 interface LanguageResponse {
   ok?: boolean;
   language?: { effectiveLanguage?: string | null; detectedLanguage?: string | null; percentage?: number; isReliable?: boolean };
 }
 
+let activeEngineId = LOCAL_TRANSLATION_ENGINE_ID;
+let configuredEngines: EngineItemView[] = [];
+
 async function activeTab(): Promise<browser.tabs.Tab> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("找不到当前标签页");
   return tab;
+}
+
+function engineLabel(id: string): string {
+  if (id === LOCAL_TRANSLATION_ENGINE_ID) return "Firefox 本地翻译";
+  if (id === BUILTIN_MICROSOFT_ENGINE_ID) return "微软翻译";
+  if (id === BUILTIN_GOOGLE_ENGINE_ID) return "Google 翻译";
+  return configuredEngines.find((item) => item.id === id)?.name ?? "外部引擎";
+}
+
+function renderEngineSelect(): void {
+  if (!engineSelect) return;
+  engineSelect.replaceChildren();
+  const builtins: Array<{ id: string; label: string }> = [
+    { id: LOCAL_TRANSLATION_ENGINE_ID, label: "Firefox 本地翻译" },
+    { id: BUILTIN_MICROSOFT_ENGINE_ID, label: "微软翻译" },
+    { id: BUILTIN_GOOGLE_ENGINE_ID, label: "Google 翻译" },
+  ];
+  for (const item of builtins) {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.label;
+    engineSelect.append(option);
+  }
+  for (const engine of configuredEngines.filter((item) => item.enabled)) {
+    const option = document.createElement("option");
+    option.value = engine.id;
+    option.textContent = engine.name;
+    engineSelect.append(option);
+  }
+  engineSelect.value = activeEngineId;
+  if (engineSelect.value !== activeEngineId) {
+    activeEngineId = LOCAL_TRANSLATION_ENGINE_ID;
+    engineSelect.value = LOCAL_TRANSLATION_ENGINE_ID;
+  }
+}
+
+function applyEngineState(state: EngineStateResponse["state"]): void {
+  if (!state) return;
+  activeEngineId = typeof state.activeEngineId === "string" ? state.activeEngineId : LOCAL_TRANSLATION_ENGINE_ID;
+  configuredEngines = Array.isArray(state.engines) ? state.engines : [];
+  renderEngineSelect();
+}
+
+async function refreshEngines(): Promise<void> {
+  if (!engineSelect) return;
+  try {
+    const response = await sendRuntimeMessage<EngineStateResponse>({ type: "get-translation-engines" });
+    if (response?.ok && response.state) applyEngineState(response.state);
+  } catch {
+    renderEngineSelect();
+  }
+}
+
+async function switchEngine(nextId: string): Promise<void> {
+  if (!engineSelect) return;
+  const previousId = activeEngineId;
+  try {
+    if (nextId !== LOCAL_TRANSLATION_ENGINE_ID) {
+      const builtinFree = isBuiltinFreeEngineId(nextId);
+      const engine = builtinFree ? null : configuredEngines.find((item) => item.id === nextId);
+      if (!builtinFree && !engine) throw new Error("找不到所选翻译引擎");
+      const granted = await requestExternalTranslationConsent(Boolean(engine?.hasApiKey));
+      if (!granted) {
+        engineSelect.value = previousId;
+        throw new Error("未授权向外部翻译服务发送网页内容");
+      }
+    }
+    const response = await sendRuntimeMessage<EngineStateResponse>({ type: "set-active-translation-engine", id: nextId });
+    if (!response?.ok || !response.state) {
+      engineSelect.value = previousId;
+      throw new Error(response?.error ?? "切换翻译引擎失败");
+    }
+    applyEngineState(response.state);
+    await refreshLanguage();
+
+    let pageTranslated = false;
+    try {
+      const tab = await activeTab();
+      const menuState = await sendMainFrameMessage<{ ok?: boolean; pageTranslated?: boolean }>(tab.id!, { type: "get-context-menu-state" });
+      pageTranslated = menuState?.pageTranslated === true;
+    } catch {
+      // Non-web tabs do not have a content script.
+    }
+    if (statusEl && !statusEl.textContent?.startsWith("暂不支持") && statusEl.textContent !== "当前页面已经是目标语言") {
+      const label = engineLabel(activeEngineId);
+      statusEl.textContent = pageTranslated
+        ? `已切换到 ${label}，可点击「翻译本页」重新翻译`
+        : `已切换到 ${label}`;
+    }
+  } catch (error) {
+    engineSelect.value = previousId;
+    if (statusEl) statusEl.textContent = error instanceof Error ? error.message : String(error);
+  }
 }
 
 function fillSelect(select: HTMLSelectElement | null, languages: LanguageOption[], includeAuto = false): void {
@@ -139,6 +257,7 @@ sourceSelect?.addEventListener("change", () => void refreshLanguage());
 targetSelect?.addEventListener("change", () => {
   void saveTargetLanguage(targetSelect.value).then(() => refreshLanguage());
 });
+engineSelect?.addEventListener("change", () => void switchEngine(engineSelect.value));
 
 for (const button of modeButtons) {
   button.addEventListener("click", () => {
@@ -169,6 +288,7 @@ void (async () => {
   const [stored, catalogResponse] = await Promise.all([
     loadSettings(),
     sendRuntimeMessage<CatalogResponse>({ type: "get-language-catalog" }),
+    refreshEngines(),
   ]);
   const catalog = catalogResponse?.catalog;
   fillSelect(sourceSelect, catalog?.sourceLanguages ?? [{ code: "en", label: "English" }], true);
@@ -188,4 +308,7 @@ void (async () => {
 browser.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
   if (changes.displayMode) setMode(changes.displayMode.newValue === "translation" ? "translation" : "bilingual");
+  if (changes.activeTranslationEngineId || changes.translationEngines) {
+    void refreshEngines().then(() => refreshLanguage());
+  }
 });

@@ -2,6 +2,7 @@ import { languageLabel } from "../shared/settings";
 import { isLoopbackHostname } from "../shared/network-endpoint";
 import {
   OPENCODE_GO_BASE_URL,
+  isLlmEngineType,
   type RuntimeExternalEngineConfig,
   type RuntimeExternalEngineType,
 } from "../shared/translation-engine-settings";
@@ -24,30 +25,45 @@ export interface ExternalTranslationRequest {
 const DEFAULT_LLM_PROMPT = "Translate only the human-readable text inside the HTML from {{source}} to {{target}}. Preserve every HTML tag, tag order, placeholder, URL, and attribute exactly. If numbered data-flt-text-id spans are present, translate their text with the whole paragraph as context, keep each ID exactly once in its original parent and order, and put all translated words inside their original spans. Keep data-flt-fixed content and code placeholders exactly unchanged. Output only the translated HTML. Do not use Markdown or add explanations.";
 const EXTERNAL_REQUEST_TIMEOUT_MS = 30_000;
 const LLM_REQUEST_TIMEOUT_MS = 120_000;
-const EDGE_AUTH_TIMEOUT_MS = 15_000;
 const OPENCODE_GO_SESSION_ID = "pagelingo";
-const EDGE_AUTH_URL = "https://edge.microsoft.com/translate/auth";
-const EDGE_TRANSLATE_URL = "https://api-edge.cognitive.microsofttranslator.com/translate";
+const EDGE_TRANSLATE_TEXT_URL = "https://edge.microsoft.com/translate/translatetext";
 const GOOGLE_FREE_BATCH_URL = "https://translate.googleapis.com/translate_a/t";
 const GOOGLE_FREE_SINGLE_URL = "https://translate.googleapis.com/translate_a/single";
+const ANTHROPIC_API_VERSION = "2023-06-01";
+
+const OPENAI_COMPATIBLE_DEFAULT_BASE_URLS: Partial<Record<RuntimeExternalEngineType, string>> = {
+  openai: "https://api.openai.com/v1",
+  deepseek: "https://api.deepseek.com",
+  xai: "https://api.x.ai/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  "opencode-go": OPENCODE_GO_BASE_URL,
+  groq: "https://api.groq.com/openai/v1",
+  mistral: "https://api.mistral.ai/v1",
+  dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  moonshot: "https://api.moonshot.cn/v1",
+  zhipu: "https://open.bigmodel.cn/api/paas/v4",
+  siliconflow: "https://api.siliconflow.cn/v1",
+  volcengine: "https://ark.cn-beijing.volces.com/api/v3",
+  ollama: "http://127.0.0.1:11434/v1",
+  "openai-compatible": "",
+};
 
 const MAX_ACTIVE_REQUESTS = 8;
+const MAX_MICROSOFT_FREE_REQUESTS = 4;
+const MICROSOFT_FREE_MAX_ITEMS_PER_CALL = 25;
+const MICROSOFT_FREE_MAX_CHARS_PER_CALL = 4_800;
 const MAX_GOOGLE_FREE_REQUESTS = 3;
 const GOOGLE_FREE_MAX_ITEMS_PER_CALL = 20;
 const GOOGLE_FREE_MAX_CHARS_PER_CALL = 3_800;
 
 let activeRequests = 0;
 const waitingRequests: Array<() => void> = [];
+let activeMicrosoftFreeRequests = 0;
+const waitingMicrosoftFreeRequests: Array<() => void> = [];
+let microsoftFreeCooldownUntil = 0;
 let activeGoogleFreeRequests = 0;
 const waitingGoogleFreeRequests: Array<() => void> = [];
 let googleFreeCooldownUntil = 0;
-
-interface CachedEdgeToken {
-  token: string;
-  expiresAtMs: number;
-}
-let edgeTokenCache: CachedEdgeToken | null = null;
-let edgeTokenPromise: Promise<CachedEdgeToken> | null = null;
 
 type OpenAiReasoningMode = "none" | "low" | "omit";
 type GeminiThinkingMode = "budget0" | "omit";
@@ -69,8 +85,7 @@ class HttpStatusError extends Error {
 }
 
 export function resetExternalTranslationStateForTests(): void {
-  edgeTokenCache = null;
-  edgeTokenPromise = null;
+  microsoftFreeCooldownUntil = 0;
   googleFreeCooldownUntil = 0;
   openAiReasoningModeCache.clear();
   geminiThinkingModeCache.clear();
@@ -88,7 +103,7 @@ export function externalBatchSize(config: RuntimeExternalEngineConfig): number {
   if (config.type === "microsoft-free") return 20;
   if (config.type === "google-free") return 16;
   if (["microsoft", "google", "deepl"].includes(config.type)) return 20;
-  if (!config.prompt && ["openai-compatible", "opencode-go", "deepseek", "openrouter", "gemini"].includes(config.type)) return 12;
+  if (!config.prompt && isLlmEngineType(config.type)) return 12;
   return 1;
 }
 
@@ -230,6 +245,21 @@ async function withConcurrencySlot<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
+async function withMicrosoftFreeSlot<T>(task: () => Promise<T>): Promise<T> {
+  if (activeMicrosoftFreeRequests >= MAX_MICROSOFT_FREE_REQUESTS) {
+    await new Promise<void>((resolve) => waitingMicrosoftFreeRequests.push(resolve));
+  } else {
+    activeMicrosoftFreeRequests += 1;
+  }
+  try {
+    return await task();
+  } finally {
+    const next = waitingMicrosoftFreeRequests.shift();
+    if (next) next();
+    else activeMicrosoftFreeRequests -= 1;
+  }
+}
+
 async function withGoogleFreeSlot<T>(task: () => Promise<T>): Promise<T> {
   if (activeGoogleFreeRequests >= MAX_GOOGLE_FREE_REQUESTS) {
     await new Promise<void>((resolve) => waitingGoogleFreeRequests.push(resolve));
@@ -345,110 +375,25 @@ function requireModel(config: RuntimeExternalEngineConfig): string {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Built-in Microsoft Free (Edge Translate JWT auth + batch HTML translation) */
+/* Shared template-preserving plain-text batching (Edge Free & Google Free)   */
 /* -------------------------------------------------------------------------- */
 
-function parseJwtExpiryMs(jwt: string): number {
-  const fallback = Date.now() + 8 * 60_000;
-  try {
-    const parts = jwt.split(".");
-    if (parts.length < 2 || !parts[1]) return fallback;
-    const base64 = parts[1].replaceAll("-", "+").replaceAll("_", "/");
-    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-    const payload = JSON.parse(atob(padded)) as { exp?: unknown };
-    if (typeof payload.exp === "number" && Number.isFinite(payload.exp) && payload.exp > 0) {
-      return payload.exp * 1000;
-    }
-  } catch {
-    // Non-standard token payload; use safe short fallback TTL.
-  }
-  return fallback;
-}
-
-async function getEdgeAuthToken(forceRefresh = false): Promise<string> {
-  const now = Date.now();
-  if (!forceRefresh && edgeTokenCache && now < edgeTokenCache.expiresAtMs - 60_000) {
-    return edgeTokenCache.token;
-  }
-  if (!edgeTokenPromise) {
-    edgeTokenPromise = (async () => {
-      const response = await fetchResponseWithRetry(EDGE_AUTH_URL, { method: "GET" }, {
-        timeoutMs: EDGE_AUTH_TIMEOUT_MS,
-        maxRetries: 1,
-        baseBackoffMs: 300,
-      });
-      const token = (await response.text()).trim();
-      if (!token) throw new Error("微软免费翻译令牌获取失败");
-      const entry: CachedEdgeToken = { token, expiresAtMs: parseJwtExpiryMs(token) };
-      edgeTokenCache = entry;
-      return entry;
-    })().finally(() => {
-      edgeTokenPromise = null;
-    });
-  }
-  const entry = await edgeTokenPromise;
-  return entry.token;
-}
-
-async function translateMicrosoftFree(
-  requests: ExternalTranslationRequest[],
-): Promise<Array<string | undefined>> {
-  const request = requests[0]!;
-  const to = encodeURIComponent(apiLanguage(request.targetLanguage, "microsoft-free"));
-  const from = request.sourceLanguage && request.sourceLanguage !== "auto"
-    ? encodeURIComponent(apiLanguage(request.sourceLanguage, "microsoft-free"))
-    : "";
-  const endpoint = `${EDGE_TRANSLATE_URL}?from=${from}&to=${to}&api-version=3.0&textType=html`;
-  const payload = JSON.stringify(requests.map(({ html }) => ({ Text: html })));
-
-  const callWithToken = async (token: string) => jsonRequest(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-    },
-    body: payload,
-  }) as Promise<Array<{ translations?: Array<{ text?: string }> }>>;
-
-  let token = await getEdgeAuthToken(false);
-  let result: Array<{ translations?: Array<{ text?: string }> }>;
-  try {
-    result = await callWithToken(token);
-  } catch (error) {
-    if (error instanceof HttpStatusError && (error.status === 401 || error.status === 403)) {
-      if (edgeTokenCache?.token === token) edgeTokenCache = null;
-      token = await getEdgeAuthToken(true);
-      result = await callWithToken(token);
-    } else {
-      throw error;
-    }
-  }
-  if (!Array.isArray(result) || result.length !== requests.length) {
-    throw new Error("微软免费翻译返回格式异常");
-  }
-  return result.map((item) => item?.translations?.[0]?.text);
-}
-
-/* -------------------------------------------------------------------------- */
-/* Built-in Google Free (Keyless batch endpoint + template-safe reconstruction)*/
-/* -------------------------------------------------------------------------- */
-
-interface GoogleFreeSlotRef {
+interface PlainTextSlotRef {
   node: Text;
   leading: string;
   core: string;
   trailing: string;
 }
 
-interface GoogleFreeTemplate {
+interface PlainTextTemplate {
   doc: Document;
-  slots: GoogleFreeSlotRef[];
+  slots: PlainTextSlotRef[];
   originalHtml: string;
 }
 
-function extractGoogleFreeTemplate(html: string): GoogleFreeTemplate {
+function extractPlainTextTemplate(html: string): PlainTextTemplate {
   const doc = new DOMParser().parseFromString(html, "text/html");
-  const slots: GoogleFreeSlotRef[] = [];
+  const slots: PlainTextSlotRef[] = [];
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
   for (let current = walker.nextNode(); current; current = walker.nextNode()) {
     const textNode = current as Text;
@@ -467,6 +412,123 @@ function extractGoogleFreeTemplate(html: string): GoogleFreeTemplate {
   }
   return { doc, slots, originalHtml: html };
 }
+
+async function translatePlainTextTemplates(
+  requests: ExternalTranslationRequest[],
+  maxItemsPerCall: number,
+  maxCharsPerCall: number,
+  translateChunk: (texts: string[]) => Promise<Array<string | undefined>>,
+): Promise<Array<string | undefined>> {
+  const templates = requests.map((request) => extractPlainTextTemplate(request.html));
+  const uniqueTexts: string[] = [];
+  const textIndex = new Map<string, number>();
+  for (const template of templates) {
+    for (const slot of template.slots) {
+      if (!textIndex.has(slot.core)) {
+        textIndex.set(slot.core, uniqueTexts.length);
+        uniqueTexts.push(slot.core);
+      }
+    }
+  }
+
+  const translatedByText = new Map<string, string>();
+  if (uniqueTexts.length > 0) {
+    const chunks: string[][] = [];
+    let current: string[] = [];
+    let currentChars = 0;
+    for (const text of uniqueTexts) {
+      if (
+        current.length > 0
+        && (current.length >= maxItemsPerCall || currentChars + text.length > maxCharsPerCall)
+      ) {
+        chunks.push(current);
+        current = [];
+        currentChars = 0;
+      }
+      current.push(text);
+      currentChars += text.length;
+    }
+    if (current.length > 0) chunks.push(current);
+
+    for (const chunk of chunks) {
+      const translatedChunk = await translateChunk(chunk);
+      for (let i = 0; i < chunk.length; i += 1) {
+        const source = chunk[i]!;
+        const target = translatedChunk[i];
+        if (typeof target === "string") translatedByText.set(source, target);
+      }
+    }
+  }
+
+  return templates.map((template) => {
+    if (template.slots.length === 0) return template.originalHtml;
+    for (const slot of template.slots) {
+      const translated = translatedByText.get(slot.core);
+      if (typeof translated !== "string") return undefined;
+      slot.node.data = `${slot.leading}${translated}${slot.trailing}`;
+    }
+    return template.doc.body.innerHTML;
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Built-in Microsoft Translate (Edge translatetext endpoint)                 */
+/* -------------------------------------------------------------------------- */
+
+async function translateMicrosoftFreeChunk(
+  texts: string[],
+  from: string,
+  to: string,
+): Promise<Array<string | undefined>> {
+  const endpoint = `${EDGE_TRANSLATE_TEXT_URL}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&isEnterpriseClient=false`;
+  return withMicrosoftFreeSlot(() => withConcurrencySlot(async () => {
+    const waitMs = microsoftFreeCooldownUntil - Date.now();
+    if (waitMs > 0) await sleep(waitMs);
+    const response = await fetchResponseWithRetry(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(texts),
+    }, {
+      timeoutMs: EXTERNAL_REQUEST_TIMEOUT_MS,
+      maxRetries: 3,
+      baseBackoffMs: 500,
+      maxBackoffMs: 4_000,
+      onRateLimit: (delayMs) => {
+        microsoftFreeCooldownUntil = Math.max(microsoftFreeCooldownUntil, Date.now() + delayMs);
+      },
+    });
+    let result: unknown;
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error("微软翻译返回了无效 JSON");
+    }
+    if (!Array.isArray(result) || result.length !== texts.length) {
+      throw new Error("微软翻译返回格式异常");
+    }
+    return (result as Array<{ translations?: Array<{ text?: string }> }>).map((item) => item?.translations?.[0]?.text);
+  }));
+}
+
+async function translateMicrosoftFree(
+  requests: ExternalTranslationRequest[],
+): Promise<Array<string | undefined>> {
+  const request = requests[0]!;
+  const to = apiLanguage(request.targetLanguage, "microsoft-free");
+  const from = request.sourceLanguage && request.sourceLanguage !== "auto"
+    ? apiLanguage(request.sourceLanguage, "microsoft-free")
+    : "";
+  return translatePlainTextTemplates(
+    requests,
+    MICROSOFT_FREE_MAX_ITEMS_PER_CALL,
+    MICROSOFT_FREE_MAX_CHARS_PER_CALL,
+    (chunk) => translateMicrosoftFreeChunk(chunk, from, to),
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Built-in Google Translate (Keyless batch endpoint + single fallback)       */
+/* -------------------------------------------------------------------------- */
 
 function parseGoogleFreeBatchPayload(data: unknown, expectedCount: number): string[] | null {
   if (typeof data === "string") {
@@ -533,7 +595,7 @@ async function googleFreeJsonPost(url: string, params: URLSearchParams): Promise
     try {
       return await response.json();
     } catch {
-      throw new Error("Google 免费翻译返回了无效 JSON");
+      throw new Error("Google 翻译返回了无效 JSON");
     }
   }));
 }
@@ -544,7 +606,7 @@ async function translateGoogleFreeSingleText(text: string, sl: string, tl: strin
   params.append("q", text);
   const data = await googleFreeJsonPost(endpoint, params);
   const translated = parseGoogleFreeSinglePayload(data);
-  if (translated === null) throw new Error("Google 免费翻译返回格式异常");
+  if (translated === null) throw new Error("Google 翻译返回格式异常");
   return translated;
 }
 
@@ -575,57 +637,12 @@ async function translateGoogleFree(
     ? apiLanguage(first.sourceLanguage, "google-free")
     : "auto";
   const tl = apiLanguage(first.targetLanguage, "google-free");
-
-  const templates = requests.map((request) => extractGoogleFreeTemplate(request.html));
-  const uniqueTexts: string[] = [];
-  const textIndex = new Map<string, number>();
-  for (const template of templates) {
-    for (const slot of template.slots) {
-      if (!textIndex.has(slot.core)) {
-        textIndex.set(slot.core, uniqueTexts.length);
-        uniqueTexts.push(slot.core);
-      }
-    }
-  }
-
-  const translatedByText = new Map<string, string>();
-  if (uniqueTexts.length > 0) {
-    const chunks: string[][] = [];
-    let current: string[] = [];
-    let currentChars = 0;
-    for (const text of uniqueTexts) {
-      if (
-        current.length > 0
-        && (current.length >= GOOGLE_FREE_MAX_ITEMS_PER_CALL || currentChars + text.length > GOOGLE_FREE_MAX_CHARS_PER_CALL)
-      ) {
-        chunks.push(current);
-        current = [];
-        currentChars = 0;
-      }
-      current.push(text);
-      currentChars += text.length;
-    }
-    if (current.length > 0) chunks.push(current);
-
-    for (const chunk of chunks) {
-      const translatedChunk = await translateGoogleFreeChunk(chunk, sl, tl);
-      for (let i = 0; i < chunk.length; i += 1) {
-        const source = chunk[i]!;
-        const target = translatedChunk[i];
-        if (typeof target === "string") translatedByText.set(source, target);
-      }
-    }
-  }
-
-  return templates.map((template) => {
-    if (template.slots.length === 0) return template.originalHtml;
-    for (const slot of template.slots) {
-      const translated = translatedByText.get(slot.core);
-      if (typeof translated !== "string") return undefined;
-      slot.node.data = `${slot.leading}${translated}${slot.trailing}`;
-    }
-    return template.doc.body.innerHTML;
-  });
+  return translatePlainTextTemplates(
+    requests,
+    GOOGLE_FREE_MAX_ITEMS_PER_CALL,
+    GOOGLE_FREE_MAX_CHARS_PER_CALL,
+    (chunk) => translateGoogleFreeChunk(chunk, sl, tl),
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -735,13 +752,7 @@ async function translateOpenAiCompatible(
   request: ExternalTranslationRequest,
   batch?: { instructions: string; input: string },
 ): Promise<string> {
-  const fallback = config.type === "openrouter"
-    ? "https://openrouter.ai/api/v1"
-    : config.type === "opencode-go"
-      ? OPENCODE_GO_BASE_URL
-      : config.type === "deepseek"
-        ? "https://api.deepseek.com"
-        : "";
+  const fallback = OPENAI_COMPATIBLE_DEFAULT_BASE_URLS[config.type] ?? "";
   const base = requireBaseUrl(config, fallback);
   const endpoint = base.endsWith("/chat/completions") ? base : `${base}/chat/completions`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -873,6 +884,48 @@ async function translateGemini(
   return stripCodeFence(text);
 }
 
+async function translateAnthropic(
+  config: RuntimeExternalEngineConfig,
+  request: ExternalTranslationRequest,
+  batch?: { instructions: string; input: string },
+): Promise<string> {
+  const base = requireBaseUrl(config, "https://api.anthropic.com/v1");
+  const endpoint = base.endsWith("/messages") ? base : `${base}/messages`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-api-key": requireApiKey(config),
+    "anthropic-version": ANTHROPIC_API_VERSION,
+    "anthropic-dangerous-direct-browser-access": "true",
+  };
+  // Extended thinking is off by default in Anthropic Messages API; omit thinking unless explicitly requested.
+  const payload: Record<string, unknown> = {
+    model: requireModel(config),
+    max_tokens: 4096,
+    temperature: 0,
+    system: batch?.instructions ?? renderPrompt(config, request),
+    messages: [{ role: "user", content: batch?.input ?? request.html }],
+  };
+  const result = await jsonRequest(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  }, LLM_REQUEST_TIMEOUT_MS) as {
+    stop_reason?: string | null;
+    content?: Array<{ type?: string; text?: string }>;
+  };
+  if (result?.stop_reason === "max_tokens") {
+    throw new Error("模型未完整结束生成，已拒绝写入页面");
+  }
+  if (result?.stop_reason === "refusal") {
+    throw new Error("模型拒绝生成译文，已保留原文");
+  }
+  const text = Array.isArray(result?.content)
+    ? result.content.filter((part) => part?.type === "text" && typeof part.text === "string").map((part) => part.text).join("").trim()
+    : "";
+  if (!text) throw new Error("Anthropic 返回格式异常");
+  return stripCodeFence(text);
+}
+
 function parseJson(value: string, label: string): unknown {
   if (!value.trim()) return {};
   try {
@@ -956,20 +1009,43 @@ function modelListEndpoint(base: string): string {
   const trimmed = trimSlash(base);
   if (trimmed.endsWith("/models")) return trimmed;
   if (trimmed.endsWith("/chat/completions")) return `${trimmed.slice(0, -"/chat/completions".length)}/models`;
+  if (trimmed.endsWith("/messages")) return `${trimmed.slice(0, -"/messages".length)}/models`;
   return `${trimmed}/models`;
 }
 
 export async function listExternalTranslationModels(config: RuntimeExternalEngineConfig): Promise<ExternalModelInfo[]> {
-  if (!["openrouter", "opencode-go", "deepseek", "openai-compatible"].includes(config.type)) {
+  if (config.type === "anthropic") {
+    const base = requireBaseUrl(config, "https://api.anthropic.com/v1");
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "x-api-key": requireApiKey(config),
+      "anthropic-version": ANTHROPIC_API_VERSION,
+      "anthropic-dangerous-direct-browser-access": "true",
+    };
+    const result = await jsonRequest(modelListEndpoint(base), { method: "GET", headers }) as {
+      data?: Array<{ id?: unknown; display_name?: unknown; name?: unknown }>;
+    };
+    const models = Array.isArray(result.data)
+      ? result.data
+          .map((item) => ({
+            id: typeof item?.id === "string" ? item.id.trim() : "",
+            name: typeof item?.display_name === "string"
+              ? item.display_name.trim()
+              : typeof item?.name === "string"
+                ? item.name.trim()
+                : undefined,
+            ownedBy: "anthropic",
+          }))
+          .filter((item) => item.id)
+      : [];
+    if (!models.length) throw new Error("模型列表为空或返回格式不兼容");
+    return models.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(OPENAI_COMPATIBLE_DEFAULT_BASE_URLS, config.type)) {
     throw new Error("当前翻译引擎不支持自动获取模型");
   }
-  const fallback = config.type === "openrouter"
-    ? "https://openrouter.ai/api/v1"
-    : config.type === "opencode-go"
-      ? OPENCODE_GO_BASE_URL
-      : config.type === "deepseek"
-        ? "https://api.deepseek.com"
-        : "";
+  const fallback = OPENAI_COMPATIBLE_DEFAULT_BASE_URLS[config.type] ?? "";
   const base = requireBaseUrl(config, fallback);
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
@@ -1080,8 +1156,8 @@ async function translateLlmBatch(
   requests: ExternalTranslationRequest[],
 ): Promise<Array<string | undefined>> {
   const first = requests[0]!;
-  // Keep the system prompt strictly static per language pair so OpenCode Go / LLM
-  // providers can reuse the prompt-cache KV prefix across every batch on the page.
+  // Keep the system prompt strictly static per language pair so LLM providers
+  // can reuse the prompt-cache KV prefix across every batch on the page.
   const instructions = `Translate each [[SEG_N]]...[[/SEG_N]] HTML block independently from ${languageLabel(first.sourceLanguage)} to ${languageLabel(first.targetLanguage)}. Preserve every HTML tag, attribute, tag order, data-flt-text-id span, data-flt-fixed span, and placeholder exactly. Translate human-readable text using the whole paragraph as context, keeping all translated words inside their original spans. Return only the translated [[SEG_N]]...[[/SEG_N]] blocks in the same IDs with no Markdown fences or explanations.`;
 
   const mergedTerms = mergeBatchTerminology(requests);
@@ -1091,7 +1167,9 @@ async function translateLlmBatch(
 
   const result = config.type === "gemini"
     ? await translateGemini(config, first, { instructions, input })
-    : await translateOpenAiCompatible(config, first, { instructions, input });
+    : config.type === "anthropic"
+      ? await translateAnthropic(config, first, { instructions, input })
+      : await translateOpenAiCompatible(config, first, { instructions, input });
 
   const parsed = parseLlmBatchResponse(result, requests.length);
   return parsed.map((html) => typeof html === "string" ? expandLlmTransportHtml(html) : undefined);
@@ -1145,9 +1223,8 @@ export async function translateWithExternalEngine(
   config: RuntimeExternalEngineConfig,
   request: ExternalTranslationRequest,
 ): Promise<string> {
-  const wireRequest = config.type === "google-free" || config.type === "custom-rest"
-    ? request
-    : { ...request, html: markHtmlTermsNoTranslate(request.html) };
+  const skipWireMark = config.type === "microsoft-free" || config.type === "google-free" || config.type === "custom-rest";
+  const wireRequest = skipWireMark ? request : { ...request, html: markHtmlTermsNoTranslate(request.html) };
   let translated: string | undefined;
   switch (config.type) {
     case "microsoft-free": [translated] = await translateMicrosoftFree([wireRequest]); break;
@@ -1157,9 +1234,20 @@ export async function translateWithExternalEngine(
     case "deepl": [translated] = await translateDeepL(config, [wireRequest]); break;
     case "libretranslate": translated = await translateLibre(config, wireRequest); break;
     case "gemini": translated = await translateGemini(config, wireRequest); break;
+    case "anthropic": translated = await translateAnthropic(config, wireRequest); break;
+    case "openai":
+    case "deepseek":
+    case "xai":
     case "openrouter":
     case "opencode-go":
-    case "deepseek":
+    case "groq":
+    case "mistral":
+    case "dashscope":
+    case "moonshot":
+    case "zhipu":
+    case "siliconflow":
+    case "volcengine":
+    case "ollama":
     case "openai-compatible": translated = await translateOpenAiCompatible(config, wireRequest); break;
     case "custom-rest": translated = await translateCustomRest(config, wireRequest); break;
   }
@@ -1170,7 +1258,8 @@ export async function translateExternalBatch(
   config: RuntimeExternalEngineConfig,
   requests: ExternalTranslationRequest[],
 ): Promise<Array<string | null>> {
-  const wireRequests = config.type === "google-free" || config.type === "custom-rest"
+  const skipWireMark = config.type === "microsoft-free" || config.type === "google-free" || config.type === "custom-rest";
+  const wireRequests = skipWireMark
     ? requests
     : requests.map((item) => ({ ...item, html: markHtmlTermsNoTranslate(item.html) }));
   let translated: Array<string | undefined>;

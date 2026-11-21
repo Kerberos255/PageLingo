@@ -26,12 +26,6 @@ import { PageTranslator } from "../src/core/page-translator";
 import type { TranslationRequest } from "../src/core/provider";
 import { protectTerminologyHtml, restoreTerminologyHtml } from "../src/core/rich-segment";
 
-function makeJwt(expSeconds: number): string {
-  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" })).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-  const payload = btoa(JSON.stringify({ exp: expSeconds })).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-  return `${header}.${payload}.sig`;
-}
-
 function llmConfig(overrides: Partial<TranslationEngineConfig> = {}): TranslationEngineConfig {
   return {
     id: "engine-opencode",
@@ -82,61 +76,105 @@ describe("built-in free Microsoft (Edge) and Google Translate engines", () => {
     expect((await loadTranslationEngineState()).activeEngineId).toBe(BUILTIN_GOOGLE_ENGINE_ID);
   });
 
-  it("caches the Edge JWT token across batch calls and refreshes automatically on 401", async () => {
-    const futureExp = Math.floor(Date.now() / 1000) + 600;
-    const token1 = makeJwt(futureExp);
-    const token2 = makeJwt(futureExp + 600);
-    let authCalls = 0;
-    let translateCalls = 0;
-
+  it("translates via Edge translatetext with string-array body, template/brand preservation, and 429 retry", async () => {
+    let calls = 0;
     const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls += 1;
       const target = String(url);
-      if (target === "https://edge.microsoft.com/translate/auth") {
-        authCalls += 1;
-        return new Response(authCalls === 1 ? token1 : token2, { status: 200 });
-      }
-      expect(target).toContain("https://api-edge.cognitive.microsofttranslator.com/translate?");
-      expect(target).toContain("api-version=3.0");
-      expect(target).toContain("textType=html");
+      expect(target).toContain("https://edge.microsoft.com/translate/translatetext?");
+      const parsed = new URL(target);
+      expect(parsed.searchParams.get("to")).toBe("zh-Hans");
+      expect(parsed.searchParams.get("isEnterpriseClient")).toBe("false");
       const headers = init?.headers as Record<string, string>;
-      translateCalls += 1;
-      // Simulate token revocation on the 3rd translate call
-      if (translateCalls === 3 && headers.Authorization === `Bearer ${token1}`) {
-        return new Response("Unauthorized", { status: 401 });
+      expect(headers.Authorization).toBeUndefined();
+      if (calls === 1) {
+        return new Response("Too Many Requests", { status: 429, headers: { "retry-after": "0" } });
       }
-      const items = JSON.parse(String(init?.body)) as Array<{ Text: string }>;
-      return new Response(JSON.stringify(items.map(({ Text }) => ({
-        translations: [{ text: Text.replace("Hello", "你好").replace("World", "世界") }],
-      }))), { status: 200, headers: { "content-type": "application/json" } });
+      const items = JSON.parse(String(init?.body)) as string[];
+      expect(Array.isArray(items)).toBe(true);
+      expect(items).not.toContain("Claude");
+      expect(items).not.toContain("GPT");
+      const map: Record<string, string> = {
+        Hello: "你好",
+        World: "世界",
+        and: "和",
+        models: "模型",
+      };
+      return Response.json(items.map((text) => ({
+        detectedLanguage: { language: "en", score: 1 },
+        translations: [{ text: map[text] ?? text, to: "zh-Hans" }],
+      })));
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const msFree = builtinFreeEngineConfig(BUILTIN_MICROSOFT_ENGINE_ID)!;
+    expect(msFree.name).toBe("微软翻译");
     expect(externalBatchSize(msFree)).toBe(20);
 
-    // First two calls share the cached JWT (only 1 /translate/auth call)
     const batch = await translateExternalBatch(msFree, [
       { html: '<span data-flt-text-id="0">Hello</span>', sourceLanguage: "auto", targetLanguage: "zh-Hans" },
-      { html: '<span data-flt-text-id="0">World</span>', sourceLanguage: "auto", targetLanguage: "zh-Hans" },
+      { html: '<span data-flt-text-id="0"><span data-flt-term-id="0">Claude</span> and <span data-flt-term-id="1">GPT</span> models</span>', sourceLanguage: "auto", targetLanguage: "zh-Hans" },
     ]);
-    expect(batch).toEqual(['<span data-flt-text-id="0">你好</span>', '<span data-flt-text-id="0">世界</span>']);
-    expect(authCalls).toBe(1);
+    expect(batch).toEqual([
+      '<span data-flt-text-id="0">你好</span>',
+      '<span data-flt-text-id="0"><span data-flt-term-id="0">Claude</span> 和 <span data-flt-term-id="1">GPT</span> 模型</span>',
+    ]);
+    expect(restoreTerminologyHtml(document, batch[1]!, ["Claude", "GPT"])).toBe('<span data-flt-text-id="0">Claude 和 GPT 模型</span>');
+    expect(calls).toBe(2);
 
-    await translateWithExternalEngine(msFree, {
-      html: '<span data-flt-text-id="0">Hello</span>',
-      sourceLanguage: "en",
-      targetLanguage: "zh-Hans",
-    });
-    expect(authCalls).toBe(1);
-
-    // Third call hits 401, refreshes JWT once, and succeeds
-    const refreshed = await translateWithExternalEngine(msFree, {
+    const single = await translateWithExternalEngine(msFree, {
       html: '<span data-flt-text-id="0">World</span>',
       sourceLanguage: "en",
       targetLanguage: "zh-Hans",
     });
-    expect(refreshed).toBe('<span data-flt-text-id="0">世界</span>');
-    expect(authCalls).toBe(2);
+    expect(single).toBe('<span data-flt-text-id="0">世界</span>');
+  });
+
+  it("supports native Anthropic Messages API, model discovery, and OpenAI / DashScope defaults", async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const target = String(url);
+      if (target === "https://api.anthropic.com/v1/messages") {
+        const headers = init?.headers as Record<string, string>;
+        expect(headers["x-api-key"]).toBe("ant-key");
+        expect(headers["anthropic-version"]).toBe("2023-06-01");
+        const body = JSON.parse(String(init?.body)) as { system: string; messages: Array<{ content: string }> };
+        expect(body.system).toContain("[[SEG_N]]");
+        expect(body.messages[0]!.content).toContain("[[SEG_0]]");
+        return Response.json({
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: '[[SEG_0]]\n<span data-flt-text-id="0">你好</span>\n[[/SEG_0]]\n[[SEG_1]]\n<span data-flt-text-id="0">世界</span>\n[[/SEG_1]]' }],
+        });
+      }
+      if (target === "https://api.anthropic.com/v1/models") {
+        return Response.json({
+          data: [{ id: "claude-haiku-4-5", display_name: "Claude Haiku 4.5" }],
+        });
+      }
+      if (target === "https://api.openai.com/v1/chat/completions") {
+        return Response.json({ choices: [{ finish_reason: "stop", message: { content: '<span data-flt-text-id="0">你好 GPT</span>' } }] });
+      }
+      throw new Error(`Unexpected URL: ${target}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const claude = llmConfig({ type: "anthropic", baseUrl: "", apiKey: "ant-key", model: "claude-haiku-4-5" });
+    expect(externalBatchSize(claude)).toBe(12);
+    const batch = await translateExternalBatch(claude, [
+      { html: '<span data-flt-text-id="0">Hello</span>', sourceLanguage: "en", targetLanguage: "zh-Hans" },
+      { html: '<span data-flt-text-id="0">World</span>', sourceLanguage: "en", targetLanguage: "zh-Hans" },
+    ]);
+    expect(batch).toEqual(['<span data-flt-text-id="0">你好</span>', '<span data-flt-text-id="0">世界</span>']);
+
+    const { listExternalTranslationModels } = await import("../src/providers/external-translation");
+    const models = await listExternalTranslationModels(claude);
+    expect(models).toEqual([{ id: "claude-haiku-4-5", name: "Claude Haiku 4.5", ownedBy: "anthropic" }]);
+
+    const openai = llmConfig({ type: "openai", baseUrl: "", apiKey: "sk-test", model: "gpt-4.1-mini" });
+    await expect(translateWithExternalEngine(openai, {
+      html: '<span data-flt-text-id="0">Hello GPT</span>',
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    })).resolves.toBe('<span data-flt-text-id="0">你好 GPT</span>');
   });
 
   it("batches Google Free plain text via translate_a/t while preserving HTML slots, links, code, and protected terms", async () => {

@@ -55,12 +55,23 @@ const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
   microsoft: { name: "Microsoft Translator", baseUrl: "https://api.cognitive.microsofttranslator.com" },
   google: { name: "Google Cloud Translation", baseUrl: "https://translation.googleapis.com/language/translate/v2" },
   deepl: { name: "DeepL API", baseUrl: "https://api.deepl.com/v2" },
+  libretranslate: { name: "LibreTranslate", baseUrl: "https://libretranslate.com" },
+  openai: { name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini" },
+  anthropic: { name: "Anthropic (Claude)", baseUrl: "https://api.anthropic.com/v1", model: "claude-haiku-4-5" },
   gemini: { name: "Gemini API", baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-3.8-flash" },
+  deepseek: { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
+  xai: { name: "xAI (Grok)", baseUrl: "https://api.x.ai/v1", model: "grok-3-mini-fast" },
   openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free" },
   "opencode-go": { name: "OpenCode Go", baseUrl: OPENCODE_GO_BASE_URL, model: "deepseek-v4.1-flash" },
-  deepseek: { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
+  groq: { name: "Groq", baseUrl: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile" },
+  mistral: { name: "Mistral", baseUrl: "https://api.mistral.ai/v1", model: "mistral-small-latest" },
+  dashscope: { name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
+  moonshot: { name: "Moonshot (Kimi)", baseUrl: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
+  zhipu: { name: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash" },
+  siliconflow: { name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen2.5-7B-Instruct" },
+  volcengine: { name: "火山方舟", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", model: "" },
+  ollama: { name: "Ollama (本地)", baseUrl: "http://127.0.0.1:11434/v1", model: "" },
   "openai-compatible": { name: "OpenAI Compatible", baseUrl: "", model: "" },
-  libretranslate: { name: "LibreTranslate", baseUrl: "https://libretranslate.com" },
   "custom-rest": {
     name: "Custom REST",
     baseUrl: "",
@@ -74,12 +85,23 @@ const TYPE_LABELS: Record<ExternalTranslationEngineType, string> = {
   microsoft: "Microsoft Translator",
   google: "Google Cloud Translation",
   deepl: "DeepL API",
+  libretranslate: "LibreTranslate",
+  openai: "OpenAI (GPT)",
+  anthropic: "Anthropic (Claude)",
   gemini: "Gemini API",
+  deepseek: "DeepSeek",
+  xai: "xAI (Grok)",
   openrouter: "OpenRouter",
   "opencode-go": "OpenCode Go",
-  deepseek: "DeepSeek",
+  groq: "Groq",
+  mistral: "Mistral",
+  dashscope: "通义千问",
+  moonshot: "Moonshot (Kimi)",
+  zhipu: "智谱 GLM",
+  siliconflow: "硅基流动",
+  volcengine: "火山方舟",
+  ollama: "Ollama",
   "openai-compatible": "OpenAI Compatible",
-  libretranslate: "LibreTranslate",
   "custom-rest": "自定义 REST",
 };
 
@@ -132,7 +154,7 @@ function currentType(): ExternalTranslationEngineType {
 }
 
 function supportsModelDiscovery(type: ExternalTranslationEngineType): boolean {
-  return type === "openrouter" || type === "opencode-go" || type === "deepseek" || type === "openai-compatible";
+  return isLlmEngineType(type) && type !== "gemini";
 }
 
 function updateConditionalFields(): void {
@@ -194,8 +216,8 @@ function renderActiveSelect(): void {
   activeSelect.replaceChildren();
   const builtins: Array<{ id: string; label: string }> = [
     { id: LOCAL_TRANSLATION_ENGINE_ID, label: "Firefox 本地翻译" },
-    { id: BUILTIN_MICROSOFT_ENGINE_ID, label: "微软翻译（免费 · 无需 Key）" },
-    { id: BUILTIN_GOOGLE_ENGINE_ID, label: "Google 翻译（免费 · 无需 Key）" },
+    { id: BUILTIN_MICROSOFT_ENGINE_ID, label: "微软翻译" },
+    { id: BUILTIN_GOOGLE_ENGINE_ID, label: "Google 翻译" },
   ];
   for (const item of builtins) {
     const option = document.createElement("option");
@@ -304,9 +326,9 @@ async function setActive(id: string): Promise<void> {
       id === LOCAL_TRANSLATION_ENGINE_ID
         ? "已切换到 Firefox 本地翻译"
         : id === BUILTIN_MICROSOFT_ENGINE_ID
-          ? "已切换到微软翻译（免费）"
+          ? "已切换到微软翻译"
           : id === BUILTIN_GOOGLE_ENGINE_ID
-            ? "已切换到 Google 翻译（免费）"
+            ? "已切换到 Google 翻译"
             : "翻译引擎已切换",
     );
   } catch (error) {
@@ -500,6 +522,12 @@ export async function initializeTranslationEngines(): Promise<void> {
   });
   testButton?.addEventListener("click", () => void testConfig());
   addButton?.addEventListener("click", () => void addConfig());
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") return;
+    if (changes.activeTranslationEngineId || changes.translationEngines) {
+      void refreshTranslationEngines().catch(() => {});
+    }
+  });
   applyPreset();
   await refreshTranslationEngines();
 }

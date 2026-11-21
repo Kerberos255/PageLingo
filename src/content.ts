@@ -401,34 +401,22 @@ function createImageOverlay(image) {
     return overlay;
 }
 function buildSpinnerSvg(size) {
-    const NS = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(NS, "svg");
-    svg.setAttribute("width", String(size));
-    svg.setAttribute("height", String(size));
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("fill", "none");
-    svg.setAttribute("aria-hidden", "true");
-    svg.dataset.pagelingoImageSpinner = "true";
-    setImportantStyle(svg, {
-        display: "block",
+    const spinner = document.createElement("span");
+    spinner.setAttribute("aria-hidden", "true");
+    spinner.dataset.pagelingoImageSpinner = "true";
+    setImportantStyle(spinner, {
+        display: "inline-block",
         width: `${size}px`,
         height: `${size}px`,
+        "box-sizing": "border-box",
+        "border-radius": "50%",
+        border: "2.4px solid rgba(255, 255, 255, 0.22)",
+        "border-top-color": "#f28466",
+        "border-right-color": "#f28466",
         flex: "0 0 auto",
-        animation: "pagelingo-img-spin 0.85s linear infinite",
+        animation: "pagelingo-img-spin 0.8s linear infinite",
     });
-    const track = document.createElementNS(NS, "circle");
-    track.setAttribute("cx", "12");
-    track.setAttribute("cy", "12");
-    track.setAttribute("r", "9");
-    track.setAttribute("stroke", "rgba(255, 255, 255, 0.22)");
-    track.setAttribute("stroke-width", "2.6");
-    const arc = document.createElementNS(NS, "path");
-    arc.setAttribute("d", "M12 3a9 9 0 0 1 9 9");
-    arc.setAttribute("stroke", "#f28466");
-    arc.setAttribute("stroke-width", "2.6");
-    arc.setAttribute("stroke-linecap", "round");
-    svg.append(track, arc);
-    return svg;
+    return spinner;
 }
 function showImageLoading(overlay, status, progress = 0.08) {
     const rect = overlay.getBoundingClientRect();
@@ -457,12 +445,13 @@ function showImageLoading(overlay, status, progress = 0.08) {
             display: "flex",
             "flex-direction": "column",
             "align-items": "center",
-            gap: compact ? "6px" : "10px",
-            "min-width": compact ? "120px" : "180px",
-            "max-width": "calc(100% - 20px)",
-            padding: compact ? "10px 14px" : "16px 22px",
+            gap: compact ? "7px" : "10px",
+            width: "max-content",
+            "min-width": compact ? "144px" : "188px",
+            "max-width": "calc(100% - 16px)",
+            padding: compact ? "10px 14px" : "14px 18px",
             "border-radius": compact ? "10px" : "14px",
-            background: "rgba(20, 23, 30, 0.84)",
+            background: "rgba(20, 23, 30, 0.86)",
             "backdrop-filter": "blur(12px)",
             border: "1px solid rgba(255, 255, 255, 0.14)",
             "box-shadow": "0 10px 30px rgba(0, 0, 0, 0.28)",
@@ -484,26 +473,28 @@ function showImageLoading(overlay, status, progress = 0.08) {
         const label = document.createElement("span");
         label.dataset.pagelingoImageStatusText = "true";
         setImportantStyle(label, {
+            display: "inline-block",
             color: "#f8fafc",
             font: `500 ${compact ? 12 : 13}px/1.4 "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif`,
-            "white-space": "nowrap",
-            overflow: "hidden",
-            "text-overflow": "ellipsis",
-            "max-width": "240px",
+            "font-variant-numeric": "tabular-nums",
+            "white-space": compact ? "normal" : "nowrap",
+            "overflow-wrap": "anywhere",
         });
         header.append(spinner, label);
 
         const barTrack = document.createElement("div");
         setImportantStyle(barTrack, {
+            display: "block",
             width: "100%",
             height: "3px",
             "border-radius": "999px",
-            background: "rgba(255, 255, 255, 0.14)",
+            background: "rgba(255, 255, 255, 0.16)",
             overflow: "hidden",
         });
         const barFill = document.createElement("div");
         barFill.dataset.pagelingoImageProgressFill = "true";
         setImportantStyle(barFill, {
+            display: "block",
             height: "100%",
             width: "10%",
             "border-radius": "999px",

@@ -49,11 +49,11 @@ function report(id: number, status: string, progress?: number): void {
 
 function progressInfo(progress: WorkerProgress): { label: string; ratio: number } | null {
   if (progress.type === "det") {
-    if (progress.stage === "preprocess") return { label: "正在检测图片文字", ratio: 0.28 };
-    if (progress.stage === "infer") return { label: "正在分析文字区域", ratio: 0.42 };
+    if (progress.stage === "preprocess") return { label: "检测文字区域", ratio: 0.28 };
+    if (progress.stage === "infer") return { label: "分析文字区域", ratio: 0.42 };
     if (progress.stage === "postprocess") {
       const total = progress.detectedCount ?? 0;
-      return { label: total > 0 ? `正在识别文字 · 0/${total}` : "正在识别文字", ratio: 0.48 };
+      return { label: total > 0 ? `识别文字 0/${total}` : "识别文字中", ratio: 0.48 };
     }
   }
   if (progress.type === "rec") {
@@ -61,9 +61,9 @@ function progressInfo(progress: WorkerProgress): { label: string; ratio: number 
     const total = progress.progress?.total ?? 0;
     if (progress.stage === "item") {
       const fraction = total > 0 ? Math.min(1, current / total) : 0;
-      return { label: total > 0 ? `正在识别文字 · ${current}/${total}` : "正在识别文字", ratio: 0.48 + fraction * 0.32 };
+      return { label: total > 0 ? `识别文字 ${current}/${total}` : "识别文字中", ratio: 0.48 + fraction * 0.32 };
     }
-    if (progress.stage === "complete") return { label: "正在翻译图片文字", ratio: 0.84 };
+    if (progress.stage === "complete") return { label: "正在翻译文字", ratio: 0.84 };
   }
   return null;
 }

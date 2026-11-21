@@ -11,12 +11,23 @@ export type ExternalTranslationEngineType =
   | "microsoft"
   | "google"
   | "deepl"
+  | "libretranslate"
+  | "openai"
+  | "anthropic"
   | "gemini"
+  | "deepseek"
+  | "xai"
   | "openrouter"
   | "opencode-go"
-  | "deepseek"
+  | "groq"
+  | "mistral"
+  | "dashscope"
+  | "moonshot"
+  | "zhipu"
+  | "siliconflow"
+  | "volcengine"
+  | "ollama"
   | "openai-compatible"
-  | "libretranslate"
   | "custom-rest";
 
 export type RuntimeExternalEngineType = ExternalTranslationEngineType | BuiltinFreeTranslationEngineType;
@@ -51,20 +62,42 @@ const ENGINE_TYPES = new Set<ExternalTranslationEngineType>([
   "microsoft",
   "google",
   "deepl",
+  "libretranslate",
+  "openai",
+  "anthropic",
   "gemini",
+  "deepseek",
+  "xai",
   "openrouter",
   "opencode-go",
-  "deepseek",
+  "groq",
+  "mistral",
+  "dashscope",
+  "moonshot",
+  "zhipu",
+  "siliconflow",
+  "volcengine",
+  "ollama",
   "openai-compatible",
-  "libretranslate",
   "custom-rest",
 ]);
 
 const LLM_ENGINE_TYPES = new Set<RuntimeExternalEngineType>([
+  "openai",
+  "anthropic",
   "gemini",
+  "deepseek",
+  "xai",
   "openrouter",
   "opencode-go",
-  "deepseek",
+  "groq",
+  "mistral",
+  "dashscope",
+  "moonshot",
+  "zhipu",
+  "siliconflow",
+  "volcengine",
+  "ollama",
   "openai-compatible",
 ]);
 
@@ -80,10 +113,10 @@ export function builtinFreeEngineConfig(id: string): RuntimeExternalEngineConfig
   if (id === BUILTIN_MICROSOFT_ENGINE_ID) {
     return {
       id: BUILTIN_MICROSOFT_ENGINE_ID,
-      name: "微软翻译（免费）",
+      name: "微软翻译",
       type: "microsoft-free",
       enabled: true,
-      baseUrl: "https://api-edge.cognitive.microsofttranslator.com",
+      baseUrl: "https://edge.microsoft.com",
       apiKey: "",
       model: "",
       region: "",
@@ -96,7 +129,7 @@ export function builtinFreeEngineConfig(id: string): RuntimeExternalEngineConfig
   if (id === BUILTIN_GOOGLE_ENGINE_ID) {
     return {
       id: BUILTIN_GOOGLE_ENGINE_ID,
-      name: "Google 翻译（免费）",
+      name: "Google 翻译",
       type: "google-free",
       enabled: true,
       baseUrl: "https://translate.googleapis.com",

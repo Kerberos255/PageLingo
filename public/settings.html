@@ -114,7 +114,7 @@
         <section id="engine" class="section settings-page">
           <div class="section-heading"><h2>翻译引擎</h2></div>
           <div class="setting-card stack-card">
-            <div class="setting-row"><label for="active-engine-select"><strong>当前引擎</strong><small>本地引擎在 Firefox 内翻译。选择内置免费微软 / Google 翻译或外部 API 引擎时，待译文字会发送给对应服务。</small></label><div class="active-engine-controls"><select id="active-engine-select"></select><button id="active-engine-consent" type="button" hidden>数据权限</button></div></div>
+            <div class="setting-row"><label for="active-engine-select"><strong>当前引擎</strong><small>本地引擎在 Firefox 内翻译。选择微软 / Google 翻译或外部 API 引擎时，待译文字会发送给对应服务。</small></label><div class="active-engine-controls"><select id="active-engine-select"></select><button id="active-engine-consent" type="button" hidden>数据权限</button></div></div>
           </div>
           <div class="setting-card">
             <div class="setting-copy"><strong>外部引擎</strong><span>API 密钥保存在当前 Firefox 配置中。</span></div>
@@ -123,13 +123,41 @@
           <div class="setting-card engine-form-card">
             <div class="setting-copy"><div><strong>添加翻译引擎</strong><span>选择服务后填写连接信息。</span></div></div>
             <div class="engine-form-grid">
-              <label><span>类型</span><select id="engine-type"><option value="microsoft">Microsoft Translator</option><option value="google">Google Cloud Translation</option><option value="deepl">DeepL API</option><option value="gemini">Gemini API</option><option value="openrouter">OpenRouter</option><option value="opencode-go">OpenCode Go</option><option value="deepseek">DeepSeek</option><option value="openai-compatible">OpenAI Compatible</option><option value="libretranslate">LibreTranslate</option><option value="custom-rest">自定义 REST</option></select></label>
+              <label><span>类型</span><select id="engine-type">
+                <optgroup label="传统翻译 API">
+                  <option value="microsoft">Microsoft Translator</option>
+                  <option value="google">Google Cloud Translation</option>
+                  <option value="deepl">DeepL API</option>
+                  <option value="libretranslate">LibreTranslate</option>
+                </optgroup>
+                <optgroup label="大语言模型 (LLM)">
+                  <option value="openai">OpenAI (GPT)</option>
+                  <option value="anthropic">Anthropic (Claude)</option>
+                  <option value="gemini">Gemini API</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="xai">xAI (Grok)</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="opencode-go">OpenCode Go</option>
+                  <option value="groq">Groq</option>
+                  <option value="mistral">Mistral</option>
+                  <option value="dashscope">通义千问 (DashScope)</option>
+                  <option value="moonshot">Moonshot (Kimi)</option>
+                  <option value="zhipu">智谱 GLM (Zhipu)</option>
+                  <option value="siliconflow">硅基流动 (SiliconFlow)</option>
+                  <option value="volcengine">火山方舟 (豆包)</option>
+                  <option value="ollama">Ollama (本地)</option>
+                  <option value="openai-compatible">OpenAI Compatible</option>
+                </optgroup>
+                <optgroup label="自定义接口">
+                  <option value="custom-rest">自定义 REST</option>
+                </optgroup>
+              </select></label>
               <label><span>名称</span><input id="engine-name" type="text" /></label>
               <label class="engine-wide"><span>Base URL / Endpoint（公网必须 HTTPS）</span><input id="engine-base-url" type="text" spellcheck="false" /></label>
               <label><span>API Key</span><input id="engine-api-key" type="password" autocomplete="off" /></label>
               <div class="engine-field" data-engine-field="model"><span>模型</span><div class="engine-model-row"><input id="engine-model" type="text" spellcheck="false" /><button id="get-engine-models" type="button">获取模型</button></div></div>
               <label data-engine-field="region"><span>Azure Region（可选）</span><input id="engine-region" type="text" spellcheck="false" /></label>
-              <label class="engine-wide engine-checkbox" data-engine-field="llm"><input id="engine-disable-thinking" type="checkbox" checked /><span>关闭思考模式（推荐，显著降低 DeepSeek / OpenCode Go / Gemini 等推理模型延迟）</span></label>
+              <label class="engine-wide engine-checkbox" data-engine-field="llm"><input id="engine-disable-thinking" type="checkbox" checked /><span>关闭思考模式（推荐，显著降低支持思考/推理模式模型的翻译延迟）</span></label>
               <label class="engine-wide" data-engine-field="prompt"><span>LLM 提示词（可选）</span><textarea id="engine-prompt" rows="4" placeholder="留空使用 PageLingo 的 HTML 安全翻译提示词"></textarea></label>
               <label class="engine-wide" data-engine-field="custom"><span>请求头 JSON</span><textarea id="engine-headers-json" rows="3" spellcheck="false" placeholder='{"Authorization":"Bearer {{apiKey}}"}'></textarea></label>
               <label class="engine-wide" data-engine-field="custom"><span>请求体 JSON 模板</span><textarea id="engine-body-json" rows="5" spellcheck="false" placeholder='{"text":"{{html}}","source":"{{source}}","target":"{{target}}"}'></textarea></label>
