@@ -114,7 +114,7 @@
         <section id="engine" class="section settings-page">
           <div class="section-heading"><h2>翻译引擎</h2></div>
           <div class="setting-card stack-card">
-            <div class="setting-row"><label for="active-engine-select"><strong>当前引擎</strong><small>本地引擎在 Firefox 内翻译。使用外部引擎时，待译文字会发送给对应服务。</small></label><select id="active-engine-select"></select></div>
+            <div class="setting-row"><label for="active-engine-select"><strong>当前引擎</strong><small>本地引擎在 Firefox 内翻译。选择内置免费微软 / Google 翻译或外部 API 引擎时，待译文字会发送给对应服务。</small></label><div class="active-engine-controls"><select id="active-engine-select"></select><button id="active-engine-consent" type="button" hidden>数据权限</button></div></div>
           </div>
           <div class="setting-card">
             <div class="setting-copy"><strong>外部引擎</strong><span>API 密钥保存在当前 Firefox 配置中。</span></div>
@@ -129,6 +129,7 @@
               <label><span>API Key</span><input id="engine-api-key" type="password" autocomplete="off" /></label>
               <div class="engine-field" data-engine-field="model"><span>模型</span><div class="engine-model-row"><input id="engine-model" type="text" spellcheck="false" /><button id="get-engine-models" type="button">获取模型</button></div></div>
               <label data-engine-field="region"><span>Azure Region（可选）</span><input id="engine-region" type="text" spellcheck="false" /></label>
+              <label class="engine-wide engine-checkbox" data-engine-field="llm"><input id="engine-disable-thinking" type="checkbox" checked /><span>关闭思考模式（推荐，显著降低 DeepSeek / OpenCode Go / Gemini 等推理模型延迟）</span></label>
               <label class="engine-wide" data-engine-field="prompt"><span>LLM 提示词（可选）</span><textarea id="engine-prompt" rows="4" placeholder="留空使用 PageLingo 的 HTML 安全翻译提示词"></textarea></label>
               <label class="engine-wide" data-engine-field="custom"><span>请求头 JSON</span><textarea id="engine-headers-json" rows="3" spellcheck="false" placeholder='{"Authorization":"Bearer {{apiKey}}"}'></textarea></label>
               <label class="engine-wide" data-engine-field="custom"><span>请求体 JSON 模板</span><textarea id="engine-body-json" rows="5" spellcheck="false" placeholder='{"text":"{{html}}","source":"{{source}}","target":"{{target}}"}'></textarea></label>

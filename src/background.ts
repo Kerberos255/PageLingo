@@ -29,19 +29,31 @@ import { handleImageRuntimeMessage, initializeImageTranslation } from "./image-t
 import { languageLabel, loadSettings, normalizeDetectedLanguage } from "./shared/settings";
 import { hasExternalTranslationConsent } from "./shared/data-consent";
 import { isLoopbackTranslationEndpoint } from "./shared/network-endpoint";
-import { externalBatchSize, listExternalTranslationModels, translateExternalBatch, translateWithExternalEngine } from "./providers/external-translation";
+import {
+  externalBatchSize,
+  isFatalExternalError,
+  listExternalTranslationModels,
+  translateExternalBatch,
+  translateWithExternalEngine,
+  type ExternalTranslationRequest,
+} from "./providers/external-translation";
+import { ExternalTranslationCache, externalTranslationCacheKey } from "./providers/external-translation-cache";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
+  builtinFreeEngineConfig,
   deleteTranslationEngine,
+  isLlmEngineType,
   loadTranslationEngineState,
   normalizeTranslationEngineConfig,
   saveTranslationEngine,
   setActiveTranslationEngine,
   setTranslationEngineEnabled,
+  type RuntimeExternalEngineConfig,
 } from "./shared/translation-engine-settings";
 import { keepEventPageAlive } from "./shared/event-page-keepalive";
 
 const bergamot = new BergamotClient();
+const externalCache = new ExternalTranslationCache();
 const MODEL_UPDATE_ALARM = "pagelingo-model-updates";
 const MODEL_UPDATE_INTERVAL_MINUTES = 24 * 60;
 let overridesPromise = loadModelOverrides();
@@ -136,26 +148,157 @@ async function refreshTranslationEngineState() {
   return state;
 }
 
-async function activeExternalEngine() {
+async function activeExternalEngine(): Promise<RuntimeExternalEngineConfig | null> {
   const state = await currentTranslationEngineState();
   if (state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID) return null;
+  const builtinFree = builtinFreeEngineConfig(state.activeEngineId);
+  if (builtinFree) return builtinFree;
   return state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
+}
+
+async function translateExternalSingleCached(
+  external: RuntimeExternalEngineConfig,
+  request: ExternalTranslationRequest,
+): Promise<string> {
+  const cacheable = externalCache.isCacheable(request.html);
+  const key = cacheable
+    ? externalTranslationCacheKey(external, request.sourceLanguage, request.targetLanguage, request.html, request.terminology)
+    : "";
+  if (key) {
+    const cached = await externalCache.get(key);
+    if (cached !== undefined) return cached;
+    const inFlight = externalCache.getInFlight(key);
+    if (inFlight) return inFlight;
+  }
+  const promise = keepEventPageAlive(translateWithExternalEngine(external, request), "external-translate")
+    .then((html) => {
+      if (key) externalCache.set(key, html);
+      return html;
+    });
+  return key ? externalCache.trackInFlight(key, promise) : promise;
+}
+
+async function translateExternalBatchCached(
+  external: RuntimeExternalEngineConfig,
+  requests: ExternalTranslationRequest[],
+): Promise<Array<string | null>> {
+  const keys = requests.map((request) =>
+    externalCache.isCacheable(request.html)
+      ? externalTranslationCacheKey(external, request.sourceLanguage, request.targetLanguage, request.html, request.terminology)
+      : "",
+  );
+  const cacheHits = await externalCache.getMany(keys.filter(Boolean));
+  const results: Array<string | null> = new Array(requests.length).fill(null);
+  const awaitedInFlight: Array<Promise<void>> = [];
+
+  // Deduplicate misses within the same batch so identical nav/UI labels are sent once.
+  const missGroups = new Map<string, { request: ExternalTranslationRequest; indices: number[] }>();
+  const uncacheableMisses: Array<{ request: ExternalTranslationRequest; index: number }> = [];
+
+  for (let index = 0; index < requests.length; index += 1) {
+    const key = keys[index]!;
+    if (key) {
+      const hit = cacheHits.get(key);
+      if (hit !== undefined) {
+        results[index] = hit;
+        continue;
+      }
+      const inFlight = externalCache.getInFlight(key);
+      if (inFlight) {
+        awaitedInFlight.push(inFlight.then((html) => { results[index] = html; }, () => {}));
+        continue;
+      }
+      const existing = missGroups.get(key);
+      if (existing) {
+        existing.indices.push(index);
+      } else {
+        missGroups.set(key, { request: requests[index]!, indices: [index] });
+      }
+    } else {
+      uncacheableMisses.push({ request: requests[index]!, index });
+    }
+  }
+
+  const dedupedKeys = Array.from(missGroups.keys());
+  const toTranslate: ExternalTranslationRequest[] = [
+    ...dedupedKeys.map((key) => missGroups.get(key)!.request),
+    ...uncacheableMisses.map((item) => item.request),
+  ];
+
+  if (toTranslate.length > 0) {
+    const deferredResolvers = new Map<string, { resolve: (html: string) => void; reject: (error: Error) => void }>();
+    for (const key of dedupedKeys) {
+      let resolve!: (html: string) => void;
+      let reject!: (error: Error) => void;
+      const promise = new Promise<string>((res, rej) => { resolve = res; reject = rej; });
+      deferredResolvers.set(key, { resolve, reject });
+      externalCache.trackInFlight(key, promise);
+      // Avoid unhandled rejection warnings if no external waiter attaches.
+      void promise.catch(() => {});
+    }
+
+    try {
+      const batchResults = toTranslate.length === 1
+        ? [await translateWithExternalEngine(external, toTranslate[0]!).catch((error) => {
+            if (isFatalExternalError(error)) throw error;
+            return null;
+          })]
+        : await keepEventPageAlive(translateExternalBatch(external, toTranslate), "external-batch");
+
+      for (let i = 0; i < dedupedKeys.length; i += 1) {
+        const key = dedupedKeys[i]!;
+        const html = batchResults[i] ?? null;
+        const group = missGroups.get(key)!;
+        const deferred = deferredResolvers.get(key)!;
+        if (typeof html === "string") {
+          externalCache.set(key, html);
+          for (const index of group.indices) results[index] = html;
+          deferred.resolve(html);
+        } else {
+          deferred.reject(new Error("Batch item failed validation"));
+        }
+      }
+
+      for (let i = 0; i < uncacheableMisses.length; i += 1) {
+        const html = batchResults[dedupedKeys.length + i] ?? null;
+        results[uncacheableMisses[i]!.index] = html;
+      }
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      for (const deferred of deferredResolvers.values()) deferred.reject(failure);
+      throw error;
+    }
+  }
+
+  if (awaitedInFlight.length > 0) await Promise.all(awaitedInFlight);
+  return results;
 }
 
 async function translationEngineStateForUi() {
   const state = await currentTranslationEngineState();
-  const activeExternal = state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
-    ? null
-    : state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
+  const activeExternal = await activeExternalEngine();
   const batchSize = activeExternal ? externalBatchSize(activeExternal) : 24;
+  const isLlm = Boolean(activeExternal && isLlmEngineType(activeExternal.type));
+  const isLoopback = Boolean(activeExternal && activeExternal.baseUrl && isLoopbackTranslationEndpoint(activeExternal.baseUrl));
+  const batchHtmlLimit = !activeExternal
+    ? 24_000
+    : activeExternal.type === "google-free"
+      ? 6_000
+      : activeExternal.type === "microsoft-free"
+        ? 8_000
+        : isLlm
+          ? 4_800
+          : 12_000;
   return {
     activeEngineId: state.activeEngineId,
     batchSize,
-    concurrentSegments: activeExternal ? (batchSize > 1 ? Math.min(batchSize * 3, 32) : 6) : batchSize,
-    batchHtmlLimit: activeExternal && batchSize === 8 ? 3600 : 24_000,
+    concurrentSegments: activeExternal
+      ? (activeExternal.type === "google-free" ? 24 : batchSize > 1 ? Math.min(batchSize * 3, 32) : 8)
+      : batchSize,
+    batchHtmlLimit,
     firstVisibleSingles: activeExternal?.type === "opencode-go" && batchSize > 1 ? 2 : 0,
-    structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
-      || Boolean(activeExternal && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
+    lazyOffscreen: Boolean(activeExternal && !isLoopback),
+    structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID || isLoopback,
     // Every backend returns text for an application-owned template. Provider
     // markup never replaces source nodes or supplies event handlers/styles.
     prefersWholeSentenceHtml: true,
@@ -166,6 +309,7 @@ async function translationEngineStateForUi() {
       enabled: engine.enabled,
       model: engine.model,
       hasApiKey: Boolean(engine.apiKey),
+      disableThinking: engine.disableThinking,
     })),
   };
 }
@@ -441,7 +585,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
           throw new Error("外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权");
         }
-        const html = await keepEventPageAlive(translateWithExternalEngine(external, request), "external-translate");
+        const html = await translateExternalSingleCached(external, request);
         return { ok: true, html };
       }
       const overrides = await currentOverrides();
@@ -466,15 +610,19 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const external = await activeExternalEngine();
       if (external) {
         const size = externalBatchSize(external);
-        if (size < 2 || normalized.length > size) return {ok:false, batchUnsupported:true};
+        if (size < 2 || normalized.length > size) return { ok: false, batchUnsupported: true };
         if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
-          return {ok:false, retrySingles:false, error:"外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权"};
+          return { ok: false, retrySingles: false, error: "外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权" };
         }
         try {
-          const htmls = await keepEventPageAlive(translateExternalBatch(external, normalized), "external-batch");
-          return {ok:true, htmls};
+          const htmls = await translateExternalBatchCached(external, normalized);
+          return { ok: true, htmls };
         } catch (error) {
-          return {ok:false, retrySingles:false, error:error instanceof Error ? error.message : String(error)};
+          return {
+            ok: false,
+            retrySingles: !isFatalExternalError(error),
+            error: error instanceof Error ? error.message : String(error),
+          };
         }
       }
       const overrides = await currentOverrides();

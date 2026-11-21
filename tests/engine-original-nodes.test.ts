@@ -70,7 +70,7 @@ describe("engine-independent original-node transport", () => {
       expect(source).toContain('data-flt-text-id=');expect(source).toContain('__FLT_OPAQUE_0__');
       if(type==='microsoft')expect(String(_url)).toContain('textType=html');
       if(type==='google')expect(body.format).toBe('html');
-      // Real HTML MT can omit non-linguistic marker text. The adapter must
+      // Real HTML translation engines can omit non-linguistic marker text. The adapter must
       // restore only known source-owned atoms before its opaque-token check.
       const result=source.replace('Use ', '使用 ').replace('the guide', '指南').replace(' with ', ' 并使用 ').replace(/__FLT_(?:OPAQUE|LINK_START|LINK_END)_\d+__/gu,'');
       return new Response(JSON.stringify(type==='microsoft'?[{translations:[{text:result}]}]:type==='google'?{data:{translations:[{translatedText:result}]}}:{choices:[{message:{content:result}}]}));

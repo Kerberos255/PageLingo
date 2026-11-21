@@ -67,7 +67,7 @@ function markerBucket(markerCount: number): string {
 }
 
 export function collectTranslationTelemetry(scope: Document | Element) {
-  // Diagnostics must not insert source wrappers or invalidate live MT text slots.
+  // Diagnostics must not insert source wrappers or invalidate live text slots.
   const roots = collectTranslationRoots(scope, {preserveInlineContext: true});
   const rows = roots.map((root, index) => {
     const segment = serializeRichSegment(root);

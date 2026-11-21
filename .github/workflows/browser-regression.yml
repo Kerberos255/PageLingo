@@ -6,8 +6,7 @@ on:
     paths:
       - "src/**"
       - "tests/**"
-      - "eval/mt-quality/browser-structure.ts"
-      - "tools/mt-structure-firefox.py"
+      - "tools/browser-structure-firefox.py"
       - ".github/workflows/browser-regression.yml"
 
 permissions:
@@ -72,7 +71,7 @@ jobs:
       - name: Install Selenium
         run: python -m pip install --disable-pip-version-check selenium==4.35.0
 
-      - name: MT original-node structure regression
+      - name: Original-node structure regression
         run: |
           python - <<'PY'
           import shutil
@@ -82,9 +81,9 @@ jobs:
           geckodriver = shutil.which("geckodriver")
           if not firefox or not geckodriver:
               raise RuntimeError("Firefox and geckodriver must be available after setup")
-          subprocess.run([sys.executable, "tools/mt-structure-firefox.py",
+          subprocess.run([sys.executable, "tools/browser-structure-firefox.py",
                           "--firefox", firefox, "--geckodriver", geckodriver,
-                          "--output", "artifacts/mt-quality/ci-structure"], check=True)
+                          "--output", "artifacts/browser-structure"], check=True)
           PY
 
       - name: Live OpenClaw + Claude regression
@@ -104,6 +103,6 @@ jobs:
             artifacts/openclaw-after.png
             artifacts/claude-before.png
             artifacts/claude-after.png
-            artifacts/mt-quality/ci-structure/
+            artifacts/browser-structure/
           if-no-files-found: warn
           retention-days: 7

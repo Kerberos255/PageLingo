@@ -13,12 +13,14 @@ interface ImageRuntimeMessage {
   width?: unknown;
   height?: unknown;
   pixels?: unknown;
+  requestId?: unknown;
 }
 
 interface WorkerProgressMessage {
   type: "progress";
   id: number;
   status: string;
+  progress?: number;
 }
 
 interface WorkerResultMessage {
@@ -38,7 +40,7 @@ type WorkerMessage = WorkerProgressMessage | WorkerResultMessage | WorkerErrorMe
 interface PendingOcr {
   resolve: (regions: OcrRegion[]) => void;
   reject: (error: Error) => void;
-  progress: (status: string) => void;
+  progress: (status: string, progress?: number) => void;
   timeoutId: ReturnType<typeof setTimeout>;
 }
 
@@ -61,7 +63,7 @@ class ImageOcrWorkerClient {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       if (message.type === "progress") {
-        pending.progress(message.status);
+        pending.progress(message.status, message.progress);
         return;
       }
       this.pending.delete(message.id);
@@ -93,7 +95,7 @@ class ImageOcrWorkerClient {
     height: number,
     pixels: ArrayBuffer,
     bundle: ImageOcrBundle,
-    progress: (status: string) => void,
+    progress: (status: string, progress?: number) => void,
   ): Promise<OcrRegion[]> {
     const worker = this.ensureWorker();
     const id = this.nextId++;
@@ -136,11 +138,20 @@ class ImageOcrWorkerClient {
 
 const ocrWorker = new ImageOcrWorkerClient();
 
-async function sendProgress(sender: browser.runtime.MessageSender, status: string): Promise<void> {
+async function sendProgress(
+  sender: browser.runtime.MessageSender,
+  status: string,
+  requestId?: string,
+  progress?: number,
+): Promise<void> {
   const tabId = sender.tab?.id;
   if (!tabId) return;
   try {
-    await browser.tabs.sendMessage(tabId, { type: "image-translation-progress", status }, { frameId: sender.frameId ?? 0 });
+    await browser.tabs.sendMessage(
+      tabId,
+      { type: "image-translation-progress", status, requestId, progress },
+      { frameId: sender.frameId ?? 0 },
+    );
   } catch {
     // The originating page may have navigated while OCR was running.
   }
@@ -229,20 +240,26 @@ export async function handleImageRuntimeMessage(
   if (message.type === "recognize-image") {
     const width = typeof message.width === "number" ? Math.round(message.width) : 0;
     const height = typeof message.height === "number" ? Math.round(message.height) : 0;
+    const requestId = typeof message.requestId === "string" ? message.requestId : undefined;
     if (width <= 0 || height <= 0 || !(message.pixels instanceof ArrayBuffer)) {
       return { ok: false, error: "无效的图片像素数据" };
     }
     try {
       const bundle = await getImageOcrBundle(undefined, (status: string) => {
-        void sendProgress(sender, status);
+        void sendProgress(sender, status, requestId, 0.12);
       });
-      await sendProgress(sender, "OCR 模型就绪 · 正在识别图片…");
-      const regions = await ocrWorker.recognize(width, height, message.pixels, bundle, (status) => {
-        void sendProgress(sender, status);
+      await sendProgress(sender, "正在检测图片文字", requestId, 0.2);
+      // Copy pixels before transferring message.pixels to the worker (transfer detaches the buffer).
+      const pixelSnapshot = new Uint8ClampedArray(message.pixels.slice(0));
+      const regions = await ocrWorker.recognize(width, height, message.pixels, bundle, (status, progress) => {
+        void sendProgress(sender, status, requestId, progress);
       });
       return {
         ok: true,
-        regions: mergeOcrRegions(regions.filter((region) => region.confidence >= 0.25)),
+        regions: mergeOcrRegions(
+          regions.filter((region) => region.confidence >= 0.25),
+          { pixels: pixelSnapshot, width, height },
+        ),
       };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };

@@ -238,18 +238,80 @@ export class PageTranslator {
     #sourceLinkStyleSnapshots = new Map();
     #sourceHadClassAttribute = new WeakMap();
     #wholeSentenceContext = false;
+    #lazyOffscreen = false;
     #fixedRecords = new Map();
     #fixedOwners = new WeakMap();
+    #visibilityObserver = null;
+    #deferredRoots = new Set();
     #contextModePromise = null;
     async #loadContextMode() {
         if (!this.#contextModePromise) this.#contextModePromise = Promise.all([
             Promise.resolve().then(() => this.#provider.prefersWholeSentenceHtml?.()).catch(() => false),
             Promise.resolve().then(() => this.#provider.concurrentSegments?.()).catch(() => undefined),
-        ]).then(([wholeSentence, concurrency]) => {
+            Promise.resolve().then(() => this.#provider.prefersLazyOffscreen?.()).catch(() => false),
+        ]).then(([wholeSentence, concurrency, lazyOffscreen]) => {
             this.#wholeSentenceContext = Boolean(wholeSentence);
             if (Number.isInteger(concurrency)) this.#concurrency = Math.max(1, Math.min(32, concurrency));
+            this.#lazyOffscreen = Boolean(lazyOffscreen);
         });
         return this.#contextModePromise;
+    }
+    #hasRealViewportGeometry(roots) {
+        const view = this.#doc.defaultView;
+        if (!view || !(view.innerHeight > 0)) return false;
+        for (const root of roots) {
+            const rect = root.getBoundingClientRect();
+            if (rect.width > 0 || rect.height > 0 || rect.top !== 0 || rect.bottom !== 0) return true;
+        }
+        return false;
+    }
+    #classifyRootPriority(root) {
+        const view = this.#doc.defaultView;
+        const rect = root.getBoundingClientRect();
+        const vh = view?.innerHeight ?? 0;
+        const vw = view?.innerWidth ?? 0;
+        const visible = rect.bottom > 0 && rect.top < vh && rect.right > 0 && rect.left < vw;
+        const nearViewport = !visible && rect.bottom > -200 && rect.top < vh + 500 && rect.right > -100 && rect.left < vw + 100;
+        const inMain = Boolean(root.closest("main, article, [role='main']"));
+        const tier = visible
+            ? (inMain ? 0 : 1)
+            : nearViewport
+                ? (inMain ? 2 : 3)
+                : 4;
+        return { tier, top: rect.top, visible };
+    }
+    #ensureVisibilityObserver() {
+        if (this.#visibilityObserver || this.#disposed) return;
+        const ObserverCtor = this.#doc.defaultView?.IntersectionObserver ?? globalThis.IntersectionObserver;
+        if (typeof ObserverCtor !== "function") return;
+        this.#visibilityObserver = new ObserverCtor((entries) => {
+            if (this.#disposed) return;
+            const revealed = [];
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                const root = entry.target;
+                this.#visibilityObserver?.unobserve(root);
+                this.#deferredRoots.delete(root);
+                if (root.isConnected) revealed.push(root);
+            }
+            if (!revealed.length) return;
+            revealed.sort((a, b) => {
+                const pa = this.#classifyRootPriority(a);
+                const pb = this.#classifyRootPriority(b);
+                return pa.tier - pb.tier || pa.top - pb.top;
+            });
+            for (const root of revealed) void this.#queue(root);
+        }, { rootMargin: "600px 0px" });
+    }
+    #deferRoot(root) {
+        if (this.#disposed || !root.isConnected || this.#deferredRoots.has(root)) return;
+        this.#ensureVisibilityObserver();
+        if (!this.#visibilityObserver) {
+            void this.#queue(root);
+            return;
+        }
+        this.#deferredRoots.add(root);
+        this.#visibilityObserver.observe(root);
     }
     constructor(doc, provider, options = {}) {
         this.#doc = doc;
@@ -308,7 +370,32 @@ export class PageTranslator {
             return this.translatedCount;
         await this.#loadContextMode();
         if (watchDuringPass) this.observe();
-        await Promise.all(this.#collect(scope).map(root => this.#queue(root)));
+        const collected = this.#collect(scope);
+        const hasGeometry = this.#hasRealViewportGeometry(collected);
+        const ObserverCtor = this.#doc.defaultView?.IntersectionObserver ?? globalThis.IntersectionObserver;
+        const useLazy = this.#lazyOffscreen && hasGeometry && typeof ObserverCtor === "function";
+        const ranked = collected.map((root, index) => {
+            const priority = hasGeometry ? this.#classifyRootPriority(root) : { tier: 0, top: index, visible: true };
+            return { root, index, ...priority };
+        });
+        if (hasGeometry) {
+            ranked.sort((a, b) => a.tier - b.tier || a.top - b.top || a.index - b.index);
+        }
+        if (useLazy) {
+            const immediate = [];
+            const deferred = [];
+            for (const item of ranked) {
+                if (item.tier <= 3) immediate.push(item.root);
+                else deferred.push(item.root);
+            }
+            if (immediate.length === 0 && deferred.length > 0) {
+                immediate.push(...deferred.splice(0, 8));
+            }
+            for (const root of deferred) this.#deferRoot(root);
+            await Promise.all(immediate.map((root) => this.#queue(root)));
+            return this.translatedCount;
+        }
+        await Promise.all(ranked.map(({ root }) => this.#queue(root)));
         return this.translatedCount;
     }
     #collect(scope) {
@@ -373,10 +460,9 @@ export class PageTranslator {
         const markerCount = richMarkerCandidateCount(segment.html);
         const markerDepth = richMarkerCandidateMaxDepth(segment.html);
         const complexRoot = markerCount >= COMPLEX_ROOT_MARKER_THRESHOLD;
-        // Hy-MT regression testing shows a distinct failure pocket at 5-6 markers
-        // with 2-3 levels of nesting. For local engines, route that narrow tail
-        // through deterministic leaf-safe translation so PageLingo retains markup
-        // ownership instead of asking the model to reproduce deep marker structure.
+        // Regression testing shows a failure pocket at 5-6 markers with 2-3 levels
+        // of nesting. For local engines, route that narrow tail through deterministic
+        // leaf-safe translation so PageLingo retains markup ownership.
         const nestingRiskRoot = markerCount >= 5 && markerCount <= 6 && markerDepth >= 2;
         const structuralFallbackAllowed =
             !this.#wholeSentenceContext && (complexRoot || nestingRiskRoot) &&
@@ -447,7 +533,7 @@ export class PageTranslator {
         // transport-damage fallback.
         if (this.#wholeSentenceContext) translatedHtml = restoreFixedHtmlTransport(segment.html, translatedHtml);
         const mainLinksComplete = translatedLinkTransportComplete(translatedHtml, segment.links);
-        if (this.#wholeSentenceContext && !mainLinksComplete) throw new Error("MT link transport incomplete; preserving the original paragraph");
+        if (this.#wholeSentenceContext && !mainLinksComplete) throw new Error("Translation link transport incomplete; preserving the original paragraph");
         const translatedLinkTexts = mainLinksComplete ? [] : await Promise.all(segment.links.map(async (link) => {
             if (!link.sourceText.trim()) return "";
             const exactTerm = exactTerminologyTarget(link.sourceText, this.#terminology);
@@ -648,6 +734,9 @@ export class PageTranslator {
         this.#disposed = true;
         this.#observer?.disconnect();
         this.#observer = null;
+        this.#visibilityObserver?.disconnect();
+        this.#visibilityObserver = null;
+        this.#deferredRoots.clear();
         this.#doc.removeEventListener("toggle", this.#handleToggle, true);
         for (const stop of this.#pendingProgress.values()) stop();
         this.#pendingProgress.clear();
@@ -745,15 +834,13 @@ export class PageTranslator {
     }
     #queue(root) {
         if (this.#disposed || !root.isConnected) return Promise.resolve();
+        if (this.#deferredRoots.delete(root)) this.#visibilityObserver?.unobserve(root);
         const existing = this.#pending.get(root);
         if (existing) return existing.done;
         let resolve;
         const done = new Promise(finish => { resolve = finish; });
-        const view = this.#doc.defaultView;
-        const rect = root.getBoundingClientRect();
-        const visible = rect.bottom > 0 && rect.top < (view?.innerHeight ?? 0)
-            && rect.right > 0 && rect.left < (view?.innerWidth ?? 0);
-        this.#pending.set(root, {done, resolve, visible});
+        const { tier, top } = this.#classifyRootPriority(root);
+        this.#pending.set(root, { done, resolve, tier, top });
         this.#scheduleFlush();
         return done;
     }
@@ -764,19 +851,18 @@ export class PageTranslator {
     }
     #flush() {
         this.#flushQueued = false;
-        // Dispatch the visible roots first. A newly revealed panel can join the queue during the first pass.
-        for (const visible of [true, false]) {
-            for (const [root, job] of this.#pending) {
-                if (this.#activeJobs >= this.#concurrency) return;
-                if (job.visible !== visible || this.#inFlight.has(root)) continue;
-                this.#pending.delete(root);
-                this.#activeJobs += 1;
-                void this.translateRoot(root).catch(error => console.warn("[PageLingo] Translation root failed", error)).finally(() => {
-                    this.#activeJobs -= 1;
-                    job.resolve();
-                    this.#scheduleFlush();
-                });
-            }
+        // Dispatch visible <main>/<article> roots first, then other visible roots, then near/off-screen.
+        const ready = Array.from(this.#pending.entries()).filter(([root]) => !this.#inFlight.has(root));
+        ready.sort(([, a], [, b]) => a.tier - b.tier || a.top - b.top);
+        for (const [root, job] of ready) {
+            if (this.#activeJobs >= this.#concurrency) return;
+            this.#pending.delete(root);
+            this.#activeJobs += 1;
+            void this.translateRoot(root).catch(error => console.warn("[PageLingo] Translation root failed", error)).finally(() => {
+                this.#activeJobs -= 1;
+                job.resolve();
+                this.#scheduleFlush();
+            });
         }
     }
 }

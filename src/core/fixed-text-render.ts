@@ -33,25 +33,25 @@ function sourceNodes(root: HTMLElement): Node[] {
 export function prepareFixedTextRecord(root: HTMLElement, slots: SourceTextSlot[], html: string, language = ""): FixedTextRecord {
   const body = new DOMParser().parseFromString(html, "text/html").body;
   const targets = Array.from(body.querySelectorAll("[data-flt-text-id]"));
-  if (targets.length !== slots.length) throw new Error("MT text-node mapping count mismatch");
+  if (targets.length !== slots.length) throw new Error("Translation text-node mapping count mismatch");
   const edits: TextEdit[] = [];
   for (const slot of slots) {
     const target = targets[slot.id];
     if (!target || target.tagName !== "SPAN" || target.getAttribute("data-flt-text-id") !== String(slot.id)
         || target.childElementCount || !slot.node.isConnected || !root.contains(slot.node)
         || slot.node.parentNode !== slot.parent || slot.node.data !== slot.source) {
-      throw new Error("MT text-node mapping changed; original paragraph retained");
+      throw new Error("Translation text-node mapping changed; original paragraph retained");
     }
     const translated = target.textContent ?? "";
     if (slot.writePolicy === "frozen-prose-gap") {
       if (!frozenSourceAuthority.has(slot) || !canWriteFrozenProseGap(slot.node, slot.source)) {
-        throw new Error("MT frozen prose gap requires verified application authority");
+        throw new Error("Translation frozen prose gap requires verified application authority");
       }
     } else if (slot.writePolicy === "collapsible-whitespace") {
       if (!isAsciiWhitespace(slot.source) || !isAsciiWhitespaceOrEmpty(translated) || !canCollapseProseWhitespace(slot.node)) {
-        throw new Error("MT collapsible whitespace ownership changed");
+        throw new Error("Translation collapsible whitespace ownership changed");
       }
-    } else if (!translated.trim() && !isOptionalEnglishArticle(slot.source)) throw new Error("MT empty text-node translation");
+    } else if (!translated.trim() && !isOptionalEnglishArticle(slot.source)) throw new Error("Translation empty text-node translation");
     edits.push({...slot, translated});
   }
   const snapshot = sourceNodes(root).map(node => ({node, text: node.nodeType === Node.TEXT_NODE ? node.textContent : null}));
@@ -67,12 +67,12 @@ export function prepareFixedTextRecord(root: HTMLElement, slots: SourceTextSlot[
 // ordinary prose gaps after checking the complete frozen target against the
 // renderer's parsed edits. JSON/model output cannot mint the private authority.
 export function prepareFrozenProseRecord(root: HTMLElement, slots: SourceTextSlot[], html: string, witness: FrozenProseWitness): FixedTextRecord {
-  if (!witness.target.trim()) throw new Error("MT frozen prose target is empty");
+  if (!witness.target.trim()) throw new Error("Translation frozen prose target is empty");
   const authorized = slots.map(slot => ({...slot}));
   authorized.forEach(slot => {if (slot.writePolicy === "frozen-prose-gap") frozenSourceAuthority.add(slot);});
   const record = prepareFixedTextRecord(root, authorized, html);
   if (witness.readProjected(new Map(record.edits.map(edit => [edit.node, edit.translated]))) !== witness.target) {
-    throw new Error("MT frozen prose target witness failed");
+    throw new Error("Translation frozen prose target witness failed");
   }
   frozenRecordAuthority.set(record, Object.freeze({target: witness.target, readProjected: witness.readProjected})); return record;
 }

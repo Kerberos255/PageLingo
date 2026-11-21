@@ -914,4 +914,80 @@ describe("PageTranslator event-driven tooltips", () => {
     expect(translated.textContent).not.toContain("__FLT_OPAQUE_0__");
   });
 
+  it("prioritizes visible <main> content over sidebar and lazily translates off-screen roots via IntersectionObserver", async () => {
+    document.body.innerHTML = `
+      <aside><p id="side">Sidebar navigation item</p></aside>
+      <main>
+        <p id="hero">Main article heading paragraph</p>
+        <p id="far">Far below the fold paragraph</p>
+      </main>
+    `;
+    const side = document.querySelector<HTMLElement>("#side")!;
+    const hero = document.querySelector<HTMLElement>("#hero")!;
+    const far = document.querySelector<HTMLElement>("#far")!;
+    const makeRect = (top: number): DOMRect => ({
+      x: 0, y: top, top, bottom: top + 40, left: 0, right: 300, width: 300, height: 40,
+      toJSON: () => ({}),
+    });
+    side.getBoundingClientRect = () => makeRect(20);
+    hero.getBoundingClientRect = () => makeRect(80);
+    far.getBoundingClientRect = () => makeRect(2400);
+    Object.defineProperty(window, "innerHeight", { value: 900, configurable: true });
+    Object.defineProperty(window, "innerWidth", { value: 1200, configurable: true });
+
+    const observed = new Set<Element>();
+    const ioState: { cb: ((entries: Array<{ target: Element; isIntersecting: boolean }>) => void) | null } = { cb: null };
+    class FakeIntersectionObserver {
+      constructor(cb: (entries: Array<{ target: Element; isIntersecting: boolean }>) => void) {
+        ioState.cb = cb;
+      }
+      observe(target: Element) { observed.add(target); }
+      unobserve(target: Element) { observed.delete(target); }
+      disconnect() { observed.clear(); }
+    }
+    const prevIO = globalThis.IntersectionObserver;
+    (globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver = FakeIntersectionObserver;
+
+    const order: string[] = [];
+    const provider: TranslationProvider = {
+      prefersWholeSentenceHtml: async () => true,
+      prefersLazyOffscreen: async () => true,
+      concurrentSegments: async () => 1,
+      translateHtml: async (req) => {
+        order.push(req.html);
+        const body = new DOMParser().parseFromString(req.html, "text/html").body;
+        for (const slot of body.querySelectorAll("[data-flt-text-id]")) {
+          slot.textContent = `译:${slot.textContent}`;
+        }
+        return body.innerHTML;
+      },
+    };
+
+    const translator = new PageTranslator(document, provider, { displayMode: "translation" });
+    try {
+      await translator.translateAll();
+      // Main visible paragraph ran BEFORE sidebar, and far off-screen paragraph was deferred!
+      expect(order).toHaveLength(2);
+      expect(order[0]).toContain("Main article heading paragraph");
+      expect(order[1]).toContain("Sidebar navigation item");
+      expect(observed.has(far)).toBe(true);
+      expect(far.textContent).toBe("Far below the fold paragraph");
+
+      // Simulate scrolling near the deferred paragraph
+      ioState.cb?.([{ target: far, isIntersecting: true }]);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(order).toHaveLength(3);
+      expect(order[2]).toContain("Far below the fold paragraph");
+      expect(far.textContent).toBe("译:Far below the fold paragraph");
+      expect(observed.has(far)).toBe(false);
+    } finally {
+      translator.restore();
+      (globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver = prevIO;
+    }
+    expect(observed.size).toBe(0);
+    expect(hero.textContent).toBe("Main article heading paragraph");
+    expect(far.textContent).toBe("Far below the fold paragraph");
+  });
+
 });
+

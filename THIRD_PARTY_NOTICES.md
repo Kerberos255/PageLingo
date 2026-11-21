@@ -124,7 +124,3 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## Dependency versions
 
 The exact npm dependency graph used for release builds is pinned by `package-lock.json`. Build-time tools are not shipped as executable extension dependencies unless their output is explicitly copied or bundled by `tools/build.mjs`.
-
-## wllama
-
-The PageLingo MT research tooling uses `@wllama/wllama` 3.6.1 under the MIT License.

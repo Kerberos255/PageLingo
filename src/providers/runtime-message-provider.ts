@@ -19,6 +19,7 @@ interface TranslationEngineStateResponse {
     batchHtmlLimit?: number;
     concurrentSegments?: number;
     firstVisibleSingles?: number;
+    lazyOffscreen?: boolean;
   };
 }
 
@@ -47,6 +48,10 @@ export class RuntimeMessageProvider implements TranslationProvider {
 
   async concurrentSegments(): Promise<number> {
     return (await this.#state())?.concurrentSegments ?? 4;
+  }
+
+  async prefersLazyOffscreen(): Promise<boolean> {
+    return (await this.#state())?.lazyOffscreen === true;
   }
 
   async supportsStructuralSplitting(): Promise<boolean> {

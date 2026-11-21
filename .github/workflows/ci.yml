@@ -26,6 +26,3 @@ jobs:
 
       - name: Verify
         run: npm run verify
-
-      - name: Check MT preparation and model-export guards
-        run: python3 -m unittest discover -s training/mt-fixed-slots/tests

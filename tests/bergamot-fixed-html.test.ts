@@ -72,6 +72,45 @@ describe("Bergamot fixed HTML", () => {
     expect(() => repairBergamotFixedHtml(source, changed, true)).toThrow(/缺少受保护术语/u);
   });
 
+  it("protects multi-brand phrases like 'Claude and GPT models' via opaque code markers without transliteration or duplication", () => {
+    const source = slot(0, `${term(0, "Claude")} and ${term(1, "GPT")} models`);
+    const prepared = prepareBergamotFixedHtml(source);
+    expect(prepared).toBe(slot(0, '<code data-flt-term-id="0">Claude</code> and <code data-flt-term-id="1">GPT</code> models'));
+    // Real Bergamot outputs empty <code> placeholders at the exact target word-order positions.
+    const bergamotOutput = slot(0, '<code data-flt-term-id="0"></code> 和 <code data-flt-term-id="1"></code> 模型');
+    const repaired = repairBergamotFixedHtml(source, bergamotOutput, true);
+    expect(restoreTerminologyHtml(document, repaired, ["Claude", "GPT"])).toBe(slot(0, "Claude 和 GPT 模型"));
+  });
+
+  it("also protects plain/OCR phrases without data-flt-text-id wrappers via opaque code markers", () => {
+    const source = `${term(0, "Claude")} and ${term(1, "GPT")} models`;
+    const prepared = prepareBergamotFixedHtml(source);
+    expect(prepared).toBe('<code data-flt-term-id="0">Claude</code> and <code data-flt-term-id="1">GPT</code> models');
+    const repaired = repairBergamotFixedHtml(source, '<code data-flt-term-id="0"></code> 和 <code data-flt-term-id="1"></code> 模型', true);
+    expect(restoreTerminologyHtml(document, repaired, ["Claude", "GPT"])).toBe("Claude 和 GPT 模型");
+  });
+
+  it("retries misaligned empty multi-term spans that would otherwise produce 'ClaudeGPT克劳德和GPT模型'", () => {
+    const source = slot(0, `${term(0, "Claude")} and ${term(1, "GPT")} models`);
+    const duplicated = slot(0, `${term(0, "")}${term(1, "")}克劳德和GPT模型`);
+    const retry = prepareBergamotFixedRetry(source, duplicated)!;
+    expect(retry).toBeDefined();
+    expect(retry.html).toBe(slot(0, '<code data-flt-term-id="0">Claude</code> and <code data-flt-term-id="1">GPT</code> models'));
+    const recovered = retry.restore(slot(0, '<code data-flt-term-id="0"></code> 和 <code data-flt-term-id="1"></code> 模型'))!;
+    expect(restoreTerminologyHtml(document, recovered, ["Claude", "GPT"])).toBe(slot(0, "Claude 和 GPT 模型"));
+  });
+
+  it("deduplicates adjacent and stacked empty term markers when exact brands already appear in the same scope", () => {
+    const adjacent = `${term(0, "Claude")}和${term(1, "")}GPT模型`;
+    expect(restoreTerminologyHtml(document, adjacent, ["Claude", "GPT"])).toBe("Claude和GPT模型");
+
+    const stacked = `${term(0, "")}${term(1, "")}Claude 和 GPT 模型`;
+    expect(restoreTerminologyHtml(document, stacked, ["Claude", "GPT"])).toBe("Claude 和 GPT 模型");
+
+    const repeated = `${term(0, "")} 和 ${term(1, "")}OpenClaw`;
+    expect(restoreTerminologyHtml(document, repeated, ["OpenClaw", "OpenClaw"])).toBe("OpenClaw 和 OpenClaw");
+  });
+
   it.each([
     [label("Self-hosted", " runs on your hardware"), label("", "自托管:使用你的硬件")],
     [label("Self-hosted", ": runs on your hardware"), label("", "自托管。你可以使用:硬件")],

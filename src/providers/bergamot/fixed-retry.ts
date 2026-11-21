@@ -35,34 +35,85 @@ function surroundingText(marker: Element): string {
     .join("");
 }
 
-/** A term span can absorb the whole translated title, which is lost when the name is restored. */
+/**
+ * Term spans can absorb surrounding prose or collapse to empty markers while Bergamot
+ * transliterates the protected name outside the span (e.g. "Claude and GPT models" ->
+ * "<span id=0></span><span id=1></span>克劳德和GPT模型"). Retry those slots with opaque
+ * <code data-flt-term-id> markers so Bergamot never translates or duplicates the names.
+ */
 function retryAbsorbedTerm(sourceHtml: string, outputHtml: string): FixedRetry | undefined {
   if (!sourceHtml.startsWith('<span data-flt-text-id="0">') || sourceHtml.length > 320
     || !sourceHtml.includes("data-flt-term-id=") || !outputHtml.includes("data-flt-term-id=")) return;
   const parser = new DOMParser();
   const source = parser.parseFromString(sourceHtml, "text/html");
   const previous = parser.parseFromString(outputHtml, "text/html");
-  const name = standaloneTerm(source.body, termSelector);
-  const received = standaloneTerm(previous.body, termSelector);
-  if (source.head.childNodes.length || previous.head.childNodes.length || !name || !received
-    || !/\p{Script=Latin}/u.test(surroundingText(name)) || /\p{L}/u.test(surroundingText(received))
-    || !/\p{Script=Han}/u.test(received.textContent ?? "")) return;
-  const id = name.getAttribute("data-flt-term-id");
-  if (id !== received.getAttribute("data-flt-term-id")) return;
-  const code = source.createElement("code");
-  code.setAttribute("data-flt-term-id", id!);
-  code.textContent = name.textContent;
-  name.replaceWith(code);
+  if (source.head.childNodes.length || previous.head.childNodes.length) return;
+
+  const sourceSlot = source.body.firstElementChild;
+  const previousSlot = previous.body.firstElementChild;
+  if (source.body.childNodes.length !== 1 || previous.body.childNodes.length !== 1
+    || !sourceSlot?.matches('span[data-flt-text-id="0"]') || sourceSlot.attributes.length !== 1
+    || !previousSlot?.matches('span[data-flt-text-id="0"]') || previousSlot.attributes.length !== 1) return;
+
+  const sourceMarkers = [...sourceSlot.children].filter((el) => el.matches(termSelector) && el.attributes.length === 1 && !el.childElementCount);
+  const previousMarkers = [...previousSlot.children].filter((el) => el.matches(termSelector) && el.attributes.length === 1 && !el.childElementCount);
+  if (!sourceMarkers.length || sourceMarkers.length !== previousMarkers.length) return;
+  if (sourceSlot.childElementCount !== sourceMarkers.length || previousSlot.childElementCount !== previousMarkers.length) return;
+
+  const expectedById = new Map<string, Element>();
+  for (const marker of sourceMarkers) {
+    const id = marker.getAttribute("data-flt-term-id");
+    if (!id || expectedById.has(id)) return;
+    expectedById.set(id, marker);
+  }
+  const previousIds = previousMarkers.map((el) => el.getAttribute("data-flt-term-id"));
+  if (previousIds.some((id) => !id || !expectedById.has(id)) || new Set(previousIds).size !== expectedById.size) return;
+
+  const sourceOutside = surroundingText(sourceMarkers[0]!);
+  const previousOutside = surroundingText(previousMarkers[0]!);
+  const absorbedSingle = sourceMarkers.length === 1
+    && /\p{Script=Latin}/u.test(sourceOutside)
+    && !/\p{L}/u.test(previousOutside)
+    && /\p{Script=Han}/u.test(previousMarkers[0]!.textContent ?? "");
+  const emptyMisaligned = previousMarkers.some((marker) => {
+    if (marker.textContent?.trim()) return false;
+    const id = marker.getAttribute("data-flt-term-id")!;
+    const name = expectedById.get(id)?.textContent ?? "";
+    return Boolean(name) && /\p{Script=Han}/u.test(previousOutside);
+  });
+  if (!absorbedSingle && !emptyMisaligned) return;
+
+  for (const marker of sourceMarkers) {
+    const id = marker.getAttribute("data-flt-term-id")!;
+    const code = source.createElement("code");
+    code.setAttribute("data-flt-term-id", id);
+    code.textContent = marker.textContent;
+    marker.replaceWith(code);
+  }
+
   return {
     html: source.body.innerHTML,
     fallback: sourceHtml,
     restore(translatedHtml) {
       const result = parser.parseFromString(translatedHtml, "text/html");
-      const translatedCode = standaloneTerm(result.body, "code[data-flt-term-id]");
-      if (result.head.childNodes.length || !translatedCode || translatedCode.getAttribute("data-flt-term-id") !== id
-        || (translatedCode.textContent?.trim() && translatedCode.textContent !== name.textContent)
-        || !/\p{Script=Han}/u.test(surroundingText(translatedCode))) return;
-      translatedCode.replaceWith(result.importNode(name, true));
+      const resultSlot = result.body.firstElementChild;
+      if (result.head.childNodes.length || result.body.childNodes.length !== 1
+        || !resultSlot?.matches('span[data-flt-text-id="0"]') || resultSlot.attributes.length !== 1) return;
+      const translatedCodes = [...resultSlot.children].filter((el) => el.matches("code[data-flt-term-id]") && el.attributes.length === 1 && !el.childElementCount);
+      if (translatedCodes.length !== expectedById.size || resultSlot.childElementCount !== translatedCodes.length) return;
+      if (!/\p{Script=Han}/u.test(surroundingText(translatedCodes[0]!))) return;
+      const seen = new Set<string>();
+      for (const code of translatedCodes) {
+        const id = code.getAttribute("data-flt-term-id");
+        if (!id || seen.has(id) || !expectedById.has(id)) return;
+        const origName = expectedById.get(id)!.textContent ?? "";
+        if (code.textContent?.trim() && code.textContent !== origName) return;
+        seen.add(id);
+      }
+      for (const code of translatedCodes) {
+        const id = code.getAttribute("data-flt-term-id")!;
+        code.replaceWith(result.importNode(expectedById.get(id)!, true));
+      }
       return result.body.innerHTML;
     },
   };

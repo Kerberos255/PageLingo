@@ -269,10 +269,35 @@ export class BergamotClient {
     sources: string[], prepared: string[], translations: string[], route: TranslationRoute, session: RouteSession,
   ): Promise<string[]> {
     const canRecoverChinese = route.sourceLanguage === "en" && route.targetLanguage === "zh-Hans";
+    const opaqueFallbacks: number[] = [];
     const outputs = sources.map((html, index) => {
-      const output = repairBergamotFixedHtml(html, translations[index] ?? html, prepared[index] !== html);
-      return canRecoverChinese ? restoreBergamotSentenceLines(html, output) ?? output : output;
+      const raw = translations[index] ?? html;
+      const usedOpaque = prepared[index] !== html;
+      try {
+        const output = repairBergamotFixedHtml(html, raw, usedOpaque);
+        return canRecoverChinese ? restoreBergamotSentenceLines(html, output) ?? output : output;
+      } catch {
+        if (usedOpaque) opaqueFallbacks.push(index);
+        return raw;
+      }
     });
+
+    if (opaqueFallbacks.length > 0) {
+      try {
+        const fallbackTranslations = await session.translateHtmlBatch(opaqueFallbacks.map((index) => sources[index]!));
+        for (let i = 0; i < opaqueFallbacks.length; i += 1) {
+          const outputIndex = opaqueFallbacks[i]!;
+          const html = sources[outputIndex]!;
+          const fallbackRaw = fallbackTranslations[i];
+          if (fallbackRaw === undefined) continue;
+          const repaired = repairBergamotFixedHtml(html, fallbackRaw, false);
+          outputs[outputIndex] = canRecoverChinese ? restoreBergamotSentenceLines(html, repaired) ?? repaired : repaired;
+        }
+      } catch {
+        // Leave the raw damaged output so PageTranslator safely keeps only that paragraph in source.
+      }
+    }
+
     if (!canRecoverChinese) return outputs;
 
     const retries = sources.flatMap((html, index) => {

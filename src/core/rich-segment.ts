@@ -129,7 +129,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
         if (tag === "A") {
             const linkIndex = links.length;
             links.push(snapshotLink(element));
-            // Legacy providers use link sentinels for recovery. MT additionally maps
+            // Legacy providers use link sentinels for recovery. Original-node mode additionally maps
             // each original text node to a fixed slot; link topology is application-owned.
             const children = trace ? [] : undefined;
             const serializedLabel = serializeChildren(element, root, links, opaque, textSlots, children);
@@ -351,12 +351,67 @@ export function protectTerminologyInFragment(content, protectedEntries) {
     return replacements;
 }
 export function restoreTerminology(container, replacements) {
-    for (const span of Array.from(container.querySelectorAll("span[data-flt-term-id]"))) {
-        const rawId = span.getAttribute("data-flt-term-id");
-        const id = rawId && /^\d+$/.test(rawId) ? Number.parseInt(rawId, 10) : -1;
-        const target = replacements[id];
-        if (typeof target === "string") span.replaceWith(container.ownerDocument.createTextNode(target));
-        else span.removeAttribute("data-flt-term-id");
+    const spans = Array.from(container.querySelectorAll("span[data-flt-term-id]"));
+    if (!spans.length) return;
+    const byScope = new Map();
+    for (const span of spans) {
+        const scope = span.parentElement ?? container;
+        let list = byScope.get(scope);
+        if (!list) {
+            list = [];
+            byScope.set(scope, list);
+        }
+        list.push(span);
+    }
+    for (const [scope, scopeSpans] of byScope) {
+        const outsideText = Array.from(scope.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent ?? "")
+            .join("");
+        const surplusByTarget = new Map();
+        const emptySpans = [];
+        for (const span of scopeSpans) {
+            const rawId = span.getAttribute("data-flt-term-id");
+            const id = rawId && /^\d+$/.test(rawId) ? Number.parseInt(rawId, 10) : -1;
+            const target = replacements[id];
+            if (typeof target !== "string") {
+                span.removeAttribute("data-flt-term-id");
+                continue;
+            }
+            if (!span.textContent?.trim() && target) {
+                if (!surplusByTarget.has(target)) {
+                    surplusByTarget.set(target, termOccurrenceCount(outsideText, target, true));
+                }
+                emptySpans.push({ span, target });
+            } else {
+                span.replaceWith(container.ownerDocument.createTextNode(target));
+            }
+        }
+        // Pass 1: drop empty markers immediately adjacent to an already-present target.
+        const remaining = [];
+        for (const item of emptySpans) {
+            const { span, target } = item;
+            const surplus = surplusByTarget.get(target) ?? 0;
+            const prevText = span.previousSibling?.nodeType === Node.TEXT_NODE ? (span.previousSibling.textContent ?? "") : "";
+            const nextText = span.nextSibling?.nodeType === Node.TEXT_NODE ? (span.nextSibling.textContent ?? "") : "";
+            if (surplus > 0 && (prevText.endsWith(target) || nextText.startsWith(target))) {
+                surplusByTarget.set(target, surplus - 1);
+                span.remove();
+            } else {
+                remaining.push(item);
+            }
+        }
+        // Pass 2: drop stacked/non-adjacent empty markers if the exact target already
+        // survives in the same scope's text; otherwise restore the protected target.
+        for (const { span, target } of remaining) {
+            const surplus = surplusByTarget.get(target) ?? 0;
+            if (surplus > 0) {
+                surplusByTarget.set(target, surplus - 1);
+                span.remove();
+            } else {
+                span.replaceWith(container.ownerDocument.createTextNode(target));
+            }
+        }
     }
 }
 export function restoreTerminologyHtml(doc, html, replacements) {

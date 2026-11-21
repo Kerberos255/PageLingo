@@ -1,8 +1,12 @@
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { requestExternalAuthenticationConsent, requestExternalTranslationConsent } from "./shared/data-consent";
 import {
+  BUILTIN_GOOGLE_ENGINE_ID,
+  BUILTIN_MICROSOFT_ENGINE_ID,
   LOCAL_TRANSLATION_ENGINE_ID,
   OPENCODE_GO_BASE_URL,
+  isBuiltinFreeEngineId,
+  isLlmEngineType,
   type ExternalTranslationEngineType,
   type TranslationEngineConfig,
 } from "./shared/translation-engine-settings";
@@ -14,6 +18,7 @@ interface EngineView {
   enabled: boolean;
   model: string;
   hasApiKey: boolean;
+  disableThinking?: boolean;
 }
 
 interface EngineUiState {
@@ -79,6 +84,7 @@ const TYPE_LABELS: Record<ExternalTranslationEngineType, string> = {
 };
 
 const activeSelect = document.querySelector<HTMLSelectElement>("#active-engine-select");
+const activeConsentButton = document.querySelector<HTMLButtonElement>("#active-engine-consent");
 const engineList = document.querySelector<HTMLElement>("#translation-engine-list");
 const typeSelect = document.querySelector<HTMLSelectElement>("#engine-type");
 const nameInput = document.querySelector<HTMLInputElement>("#engine-name");
@@ -86,6 +92,7 @@ const baseUrlInput = document.querySelector<HTMLInputElement>("#engine-base-url"
 const apiKeyInput = document.querySelector<HTMLInputElement>("#engine-api-key");
 const modelInput = document.querySelector<HTMLInputElement>("#engine-model");
 const regionInput = document.querySelector<HTMLInputElement>("#engine-region");
+const disableThinkingInput = document.querySelector<HTMLInputElement>("#engine-disable-thinking");
 const promptInput = document.querySelector<HTMLTextAreaElement>("#engine-prompt");
 const headersInput = document.querySelector<HTMLTextAreaElement>("#engine-headers-json");
 const bodyInput = document.querySelector<HTMLTextAreaElement>("#engine-body-json");
@@ -130,11 +137,11 @@ function supportsModelDiscovery(type: ExternalTranslationEngineType): boolean {
 
 function updateConditionalFields(): void {
   const type = currentType();
-  const llm = type === "gemini" || type === "openrouter" || type === "opencode-go" || type === "deepseek" || type === "openai-compatible";
+  const llm = isLlmEngineType(type);
   for (const field of conditionalFields) {
     const kind = field.dataset.engineField;
     const visible = kind === "model" ? llm || type === "custom-rest"
-      : kind === "prompt" ? llm
+      : kind === "prompt" || kind === "llm" ? llm
         : kind === "region" ? type === "microsoft"
           : kind === "custom" ? type === "custom-rest"
             : true;
@@ -149,6 +156,7 @@ function applyPreset(): void {
   if (baseUrlInput) baseUrlInput.value = preset.baseUrl;
   if (modelInput) modelInput.value = preset.model ?? "";
   if (regionInput) regionInput.value = "";
+  if (disableThinkingInput) disableThinkingInput.checked = true;
   if (promptInput) promptInput.value = "";
   if (headersInput) headersInput.value = preset.headersJson ?? "";
   if (bodyInput) bodyInput.value = preset.bodyJson ?? "";
@@ -161,7 +169,7 @@ function collectConfig(): TranslationEngineConfig {
   const name = nameInput?.value.trim() ?? "";
   if (!name) throw new Error("请填写引擎名称");
   const type = currentType();
-  return {
+  const config: TranslationEngineConfig = {
     id: `engine-${crypto.randomUUID()}`,
     name,
     type,
@@ -175,15 +183,26 @@ function collectConfig(): TranslationEngineConfig {
     bodyJson: bodyInput?.value.trim() ?? "",
     responsePath: responsePathInput?.value.trim() ?? "",
   };
+  if (isLlmEngineType(type)) {
+    config.disableThinking = disableThinkingInput?.checked !== false;
+  }
+  return config;
 }
 
 function renderActiveSelect(): void {
   if (!activeSelect) return;
   activeSelect.replaceChildren();
-  const local = document.createElement("option");
-  local.value = LOCAL_TRANSLATION_ENGINE_ID;
-  local.textContent = "Firefox 本地翻译";
-  activeSelect.append(local);
+  const builtins: Array<{ id: string; label: string }> = [
+    { id: LOCAL_TRANSLATION_ENGINE_ID, label: "Firefox 本地翻译" },
+    { id: BUILTIN_MICROSOFT_ENGINE_ID, label: "微软翻译（免费 · 无需 Key）" },
+    { id: BUILTIN_GOOGLE_ENGINE_ID, label: "Google 翻译（免费 · 无需 Key）" },
+  ];
+  for (const item of builtins) {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.label;
+    activeSelect.append(option);
+  }
   for (const engine of engineState.engines.filter((item) => item.enabled)) {
     const option = document.createElement("option");
     option.value = engine.id;
@@ -192,6 +211,7 @@ function renderActiveSelect(): void {
   }
   activeSelect.value = engineState.activeEngineId;
   if (activeSelect.value !== engineState.activeEngineId) activeSelect.value = LOCAL_TRANSLATION_ENGINE_ID;
+  if (activeConsentButton) activeConsentButton.hidden = !isBuiltinFreeEngineId(activeSelect.value);
 }
 
 function renderEngineList(): void {
@@ -214,7 +234,8 @@ function renderEngineList(): void {
     const detail = document.createElement("small");
     const model = engine.model ? ` · ${engine.model}` : "";
     const keyState = engine.hasApiKey ? " · Key 已配置" : "";
-    detail.textContent = `${TYPE_LABELS[engine.type]}${model}${keyState}`;
+    const speedMode = isLlmEngineType(engine.type) && engine.disableThinking === false ? " · 思考模式" : "";
+    detail.textContent = `${TYPE_LABELS[engine.type]}${model}${keyState}${speedMode}`;
     copy.append(title, detail);
 
     const badge = document.createElement("span");
@@ -269,18 +290,25 @@ async function requestState(message: Record<string, unknown>): Promise<void> {
 async function setActive(id: string): Promise<void> {
   try {
     if (id !== LOCAL_TRANSLATION_ENGINE_ID) {
-      const engine = engineState.engines.find((item) => item.id === id);
-      if (!engine) throw new Error("找不到翻译引擎");
-      const granted = await requestExternalTranslationConsent(engine.hasApiKey);
+      const builtinFree = isBuiltinFreeEngineId(id);
+      const engine = builtinFree ? null : engineState.engines.find((item) => item.id === id);
+      if (!builtinFree && !engine) throw new Error("找不到翻译引擎");
+      const granted = await requestExternalTranslationConsent(Boolean(engine?.hasApiKey));
       if (!granted) {
         renderActiveSelect();
         throw new Error("未授权向外部翻译服务发送网页内容");
       }
     }
     await requestState({ type: "set-active-translation-engine", id });
-    notify(id === LOCAL_TRANSLATION_ENGINE_ID
-      ? "已切换到 Firefox 本地翻译"
-      : "翻译引擎已切换");
+    notify(
+      id === LOCAL_TRANSLATION_ENGINE_ID
+        ? "已切换到 Firefox 本地翻译"
+        : id === BUILTIN_MICROSOFT_ENGINE_ID
+          ? "已切换到微软翻译（免费）"
+          : id === BUILTIN_GOOGLE_ENGINE_ID
+            ? "已切换到 Google 翻译（免费）"
+            : "翻译引擎已切换",
+    );
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error), 5000);
   }
@@ -465,6 +493,11 @@ export async function initializeTranslationEngines(): Promise<void> {
     if (event.target === modelPickerDialog) closeModelPicker();
   });
   activeSelect?.addEventListener("change", () => void setActive(activeSelect.value));
+  activeConsentButton?.addEventListener("click", () => {
+    void requestExternalTranslationConsent(false)
+      .then((granted) => notify(granted ? "外部翻译数据权限已授权" : "未授予外部翻译数据权限", 5000))
+      .catch((error) => notify(error instanceof Error ? error.message : String(error), 5000));
+  });
   testButton?.addEventListener("click", () => void testConfig());
   addButton?.addEventListener("click", () => void addConfig());
   applyPreset();

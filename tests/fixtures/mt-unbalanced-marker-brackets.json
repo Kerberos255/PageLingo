@@ -1,8 +1,0 @@
-{
-  "source": "2026-10-25 actual 44-step candidate Q5 bounded-grammar output",
-  "case_id": "release-v2-protocol-definition-thenable",
-  "model_sha256": "6604d1501f6ff401a4504cf67e53a32e9a9c42e64fe1446fd22256fe15403fd7",
-  "html": "<p>A <a href=\"/thenable\">thenable</a> must provide a callable <code>then</code> method; iteration is optional.</p>",
-  "text": "⟦0⟧A 〔⟦/0⟧⟦1⟧〕thenable〔⟦/1⟧⟦2⟧〕必须提供一个可调用〔⟦/2⟧⟪P0⟫⟦3⟧〕方法；迭代是可选的。〔⟦/3⟧",
-  "finish_reason": "stop"
-}

@@ -26,20 +26,21 @@ describe("external translation HTML safety", () => {
   it("matches LLM batch answers by id and leaves only malformed fragments for retry", async () => {
     const first = '<span data-flt-text-id="0">Read the manual.</span>';
     const second = '<strong><span data-flt-text-id="0">Complete the setup.</span></strong>';
-    const request = (html: string) => ({html, sourceLanguage: "en", targetLanguage: "zh-Hans"});
+    const request = (html: string) => ({ html, sourceLanguage: "en", targetLanguage: "zh-Hans" });
     const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
-      const input = JSON.parse(JSON.parse(String(init.body)).messages[1].content);
-      expect(input).toEqual([{id: 0, html: first}, {id: 1, html: second}]);
-      const content = JSON.stringify([
-        {id: 1, html: '<em><span data-flt-text-id="0">完成设置。</span></em>'},
-        {id: 0, html: '<span data-flt-text-id="0">阅读手册。</span>'},
-      ]);
-      return Response.json({choices: [{finish_reason: "stop", message: {content}}]});
+      const userContent = JSON.parse(String(init.body)).messages[1].content as string;
+      expect(userContent).toContain(`[[SEG_0]]\n${first}\n[[/SEG_0]]`);
+      expect(userContent).toContain(`[[SEG_1]]\n${second}\n[[/SEG_1]]`);
+      const content = [
+        '[[SEG_1]]\n<em><span data-flt-text-id="0">完成设置。</span></em>\n[[/SEG_1]]',
+        '[[SEG_0]]\n<span data-flt-text-id="0">阅读手册。</span>\n[[/SEG_0]]',
+      ].join("\n");
+      return Response.json({ choices: [{ finish_reason: "stop", message: { content } }] });
     });
     vi.stubGlobal("fetch", fetchMock);
-    const llm = config({type: "openai-compatible"});
+    const llm = config({ type: "openai-compatible" });
     expect(externalBatchSize(llm)).toBeGreaterThan(1);
-    expect(externalBatchSize({...llm, prompt: "Custom single-fragment prompt"})).toBe(1);
+    expect(externalBatchSize({ ...llm, prompt: "Custom single-fragment prompt" })).toBe(1);
     await expect(translateExternalBatch(llm, [request(first), request(second)]))
       .resolves.toEqual(['<span data-flt-text-id="0">阅读手册。</span>', null]);
     expect(fetchMock).toHaveBeenCalledTimes(1);

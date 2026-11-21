@@ -20,6 +20,8 @@ export interface TranslationProvider {
   /** Original-node contract: preserve transport text slots and whole-paragraph context. */
   prefersWholeSentenceHtml?(): Promise<boolean>;
   concurrentSegments?(): Promise<number>;
+  /** Defer off-screen roots until near viewport via IntersectionObserver. */
+  prefersLazyOffscreen?(): Promise<boolean>;
 }
 
 

@@ -39,8 +39,6 @@ The renderer:
 
 Restoring the page removes PageLingo-generated translation nodes and source wrappers without replacing the original application DOM.
 
-The [fixed-slot model evaluation](eval/mt-quality/README.md) documents experiments with alternative models.
-
 ## Terminology
 
 The built-in terminology list is intentionally limited to proper names such as brands, organizations, products, platforms, and named projects. Built-in protected names use **case-sensitive matching** so a name such as `Signal`, `Matrix`, `Render`, or `Windows` does not freeze the corresponding ordinary lowercase word.

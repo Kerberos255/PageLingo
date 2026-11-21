@@ -43,21 +43,27 @@ let ortRuntimeReady: Promise<void> | null = null;
 let service: PaddleOcrService | null = null;
 let activeProfileId = "";
 
-function report(id: number, status: string): void {
-  scope.postMessage({ type: "progress", id, status });
+function report(id: number, status: string, progress?: number): void {
+  scope.postMessage({ type: "progress", id, status, progress });
 }
 
-function progressLabel(progress: WorkerProgress): string | null {
+function progressInfo(progress: WorkerProgress): { label: string; ratio: number } | null {
   if (progress.type === "det") {
-    if (progress.stage === "preprocess") return "正在检测文字 · 预处理完成";
-    if (progress.stage === "infer") return "正在检测文字 · 模型推理完成";
-    if (progress.stage === "postprocess") return `正在识别文字 · 0/${progress.detectedCount ?? 0}`;
+    if (progress.stage === "preprocess") return { label: "正在检测图片文字", ratio: 0.28 };
+    if (progress.stage === "infer") return { label: "正在分析文字区域", ratio: 0.42 };
+    if (progress.stage === "postprocess") {
+      const total = progress.detectedCount ?? 0;
+      return { label: total > 0 ? `正在识别文字 · 0/${total}` : "正在识别文字", ratio: 0.48 };
+    }
   }
   if (progress.type === "rec") {
     const current = progress.progress?.current ?? 0;
     const total = progress.progress?.total ?? 0;
-    if (progress.stage === "item") return `正在识别文字 · ${current}/${total}`;
-    if (progress.stage === "complete") return "文字识别完成 · 正在翻译";
+    if (progress.stage === "item") {
+      const fraction = total > 0 ? Math.min(1, current / total) : 0;
+      return { label: total > 0 ? `正在识别文字 · ${current}/${total}` : "正在识别文字", ratio: 0.48 + fraction * 0.32 };
+    }
+    if (progress.stage === "complete") return { label: "正在翻译图片文字", ratio: 0.84 };
   }
   return null;
 }
@@ -93,7 +99,7 @@ async function ensureService(request: WorkerRecognizeRequest): Promise<PaddleOcr
   await ensureOrtRuntime();
   const dictionary = request.dictionary.replace(/\r/g, "").replace(/\n+$/, "").split("\n");
   if (!dictionary.includes(" ")) dictionary.push(" ");
-  report(request.id, "正在创建 OCR 推理会话…");
+  report(request.id, "正在初始化文字识别", 0.22);
   service = await PaddleOcrService.createInstance({
     ort: paddleOrt,
     modelPreset: request.modelPreset,
@@ -116,8 +122,8 @@ async function recognize(request: WorkerRecognizeRequest): Promise<void> {
       data: new Uint8Array(request.pixels),
     }, {
       onProgress(progress: WorkerProgress) {
-        const label = progressLabel(progress);
-        if (label) report(request.id, label);
+        const info = progressInfo(progress);
+        if (info) report(request.id, info.label, info.ratio);
       },
     });
     const regions: OcrRegion[] = raw.map((item) => ({

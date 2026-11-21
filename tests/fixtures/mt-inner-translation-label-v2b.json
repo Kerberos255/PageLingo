@@ -1,8 +1,0 @@
-{
-  "origin": "Actual CPU Q5 generation, 2026-10-26. No synthetic completion.",
-  "model_sha256": "748c66dee23ec95583d0c84bd49bd3e516b0d2c1d242fbf4e152ff710e0f62bb",
-  "case_id": "d-html-headings-05",
-  "html": "<p>Prefer using only one <code>&lt;h1&gt;</code> per page and <a href=\"#nesting\">nest headings</a> without skipping levels.</p>",
-  "text": "⟦0⟧每页只使用一个⟦/0⟧⟪P0⟫⟦1⟧，且必须连续嵌套标题，不得跳过层级。⟦/1⟧⟦2⟧。  \n中文：  \n⟦/2⟧⟦3⟧每页只使用一个⟦/3⟧",
-  "finish_reason": "stop"
-}
