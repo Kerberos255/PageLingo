@@ -7,6 +7,7 @@ const PAGE_MENU_ID = "pagelingo-translate-page";
 
 interface ImageRuntimeMessage {
   type?: string;
+  requestId?: unknown;
   url?: unknown;
   width?: unknown;
   height?: unknown;
@@ -134,11 +135,19 @@ class ImageOcrWorkerClient {
 
 const ocrWorker = new ImageOcrWorkerClient();
 
-async function sendProgress(sender: browser.runtime.MessageSender, status: string): Promise<void> {
+async function sendProgress(
+  sender: browser.runtime.MessageSender,
+  status: string,
+  requestId?: string,
+): Promise<void> {
   const tabId = sender.tab?.id;
   if (!tabId) return;
   try {
-    await browser.tabs.sendMessage(tabId, { type: "image-translation-progress", status });
+    await browser.tabs.sendMessage(tabId, {
+      type: "image-translation-progress",
+      status,
+      ...(requestId ? { requestId } : {}),
+    });
   } catch {
     // The originating page may have navigated while OCR was running.
   }
@@ -188,20 +197,27 @@ export async function handleImageRuntimeMessage(
   if (message.type === "recognize-image") {
     const width = typeof message.width === "number" ? Math.round(message.width) : 0;
     const height = typeof message.height === "number" ? Math.round(message.height) : 0;
+    const requestId = typeof message.requestId === "string" ? message.requestId : undefined;
     if (width <= 0 || height <= 0 || !(message.pixels instanceof ArrayBuffer)) {
       return { ok: false, error: "无效的图片像素数据" };
     }
     try {
+      // Retain a copy before transferring the pixel ArrayBuffer to the OCR worker
+      // so layout merging can enforce background-color consistency between text lines.
+      const pixelSnapshot = new Uint8ClampedArray(message.pixels.slice(0));
       const bundle = await getImageOcrBundle(undefined, (status: string) => {
-        void sendProgress(sender, status);
+        void sendProgress(sender, status, requestId);
       });
-      await sendProgress(sender, "OCR 模型就绪 · 正在识别图片…");
+      await sendProgress(sender, "识别文字中…", requestId);
       const regions = await ocrWorker.recognize(width, height, message.pixels, bundle, (status) => {
-        void sendProgress(sender, status);
+        void sendProgress(sender, status, requestId);
       });
       return {
         ok: true,
-        regions: mergeOcrRegions(regions.filter((region) => region.confidence >= 0.25)),
+        regions: mergeOcrRegions(
+          regions.filter((region) => region.confidence >= 0.25),
+          { pixels: pixelSnapshot, width, height },
+        ),
       };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };

@@ -29,7 +29,17 @@ import { handleImageRuntimeMessage, initializeImageTranslation } from "./image-t
 import { languageLabel, loadSettings, normalizeDetectedLanguage } from "./shared/settings";
 import { hasExternalTranslationConsent } from "./shared/data-consent";
 import { isLoopbackTranslationEndpoint } from "./shared/network-endpoint";
-import { listExternalTranslationModels, translateWithExternalEngine } from "./providers/external-translation";
+import {
+  externalEngineIsLlm,
+  externalEngineSupportsBatch,
+  listExternalTranslationModels,
+  resetThinkingModeCache,
+  translateBatchWithExternalEngine,
+  translateWithExternalEngine,
+  type ExternalTranslationRequest,
+  type ExternalTranslationTerminologyEntry,
+} from "./providers/external-translation";
+import { ExternalTranslationCache, externalTranslationCacheKey } from "./providers/external-translation-cache";
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
   PAGELINGO_MT_ENGINE_ID,
@@ -39,13 +49,40 @@ import {
   saveTranslationEngine,
   setActiveTranslationEngine,
   setTranslationEngineEnabled,
+  type TranslationEngineConfig,
 } from "./shared/translation-engine-settings";
 import { PageLingoMtClient } from "./providers/pagelingo-mt/client";
 import { mtRouteSupported } from "./providers/pagelingo-mt/protocol";
 import { keepEventPageAlive } from "./shared/event-page-keepalive";
 
+class ConcurrencyGate {
+  readonly #limit: number;
+  #active = 0;
+  readonly #waiters: Array<() => void> = [];
+
+  constructor(limit: number) {
+    this.#limit = Math.max(1, limit);
+  }
+
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.#active >= this.#limit) {
+      await new Promise<void>((resolve) => this.#waiters.push(resolve));
+    }
+    this.#active += 1;
+    try {
+      return await task();
+    } finally {
+      this.#active -= 1;
+      const next = this.#waiters.shift();
+      if (next) next();
+    }
+  }
+}
+
 const bergamot = new BergamotClient();
 const pagelingoMt = new PageLingoMtClient();
+const externalCache = new ExternalTranslationCache();
+const externalGate = new ConcurrencyGate(6);
 const MODEL_UPDATE_ALARM = "pagelingo-model-updates";
 const MODEL_UPDATE_INTERVAL_MINUTES = 24 * 60;
 let overridesPromise = loadModelOverrides();
@@ -77,6 +114,151 @@ interface RuntimeMessage {
 
 function asLanguage(value: unknown): string | null {
   return normalizeDetectedLanguage(value);
+}
+
+function parseTerminologyPayload(raw: unknown): ExternalTranslationTerminologyEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((entry): entry is ExternalTranslationTerminologyEntry =>
+      Boolean(
+        entry &&
+        typeof entry === "object" &&
+        typeof (entry as { source?: unknown }).source === "string" &&
+        typeof (entry as { target?: unknown }).target === "string" &&
+        ((entry as { mode?: unknown }).mode === "protect" || (entry as { mode?: unknown }).mode === "replace")
+      )
+    )
+    .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }));
+}
+
+async function translateExternalSingleCached(
+  external: TranslationEngineConfig,
+  request: ExternalTranslationRequest,
+): Promise<string> {
+  const cacheable = externalCache.isCacheable(request.html);
+  const key = cacheable
+    ? externalTranslationCacheKey(external, request.sourceLanguage, request.targetLanguage, request.html, request.terminology)
+    : "";
+  if (cacheable) {
+    const cached = await externalCache.get(key);
+    if (cached !== undefined) return cached;
+    const inFlight = externalCache.getInFlight(key);
+    if (inFlight) return inFlight;
+  }
+  const run = externalGate.run(async () => {
+    const html = await translateWithExternalEngine(external, request);
+    if (cacheable) externalCache.set(key, html);
+    return html;
+  });
+  return cacheable ? externalCache.trackInFlight(key, run) : run;
+}
+
+async function translateExternalBatchCached(
+  external: TranslationEngineConfig,
+  requests: readonly ExternalTranslationRequest[],
+): Promise<string[]> {
+  if (requests.length === 0) return [];
+  if (requests.length === 1) return [await translateExternalSingleCached(external, requests[0]!)];
+
+  const results = new Array<string>(requests.length);
+  const keys = requests.map((request) =>
+    externalCache.isCacheable(request.html)
+      ? externalTranslationCacheKey(external, request.sourceLanguage, request.targetLanguage, request.html, request.terminology)
+      : "",
+  );
+  const uniqueLookupKeys = Array.from(new Set(keys.filter(Boolean)));
+  const cachedMap = uniqueLookupKeys.length > 0 ? await externalCache.getMany(uniqueLookupKeys) : new Map<string, string>();
+
+  const joinedPromises: Array<{ index: number; promise: Promise<string> }> = [];
+  const pendingByKey = new Map<string, {
+    request: ExternalTranslationRequest;
+    indexes: number[];
+    cacheable: boolean;
+    key: string;
+    resolve: (html: string) => void;
+    reject: (error: Error) => void;
+  }>();
+  const uncacheableItems: Array<{ request: ExternalTranslationRequest; index: number }> = [];
+
+  for (let index = 0; index < requests.length; index += 1) {
+    const request = requests[index]!;
+    const key = keys[index]!;
+    if (key) {
+      const cached = cachedMap.get(key);
+      if (cached !== undefined) {
+        results[index] = cached;
+        continue;
+      }
+      const inFlight = externalCache.getInFlight(key);
+      if (inFlight) {
+        joinedPromises.push({ index, promise: inFlight });
+        continue;
+      }
+      const existing = pendingByKey.get(key);
+      if (existing) {
+        existing.indexes.push(index);
+        continue;
+      }
+      let resolveDeferred!: (html: string) => void;
+      let rejectDeferred!: (error: Error) => void;
+      const deferred = new Promise<string>((resolve, reject) => {
+        resolveDeferred = resolve;
+        rejectDeferred = reject;
+      });
+      // Prevent unhandled rejection when no external caller joins this in-flight promise.
+      void deferred.catch(() => {});
+      externalCache.trackInFlight(key, deferred);
+      pendingByKey.set(key, {
+        request,
+        indexes: [index],
+        cacheable: true,
+        key,
+        resolve: resolveDeferred,
+        reject: rejectDeferred,
+      });
+    } else {
+      uncacheableItems.push({ request, index });
+    }
+  }
+
+  const batchEntries = Array.from(pendingByKey.values());
+  const batchRequests: ExternalTranslationRequest[] = [
+    ...batchEntries.map((entry) => entry.request),
+    ...uncacheableItems.map((entry) => entry.request),
+  ];
+
+  if (batchRequests.length > 0) {
+    try {
+      const translated = await externalGate.run(() =>
+        batchRequests.length === 1
+          ? translateWithExternalEngine(external, batchRequests[0]!).then((html) => [html])
+          : translateBatchWithExternalEngine(external, batchRequests),
+      );
+      for (let i = 0; i < batchEntries.length; i += 1) {
+        const entry = batchEntries[i]!;
+        const html = translated[i]!;
+        if (entry.cacheable) externalCache.set(entry.key, html);
+        entry.resolve(html);
+        for (const targetIndex of entry.indexes) results[targetIndex] = html;
+      }
+      for (let i = 0; i < uncacheableItems.length; i += 1) {
+        const entry = uncacheableItems[i]!;
+        results[entry.index] = translated[batchEntries.length + i]!;
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      for (const entry of batchEntries) entry.reject(err);
+      throw err;
+    }
+  }
+
+  if (joinedPromises.length > 0) {
+    await Promise.all(joinedPromises.map(async ({ index, promise }) => {
+      results[index] = await promise;
+    }));
+  }
+
+  return results;
 }
 
 async function currentOverrides(): Promise<ModelCatalogOverrides> {
@@ -120,7 +302,7 @@ async function refreshTranslationEngineState() {
 
 async function activeExternalEngine() {
   const state = await currentTranslationEngineState();
-  if (state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID) return null;
+  if (state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID || state.activeEngineId === PAGELINGO_MT_ENGINE_ID) return null;
   return state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
 }
 
@@ -130,11 +312,46 @@ async function translationEngineStateForUi() {
     ? null
     : state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
   const mt = await pagelingoMt.status();
+  const externalIsLlm = Boolean(activeExternal && externalEngineIsLlm(activeExternal.type));
+  const externalSupportsBatch = Boolean(activeExternal && externalEngineSupportsBatch(activeExternal.type));
+  const executionProfile = activeExternal
+    ? {
+        isExternal: true,
+        isLlm: externalIsLlm,
+        supportsBatch: externalSupportsBatch,
+        supportsPromptTerminology: externalIsLlm,
+        recommendedConcurrency: externalSupportsBatch ? 24 : 8,
+        batchMaxItems: externalIsLlm ? 10 : 24,
+        batchMaxChars: externalIsLlm ? 1500 : 4000,
+        batchConcurrency: 5,
+      }
+    : state.activeEngineId === PAGELINGO_MT_ENGINE_ID
+      ? {
+          isExternal: false,
+          isLlm: false,
+          supportsBatch: false,
+          supportsPromptTerminology: false,
+          recommendedConcurrency: 2,
+          batchMaxItems: 1,
+          batchMaxChars: 4000,
+          batchConcurrency: 1,
+        }
+      : {
+          isExternal: false,
+          isLlm: false,
+          supportsBatch: true,
+          supportsPromptTerminology: false,
+          recommendedConcurrency: 4,
+          batchMaxItems: 32,
+          batchMaxChars: 16000,
+          batchConcurrency: 1,
+        };
   return {
     activeEngineId: state.activeEngineId,
     structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID
       || state.activeEngineId === PAGELINGO_MT_ENGINE_ID
       || Boolean(activeExternal && isLoopbackTranslationEndpoint(activeExternal.baseUrl)),
+    executionProfile,
     mt,
     engines: state.engines.map((engine) => ({
       id: engine.id,
@@ -143,6 +360,7 @@ async function translationEngineStateForUi() {
       enabled: engine.enabled,
       model: engine.model,
       hasApiKey: Boolean(engine.apiKey),
+      disableThinking: engine.disableThinking !== false,
     })),
   };
 }
@@ -415,19 +633,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const sourceLanguage = asLanguage(request.sourceLanguage);
       const targetLanguage = asLanguage(request.targetLanguage);
       if (!sourceLanguage || !targetLanguage) throw new Error("Invalid translation languages");
-      const terminology = Array.isArray(request.terminology)
-        ? request.terminology
-            .filter((entry): entry is { source: string; target: string; mode: "protect" | "replace" } =>
-              Boolean(
-                entry &&
-                typeof entry === "object" &&
-                typeof (entry as { source?: unknown }).source === "string" &&
-                typeof (entry as { target?: unknown }).target === "string" &&
-                ((entry as { mode?: unknown }).mode === "protect" || (entry as { mode?: unknown }).mode === "replace")
-              )
-            )
-            .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }))
-        : [];
+      const terminology = parseTerminologyPayload(request.terminology);
       const engineState = await currentTranslationEngineState();
       if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
         const mtRequest = { html: request.html, sourceLanguage, targetLanguage, terminology };
@@ -444,7 +650,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
           throw new Error("外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权");
         }
-        const html = await translateWithExternalEngine(external, { html: request.html, sourceLanguage, targetLanguage, terminology });
+        const html = await translateExternalSingleCached(external, { html: request.html, sourceLanguage, targetLanguage, terminology });
         return { ok: true, html };
       }
       const overrides = await currentOverrides();
@@ -464,7 +670,13 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         const sourceLanguage = asLanguage(request.sourceLanguage);
         const targetLanguage = asLanguage(request.targetLanguage);
         if (!sourceLanguage || !targetLanguage) throw new Error("Invalid translation languages");
-        return { html: request.html, sourceLanguage, targetLanguage };
+        const terminology = parseTerminologyPayload(request.terminology);
+        return {
+          html: request.html,
+          sourceLanguage,
+          targetLanguage,
+          ...(terminology.length > 0 ? { terminology } : {}),
+        };
       });
       const first = normalized[0]!;
       if (normalized.some((request) =>
@@ -476,8 +688,16 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       if (batchEngineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
         return { ok: false, batchUnsupported: true, error: "PageLingo MT currently runs serial inference" };
       }
-      if (await activeExternalEngine()) {
-        return { ok: false, batchUnsupported: true, error: "Batching is local-Bergamot only" };
+      const external = await activeExternalEngine();
+      if (external) {
+        if (!externalEngineSupportsBatch(external.type)) {
+          return { ok: false, batchUnsupported: true, error: "Current external engine does not support batching" };
+        }
+        if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
+          throw new Error("外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权");
+        }
+        const htmls = await translateExternalBatchCached(external, normalized);
+        return { ok: true, htmls };
       }
       const overrides = await currentOverrides();
       const route = routeFor(first.sourceLanguage, first.targetLanguage, overrides);
@@ -558,6 +778,8 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "save-translation-engine") {
       await saveTranslationEngine(message.config);
       await refreshTranslationEngineState();
+      externalCache.clearMemory();
+      resetThinkingModeCache();
       return { ok: true, state: await translationEngineStateForUi() };
     }
 
@@ -565,6 +787,8 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       if (typeof message.id !== "string") throw new Error("Invalid engine id");
       await deleteTranslationEngine(message.id);
       await refreshTranslationEngineState();
+      externalCache.clearMemory();
+      resetThinkingModeCache();
       return { ok: true, state: await translationEngineStateForUi() };
     }
 
@@ -572,6 +796,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       if (typeof message.id !== "string" || typeof message.enabled !== "boolean") throw new Error("Invalid engine state");
       await setTranslationEngineEnabled(message.id, message.enabled);
       await refreshTranslationEngineState();
+      externalCache.clearMemory();
       return { ok: true, state: await translationEngineStateForUi() };
     }
 

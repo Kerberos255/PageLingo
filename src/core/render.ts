@@ -661,7 +661,9 @@ function restoreLinks(container, links, translatedLinkTexts = [], translatedGapT
 function restoreOpaque(container, opaque) {
     const nodes = Array.from(container.querySelectorAll("code,kbd,samp,var"));
     nodes.forEach((node, index) => {
-        const source = opaque[index];
+        const tokenMatch = (node.textContent ?? "").trim().match(/^__FLT_OPAQUE_(\d+)__$/);
+        const tokenIndex = tokenMatch ? Number.parseInt(tokenMatch[1], 10) : index;
+        const source = opaque[tokenIndex] ?? opaque[index];
         if (!source)
             return;
         node.textContent = source.text;

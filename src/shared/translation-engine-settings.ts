@@ -28,6 +28,7 @@ export interface TranslationEngineConfig {
   headersJson: string;
   bodyJson: string;
   responsePath: string;
+  disableThinking?: boolean;
 }
 
 export interface TranslationEngineState {
@@ -94,6 +95,7 @@ export function normalizeTranslationEngineConfig(value: unknown): TranslationEng
     headersJson: cleanString(raw.headersJson, 6000),
     bodyJson: cleanString(raw.bodyJson, 12000),
     responsePath: cleanString(raw.responsePath, 500),
+    disableThinking: raw.disableThinking !== false,
   };
 }
 

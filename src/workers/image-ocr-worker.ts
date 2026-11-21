@@ -49,15 +49,18 @@ function report(id: number, status: string): void {
 
 function progressLabel(progress: WorkerProgress): string | null {
   if (progress.type === "det") {
-    if (progress.stage === "preprocess") return "正在检测文字 · 预处理完成";
-    if (progress.stage === "infer") return "正在检测文字 · 模型推理完成";
-    if (progress.stage === "postprocess") return `正在识别文字 · 0/${progress.detectedCount ?? 0}`;
+    if (progress.stage === "preprocess") return "识别文字中…";
+    if (progress.stage === "infer") return "识别文字中…";
+    if (progress.stage === "postprocess") {
+      const total = progress.detectedCount ?? 0;
+      return total > 0 ? `识别文字中… (0/${total})` : "识别文字中…";
+    }
   }
   if (progress.type === "rec") {
     const current = progress.progress?.current ?? 0;
     const total = progress.progress?.total ?? 0;
-    if (progress.stage === "item") return `正在识别文字 · ${current}/${total}`;
-    if (progress.stage === "complete") return "文字识别完成 · 正在翻译";
+    if (progress.stage === "item" && total > 0) return `识别文字中… (${current}/${total})`;
+    if (progress.stage === "complete") return "翻译中…";
   }
   return null;
 }

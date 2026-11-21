@@ -91,6 +91,7 @@ const baseUrlInput = document.querySelector<HTMLInputElement>("#engine-base-url"
 const apiKeyInput = document.querySelector<HTMLInputElement>("#engine-api-key");
 const modelInput = document.querySelector<HTMLInputElement>("#engine-model");
 const regionInput = document.querySelector<HTMLInputElement>("#engine-region");
+const disableThinkingInput = document.querySelector<HTMLInputElement>("#engine-disable-thinking");
 const promptInput = document.querySelector<HTMLTextAreaElement>("#engine-prompt");
 const headersInput = document.querySelector<HTMLTextAreaElement>("#engine-headers-json");
 const bodyInput = document.querySelector<HTMLTextAreaElement>("#engine-body-json");
@@ -139,7 +140,7 @@ function updateConditionalFields(): void {
   for (const field of conditionalFields) {
     const kind = field.dataset.engineField;
     const visible = kind === "model" ? llm || type === "custom-rest"
-      : kind === "prompt" ? llm
+      : kind === "prompt" || kind === "thinking" ? llm
         : kind === "region" ? type === "microsoft"
           : kind === "custom" ? type === "custom-rest"
             : true;
@@ -154,6 +155,7 @@ function applyPreset(): void {
   if (baseUrlInput) baseUrlInput.value = preset.baseUrl;
   if (modelInput) modelInput.value = preset.model ?? "";
   if (regionInput) regionInput.value = "";
+  if (disableThinkingInput) disableThinkingInput.checked = true;
   if (promptInput) promptInput.value = "";
   if (headersInput) headersInput.value = preset.headersJson ?? "";
   if (bodyInput) bodyInput.value = preset.bodyJson ?? "";
@@ -179,6 +181,7 @@ function collectConfig(): TranslationEngineConfig {
     headersJson: headersInput?.value.trim() ?? "",
     bodyJson: bodyInput?.value.trim() ?? "",
     responsePath: responsePathInput?.value.trim() ?? "",
+    disableThinking: disableThinkingInput ? disableThinkingInput.checked : true,
   };
 }
 

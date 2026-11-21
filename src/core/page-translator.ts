@@ -12,7 +12,7 @@ import {
     translateRichHtmlTextNodesSafely,
 } from "./rich-segment-splitter";
 
-export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[] }
+export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[]; viewportLazy?:boolean; viewportMarginPx?:number }
 function translatedPlainText(_doc, html) {
     const parsed = new DOMParser().parseFromString(html, "text/html");
     return (parsed.body.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -218,17 +218,24 @@ export class PageTranslator {
     #shouldTranslateRoot;
     #displayMode;
     #terminology;
+    #viewportLazy;
+    #viewportMarginPx;
     #records = new Map();
     #pending = new Set();
     #inFlight = new Set();
     #rerun = new Set();
+    #deferredRoots = new Set();
     #observer = null;
+    #intersectionObserver = null;
     #tooltipController = null;
     #tooltipSnapshots = new Map();
     #flushQueued = false;
     #disposed = false;
     #sourceLinkStyleSnapshots = new Map();
     #sourceHadClassAttribute = new WeakMap();
+    #structuralSplittingAllowedPromise = null;
+    #promptTerminologySupportedPromise = null;
+    #layoutVerified = false;
     constructor(doc, provider, options = {}) {
         this.#doc = doc;
         this.#provider = provider;
@@ -238,6 +245,8 @@ export class PageTranslator {
         this.#shouldTranslateRoot = options.shouldTranslateRoot ?? null;
         this.#displayMode = options.displayMode ?? "translation";
         this.#terminology = Array.isArray(options.terminology) ? options.terminology : [];
+        this.#viewportLazy = options.viewportLazy !== false;
+        this.#viewportMarginPx = Math.max(0, options.viewportMarginPx ?? 600);
     }
     get translatedCount() {
         return this.#records.size;
@@ -250,13 +259,98 @@ export class PageTranslator {
             this.#applyDisplayMode(root, record.translationNode);
         }
     }
-    async translateAll(scope = this.#doc.body) {
-        if (this.#disposed)
-            return this.#records.size;
-        const roots = collectTranslationRoots(scope);
+    #providerAllowsStructuralSplitting() {
+        if (!this.#structuralSplittingAllowedPromise) {
+            this.#structuralSplittingAllowedPromise = providerAllowsStructuralSplitting(this.#provider);
+        }
+        return this.#structuralSplittingAllowedPromise;
+    }
+    #providerSupportsPromptTerminology() {
+        if (!this.#promptTerminologySupportedPromise) {
+            if (typeof this.#provider.supportsPromptTerminology !== "function") {
+                this.#promptTerminologySupportedPromise = Promise.resolve(false);
+            }
+            else {
+                this.#promptTerminologySupportedPromise = Promise.resolve(this.#provider.supportsPromptTerminology()).catch(() => false);
+            }
+        }
+        return this.#promptTerminologySupportedPromise;
+    }
+    #viewportDimensions() {
+        const view = this.#doc.defaultView;
+        const width = view?.innerWidth || this.#doc.documentElement?.clientWidth || 0;
+        const height = view?.innerHeight || this.#doc.documentElement?.clientHeight || 0;
+        return { view, width, height };
+    }
+    #hasViewportLayout(roots) {
+        if (!this.#viewportLazy) return false;
+        const { view, width, height } = this.#viewportDimensions();
+        if (!view || typeof view.IntersectionObserver !== "function" || width <= 0 || height <= 0) return false;
+        if (this.#layoutVerified) return true;
+        const verified = roots.some((root) => {
+            if (typeof root.getBoundingClientRect !== "function") return false;
+            const rect = root.getBoundingClientRect();
+            return rect.width > 0 || rect.height > 0;
+        });
+        if (verified) this.#layoutVerified = true;
+        return verified;
+    }
+    #isNearViewport(root, verticalMargin) {
+        if (typeof root.getBoundingClientRect !== "function") return true;
+        const { width, height } = this.#viewportDimensions();
+        if (width <= 0 || height <= 0) return true;
+        const rect = root.getBoundingClientRect();
+        if (rect.width <= 0 && rect.height <= 0) return false;
+        const horizontalMargin = 200;
+        return rect.bottom >= -verticalMargin
+            && rect.top <= height + verticalMargin
+            && rect.right >= -horizontalMargin
+            && rect.left <= width + horizontalMargin;
+    }
+    #sortByViewportPriority(roots) {
+        const scored = roots.map((root, index) => {
+            const rect = typeof root.getBoundingClientRect === "function"
+                ? root.getBoundingClientRect()
+                : { top: index, left: 0 };
+            const inMain = Boolean(root.closest?.("main, article, [role='main']"));
+            return { root, index, priority: inMain ? 0 : 1, top: rect.top, left: rect.left };
+        });
+        scored.sort((a, b) => a.priority - b.priority || a.top - b.top || a.left - b.left || a.index - b.index);
+        return scored.map((item) => item.root);
+    }
+    #ensureIntersectionObserver() {
+        if (this.#intersectionObserver || this.#disposed) return this.#intersectionObserver;
+        const view = this.#doc.defaultView;
+        if (!view || typeof view.IntersectionObserver !== "function") return null;
+        this.#intersectionObserver = new view.IntersectionObserver((entries) => {
+            if (this.#disposed) return;
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                const root = entry.target;
+                this.#intersectionObserver?.unobserve(root);
+                this.#deferredRoots.delete(root);
+                if (root.isConnected && !isGeneratedNode(root)) this.#queue(root);
+            }
+        }, {
+            rootMargin: `${this.#viewportMarginPx}px 0px`,
+            threshold: 0,
+        });
+        return this.#intersectionObserver;
+    }
+    #observeDeferredRoot(root) {
+        if (this.#disposed || !root.isConnected || this.#deferredRoots.has(root)) return;
+        const observer = this.#ensureIntersectionObserver();
+        if (!observer) {
+            this.#queue(root);
+            return;
+        }
+        this.#deferredRoots.add(root);
+        observer.observe(root);
+    }
+    async #runWorkers(roots, errorLabel = "[PageLingo] Translation root failed") {
         let cursor = 0;
         const workers = Array.from({ length: Math.min(this.#concurrency, roots.length) }, async () => {
-            while (cursor < roots.length) {
+            while (cursor < roots.length && !this.#disposed) {
                 const root = roots[cursor++];
                 if (!root)
                     continue;
@@ -264,16 +358,49 @@ export class PageTranslator {
                     await this.translateRoot(root);
                 }
                 catch (error) {
-                    console.warn("[PageLingo] Translation root failed", error);
+                    console.warn(errorLabel, error);
                 }
             }
         });
         await Promise.all(workers);
+    }
+    async translateAll(scope = this.#doc.body) {
+        if (this.#disposed)
+            return this.#records.size;
+        const roots = collectTranslationRoots(scope);
+        if (roots.length === 0)
+            return this.#records.size;
+        if (!this.#hasViewportLayout(roots)) {
+            await this.#runWorkers(roots);
+            return this.#records.size;
+        }
+        const initialMargin = Math.min(this.#viewportMarginPx, 350);
+        const immediate = [];
+        const deferred = [];
+        for (const root of roots) {
+            if (this.#isNearViewport(root, initialMargin)) immediate.push(root);
+            else deferred.push(root);
+        }
+        // On hero-heavy pages where the first prose starts below the initial fold,
+        // still translate the closest batch immediately so the user gets fast feedback.
+        if (immediate.length === 0 && deferred.length > 0) {
+            const orderedDeferred = this.#sortByViewportPriority(deferred);
+            immediate.push(...orderedDeferred.splice(0, Math.min(12, orderedDeferred.length)));
+            for (const root of orderedDeferred) this.#observeDeferredRoot(root);
+        }
+        else {
+            for (const root of deferred) this.#observeDeferredRoot(root);
+        }
+        const prioritized = this.#sortByViewportPriority(immediate);
+        await this.#runWorkers(prioritized);
         return this.#records.size;
     }
     async translateRoot(root) {
         if (this.#disposed || !root.isConnected || isGeneratedNode(root))
             return;
+        if (this.#deferredRoots.delete(root)) {
+            this.#intersectionObserver?.unobserve(root);
+        }
         if (this.#inFlight.has(root)) {
             this.#rerun.add(root);
             return;
@@ -318,7 +445,7 @@ export class PageTranslator {
         const nestingRiskRoot = markerCount >= 5 && markerCount <= 6 && markerDepth >= 2;
         const structuralFallbackAllowed =
             (complexRoot || nestingRiskRoot) &&
-            await providerAllowsStructuralSplitting(this.#provider);
+            await this.#providerAllowsStructuralSplitting();
         if (structuralFallbackAllowed && nestingRiskRoot) {
             translatedHtml = await translateLeafSafeRichHtml(
                 this.#doc,
@@ -358,22 +485,24 @@ export class PageTranslator {
             throw new Error("译文包含损坏字符，已保留原文");
         }
 
-        // Preferred translations are post-corrections. For a user-only term we learn the
-        // engine's standalone default as an alias, but never inject the preferred target into
-        // the source sentence before translation.
+        // Preferred translations are post-corrections. For local/NMT engines without prompt
+        // support, learn the engine's standalone default as an alias. Prompt-aware LLM
+        // providers already receive terminology rules directly in the request prompt.
         const dynamicAliases = new Map();
         const userTerms = this.#terminology.filter((entry) => entry.mode === "replace" && entry.origin === "user" && termOccurrenceCount(segment.fingerprint, entry.source, entry.caseSensitive === true) > 0);
-        await Promise.all(userTerms.map(async (entry) => {
-            try {
-                const aliasHtml = await this.#provider.translateHtml({
-                    html: escapeHtml(entry.source),
-                    sourceLanguage: this.#sourceLanguage,
-                    targetLanguage: this.#targetLanguage,
-                });
-                const alias = translatedPlainText(this.#doc, aliasHtml);
-                if (alias) dynamicAliases.set(entry.source.toLocaleLowerCase(), alias);
-            } catch {}
-        }));
+        if (userTerms.length > 0 && !(await this.#providerSupportsPromptTerminology())) {
+            await Promise.all(userTerms.map(async (entry) => {
+                try {
+                    const aliasHtml = await this.#provider.translateHtml({
+                        html: escapeHtml(entry.source),
+                        sourceLanguage: this.#sourceLanguage,
+                        targetLanguage: this.#targetLanguage,
+                    });
+                    const alias = translatedPlainText(this.#doc, aliasHtml);
+                    if (alias) dynamicAliases.set(entry.source.toLocaleLowerCase(), alias);
+                } catch {}
+            }));
+        }
         translatedHtml = applyTerminologyCorrectionsHtml(this.#doc, translatedHtml, segment.fingerprint, this.#terminology, dynamicAliases);
         if (hasBrokenTranslationHtml(translatedHtml)) {
             throw new Error("译文包含损坏字符，已保留原文");
@@ -441,6 +570,13 @@ export class PageTranslator {
             if (this.#rerun.delete(root) && !this.#disposed && root.isConnected) this.#queue(root);
         }
     }
+    #scheduleObservedRoot(root) {
+        if (this.#hasViewportLayout([root]) && !this.#isNearViewport(root, this.#viewportMarginPx)) {
+            this.#observeDeferredRoot(root);
+            return;
+        }
+        this.#queue(root);
+    }
     observe() {
         if (this.#observer || !this.#doc.body)
             return;
@@ -452,7 +588,7 @@ export class PageTranslator {
                     const parent = mutation.target.parentElement;
                     if (parent) {
                         for (const root of collectTranslationRoots(parent))
-                            this.#queue(root);
+                            this.#scheduleObservedRoot(root);
                     }
                     continue;
                 }
@@ -463,14 +599,14 @@ export class PageTranslator {
                         const parent = added.parentElement;
                         if (parent) {
                             for (const root of collectTranslationRoots(parent))
-                                this.#queue(root);
+                                this.#scheduleObservedRoot(root);
                         }
                     }
                     else if (added.nodeType === Node.ELEMENT_NODE) {
                         if (added.matches?.("[data-flt-source-text-wrapper]"))
                             continue;
                         for (const root of collectTranslationRoots(added))
-                            this.#queue(root);
+                            this.#scheduleObservedRoot(root);
                     }
                 }
             }
@@ -523,6 +659,9 @@ export class PageTranslator {
         this.#disposed = true;
         this.#observer?.disconnect();
         this.#observer = null;
+        this.#intersectionObserver?.disconnect();
+        this.#intersectionObserver = null;
+        this.#deferredRoots.clear();
         this.#tooltipController?.dispose();
         this.#tooltipController = null;
         this.#pending.clear();
@@ -624,17 +763,13 @@ export class PageTranslator {
         this.#flushQueued = false;
         const roots = Array.from(this.#pending);
         this.#pending.clear();
-        const guardNavigation = this.#displayMode === "translation" && roots.length > 0;
+        if (roots.length === 0 || this.#disposed)
+            return;
+        const ordered = this.#hasViewportLayout(roots) ? this.#sortByViewportPriority(roots) : roots;
+        const guardNavigation = this.#displayMode === "translation" && ordered.length > 0;
         const navigationHold = guardNavigation ? freezeNavigationLayout(false) : null;
         try {
-            for (const root of roots) {
-                try {
-                    await this.translateRoot(root);
-                }
-                catch (error) {
-                    console.warn("[Local Immersive Translate] Dynamic translation failed", error);
-                }
-            }
+            await this.#runWorkers(ordered, "[Local Immersive Translate] Dynamic translation failed");
         }
         finally {
             if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);

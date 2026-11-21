@@ -12,10 +12,23 @@ export interface TranslationRequest {
   signal?: AbortSignal;
 }
 
+export interface TranslationExecutionProfile {
+  isExternal: boolean;
+  isLlm: boolean;
+  supportsBatch: boolean;
+  supportsPromptTerminology: boolean;
+  recommendedConcurrency: number;
+  batchMaxItems: number;
+  batchMaxChars: number;
+  batchConcurrency: number;
+}
+
 export interface TranslationProvider {
   translateHtml(request: TranslationRequest): Promise<string>;
   translateHtmlChecked?(request: TranslationRequest): Promise<CheckedTranslationResult>;
   supportsStructuralSplitting?(): Promise<boolean>;
+  supportsPromptTerminology?(): Promise<boolean>;
+  getExecutionProfile?(): Promise<TranslationExecutionProfile>;
 }
 
 

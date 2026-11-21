@@ -762,3 +762,160 @@ describe("PageTranslator event-driven tooltips", () => {
   });
 
 });
+
+describe("PageTranslator viewport priority, concurrency, and structure preservation", () => {
+  it("translates visible main content first, defers off-screen sidebar links via IntersectionObserver, and restores DOM verbatim", async () => {
+    const sidebarItems = Array.from({ length: 40 }, (_, i) => `<li><a id="side-${i}" href="/doc-${i}">Sidebar item ${i}</a></li>`).join("");
+    document.body.innerHTML = `
+      <nav id="top-nav"><a id="nav-link" href="/start">Get Started</a></nav>
+      <aside id="sidebar"><ul>${sidebarItems}</ul></aside>
+      <main id="main"><article><p id="hero">OpenClaw runs on your machine.</p></article></main>
+    `;
+    const originalBodyHtml = document.body.innerHTML;
+
+    const observed = new Set<Element>();
+    const ioState: { cb: ((entries: Array<{ target: Element; isIntersecting: boolean }>) => void) | null } = { cb: null };
+    let disconnected = false;
+    class FakeIntersectionObserver {
+      constructor(cb: (entries: Array<{ target: Element; isIntersecting: boolean }>) => void) {
+        ioState.cb = cb;
+      }
+      observe(el: Element) { observed.add(el); }
+      unobserve(el: Element) { observed.delete(el); }
+      disconnect() { disconnected = true; observed.clear(); }
+    }
+
+    const origIO = (window as any).IntersectionObserver;
+    const origW = Object.getOwnPropertyDescriptor(window, "innerWidth");
+    const origH = Object.getOwnPropertyDescriptor(window, "innerHeight");
+    (window as any).IntersectionObserver = FakeIntersectionObserver;
+    Object.defineProperty(window, "innerWidth", { value: 1440, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 900, configurable: true });
+
+    const setRect = (el: Element | null, top: number, height = 24) => {
+      if (!el) return;
+      (el as HTMLElement).getBoundingClientRect = () => ({
+        x: 20, y: top, top, left: 20, width: 240, height, right: 260, bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect);
+    };
+
+    try {
+      const provider = new FakeHtmlProvider();
+      const translator = new PageTranslator(document, provider, { concurrency: 1, displayMode: "translation" });
+
+      // Position top nav and main hero inside viewport; place all 40 sidebar items far below fold.
+      setRect(document.querySelector("#nav-link"), 16);
+      setRect(document.querySelector("#hero"), 120);
+      for (let i = 0; i < 40; i += 1) {
+        setRect(document.querySelector(`#side-${i}`), 2500 + i * 36);
+      }
+
+      const origGetRect = HTMLElement.prototype.getBoundingClientRect;
+      HTMLElement.prototype.getBoundingClientRect = function () {
+        if (this.hasAttribute("data-flt-source-text-wrapper") && this.parentElement) {
+          return this.parentElement.getBoundingClientRect();
+        }
+        return origGetRect.call(this);
+      };
+      try {
+        await translator.translateAll();
+        // Only the 2 visible roots (#hero in <main> and #nav-link in <nav>) should have been translated!
+        expect(provider.requests).toHaveLength(2);
+        // Main article content is prioritized BEFORE top navigation.
+        expect(provider.requests[0]?.html).toContain("OpenClaw runs on your machine.");
+        expect(provider.requests[1]?.html).toContain("Get Started");
+        // All 40 off-screen sidebar roots are deferred to IntersectionObserver.
+        expect(observed.size).toBe(40);
+
+        // Simulate user scrolling the sidebar to reveal 2 items.
+        const firstTwoDeferred = Array.from(observed).slice(0, 2);
+        ioState.cb?.(firstTwoDeferred.map((target) => ({ target, isIntersecting: true })));
+        await new Promise((resolve) => setTimeout(resolve, 25));
+
+        expect(provider.requests).toHaveLength(4);
+        expect(observed.size).toBe(38);
+
+        // Restore must disconnect IntersectionObserver and return DOM verbatim to original structure.
+        translator.restore();
+        expect(disconnected).toBe(true);
+        expect(document.body.innerHTML).toBe(originalBodyHtml);
+      } finally {
+        HTMLElement.prototype.getBoundingClientRect = origGetRect;
+      }
+    } finally {
+      (window as any).IntersectionObserver = origIO;
+      if (origW) Object.defineProperty(window, "innerWidth", origW);
+      if (origH) Object.defineProperty(window, "innerHeight", origH);
+    }
+  });
+
+  it("flushes dynamically inserted roots concurrently instead of serially", async () => {
+    document.body.innerHTML = `<main id="main"><p>Initial</p></main>`;
+    let active = 0;
+    let peak = 0;
+    class ConcurrentTrackingProvider implements TranslationProvider {
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        active -= 1;
+        return `译:${request.html}`;
+      }
+    }
+    const translator = new PageTranslator(document, new ConcurrentTrackingProvider(), { concurrency: 4 });
+    await translator.translateAll();
+    translator.observe();
+    peak = 0;
+
+    const main = document.querySelector("#main")!;
+    for (let i = 0; i < 4; i += 1) {
+      const p = document.createElement("p");
+      p.textContent = `Dynamic paragraph ${i}`;
+      main.append(p);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(peak).toBeGreaterThanOrEqual(2);
+    expect(document.querySelectorAll(".flt-translation")).toHaveLength(5);
+    translator.restore();
+  });
+
+  it("skips redundant standalone user-term probes when provider supports prompt terminology", async () => {
+    document.body.innerHTML = `<p id="p">Configure Gateway settings.</p>`;
+    class PromptAwareProvider implements TranslationProvider {
+      requests: TranslationRequest[] = [];
+      async supportsPromptTerminology(): Promise<boolean> { return true; }
+      async translateHtml(request: TranslationRequest): Promise<string> {
+        this.requests.push(request);
+        return "配置网关设置。";
+      }
+    }
+    const provider = new PromptAwareProvider();
+    const translator = new PageTranslator(document, provider, {
+      displayMode: "translation",
+      terminology: [
+        { source: "Gateway", target: "网关", mode: "replace", origin: "user", aliases: ["Gateway"] },
+      ],
+    });
+    await translator.translateAll();
+
+    expect(provider.requests).toHaveLength(1);
+    expect(document.querySelector(".flt-translation")?.textContent).toBe("配置网关设置。");
+  });
+
+  it("restores opaque code spans by token index even when translation reorders them", async () => {
+    document.body.innerHTML = `<p id="p">Run <code>npm install</code> before <code>npm test</code>.</p>`;
+    class ReorderingOpaqueProvider implements TranslationProvider {
+      async translateHtml(): Promise<string> {
+        return "在运行 <code>__FLT_OPAQUE_1__</code> 之前先运行 <code>__FLT_OPAQUE_0__</code>。";
+      }
+    }
+    const translator = new PageTranslator(document, new ReorderingOpaqueProvider(), { displayMode: "translation" });
+    await translator.translateAll();
+
+    const codes = Array.from(document.querySelectorAll(".flt-translation code")).map((el) => el.textContent);
+    expect(codes).toEqual(["npm test", "npm install"]);
+  });
+});
+

@@ -3,7 +3,7 @@ import { PageTranslator } from "./core/page-translator";
 import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, normalizeDisplayMode } from "./shared/settings";
-import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint } from "./core/rich-segment";
+import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint, terminologyForText } from "./core/rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint, restoreNavigationLayout } from "./core/navigation-layout";
 import { collectTranslationTelemetry } from "./core/translation-telemetry";
 import {
@@ -12,8 +12,12 @@ import {
 } from "./shared/automatic-translation-state";
 import { relativeTimeElements } from "./shared/relative-time";
 import { sourceTextSample } from "./shared/source-text-sample";
+import { isUiMetadataText } from "./image-translation/ocr-layout";
+import { renderTranslatedImageToCanvas } from "./image-translation/image-renderer";
 var translator = null;
 var imageOverlays = new Map();
+var imageResizeObservers = new Map();
+var activeImageRequests = new Map();
 var activeImageOverlay = null;
 function ensureStyle() {
     if (document.getElementById("flt-style"))
@@ -248,10 +252,13 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         if (rootLanguage === normalizedTarget) return false;
         return !settings.neverTranslateLanguages.includes(rootLanguage);
     };
-    const pageTranslator = new PageTranslator(document, new RuntimeMessageProvider(), {
+    const provider = new RuntimeMessageProvider();
+    const executionProfile = await provider.getExecutionProfile();
+    if (stale()) return 0;
+    const pageTranslator = new PageTranslator(document, provider, {
         sourceLanguage: resolvedSource,
         targetLanguage: normalizedTarget,
-        concurrency: 4,
+        concurrency: executionProfile.recommendedConcurrency,
         displayMode: settings.displayMode,
         shouldTranslateRoot,
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
@@ -273,6 +280,31 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     finally {
         if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
     }
+}
+function ensureImageOverlayStyle() {
+    if (document.getElementById("pagelingo-image-style"))
+        return;
+    const style = document.createElement("style");
+    style.id = "pagelingo-image-style";
+    style.dataset.pagelingoImageGenerated = "style";
+    style.textContent = `
+    @keyframes pagelingo-image-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    [data-pagelingo-image-toolbar] {
+      opacity: 0.36 !important;
+      transition: opacity 160ms ease !important;
+    }
+    [data-pagelingo-image-toolbar]:hover,
+    [data-pagelingo-image-toolbar]:focus-within {
+      opacity: 1 !important;
+    }
+    [data-pagelingo-image-toolbar] button:hover {
+      background: rgba(255, 255, 255, 0.2) !important;
+    }
+  `;
+    document.documentElement.append(style);
 }
 function normalizeAbsoluteUrl(value) {
     try {
@@ -296,9 +328,30 @@ function positionImageOverlay(image, overlay) {
     overlay.style.setProperty("top", `${rect.top + window.scrollY}px`, "important");
     overlay.style.setProperty("width", `${rect.width}px`, "important");
     overlay.style.setProperty("height", `${rect.height}px`, "important");
+    const computed = window.getComputedStyle?.(image);
+    if (computed?.borderRadius) {
+        overlay.style.setProperty("border-radius", computed.borderRadius, "important");
+    }
+}
+function disposeImageOverlay(image) {
+    const overlay = imageOverlays.get(image);
+    if (overlay) {
+        overlay.remove();
+        imageOverlays.delete(image);
+        if (activeImageOverlay === overlay) activeImageOverlay = null;
+        for (const [id, candidate] of activeImageRequests) {
+            if (candidate === overlay) activeImageRequests.delete(id);
+        }
+    }
+    const resizeObserver = imageResizeObservers.get(image);
+    if (resizeObserver) {
+        resizeObserver.disconnect();
+        imageResizeObservers.delete(image);
+    }
 }
 function createImageOverlay(image) {
-    imageOverlays.get(image)?.remove();
+    ensureImageOverlayStyle();
+    disposeImageOverlay(image);
     const overlay = document.createElement("div");
     overlay.dataset.pagelingoImageOverlay = "true";
     setImportantStyle(overlay, {
@@ -315,176 +368,266 @@ function createImageOverlay(image) {
     positionImageOverlay(image, overlay);
     (document.body ?? document.documentElement).append(overlay);
     imageOverlays.set(image, overlay);
+    if (typeof ResizeObserver === "function") {
+        const ro = new ResizeObserver(() => {
+            if (!image.isConnected) {
+                disposeImageOverlay(image);
+                return;
+            }
+            positionImageOverlay(image, overlay);
+        });
+        ro.observe(image);
+        imageResizeObservers.set(image, ro);
+    }
     return overlay;
 }
-function showImageStatus(overlay, status) {
-    let statusEl = overlay.querySelector("[data-pagelingo-image-status]");
-    if (!statusEl) {
-        statusEl = document.createElement("div");
-        statusEl.dataset.pagelingoImageStatus = "true";
-        setImportantStyle(statusEl, {
+function createImageSpinnerSvg() {
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", "0 0 36 36");
+    svg.setAttribute("width", "30");
+    svg.setAttribute("height", "30");
+    svg.setAttribute("aria-hidden", "true");
+    setImportantStyle(svg, {
+        display: "block",
+        width: "30px",
+        height: "30px",
+        "flex-shrink": "0",
+        animation: "pagelingo-image-spin 0.85s linear infinite",
+    });
+    const track = document.createElementNS(svgNS, "circle");
+    track.setAttribute("cx", "18");
+    track.setAttribute("cy", "18");
+    track.setAttribute("r", "14");
+    track.setAttribute("fill", "none");
+    track.setAttribute("stroke", "rgba(255, 255, 255, 0.28)");
+    track.setAttribute("stroke-width", "3");
+    const arc = document.createElementNS(svgNS, "circle");
+    arc.setAttribute("cx", "18");
+    arc.setAttribute("cy", "18");
+    arc.setAttribute("r", "14");
+    arc.setAttribute("fill", "none");
+    arc.setAttribute("stroke", "#ffffff");
+    arc.setAttribute("stroke-width", "3");
+    arc.setAttribute("stroke-linecap", "round");
+    arc.setAttribute("stroke-dasharray", "52 38");
+    svg.append(track, arc);
+    return svg;
+}
+function parseImageProgressStatus(rawStatus) {
+    const text = String(rawStatus ?? "").trim();
+    const countMatch = text.match(/\((\d+)\/(\d+)\)$/);
+    if (countMatch) {
+        const current = Number.parseInt(countMatch[1], 10);
+        const total = Number.parseInt(countMatch[2], 10);
+        const label = text.slice(0, countMatch.index).trim() || "识别文字中…";
+        const ratio = total > 0 ? Math.max(0, Math.min(1, current / total)) : null;
+        return { label, ratio };
+    }
+    return { label: text || "翻译中…", ratio: null };
+}
+function showImageStatus(overlay, status, options = {}) {
+    const isError = options.error === true;
+    const onDismiss = typeof options.onDismiss === "function" ? options.onDismiss : null;
+    let card = overlay.querySelector("[data-pagelingo-image-status]");
+    if (!card || card.dataset.pagelingoImageError !== (isError ? "true" : "false")) {
+        card?.remove();
+        card = document.createElement("div");
+        card.dataset.pagelingoImageStatus = "true";
+        card.dataset.pagelingoImageError = isError ? "true" : "false";
+        setImportantStyle(card, {
             position: "absolute",
             left: "50%",
-            top: "12px",
-            transform: "translateX(-50%)",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            display: "flex",
+            "flex-direction": "column",
+            "align-items": "center",
+            "justify-content": "center",
+            gap: "9px",
+            "min-width": isError ? "148px" : "112px",
             "max-width": "calc(100% - 24px)",
-            padding: "7px 10px",
-            "border-radius": "8px",
-            background: "rgba(16, 18, 22, .96)",
-            color: "white",
-            font: "600 12px/1.35 system-ui, sans-serif",
+            padding: isError ? "12px 16px" : "14px 18px",
+            "border-radius": "14px",
+            background: isError ? "rgba(28, 22, 24, 0.78)" : "rgba(24, 26, 32, 0.60)",
+            "backdrop-filter": "blur(8px)",
+            "-webkit-backdrop-filter": "blur(8px)",
+            border: "1px solid rgba(255, 255, 255, 0.14)",
+            color: "#ffffff",
+            font: '500 13px/1.35 "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
             "text-align": "center",
-            "box-shadow": "0 4px 16px rgba(0,0,0,.28)",
+            "box-shadow": "0 8px 24px rgba(0, 0, 0, 0.26)",
             "white-space": "normal",
             "box-sizing": "border-box",
+            "pointer-events": isError ? "auto" : "none",
         });
-        overlay.append(statusEl);
+        if (!isError) {
+            card.append(createImageSpinnerSvg());
+        }
+        const labelEl = document.createElement("span");
+        labelEl.dataset.pagelingoImageLabel = "true";
+        setImportantStyle(labelEl, {
+            display: "block",
+            color: "#ffffff",
+            font: '500 13px/1.35 "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+            "text-align": "center",
+            "text-shadow": "0 1px 2px rgba(0, 0, 0, 0.3)",
+            "white-space": "normal",
+        });
+        card.append(labelEl);
+
+        if (!isError) {
+            const barTrack = document.createElement("div");
+            barTrack.dataset.pagelingoImageBarTrack = "true";
+            setImportantStyle(barTrack, {
+                display: "none",
+                width: "84px",
+                height: "3px",
+                "border-radius": "999px",
+                background: "rgba(255, 255, 255, 0.22)",
+                overflow: "hidden",
+            });
+            const barFill = document.createElement("div");
+            barFill.dataset.pagelingoImageBarFill = "true";
+            setImportantStyle(barFill, {
+                display: "block",
+                width: "0%",
+                height: "100%",
+                "border-radius": "999px",
+                background: "#ffffff",
+                transition: "width 140ms ease-out",
+            });
+            barTrack.append(barFill);
+            card.append(barTrack);
+        }
+        else if (onDismiss) {
+            const closeBtn = document.createElement("button");
+            closeBtn.type = "button";
+            closeBtn.textContent = "关闭";
+            setImportantStyle(closeBtn, {
+                display: "inline-flex",
+                "align-items": "center",
+                "justify-content": "center",
+                padding: "4px 10px",
+                "border-radius": "999px",
+                background: "rgba(255, 255, 255, 0.16)",
+                color: "#ffffff",
+                font: '500 12px/1.2 "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+                cursor: "pointer",
+                border: "0",
+            });
+            closeBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                onDismiss();
+            });
+            card.append(closeBtn);
+        }
+        overlay.append(card);
     }
-    statusEl.textContent = `PageLingo · ${status}`;
+    const labelEl = card.querySelector("[data-pagelingo-image-label]");
+    const barTrack = card.querySelector("[data-pagelingo-image-bar-track]");
+    const barFill = card.querySelector("[data-pagelingo-image-bar-fill]");
+    if (isError) {
+        if (labelEl) labelEl.textContent = status;
+        return;
+    }
+    const parsed = parseImageProgressStatus(status);
+    if (labelEl) labelEl.textContent = parsed.label;
+    if (barTrack && barFill) {
+        if (parsed.ratio !== null) {
+            barTrack.style.setProperty("display", "block", "important");
+            barFill.style.setProperty("width", `${Math.round(parsed.ratio * 100)}%`, "important");
+        }
+        else {
+            barTrack.style.setProperty("display", "none", "important");
+        }
+    }
 }
 function setImportantStyle(element, values) {
     element.style.setProperty("all", "initial", "important");
     for (const [property, value] of Object.entries(values))
         element.style.setProperty(property, value, "important");
 }
-function medianNumber(values, fallback) {
-    const clean = values.filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
-    return clean.length ? clean[Math.floor(clean.length / 2)] : fallback;
-}
-function fitImageTranslationText(item, initialSize) {
-    let low = 6;
-    let high = Math.max(low, initialSize);
-    item.style.setProperty("font-size", `${high}px`, "important");
-    if (item.scrollHeight <= item.clientHeight + 0.5 && item.scrollWidth <= item.clientWidth + 0.5) return;
-    for (let step = 0; step < 8; step += 1) {
-        const mid = (low + high) / 2;
-        item.style.setProperty("font-size", `${mid}px`, "important");
-        const fits = item.scrollHeight <= item.clientHeight + 0.5 && item.scrollWidth <= item.clientWidth + 0.5;
-        if (fits) low = mid;
-        else high = mid;
-    }
-    item.style.setProperty("font-size", `${Math.max(6, low - 0.15)}px`, "important");
-}
-function sampleImageRegionBackground(pixels, imageWidth, imageHeight, box) {
-    const data = new Uint8ClampedArray(pixels);
-    const valuesR = [];
-    const valuesG = [];
-    const valuesB = [];
-    const x0 = Math.max(0, Math.floor(box.x));
-    const y0 = Math.max(0, Math.floor(box.y));
-    const x1 = Math.min(imageWidth - 1, Math.ceil(box.x + box.width));
-    const y1 = Math.min(imageHeight - 1, Math.ceil(box.y + box.height));
-    const band = Math.max(3, Math.min(8, Math.round(box.height * 0.2)));
-    const add = (x, y) => {
-        if (x < 0 || y < 0 || x >= imageWidth || y >= imageHeight) return;
-        const offset = (y * imageWidth + x) * 4;
-        if ((data[offset + 3] ?? 0) < 128) return;
-        valuesR.push(data[offset] ?? 0);
-        valuesG.push(data[offset + 1] ?? 0);
-        valuesB.push(data[offset + 2] ?? 0);
+function createImageOverlayToolbar(image, canvas) {
+    const toolbar = document.createElement("div");
+    toolbar.dataset.pagelingoImageToolbar = "true";
+    setImportantStyle(toolbar, {
+        position: "absolute",
+        top: "8px",
+        right: "8px",
+        display: "inline-flex",
+        "align-items": "center",
+        gap: "2px",
+        padding: "3px 4px",
+        "border-radius": "999px",
+        background: "rgba(20, 22, 28, 0.68)",
+        "backdrop-filter": "blur(8px)",
+        "-webkit-backdrop-filter": "blur(8px)",
+        border: "1px solid rgba(255, 255, 255, 0.16)",
+        "box-shadow": "0 4px 12px rgba(0, 0, 0, 0.22)",
+        "pointer-events": "auto",
+        "z-index": "2",
+    });
+
+    const buttonStyle = {
+        display: "inline-flex",
+        "align-items": "center",
+        "justify-content": "center",
+        padding: "3px 8px",
+        "border-radius": "999px",
+        background: "transparent",
+        color: "#ffffff",
+        font: '500 11px/1.2 "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+        cursor: "pointer",
+        border: "0",
+        "white-space": "nowrap",
     };
-    const step = Math.max(1, Math.floor(Math.max(box.width, box.height) / 90));
-    for (let x = x0; x <= x1; x += step) {
-        for (let d = 1; d <= band; d += 1) {
-            add(x, y0 - d);
-            add(x, y1 + d);
-        }
-    }
-    for (let y = y0; y <= y1; y += step) {
-        for (let d = 1; d <= band; d += 1) {
-            add(x0 - d, y);
-            add(x1 + d, y);
-        }
-    }
-    if (valuesR.length < 4) return { background: "rgb(245, 245, 245)", color: "#111" };
-    const median = (values) => {
-        values.sort((a, b) => a - b);
-        return values[Math.floor(values.length / 2)] ?? 245;
-    };
-    const r = median(valuesR);
-    const g = median(valuesG);
-    const b = median(valuesB);
-    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    return {
-        background: `rgb(${r}, ${g}, ${b})`,
-        color: luminance < 105 ? "#fff" : "#111",
-    };
-}
-function expandedImageBox(box, imageWidth, imageHeight, xFactor = 0.55, yFactor = 0.38) {
-    const padX = Math.max(5, Math.min(18, box.height * xFactor));
-    const padY = Math.max(4, Math.min(12, box.height * yFactor));
-    const x = Math.max(0, box.x - padX);
-    const y = Math.max(0, box.y - padY);
-    const right = Math.min(imageWidth, box.x + box.width + padX);
-    const bottom = Math.min(imageHeight, box.y + box.height + padY);
-    return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
-}
-function percentBox(box, imageWidth, imageHeight) {
-    const left = Math.max(0, Math.min(100, (box.x / imageWidth) * 100));
-    const top = Math.max(0, Math.min(100, (box.y / imageHeight) * 100));
-    const width = Math.max(1, Math.min(100 - left, (box.width / imageWidth) * 100));
-    const height = Math.max(1, Math.min(100 - top, (box.height / imageHeight) * 100));
-    return { left, top, width, height };
-}
-function canvasTextLines(context, text, maxWidth) {
-    const normalized = String(text ?? "").replace(/\s+/g, " ").trim();
-    if (!normalized) return [];
-    const chars = Array.from(normalized);
-    const lines = [];
-    let line = "";
-    let lastBreak = -1;
-    for (let index = 0; index < chars.length; index += 1) {
-        const char = chars[index];
-        const candidate = line + char;
-        if (/\s/u.test(char)) lastBreak = line.length;
-        if (line && context.measureText(candidate).width > maxWidth) {
-            if (lastBreak >= 0) {
-                const head = line.slice(0, lastBreak).trimEnd();
-                const tail = line.slice(lastBreak + 1).trimStart();
-                if (head) lines.push(head);
-                line = tail + (char === " " ? "" : char);
-            }
-            else {
-                lines.push(line);
-                line = char === " " ? "" : char;
-            }
-            lastBreak = -1;
-            continue;
-        }
-        line = candidate;
-    }
-    if (line.trim()) lines.push(line.trim());
-    return lines;
-}
-function fitCanvasTranslation(context, text, box, maxFontSize, minFontSize = 6) {
-    const width = Math.max(8, box.width - 6);
-    const height = Math.max(8, box.height - 4);
-    for (let fontSize = Math.max(minFontSize, Math.floor(maxFontSize)); fontSize >= minFontSize; fontSize -= 0.5) {
-        context.font = `500 ${fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-        const lines = canvasTextLines(context, text, width);
-        const lineHeight = fontSize * 1.18;
-        if (lines.length > 0 && lines.length * lineHeight <= height) {
-            return { fontSize, lineHeight, lines };
-        }
-    }
-    context.font = `500 ${minFontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-    return { fontSize: minFontSize, lineHeight: minFontSize * 1.15, lines: canvasTextLines(context, text, width) };
+
+    let showingTranslation = true;
+    const toggleBtn = document.createElement("button");
+    toggleBtn.type = "button";
+    toggleBtn.textContent = "原文";
+    toggleBtn.title = "切换原文与译文";
+    setImportantStyle(toggleBtn, buttonStyle);
+    toggleBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showingTranslation = !showingTranslation;
+        canvas.style.setProperty("opacity", showingTranslation ? "1" : "0", "important");
+        toggleBtn.textContent = showingTranslation ? "原文" : "译文";
+    });
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "×";
+    closeBtn.title = "关闭图片译文";
+    closeBtn.setAttribute("aria-label", "关闭图片译文");
+    setImportantStyle(closeBtn, { ...buttonStyle, padding: "3px 6px", "font-size": "13px" });
+    closeBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        disposeImageOverlay(image);
+    });
+
+    toolbar.append(toggleBtn, closeBtn);
+    return toolbar;
 }
 function renderTranslatedRegions(image, overlay, regions, ocrWidth, ocrHeight, pixels) {
     overlay.replaceChildren();
     positionImageOverlay(image, overlay);
     if (regions.length === 0) {
-        showImageStatus(overlay, "没有需要覆盖的译文");
+        showImageStatus(overlay, "未检测到需要翻译的文字", {
+            error: true,
+            onDismiss: () => disposeImageOverlay(image),
+        });
         return;
     }
 
-    // Render the whole translated image on one canvas. This keeps every region in
-    // one coordinate system, avoids page CSS leaking into translated text, and
-    // prevents dozens of absolutely-positioned DOM boxes from overlapping.
+    // Render the whole translated image on one high-DPI canvas. This keeps every region in
+    // one coordinate system, avoids page CSS leaking into translated text, and eliminates
+    // misaligned DOM overlay boxes while matching the source image's exact geometry.
     const canvas = document.createElement("canvas");
     canvas.dataset.pagelingoImageCanvas = "true";
-    canvas.width = Math.max(1, Math.round(ocrWidth));
-    canvas.height = Math.max(1, Math.round(ocrHeight));
     setImportantStyle(canvas, {
         position: "absolute",
         left: "0",
@@ -497,72 +640,36 @@ function renderTranslatedRegions(image, overlay, regions, ocrWidth, ocrHeight, p
         border: "0",
         "pointer-events": "none",
         "box-sizing": "border-box",
+        opacity: "0",
+        transition: "opacity 220ms ease-out",
     });
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (!context) {
-        showImageStatus(overlay, "无法创建图片画布");
+
+    const rect = image.getBoundingClientRect();
+    const painted = renderTranslatedImageToCanvas(canvas, {
+        image,
+        regions,
+        ocrWidth,
+        ocrHeight,
+        pixels,
+        displayWidth: rect.width > 0 ? rect.width : ocrWidth,
+        displayHeight: rect.height > 0 ? rect.height : ocrHeight,
+        devicePixelRatio: window.devicePixelRatio || 1,
+    });
+    if (!painted) {
+        showImageStatus(overlay, "无法创建图片画布", {
+            error: true,
+            onDismiss: () => disposeImageOverlay(image),
+        });
         return;
-    }
-    // Firefox content scripts can reject ImageData created in the extension realm when
-    // it is passed into a canvas living in the page realm. drawImage does not cross that
-    // typed-array boundary, and we already retain the OCR pixel buffer separately for
-    // background-colour sampling.
-    try {
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    }
-    catch (error) {
-        console.warn("[PageLingo] Could not paint source image onto translation canvas", error);
-    }
-
-    const sourceLineHeights = regions.map((region) => Number(region._lineHeight) || region.box.height);
-    const medianLineHeight = medianNumber(sourceLineHeights, 18);
-    const uniformBaseFont = Math.max(7, Math.min(22, medianLineHeight * 0.78));
-    const prepared = regions.map((region) => {
-        const lineHeight = Math.max(1, Number(region._lineHeight) || medianLineHeight);
-        const padX = Math.max(3, Math.min(10, lineHeight * 0.28));
-        const padY = Math.max(2, Math.min(7, lineHeight * 0.22));
-        const x = Math.max(0, region.box.x - padX);
-        const y = Math.max(0, region.box.y - padY);
-        const right = Math.min(ocrWidth, region.box.x + region.box.width + padX);
-        const bottom = Math.min(ocrHeight, region.box.y + region.box.height + padY);
-        const box = { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
-        const palette = sampleImageRegionBackground(pixels, ocrWidth, ocrHeight, box);
-        return { region, box, palette, lineHeight };
-    });
-
-    // Erase every source text area first, then draw all translations. Doing this in
-    // two passes means an adjacent erase box can never paint over translated text.
-    for (const entry of prepared) {
-        context.save();
-        context.fillStyle = entry.palette.background;
-        const radius = Math.max(1, Math.min(5, entry.lineHeight * 0.22));
-        context.beginPath();
-        if (typeof context.roundRect === "function") context.roundRect(entry.box.x, entry.box.y, entry.box.width, entry.box.height, radius);
-        else context.rect(entry.box.x, entry.box.y, entry.box.width, entry.box.height);
-        context.fill();
-        context.restore();
-    }
-
-    for (const entry of prepared) {
-        const maxFont = Math.min(uniformBaseFont, Math.max(7, entry.lineHeight * 0.88));
-        const layout = fitCanvasTranslation(context, entry.region.text, entry.box, maxFont, 6);
-        context.save();
-        context.fillStyle = entry.palette.color;
-        context.font = `500 ${layout.fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-        context.textBaseline = "top";
-        context.textAlign = "left";
-        const innerX = entry.box.x + 3;
-        const innerWidth = Math.max(1, entry.box.width - 6);
-        const totalHeight = layout.lines.length * layout.lineHeight;
-        let y = entry.box.y + Math.max(1, (entry.box.height - totalHeight) / 2);
-        for (const line of layout.lines) {
-            context.fillText(line, innerX, y, innerWidth);
-            y += layout.lineHeight;
-        }
-        context.restore();
     }
 
     overlay.append(canvas);
+    if (rect.width >= 96 && rect.height >= 48) {
+        overlay.append(createImageOverlayToolbar(image, canvas));
+    }
+    requestAnimationFrame(() => {
+        if (canvas.isConnected) canvas.style.setProperty("opacity", "1", "important");
+    });
 }
 async function imagePixels(srcUrl) {
     const response = await sendRuntimeMessage({ type: "fetch-image-bytes", url: srcUrl });
@@ -592,19 +699,16 @@ async function imagePixels(srcUrl) {
 }
 function translatedTextFromHtml(html) {
     const parsed = new DOMParser().parseFromString(html, "text/html");
-    return (parsed.body.textContent ?? html).replace(/\s+/g, " ").trim();
-}
-function escapeHtml(text) {
-    return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-}
-function isOcrUiMetadataText(value) {
-    const text = String(value ?? "").normalize("NFKC").trim();
-    if (!text) return true;
-    if (/^[✓✔√vV\/\s]+$/u.test(text)) return true;
-    if (/^\d{1,3}$/u.test(text)) return true;
-    if (/^(?:today|yesterday|online|offline)$/iu.test(text)) return true;
-    if (/^\d{1,2}:\d{2}(?:\s*(?:am|pm))?(?:\s*[✓✔√vV\/]+)?$/iu.test(text)) return true;
-    return false;
+    for (const br of Array.from(parsed.body.querySelectorAll("br"))) {
+        br.replaceWith(parsed.createTextNode("\n"));
+    }
+    return (parsed.body.textContent ?? html)
+        .replace(/\r\n?/g, "\n")
+        .split("\n")
+        .map((line) => line.replace(/[^\S\n]+/g, " ").trim())
+        .filter((line, index, arr) => line.length > 0 || (index > 0 && index < arr.length - 1))
+        .join("\n")
+        .trim();
 }
 async function translateOcrRegions(regions) {
     if (regions.length === 0)
@@ -622,17 +726,19 @@ async function translateOcrRegions(regions) {
         throw new Error(`当前本地模型不支持 ${languageLabel(sourceLanguage)} → ${languageLabel(targetLanguage)}`);
     }
     const provider = new RuntimeMessageProvider();
+    await provider.getExecutionProfile();
     const terminology = parseTerminology(settings.glossaryCollections, sourceLanguage, targetLanguage, settings.builtinGlossaryEnabled);
     return Promise.all(regions.map(async (region) => {
         // Timestamps, read receipts, counters and tiny status labels are interface
         // metadata, not message content. Translating them both hurts quality and can
         // make a chat screenshot look structurally wrong. Keep them pixel-identical.
-        if (isOcrUiMetadataText(region.text)) return { ...region };
+        if (isUiMetadataText(region.text)) return { ...region };
         const protectedRegion = protectTerminologyHtml(document, escapeHtml(region.text), terminology);
         let html = await provider.translateHtml({
             html: protectedRegion.html,
             sourceLanguage,
             targetLanguage,
+            terminology: terminologyForText(terminology, region.text),
         });
         html = applyTerminologyCorrectionsHtml(document, html, region.text, terminology);
         const restoredHtml = restoreTerminologyHtml(document, html, protectedRegion.replacements);
@@ -644,12 +750,17 @@ async function translateImage(srcUrl) {
     if (!image)
         throw new Error("找不到当前图片，请重新右键后再试");
     const overlay = createImageOverlay(image);
+    const requestId = typeof crypto?.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     activeImageOverlay = overlay;
-    showImageStatus(overlay, "正在识别图片…");
+    activeImageRequests.set(requestId, overlay);
+    showImageStatus(overlay, "识别文字中…");
     try {
         const input = await imagePixels(srcUrl);
         const response = await sendRuntimeMessage({
             type: "recognize-image",
+            requestId,
             width: input.width,
             height: input.height,
             pixels: input.pixels,
@@ -658,7 +769,7 @@ async function translateImage(srcUrl) {
             throw new Error(response?.error ?? "图片文字识别失败");
         if (!overlay.isConnected || imageOverlays.get(image) !== overlay)
             return;
-        showImageStatus(overlay, "文字识别完成 · 正在翻译");
+        showImageStatus(overlay, "翻译中…");
         const translated = await translateOcrRegions(response.regions);
         if (!overlay.isConnected || imageOverlays.get(image) !== overlay)
             return;
@@ -669,11 +780,16 @@ async function translateImage(srcUrl) {
         renderTranslatedRegions(image, overlay, changed, input.width, input.height, input.pixels);
     }
     catch (error) {
-        if (overlay.isConnected && imageOverlays.get(image) === overlay)
-            showImageStatus(overlay, error instanceof Error ? error.message : String(error));
+        if (overlay.isConnected && imageOverlays.get(image) === overlay) {
+            showImageStatus(overlay, error instanceof Error ? error.message : String(error), {
+                error: true,
+                onDismiss: () => disposeImageOverlay(image),
+            });
+        }
         throw error;
     }
     finally {
+        activeImageRequests.delete(requestId);
         if (activeImageOverlay === overlay)
             activeImageOverlay = null;
     }
@@ -682,13 +798,9 @@ function restoreImage(srcUrl) {
     const image = findImage(srcUrl);
     if (!image)
         return false;
-    const overlay = imageOverlays.get(image);
-    if (!overlay)
+    if (!imageOverlays.has(image))
         return false;
-    overlay.remove();
-    imageOverlays.delete(image);
-    if (activeImageOverlay === overlay)
-        activeImageOverlay = null;
+    disposeImageOverlay(image);
     return true;
 }
 async function toggleImageTranslation(srcUrl) {
@@ -721,19 +833,21 @@ async function togglePageTranslation() {
 function refreshImageOverlayPositions() {
     for (const [image, overlay] of imageOverlays) {
         if (!image.isConnected) {
-            overlay.remove();
-            imageOverlays.delete(image);
+            disposeImageOverlay(image);
             continue;
         }
         positionImageOverlay(image, overlay);
     }
 }
 window.addEventListener("resize", refreshImageOverlayPositions, { passive: true });
-window.addEventListener("scroll", refreshImageOverlayPositions, { passive: true });
+window.addEventListener("scroll", refreshImageOverlayPositions, { passive: true, capture: true });
 browser.runtime.onMessage.addListener(async (message) => {
     if (message.type === "image-translation-progress") {
-        if (activeImageOverlay && typeof message.status === "string")
-            showImageStatus(activeImageOverlay, message.status);
+        const targetOverlay = typeof message.requestId === "string"
+            ? activeImageRequests.get(message.requestId)
+            : activeImageOverlay;
+        if (targetOverlay?.isConnected && typeof message.status === "string")
+            showImageStatus(targetOverlay, message.status);
         return { ok: true };
     }
     if (message.type === "translate-image") {
