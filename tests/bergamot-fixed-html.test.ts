@@ -4,7 +4,7 @@ import {PageTranslator} from "../src/core/page-translator";
 import {restoreTerminologyHtml} from "../src/core/rich-segment";
 import {restoreFixedHtmlTransport} from "../src/core/fixed-html-transport";
 import {prepareBergamotFixedHtml, repairBergamotFixedHtml} from "../src/providers/bergamot/fixed-html";
-import {prepareBergamotFixedRetry, restoreBergamotSentenceLines} from "../src/providers/bergamot/fixed-retry";
+import {prepareBergamotFixedRetry, prepareBergamotSlotFallback, restoreBergamotSentenceLines} from "../src/providers/bergamot/fixed-retry";
 
 const slot = (id: number, contents: string) => `<span data-flt-text-id="${id}">${contents}</span>`;
 const term = (id: number, contents: string) => `<span data-flt-term-id="${id}">${contents}</span>`;
@@ -181,4 +181,83 @@ describe("Bergamot inline-phrase retry", () => {
       slot(0, `工具（${term(1, "Docker")}、${term(0, "npm")}）列于`) + link("安装") + slot(2, "页面。"),
     );
   });
+
+  it("falls back to safe per-slot translation when Bergamot collapses multi-slot dialogue or drops closing brackets", () => {
+    // 1. Multi-slot dialogue where Bergamot leaves middle narrator slot empty
+    const dialogueSource =
+      `<i>${slot(0, "“So, Victor, what sex did you want the child to be?”")}</i>` +
+      slot(1, " the doctor asks, ") +
+      `<i>${slot(2, "“Given that grin, I bet you even have a name picked out.”")}</i>`;
+    const dialogueBroken =
+      `<i>${slot(0, "那么，维克多，你希望孩子是什么性别？")}</i>` +
+      slot(1, "") +
+      `<i>${slot(2, "医生问道：“看那笑容，我猜你连名字都选好了。”")}</i>`;
+
+    const plan = prepareBergamotSlotFallback(
+      dialogueSource,
+      dialogueBroken,
+      prepareBergamotFixedHtml,
+      repairBergamotFixedHtml,
+    )!;
+    expect(plan).toBeDefined();
+    expect(plan.slotPrepared).toHaveLength(3);
+    const recoveredDialogue = plan.restore([
+      slot(0, "“那么，维克多，你希望孩子是什么性别？”"),
+      slot(0, "医生问道，"),
+      slot(0, "“看那笑容，我猜你连名字都选好了。”"),
+    ])!;
+    expect(recoveredDialogue).toBeDefined();
+    expect(restoreFixedHtmlTransport(dialogueSource, recoveredDialogue)).toBe(
+      `<i>${slot(0, "“那么，维克多，你希望孩子是什么性别？”")}</i>` +
+      slot(1, " 医生问道， ") +
+      `<i>${slot(2, "“看那笑容，我猜你连名字都选好了。”")}</i>`,
+    );
+
+    // 2. Multi-sentence parenthetical where Bergamot drops the closing parenthesis
+    const parenSource = `<i>${slot(0, "(This choice will affect your character. Ultimately, the choice remains with you.)")}</i>`;
+    const parenBroken = `<i>${slot(0, "(这一选择将影响你的角色。最终，选择权仍在你手中。")}</i>`;
+    const parenPlan = prepareBergamotSlotFallback(
+      parenSource,
+      parenBroken,
+      prepareBergamotFixedHtml,
+      repairBergamotFixedHtml,
+    )!;
+    expect(parenPlan).toBeDefined();
+    // Enclosing parentheses are peeled before calling Bergamot and restored afterward
+    expect(parenPlan.slotPrepared[0]).toBe(
+      slot(0, "This choice will affect your character. Ultimately, the choice remains with you."),
+    );
+    const recoveredParen = parenPlan.restore([
+      slot(0, "这一选择将影响你的角色。最终，选择权仍在你手中。"),
+    ])!;
+    expect(restoreFixedHtmlTransport(parenSource, recoveredParen)).toBe(
+      `<i>${slot(0, "(这一选择将影响你的角色。最终，选择权仍在你手中。)")}</i>`,
+    );
+
+    // 3. Split parenthesis across fixed atom + bold + prose
+    const splitParenSource =
+      `<span data-flt-fixed="true">(</span><b>${slot(0, "Your character has been equipped!")}</b>` +
+      slot(1, " As a result, your stats will fluctuate.)");
+    const splitParenBroken =
+      `<span data-flt-fixed="true"></span><b>${slot(0, "(你的角色已装备！)")}</b>` +
+      slot(1, "因此，你的属性会波动。");
+    const splitPlan = prepareBergamotSlotFallback(
+      splitParenSource,
+      splitParenBroken,
+      prepareBergamotFixedHtml,
+      repairBergamotFixedHtml,
+    )!;
+    expect(splitPlan).toBeDefined();
+    // Unmatched trailing ')' on slot 1 is peeled and preserved
+    expect(splitPlan.slotPrepared[1]).toBe(slot(0, "As a result, your stats will fluctuate."));
+    const recoveredSplit = splitPlan.restore([
+      slot(0, "你的角色已装备！"),
+      slot(0, "因此，你的属性会波动。"),
+    ])!;
+    expect(restoreFixedHtmlTransport(splitParenSource, recoveredSplit)).toBe(
+      `<span data-flt-fixed="true">(</span><b>${slot(0, "你的角色已装备！")}</b>` +
+      slot(1, " 因此，你的属性会波动。)"),
+    );
+  });
 });
+

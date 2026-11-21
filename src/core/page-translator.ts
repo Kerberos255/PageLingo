@@ -473,7 +473,7 @@ export class PageTranslator {
             : null;
         let terminologyAppliedPerRun = false;
         if (paragraphPlan) {
-            const translatedRuns = await Promise.all(paragraphPlan.runs.map(async (run) => {
+            const settledRuns = await Promise.allSettled(paragraphPlan.runs.map(async (run) => {
                 const runTerms = terminologyForText(this.#terminology, run.plainText);
                 for (const entry of terminologyForText(contextualTerminology(context), run.plainText)) {
                     if (!runTerms.some(existing => existing.source.toLowerCase() === entry.source.toLowerCase())) runTerms.push(entry);
@@ -496,6 +496,23 @@ export class PageTranslator {
                 }
                 return restoreFixedHtmlTransport(run.html, runHtml);
             }));
+            const fatalRe = /数据权限|请填写 API Key|请填写模型名称|必须使用 HTTPS|HTTP (?:401|402|403|429)\b/u;
+            let succeededCount = 0;
+            let firstError = null;
+            const translatedRuns = settledRuns.map((outcome, index) => {
+                if (outcome.status === "fulfilled") {
+                    succeededCount += 1;
+                    return outcome.value;
+                }
+                const err = outcome.reason;
+                const msg = err instanceof Error ? err.message : String(err ?? "");
+                if (fatalRe.test(msg)) throw err;
+                if (!firstError) firstError = err;
+                // Keep only the single failed paragraph in its original source text
+                // instead of discarding every other translated paragraph in the scene.
+                return paragraphPlan.runs[index].html;
+            });
+            if (succeededCount === 0 && firstError) throw firstError;
             translatedHtml = paragraphPlan.reassemble(translatedRuns);
             terminologyAppliedPerRun = true;
         }

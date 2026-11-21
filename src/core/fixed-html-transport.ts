@@ -33,9 +33,20 @@ function checkFixedTextHtml(sourceHtml: string, translatedHtml: string, restoreA
       // still fails. No source node or model text is rewritten here.
       if (/^(CODE|KBD|SAMP|VAR)$/u.test(from.tagName)
         && /^__FLT_(?:OPAQUE|LINK_START|LINK_END)_\d+__$/u.test(original) && !received.trim()) to.textContent = original;
-      const punctuation = (s: string) => s.trim().replace(/[。．]/gu, ".").replace(/，/gu, ",").replace(/：/gu, ":")
-        .replace(/；/gu, ";").replace(/！/gu, "!").replace(/？/gu, "?");
-      if (from.hasAttribute("data-flt-fixed") && /^[.,:;!?]$/u.test(punctuation(original))
+      const punctuation = (s: string) => s.trim()
+        .replace(/[。．]/gu, ".")
+        .replace(/，/gu, ",")
+        .replace(/：/gu, ":")
+        .replace(/；/gu, ";")
+        .replace(/！/gu, "!")
+        .replace(/？/gu, "?")
+        .replace(/（/gu, "(")
+        .replace(/）/gu, ")")
+        .replace(/【/gu, "[")
+        .replace(/】/gu, "]")
+        .replace(/[“”「」『』]/gu, '"')
+        .replace(/[‘’]/gu, "'");
+      if (from.hasAttribute("data-flt-fixed") && /^[.,:;!?()\[\]"'-]+$/u.test(punctuation(original))
         && punctuation(original) === punctuation(received)) to.textContent = original;
     }
     const id = from.getAttribute("data-flt-text-id");

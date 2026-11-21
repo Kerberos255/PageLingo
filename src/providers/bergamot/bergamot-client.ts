@@ -1,7 +1,7 @@
 import { loadModelPair } from "./model-cache";
 import { ShortTranslationCache } from "./translation-cache";
 import { prepareBergamotFixedHtml, repairBergamotFixedHtml } from "./fixed-html";
-import { prepareBergamotFixedRetry, restoreBergamotSentenceLines } from "./fixed-retry";
+import { prepareBergamotFixedRetry, prepareBergamotSlotFallback, restoreBergamotSentenceLines } from "./fixed-retry";
 import type { TranslationRoute } from "./model-manifest";
 import type { BergamotWorkerRequest, BergamotWorkerResponse, WorkerModelBundle } from "./protocol";
 
@@ -298,24 +298,49 @@ export class BergamotClient {
       }
     }
 
-    if (!canRecoverChinese) return outputs;
-
-    const retries = sources.flatMap((html, index) => {
-      const plan = prepareBergamotFixedRetry(html, outputs[index]!);
-      return plan ? [{index, plan}] : [];
-    });
-    if (!retries.length) return outputs;
-    for (const {index, plan} of retries) outputs[index] = plan.fallback ?? outputs[index]!;
-    let candidates: string[];
-    try {
-      candidates = await session.translateHtmlBatch(retries.map(({plan}) => plan.html));
-    } catch {
-      return outputs;
+    if (canRecoverChinese) {
+      const retries = sources.flatMap((html, index) => {
+        const plan = prepareBergamotFixedRetry(html, outputs[index]!);
+        return plan ? [{index, plan}] : [];
+      });
+      if (retries.length) {
+        for (const {index, plan} of retries) outputs[index] = plan.fallback ?? outputs[index]!;
+        try {
+          const candidates = await session.translateHtmlBatch(retries.map(({plan}) => plan.html));
+          for (const [index, {index: outputIndex, plan}] of retries.entries()) {
+            const candidate = candidates[index];
+            if (candidate === undefined) continue;
+            outputs[outputIndex] = plan.restore(candidate) ?? outputs[outputIndex]!;
+          }
+        } catch {
+          // Proceed to slot-level recovery below if needed.
+        }
+      }
     }
-    for (const [index, {index: outputIndex, plan}] of retries.entries()) {
-      const candidate = candidates[index];
-      if (candidate === undefined) continue;
-      outputs[outputIndex] = plan.restore(candidate) ?? outputs[outputIndex]!;
+
+    // Last-resort slot-level safe fallback: if Bergamot's HTML tag alignment still
+    // broke inline tags or edge brackets on a fixed-text segment, translate each
+    // original slot in one batch and re-insert into a clean clone of the source template.
+    const slotFallbacks = sources.flatMap((html, index) => {
+      const plan = prepareBergamotSlotFallback(html, outputs[index]!, prepareBergamotFixedHtml, repairBergamotFixedHtml);
+      return plan ? [{ index, plan }] : [];
+    });
+    if (!slotFallbacks.length) return outputs;
+    const flatPrepared: string[] = [];
+    const offsets: Array<{ index: number; start: number; count: number; plan: ReturnType<typeof prepareBergamotSlotFallback> }> = [];
+    for (const entry of slotFallbacks) {
+      offsets.push({ index: entry.index, start: flatPrepared.length, count: entry.plan.slotPrepared.length, plan: entry.plan });
+      flatPrepared.push(...entry.plan.slotPrepared);
+    }
+    try {
+      const flatTranslated = await session.translateHtmlBatch(flatPrepared);
+      for (const { index: outputIndex, start, count, plan } of offsets) {
+        if (!plan) continue;
+        const recovered = plan.restore(flatTranslated.slice(start, start + count));
+        if (recovered !== undefined) outputs[outputIndex] = recovered;
+      }
+    } catch {
+      // Leave outputs untouched so PageTranslator safely preserves any unrecoverable root.
     }
     return outputs;
   }

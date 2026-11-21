@@ -435,6 +435,77 @@ function splitOversizedTextByBoundary(text: string, maxChars: number): Array<{ t
   return pieces;
 }
 
+const PLAIN_BRACKET_PAIRS: ReadonlyArray<readonly [string, string]> = [
+  ["(", ")"],
+  ["[", "]"],
+  ["{", "}"],
+  ["【", "】"],
+  ["〔", "〕"],
+  ["⟬", "⟭"],
+];
+
+function peelPlainEdgeBrackets(raw: string): { leading: string; core: string; trailing: string } {
+  const leadingWs = raw.match(/^\s*/u)?.[0] ?? "";
+  const trailingWs = raw.match(/\s*$/u)?.[0] ?? "";
+  let inner = raw.slice(leadingWs.length, raw.length - trailingWs.length);
+  if (!inner) return { leading: leadingWs, core: "", trailing: trailingWs };
+  let leading = leadingWs;
+  let trailing = trailingWs;
+
+  for (const [open, close] of PLAIN_BRACKET_PAIRS) {
+    if (inner.length >= 3 && inner.startsWith(open) && inner.endsWith(close)) {
+      let depth = 0;
+      let wrapsWhole = true;
+      for (let i = 0; i < inner.length; i += 1) {
+        const ch = inner[i]!.normalize("NFKC");
+        if (ch === open) depth += 1;
+        else if (ch === close) {
+          depth -= 1;
+          if ((depth === 0 && i < inner.length - 1) || depth < 0) {
+            wrapsWhole = false;
+            break;
+          }
+        }
+      }
+      if (wrapsWhole && depth === 0) {
+        const nextInner = inner.slice(open.length, inner.length - close.length);
+        if (nextInner.trim() && /\p{L}/u.test(nextInner)) {
+          leading += open;
+          trailing = close + trailing;
+          inner = nextInner;
+        }
+      }
+    }
+  }
+
+  for (const [open, close] of PLAIN_BRACKET_PAIRS) {
+    let depth = 0;
+    let minDepth = 0;
+    for (const ch of inner.normalize("NFKC")) {
+      if (ch === open) depth += 1;
+      else if (ch === close) {
+        depth -= 1;
+        if (depth < minDepth) minDepth = depth;
+      }
+    }
+    if (depth < 0 && inner.endsWith(close)) {
+      const nextInner = inner.slice(0, inner.length - close.length);
+      if (nextInner.trim() && /\p{L}/u.test(nextInner)) {
+        trailing = close + trailing;
+        inner = nextInner;
+      }
+    } else if (depth > 0 && minDepth === 0 && inner.startsWith(open)) {
+      const nextInner = inner.slice(open.length);
+      if (nextInner.trim() && /\p{L}/u.test(nextInner)) {
+        leading += open;
+        inner = nextInner;
+      }
+    }
+  }
+
+  return { leading, core: inner, trailing };
+}
+
 function splitPlainTextPieces(core: string, maxPieceChars: number): PlainTextPiece[] {
   const pushTranslatable = (out: PlainTextPiece[], raw: string) => {
     if (!raw) return;
@@ -442,9 +513,7 @@ function splitPlainTextPieces(core: string, maxPieceChars: number): PlainTextPie
       out.push({ kind: "literal", text: raw });
       return;
     }
-    const leading = raw.match(/^\s*/u)?.[0] ?? "";
-    const trailing = raw.match(/\s*$/u)?.[0] ?? "";
-    const inner = raw.slice(leading.length, raw.length - trailing.length);
+    const { leading, core: inner, trailing } = peelPlainEdgeBrackets(raw);
     if (!inner) {
       out.push({ kind: "literal", text: raw });
       return;

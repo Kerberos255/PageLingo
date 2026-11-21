@@ -328,3 +328,241 @@ export function prepareBergamotFixedRetry(sourceHtml: string, outputHtml: string
     },
   };
 }
+
+const BRACKET_PAIRS: ReadonlyArray<readonly [string, string]> = [
+  ["(", ")"],
+  ["[", "]"],
+  ["{", "}"],
+  ["【", "】"],
+  ["〔", "〕"],
+  ["⟬", "⟭"],
+];
+
+function peelEdgeBrackets(raw: string): { prefix: string; core: string; suffix: string } {
+  const leading = raw.match(/^\s*/u)?.[0] ?? "";
+  const trailing = raw.match(/\s*$/u)?.[0] ?? "";
+  let inner = raw.slice(leading.length, raw.length - trailing.length);
+  if (!inner) return { prefix: "", core: raw, suffix: "" };
+
+  let prefix = leading;
+  let suffix = trailing;
+
+  // Peel full enclosing balanced brackets (e.g. "(Sentence 1. Sentence 2.)") so
+  // Bergamot cannot drop the closing parenthesis across sentence boundaries.
+  for (const [open, close] of BRACKET_PAIRS) {
+    if (inner.length >= 3 && inner.startsWith(open) && inner.endsWith(close)) {
+      let depth = 0;
+      let wrapsWhole = true;
+      for (let i = 0; i < inner.length; i += 1) {
+        const ch = inner[i]!.normalize("NFKC");
+        if (ch === open) depth += 1;
+        else if (ch === close) {
+          depth -= 1;
+          if (depth === 0 && i < inner.length - 1) {
+            wrapsWhole = false;
+            break;
+          }
+          if (depth < 0) {
+            wrapsWhole = false;
+            break;
+          }
+        }
+      }
+      if (wrapsWhole && depth === 0) {
+        const nextInner = inner.slice(open.length, inner.length - close.length);
+        if (nextInner.trim() && /\p{L}/u.test(nextInner)) {
+          prefix += open;
+          suffix = close + suffix;
+          inner = nextInner;
+        }
+      }
+    }
+  }
+
+  // Peel unmatched edge brackets whose partner lives in an adjacent fixed atom
+  // or sibling slot (e.g. `<span data-flt-fixed>(</span><b>...</b> text.)`).
+  for (const [open, close] of BRACKET_PAIRS) {
+    let depth = 0;
+    let minDepth = 0;
+    for (const ch of inner.normalize("NFKC")) {
+      if (ch === open) depth += 1;
+      else if (ch === close) {
+        depth -= 1;
+        if (depth < minDepth) minDepth = depth;
+      }
+    }
+    if (depth < 0 && inner.endsWith(close)) {
+      const nextInner = inner.slice(0, inner.length - close.length);
+      if (nextInner.trim() && /\p{L}/u.test(nextInner)) {
+        suffix = close + suffix;
+        inner = nextInner;
+      }
+    } else if (depth > 0 && minDepth === 0 && inner.startsWith(open)) {
+      const nextInner = inner.slice(open.length);
+      if (nextInner.trim() && /\p{L}/u.test(nextInner)) {
+        prefix += open;
+        inner = nextInner;
+      }
+    }
+  }
+
+  return { prefix, core: inner, suffix };
+}
+
+function bracketsBalanced(value: string): boolean {
+  for (const [open, close] of BRACKET_PAIRS) {
+    let depth = 0;
+    for (const ch of value.normalize("NFKC")) {
+      if (ch === open) depth += 1;
+      else if (ch === close && --depth < 0) return false;
+    }
+    if (depth !== 0) return false;
+  }
+  return true;
+}
+
+export interface BergamotSlotFallbackPlan {
+  slotSources: string[];
+  slotPrepared: string[];
+  restore(translatedSlots: string[]): string | undefined;
+}
+
+/**
+ * Last-resort safe slot-level fallback for Bergamot when whole-sentence HTML
+ * alignment breaks inline formatting (e.g. `<i>“...”</i> narrator, <i>“...”</i>`,
+ * `<i>always</i>`, `<span data-flt-fixed>(</span><b>...</b> text.)`) or drops
+ * enclosing parentheses. Re-inserts validated per-slot translations into a clean
+ * clone of the exact original HTML template so every tag, link, fixed atom, and
+ * protected term remains untouched.
+ */
+export function prepareBergamotSlotFallback(
+  sourceHtml: string,
+  outputHtml: string,
+  prepareOpaque: (html: string) => string,
+  repairSlot: (sourceSlotHtml: string, rawSlotHtml: string, termsAreOpaque: boolean) => string,
+): BergamotSlotFallbackPlan | undefined {
+  if (!sourceHtml.includes("data-flt-text-id=")) return;
+  const parser = new DOMParser();
+  const source = parser.parseFromString(sourceHtml, "text/html");
+  const previous = parser.parseFromString(outputHtml, "text/html");
+  if (source.head.childNodes.length) return;
+
+  const replacements: string[] = [];
+  for (const marker of source.body.querySelectorAll(termSelector)) {
+    replacements[Number(marker.getAttribute("data-flt-term-id"))] = marker.textContent ?? "";
+  }
+  const withoutTerms = (body: HTMLElement) => {
+    const clone = body.cloneNode(true) as HTMLElement;
+    restoreTerminology(clone, replacements);
+    return clone.innerHTML;
+  };
+  const sourceWithoutTerms = withoutTerms(source.body);
+  if (!previous.head.childNodes.length) {
+    try {
+      restoreFixedHtmlTransport(sourceWithoutTerms, withoutTerms(previous.body));
+      return;
+    } catch {
+      // Output failed transport validation; fall back to slot-level recovery.
+    }
+  }
+
+  const sourceSlots = [...source.body.querySelectorAll(slotSelector)];
+  if (!sourceSlots.length) return;
+
+  const slotPlans: Array<{
+    id: string;
+    sourceSlotHtml: string;
+    preparedSlotHtml: string;
+    usedOpaque: boolean;
+    prefix: string;
+    suffix: string;
+    innerBalanced: boolean;
+    originalText: string;
+  }> = [];
+
+  for (const slot of sourceSlots) {
+    const id = slot.getAttribute("data-flt-text-id");
+    if (!id || !/^\d+$/u.test(id)) return;
+    const hasTerms = slot.childElementCount > 0;
+    const originalText = slot.textContent ?? "";
+    let prefix = "";
+    let suffix = "";
+    let sourceSlotHtml: string;
+
+    if (!hasTerms) {
+      const peeled = peelEdgeBrackets(originalText);
+      prefix = peeled.prefix;
+      suffix = peeled.suffix;
+      sourceSlotHtml = `<span data-flt-text-id="0">${escapeHtml(peeled.core)}</span>`;
+    } else {
+      const clone = slot.cloneNode(true) as HTMLElement;
+      clone.setAttribute("data-flt-text-id", "0");
+      sourceSlotHtml = clone.outerHTML;
+    }
+
+    const preparedSlotHtml = prepareOpaque(sourceSlotHtml);
+    slotPlans.push({
+      id,
+      sourceSlotHtml,
+      preparedSlotHtml,
+      usedOpaque: preparedSlotHtml !== sourceSlotHtml,
+      prefix,
+      suffix,
+      innerBalanced: bracketsBalanced(hasTerms ? originalText : originalText.slice(prefix.length, originalText.length - suffix.length)),
+      originalText,
+    });
+  }
+
+  return {
+    slotSources: slotPlans.map((item) => item.sourceSlotHtml),
+    slotPrepared: slotPlans.map((item) => item.preparedSlotHtml),
+    restore(translatedSlots: string[]) {
+      if (translatedSlots.length !== slotPlans.length) return;
+      const resultBody = source.body.cloneNode(true) as HTMLElement;
+      const targetSlots = new Map(
+        [...resultBody.querySelectorAll(slotSelector)].map((el) => [el.getAttribute("data-flt-text-id")!, el]),
+      );
+
+      let anyChanged = false;
+      for (let i = 0; i < slotPlans.length; i += 1) {
+        const plan = slotPlans[i]!;
+        const targetSlot = targetSlots.get(plan.id);
+        const raw = translatedSlots[i];
+        if (!targetSlot || typeof raw !== "string") return;
+
+        let repaired: string;
+        try {
+          repaired = repairSlot(plan.sourceSlotHtml, raw, plan.usedOpaque);
+        } catch {
+          return;
+        }
+        const parsed = parser.parseFromString(repaired, "text/html");
+        const parsedSlot = parsed.body.firstElementChild;
+        if (parsed.head.childNodes.length || parsed.body.childNodes.length !== 1
+          || !parsedSlot?.matches('span[data-flt-text-id="0"]')) {
+          return;
+        }
+        const slotText = parsedSlot.textContent ?? "";
+        if (!slotText.trim() || /\uFFFD/u.test(slotText)) return;
+        if (plan.innerBalanced && !bracketsBalanced(slotText)) return;
+
+        const fragment = resultBody.ownerDocument.createDocumentFragment();
+        if (plan.prefix) fragment.append(resultBody.ownerDocument.createTextNode(plan.prefix));
+        for (const child of Array.from(parsedSlot.childNodes)) {
+          fragment.append(resultBody.ownerDocument.importNode(child, true));
+        }
+        if (plan.suffix) fragment.append(resultBody.ownerDocument.createTextNode(plan.suffix));
+        targetSlot.replaceChildren(fragment);
+        if ((targetSlot.textContent ?? "").trim() !== plan.originalText.trim()) anyChanged = true;
+      }
+
+      if (!anyChanged) return;
+      try {
+        restoreFixedHtmlTransport(sourceWithoutTerms, withoutTerms(resultBody));
+        return resultBody.innerHTML;
+      } catch {
+        return;
+      }
+    },
+  };
+}

@@ -329,4 +329,38 @@ describe("plain-text multi-paragraph and oversized slot splitting (Microsoft & G
     });
     expect(result).toBe('<span data-flt-text-id="0">谷歌:Para A.\n\n***\n\n谷歌:Para B.</span>');
   });
+
+  it("isolates a single failed preformatted paragraph so other paragraphs in the same scene still translate", async () => {
+    document.body.innerHTML =
+      '<span class="mainText" style="white-space: pre-wrap">' +
+      "First paragraph translates cleanly.\n\n" +
+      "FAIL_THIS_PARAGRAPH\n\n" +
+      "Third paragraph also translates cleanly." +
+      "</span>";
+    const mainText = document.querySelector<HTMLElement>(".mainText")!;
+    const provider = {
+      prefersWholeSentenceHtml: async () => true,
+      translateHtml: async (request: TranslationRequest) => {
+        if (request.html.includes("FAIL_THIS_PARAGRAPH")) {
+          // Simulate an unrecoverable empty slot on paragraph 2 only
+          return '<span data-flt-text-id="0"></span>';
+        }
+        const body = new DOMParser().parseFromString(request.html, "text/html").body;
+        for (const slot of body.querySelectorAll("span[data-flt-text-id]")) {
+          slot.textContent = `译:${slot.textContent}`;
+        }
+        return body.innerHTML;
+      },
+    };
+    const translator = new PageTranslator(document, provider, { displayMode: "translation" });
+    await translator.translateAll();
+    expect(translator.translatedCount).toBe(1);
+    expect(translator.failedCount).toBe(0);
+    expect(mainText.textContent).toBe(
+      "译:First paragraph translates cleanly.\n\n" +
+      "FAIL_THIS_PARAGRAPH\n\n" +
+      "译:Third paragraph also translates cleanly.",
+    );
+  });
 });
+
