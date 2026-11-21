@@ -15,7 +15,57 @@ interface Slot {
 
 interface FixedRetry {
   html: string;
+  fallback?: string;
   restore(translatedHtml: string): string | undefined;
+}
+
+function standaloneTerm(body: HTMLElement, selector: string): Element | undefined {
+  const slot = body.firstElementChild;
+  const marker = slot?.firstElementChild;
+  if (body.childNodes.length !== 1 || !slot?.matches('span[data-flt-text-id="0"]') || slot.attributes.length !== 1
+    || slot.childElementCount !== 1 || !marker?.matches(selector) || marker.attributes.length !== 1
+    || marker.childElementCount) return;
+  return marker;
+}
+
+function surroundingText(marker: Element): string {
+  return [...marker.parentNode!.childNodes]
+    .filter(node => node.nodeType === Node.TEXT_NODE)
+    .map(node => node.textContent)
+    .join("");
+}
+
+/** A term span can absorb the whole translated title, which is lost when the name is restored. */
+function retryAbsorbedTerm(sourceHtml: string, outputHtml: string): FixedRetry | undefined {
+  if (!sourceHtml.startsWith('<span data-flt-text-id="0">') || sourceHtml.length > 320
+    || !sourceHtml.includes("data-flt-term-id=") || !outputHtml.includes("data-flt-term-id=")) return;
+  const parser = new DOMParser();
+  const source = parser.parseFromString(sourceHtml, "text/html");
+  const previous = parser.parseFromString(outputHtml, "text/html");
+  const name = standaloneTerm(source.body, termSelector);
+  const received = standaloneTerm(previous.body, termSelector);
+  if (source.head.childNodes.length || previous.head.childNodes.length || !name || !received
+    || !/\p{Script=Latin}/u.test(surroundingText(name)) || /\p{L}/u.test(surroundingText(received))
+    || !/\p{Script=Han}/u.test(received.textContent ?? "")) return;
+  const id = name.getAttribute("data-flt-term-id");
+  if (id !== received.getAttribute("data-flt-term-id")) return;
+  const code = source.createElement("code");
+  code.setAttribute("data-flt-term-id", id!);
+  code.textContent = name.textContent;
+  name.replaceWith(code);
+  return {
+    html: source.body.innerHTML,
+    fallback: sourceHtml,
+    restore(translatedHtml) {
+      const result = parser.parseFromString(translatedHtml, "text/html");
+      const translatedCode = standaloneTerm(result.body, "code[data-flt-term-id]");
+      if (result.head.childNodes.length || !translatedCode || translatedCode.getAttribute("data-flt-term-id") !== id
+        || (translatedCode.textContent?.trim() && translatedCode.textContent !== name.textContent)
+        || !/\p{Script=Han}/u.test(surroundingText(translatedCode))) return;
+      translatedCode.replaceWith(result.importNode(name, true));
+      return result.body.innerHTML;
+    },
+  };
 }
 
 /** Bergamot can coalesce consecutive standalone lines into the last span. */
@@ -118,6 +168,8 @@ function fillSlot(slot: Element, text: string): boolean {
 
 /** Retry bounded inline phrases as sentence text while retaining their original HTML template. */
 export function prepareBergamotFixedRetry(sourceHtml: string, outputHtml: string): FixedRetry | undefined {
+  const termRetry = retryAbsorbedTerm(sourceHtml, outputHtml);
+  if (termRetry) return termRetry;
   if (!sourceHtml.includes("data-flt-text-id=") || !/<(?:a |strong>|b>|em>|i>)/u.test(sourceHtml)
     || (!sourceHtml.includes("\n") && !/<span data-flt-text-id="\d+">\s*<\/span>/u.test(outputHtml))) return;
 

@@ -82,6 +82,22 @@ describe("Bergamot fixed HTML", () => {
 });
 
 describe("Bergamot inline-phrase retry", () => {
+  it("recovers prose absorbed into a protected name in a standalone heading", () => {
+    const name = term(0, "Antigravity");
+    const opaque = '<code data-flt-term-id="0"></code>';
+    const source = slot(0, `Welcome to ${name}`);
+    const swallowed = slot(0, term(0, "欢迎来到反重力"));
+    const retry = prepareBergamotFixedRetry(source, swallowed)!;
+
+    expect(retry.html).toBe(slot(0, 'Welcome to <code data-flt-term-id="0">Antigravity</code>'));
+    expect(retry.fallback).toBe(source);
+    expect(retry.restore(slot(0, `欢迎${opaque}`))).toBe(slot(0, `欢迎${name}`));
+    expect(retry.restore(slot(0, '欢迎<code data-flt-term-id="1"></code>'))).toBeUndefined();
+    expect(retry.restore(slot(0, opaque))).toBeUndefined();
+    expect(prepareBergamotFixedRetry(slot(0, name), swallowed)).toBeUndefined();
+    expect(prepareBergamotFixedRetry(source, slot(0, `欢迎${name}`))).toBeUndefined();
+  });
+
   it("restores each sentence to its original sibling span after Bergamot merges independent lines", () => {
     const lines = (first: string, last: string) => `<span>${slot(0, first)}</span><span>${slot(1, last)}</span>`;
     const source = lines("The AI that really does things.", "Any OS. Any Platform. The lobster way. 🦞");

@@ -280,6 +280,7 @@ export class BergamotClient {
       return plan ? [{index, plan}] : [];
     });
     if (!retries.length) return outputs;
+    for (const {index, plan} of retries) outputs[index] = plan.fallback ?? outputs[index]!;
     let candidates: string[];
     try {
       candidates = await session.translateHtmlBatch(retries.map(({plan}) => plan.html));
