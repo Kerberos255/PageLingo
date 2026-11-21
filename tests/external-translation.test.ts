@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { listExternalTranslationModels, translateWithExternalEngine, validateTranslatedHtml } from "../src/providers/external-translation";
-import { NATIVE_MT_BASE_URL, NATIVE_MT_MODEL_ID, normalizeTranslationEngineConfig, type TranslationEngineConfig } from "../src/shared/translation-engine-settings";
+import { NATIVE_MT_BASE_URL, NATIVE_MT_ENGINE_ID, NATIVE_MT_MODEL_ID, normalizeTranslationEngineConfig, type TranslationEngineConfig } from "../src/shared/translation-engine-settings";
 import { checkNativeMt } from "../src/providers/pagelingo-mt/native-client";
 
 function config(overrides: Partial<TranslationEngineConfig> = {}): TranslationEngineConfig {
@@ -30,6 +30,7 @@ describe("PageLingo MT native runtime", () => {
     expect(normalizeTranslationEngineConfig({...native, apiKey: ""})).toBeNull();
     expect(normalizeTranslationEngineConfig({...native, baseUrl: "https://example.invalid/v1"})).toBeNull();
     expect(normalizeTranslationEngineConfig(native)).toMatchObject({baseUrl: NATIVE_MT_BASE_URL, model: NATIVE_MT_MODEL_ID});
+    expect(normalizeTranslationEngineConfig({...native, id: NATIVE_MT_ENGINE_ID})).toBeNull();
   });
 
   it("uses authenticated loopback and validates native fixed-slot output before returning it", async () => {
@@ -56,6 +57,52 @@ describe("PageLingo MT native runtime", () => {
     await expect(checkNativeMt(native.apiKey)).rejects.toThrow(/服务已启动/);
     await expect(checkNativeMt(native.apiKey)).rejects.toThrow(/连接码无效/);
     await expect(checkNativeMt(native.apiKey)).rejects.toThrow(/没有加载/);
+  });
+
+  it("discovers local authentication after permission and reconnects when it changes", async () => {
+    const permissions = {contains: vi.fn().mockResolvedValue(false)};
+    let reply: {protocol: number; token?: string} = {protocol: 1};
+    const disconnect = vi.fn();
+    const connectNative = vi.fn(() => {
+      let respond: (value: unknown) => void;
+      return {
+        onMessage: {addListener: (listener: (value: unknown) => void) => { respond = listener; }},
+        onDisconnect: {addListener: vi.fn()},
+        postMessage: (value: unknown) => {
+          expect(value).toEqual({protocol: 1});
+          queueMicrotask(() => respond(reply));
+        },
+        disconnect,
+      };
+    });
+    let currentToken = "a".repeat(64);
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const headers = new Headers(init.headers);
+      return headers.get("Authorization") === `Bearer ${currentToken}`
+        ? Response.json({data: [{id: NATIVE_MT_MODEL_ID}]})
+        : new Response(null, {status: 401});
+    });
+    vi.stubGlobal("browser", {permissions, runtime: {connectNative}});
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(checkNativeMt()).rejects.toThrow(/在设置中连接/);
+    expect(connectNative).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    permissions.contains.mockResolvedValue(true);
+    await expect(checkNativeMt()).rejects.toThrow(/启动本机加速服务/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    reply = {protocol: 1, token: currentToken};
+    await Promise.all([checkNativeMt(), checkNativeMt()]);
+    expect(connectNative).toHaveBeenCalledTimes(2);
+
+    currentToken = "b".repeat(64);
+    reply = {protocol: 1, token: currentToken};
+    await checkNativeMt();
+    expect(connectNative).toHaveBeenLastCalledWith("org.pagelingo.mt");
+    expect(connectNative).toHaveBeenCalledTimes(3);
+    expect(disconnect).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenLastCalledWith(`${NATIVE_MT_BASE_URL}/models`, expect.objectContaining({
+      headers: {Authorization: `Bearer ${currentToken}`}, redirect: "error",
+    }));
   });
 });
 

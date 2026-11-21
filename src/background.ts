@@ -33,6 +33,7 @@ import { listExternalTranslationModels, translateWithExternalEngine } from "./pr
 import {
   LOCAL_TRANSLATION_ENGINE_ID,
   PAGELINGO_MT_ENGINE_ID,
+  NATIVE_MT_ENGINE_ID,
   deleteTranslationEngine,
   loadTranslationEngineState,
   normalizeTranslationEngineConfig,
@@ -42,7 +43,7 @@ import {
 } from "./shared/translation-engine-settings";
 import { PageLingoMtClient } from "./providers/pagelingo-mt/client";
 import { mtRouteSupported } from "./providers/pagelingo-mt/protocol";
-import { checkNativeMt } from "./providers/pagelingo-mt/native-client";
+import { checkNativeMt, translateNativeMt } from "./providers/pagelingo-mt/native-client";
 import { validTranslationContext } from "./core/translation-context";
 import { keepEventPageAlive } from "./shared/event-page-keepalive";
 
@@ -129,9 +130,7 @@ async function activeExternalEngine() {
 
 async function translationEngineStateForUi() {
   const state = await currentTranslationEngineState();
-  const activeExternal = state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID || state.activeEngineId === PAGELINGO_MT_ENGINE_ID
-    ? null
-    : state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
+  const activeExternal = state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled);
   const mt = await pagelingoMt.status();
   return {
     activeEngineId: state.activeEngineId,
@@ -434,6 +433,12 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
             .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }))
         : [];
       const engineState = await currentTranslationEngineState();
+      if (engineState.activeEngineId === NATIVE_MT_ENGINE_ID) {
+        const html = await keepEventPageAlive(translateNativeMt({
+          html: request.html, sourceLanguage, targetLanguage, terminology, context: validTranslationContext(request.context),
+        }), "native-mt-translate");
+        return { ok: true, html };
+      }
       if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
         const mtRequest = { html: request.html, sourceLanguage, targetLanguage, terminology, context: validTranslationContext(request.context) };
         const mtResult = await keepEventPageAlive(pagelingoMt.translateHtmlChecked(mtRequest), "mt-translate");
@@ -479,7 +484,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       if (batchEngineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
         return { ok: false, batchUnsupported: true, error: "PageLingo MT currently runs serial inference" };
       }
-      if (await activeExternalEngine()) {
+      if (batchEngineState.activeEngineId === NATIVE_MT_ENGINE_ID || await activeExternalEngine()) {
         return { ok: false, batchUnsupported: true, error: "Batching is local-Bergamot only" };
       }
       const overrides = await currentOverrides();
@@ -493,6 +498,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
       const engineState = await currentTranslationEngineState();
+      const native = engineState.activeEngineId === NATIVE_MT_ENGINE_ID;
       if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
         const mt = await pagelingoMt.status();
         return {
@@ -510,10 +516,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const externalReady = external
         ? await hasExternalTranslationConsent(Boolean(external.apiKey))
         : false;
-      if (external?.type === "pagelingo-mt-native") {
-        const supported = externalReady && Boolean(sourceLanguage && targetLanguage
+      if (native || external?.type === "pagelingo-mt-native") {
+        const supported = (native || externalReady) && Boolean(sourceLanguage && targetLanguage
           && mtRouteSupported({html:"", sourceLanguage, targetLanguage}));
-        if (supported) await checkNativeMt(external.apiKey);
+        if (supported) await checkNativeMt(native ? undefined : external?.apiKey);
         return {ok:true, supported};
       }
       const overrides = external ? null : await currentOverrides();
@@ -532,6 +538,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
       const engineState = await currentTranslationEngineState();
+      const native = engineState.activeEngineId === NATIVE_MT_ENGINE_ID;
       if (engineState.activeEngineId === PAGELINGO_MT_ENGINE_ID) {
         const mt = await pagelingoMt.status();
         return {
@@ -549,10 +556,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const externalReady = external
         ? await hasExternalTranslationConsent(Boolean(external.apiKey))
         : false;
-      if (external?.type === "pagelingo-mt-native") {
-        const ready = externalReady && Boolean(sourceLanguage && targetLanguage
+      if (native || external?.type === "pagelingo-mt-native") {
+        const ready = (native || externalReady) && Boolean(sourceLanguage && targetLanguage
           && mtRouteSupported({html:"", sourceLanguage, targetLanguage}));
-        if (ready) await checkNativeMt(external.apiKey);
+        if (ready) await checkNativeMt(native ? undefined : external?.apiKey);
         return {ok:true, ready};
       }
       return {
@@ -568,6 +575,12 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
 
     if (message.type === "get-translation-engines") {
       return { ok: true, state: await translationEngineStateForUi() };
+    }
+
+    if (message.type === "get-native-mt-status") {
+      if (!sender.url?.startsWith(browser.runtime.getURL(""))) return undefined;
+      await checkNativeMt();
+      return { ok: true };
     }
 
     if (message.type === "save-translation-engine") {
@@ -592,6 +605,10 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
 
     if (message.type === "set-active-translation-engine") {
       if (typeof message.id !== "string") throw new Error("Invalid engine id");
+      if (message.id === NATIVE_MT_ENGINE_ID) {
+        if (!sender.url?.startsWith(browser.runtime.getURL(""))) return undefined;
+        await checkNativeMt();
+      }
       if (message.id === PAGELINGO_MT_ENGINE_ID) {
         const mt = await pagelingoMt.status();
         if (!mt.installed) throw new Error("请先下载 PageLingo MT 模型");

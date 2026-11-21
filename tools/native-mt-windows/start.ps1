@@ -1,9 +1,30 @@
 [CmdletBinding()]
-param([switch]$Cpu, [switch]$Probe)
+param([switch]$Cpu, [switch]$Probe, [switch]$FirefoxBridge)
 
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
 $state = Join-Path $PSScriptRoot 'data'
+$keyPath = Join-Path $state 'connection-code.txt'
+$bridgePath = Join-Path $PSScriptRoot 'firefox-bridge.bat'
+
+if ($FirefoxBridge) {
+    # Firefox frames each UTF-8 JSON message with a 32-bit byte length.
+    $request = '{"protocol":1}'
+    $reader = [IO.BinaryReader]::new([Console]::OpenStandardInput())
+    if ($reader.ReadInt32() -ne $request.Length) { return }
+    if ([Text.Encoding]::UTF8.GetString($reader.ReadBytes($request.Length)) -cne $request) { return }
+    $reply = @{ protocol = 1 }
+    if ((Test-Path -LiteralPath $keyPath -PathType Leaf) -and (Get-Item -LiteralPath $keyPath).Length -le 128) {
+        $code = ([string](Get-Content -LiteralPath $keyPath -Raw)).Trim()
+        if ($code -match '^[a-fA-F0-9]{64}\z') { $reply.token = $code }
+    }
+    $payload = [Text.Encoding]::UTF8.GetBytes(($reply | ConvertTo-Json -Compress))
+    $writer = [IO.BinaryWriter]::new([Console]::OpenStandardOutput())
+    $writer.Write([int]$payload.Length)
+    $writer.Write($payload)
+    $writer.Flush()
+    return
+}
 $modelName = 'PageLingo-Translate-1.8B-v0.2.2-Q5_K_M.gguf'
 $modelHash = '8f8734198ad9332db97101de3ae7216daa3b59218522c4e0beebdfb4999924cc'
 $modelAlias = 'pagelingo-mt-v0.2.2-q5km'
@@ -19,6 +40,7 @@ if ($Probe) {
     Write-Output ([PSCustomObject]@{
         ModelFound = (Test-Path -LiteralPath $model -PathType Leaf)
         VulkanLoader = $vulkanAvailable
+        FirefoxBridgePresent = (Test-Path -LiteralPath $bridgePath -PathType Leaf)
         Endpoint = $modelsUrl
     } | ConvertTo-Json -Compress)
     return
@@ -34,7 +56,6 @@ if ((Get-Item -LiteralPath $model).Length -ne 1298755616 -or (Get-FileHash -Lite
 }
 
 New-Item -ItemType Directory -Path $state -Force | Out-Null
-$keyPath = Join-Path $state 'connection-code.txt'
 if (-not (Test-Path -LiteralPath $keyPath)) {
     $bytes = New-Object byte[] 32
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
@@ -47,6 +68,23 @@ if ($key -notmatch '^[a-fA-F0-9]{64}\z') {
     throw 'The connection-code file is invalid.'
 }
 $headers = @{ Authorization = "Bearer $key" }
+
+function Register-FirefoxBridge {
+    if (-not (Test-Path -LiteralPath $bridgePath -PathType Leaf)) { throw 'firefox-bridge.bat is missing from the launcher folder.' }
+    $hostName = 'org.pagelingo.mt'
+    $manifestPath = Join-Path $state "$hostName.json"
+    $manifest = @{
+        name = $hostName
+        description = 'PageLingo MT local connection'
+        path = $bridgePath
+        type = 'stdio'
+        allowed_extensions = @('pagelingo@kerberos255')
+    } | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText($manifestPath, $manifest)
+    $registration = "HKCU:\Software\Mozilla\NativeMessagingHosts\$hostName"
+    New-Item -Path $registration -Force | Out-Null
+    Set-Item -LiteralPath $registration -Value $manifestPath
+}
 
 function Test-Ready {
     try {
@@ -106,7 +144,7 @@ function Start-Backend([string]$backend) {
                 if ($gpu -and -not $offload) { throw 'Vulkan started without offloading model layers.' }
                 if ($offload) { Write-Host $offload.Line.Trim() }
                 Write-Host "READY ($backend) http://127.0.0.1:$port"
-                Write-Host "Copy the connection code from: $keyPath"
+                Write-Host 'In PageLingo settings, select Translation Engines > Local acceleration > Connect.'
                 Write-Host 'Keep this window running while using PageLingo MT. Ctrl+C stops the service.'
                 $process.WaitForExit()
                 if ($process.ExitCode -ne 0) { throw "llama.cpp exited with code $($process.ExitCode). See $stderr" }
@@ -120,9 +158,10 @@ function Start-Backend([string]$backend) {
     }
 }
 
+Register-FirefoxBridge
 if (Test-Ready) {
     Write-Host "PageLingo MT is already running at http://127.0.0.1:$port"
-    Write-Host "Connection code file: $keyPath"
+    Write-Host 'In PageLingo settings, select Translation Engines > Local acceleration > Connect.'
     return
 }
 if (-not $Cpu -and $vulkanAvailable) {

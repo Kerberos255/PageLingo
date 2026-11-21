@@ -24,6 +24,10 @@ Image translation is disabled by default. When enabled and invoked by the user, 
 
 On first use, OCR model-data files are downloaded from the upstream model hosts identified in the source code and verified by size and SHA-256. PageLingo does not send OCR output to a remote service when the Firefox local translation engine is selected.
 
+## Local acceleration
+
+When you enable PageLingo MT local acceleration, Firefox Native Messaging connects PageLingo to the locally installed launcher. The launcher supplies a connection code to PageLingo, which uses it to authenticate translation requests to `127.0.0.1:18731`. PageLingo keeps the automatically obtained code in memory. Page text stays on the device.
+
 ## External translation engines
 
 External translation engines are optional and are never the default.
@@ -35,8 +39,6 @@ PageLingo asks Firefox for the relevant optional data-transmission permission be
 The external service's own privacy policy and data-retention practices apply to data sent to that service. PageLingo does not proxy these requests through a PageLingo server.
 
 For security, remote external-engine endpoints must use HTTPS. Plain HTTP is allowed only for loopback/local-host endpoints.
-
-The optional PageLingo MT native engine sends translation requests and its connection code to a service you run on the same device at `127.0.0.1:18731`.
 
 ## Custom REST engines
 

@@ -9,6 +9,7 @@
     "contextMenus",
     "unlimitedStorage"
   ],
+  "optional_permissions": ["nativeMessaging"],
   "host_permissions": [
     "http://*/*",
     "https://*/*"

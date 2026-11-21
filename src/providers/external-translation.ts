@@ -470,7 +470,7 @@ export async function translateWithExternalEngine(
   config: TranslationEngineConfig,
   request: ExternalTranslationRequest,
 ): Promise<string> {
-  if (config.type === "pagelingo-mt-native") return translateNativeMt(config.apiKey, request);
+  if (config.type === "pagelingo-mt-native") return translateNativeMt(request, config.apiKey);
   let translated: string;
   switch (config.type) {
     case "microsoft": translated = await translateMicrosoft(config, request); break;
