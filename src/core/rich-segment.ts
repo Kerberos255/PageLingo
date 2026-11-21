@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { isElementEffectivelyHidden, isTranslationRootElement, isEligibleTextNode, isEligibleTextContext, isTranslationDisabled, isProtectedTranslationSubtree, isProtectedFilePathLink } from "./dom-policy";
+import { isElementEffectivelyHidden, isNestedOwnerBoundary, isEligibleTextNode, isEligibleTextContext, isTranslationDisabled, isProtectedTranslationSubtree, isProtectedFilePathLink } from "./dom-policy";
 import type { SourceTextSlot } from "./fixed-text-render";
 import { normalizeGlossaryEntry } from "../shared/settings";
 
@@ -94,7 +94,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
             trace?.push({kind: "boundary", node: element, reason: "hidden"});
             continue;
         }
-        if (element !== root && isTranslationRootElement(element)) {
+        if (element !== root && isNestedOwnerBoundary(element, root)) {
             trace?.push({kind: "boundary", node: element, reason: "nested-root"});
             continue;
         }
@@ -166,7 +166,7 @@ export function sourceFingerprint(root, {excludeNestedRoots = false} = {}) {
         let nested = false;
         if (excludeNestedRoots) {
             for (let parent = node.parentElement; parent && parent !== root; parent = parent.parentElement) {
-                if (isTranslationRootElement(parent)) { nested = true; break; }
+                if (isNestedOwnerBoundary(parent, root)) { nested = true; break; }
             }
         }
         if (!nested && !node.parentElement?.closest("[data-flt-generated]") && !node.parentElement?.closest("[hidden],[aria-hidden='true'],tool-tip,[role='tooltip'],[inert]")) text += node.data;
@@ -188,7 +188,7 @@ function snapshotLinkGaps(root) {
             if (element.hasAttribute("data-flt-generated")) continue;
             if (element !== root && DYNAMIC_TIME_TAGS.has(element.tagName)) continue;
             if (element !== root && isElementEffectivelyHidden(element)) continue;
-            if (element !== root && isTranslationRootElement(element)) continue;
+            if (element !== root && isNestedOwnerBoundary(element, root)) continue;
             if (element.tagName === "A") {
                 linkIndex += 1;
                 if (gaps[linkIndex] === undefined) gaps[linkIndex] = "";

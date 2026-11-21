@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { collectTranslationRoots, findTranslationRoot, isElementEffectivelyHidden, isGeneratedNode, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
+import { collectTranslationRoots, findTranslationRoot, hasNestedOwnerBoundaryBetween, isElementEffectivelyHidden, isGeneratedNode, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
 import { TranslationProgress } from "./translation-progress";
 import { createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
@@ -7,6 +7,7 @@ import { TooltipController } from "./tooltip-controller";
 import { contextualTerminology, translationContextForUrl } from "./translation-context";
 import {prepareFixedTextRecord, fixedTextRecordUnchanged, clearFixedTextRecord, applyFixedTextRecord} from "./fixed-text-render";
 import {restoreFixedHtmlTransport} from "./fixed-html-transport";
+import {isPreformattedNewlineContext, planPreformattedParagraphRuns} from "./fixed-html-paragraphs";
 import {
     richHtmlStructureCompatible,
     richMarkerCandidateCount,
@@ -347,8 +348,8 @@ export class PageTranslator {
             const owner = this.#fixedOwners.get(node);
             if (!owner || owner.root === root || seen.has(owner) || this.#fixedRecords.get(owner.root) !== owner) continue;
             seen.add(owner);
-            // Existing nested structural roots own their text independently.
-            if (root.contains(owner.root) && isTranslationRootElement(owner.root)) continue;
+            // Existing nested structural roots and nested block boundaries own their text independently.
+            if (root.contains(owner.root) && hasNestedOwnerBoundaryBetween(owner.root, root)) continue;
             if (root.contains(owner.root) || !fixedTextRecordUnchanged(owner)) this.#clearFixedRecord(owner.root, owner);
         }
     }
@@ -467,7 +468,38 @@ export class PageTranslator {
         const structuralFallbackAllowed =
             !this.#wholeSentenceContext && (complexRoot || nestingRiskRoot) &&
             await providerAllowsStructuralSplitting(this.#provider);
-        if (structuralFallbackAllowed && nestingRiskRoot) {
+        const paragraphPlan = this.#wholeSentenceContext && isPreformattedNewlineContext(root)
+            ? planPreformattedParagraphRuns(segment.html)
+            : null;
+        let terminologyAppliedPerRun = false;
+        if (paragraphPlan) {
+            const translatedRuns = await Promise.all(paragraphPlan.runs.map(async (run) => {
+                const runTerms = terminologyForText(this.#terminology, run.plainText);
+                for (const entry of terminologyForText(contextualTerminology(context), run.plainText)) {
+                    if (!runTerms.some(existing => existing.source.toLowerCase() === entry.source.toLowerCase())) runTerms.push(entry);
+                }
+                const protectedRun = protectTerminologyHtml(this.#doc, run.html, this.#terminology);
+                let runHtml = await this.#provider.translateHtml({
+                    html: protectedRun.html,
+                    sourceLanguage: this.#sourceLanguage,
+                    targetLanguage: this.#targetLanguage,
+                    terminology: runTerms,
+                    context,
+                });
+                runHtml = restoreTerminologyHtml(this.#doc, runHtml, protectedRun.replacements);
+                if (hasBrokenTranslationHtml(runHtml)) {
+                    throw new Error("译文包含损坏字符，已保留原文");
+                }
+                runHtml = applyTerminologyCorrectionsHtml(this.#doc, runHtml, run.plainText, this.#terminology, new Map());
+                if (hasBrokenTranslationHtml(runHtml)) {
+                    throw new Error("译文包含损坏字符，已保留原文");
+                }
+                return restoreFixedHtmlTransport(run.html, runHtml);
+            }));
+            translatedHtml = paragraphPlan.reassemble(translatedRuns);
+            terminologyAppliedPerRun = true;
+        }
+        else if (structuralFallbackAllowed && nestingRiskRoot) {
             translatedHtml = await translateLeafSafeRichHtml(
                 this.#doc,
                 this.#provider,
@@ -521,9 +553,11 @@ export class PageTranslator {
                 if (alias) dynamicAliases.set(entry.source.toLocaleLowerCase(), alias);
             } catch {}
         }));
-        translatedHtml = applyTerminologyCorrectionsHtml(this.#doc, translatedHtml, segment.fingerprint, this.#terminology, dynamicAliases);
-        if (hasBrokenTranslationHtml(translatedHtml)) {
-            throw new Error("译文包含损坏字符，已保留原文");
+        if (!terminologyAppliedPerRun) {
+            translatedHtml = applyTerminologyCorrectionsHtml(this.#doc, translatedHtml, segment.fingerprint, this.#terminology, dynamicAliases);
+            if (hasBrokenTranslationHtml(translatedHtml)) {
+                throw new Error("译文包含损坏字符，已保留原文");
+            }
         }
 
         // The main HTML translation is authoritative when every source link keeps a

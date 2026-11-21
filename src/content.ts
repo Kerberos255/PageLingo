@@ -249,7 +249,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         // Inspect only source text. LI/TD/TH keep the generated translation inside the root;
         // using innerText here would mistake our own Chinese output for source-language content
         // and immediately remove the translation on the next mutation/rescan.
-        const rootText = sourceFingerprint(root).replace(/\s+/g, " ").trim();
+        const rootText = sourceFingerprint(root, { excludeNestedRoots: true }).replace(/\s+/g, " ").trim();
         if (targetLooksChinese(normalizedTarget) && looksLikeChineseFragment(rootText)) return false;
         // A direct user action outranks automatic language/site rules. Keep only the
         // per-block target-language safety check above so already-Chinese fragments

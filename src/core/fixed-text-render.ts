@@ -1,6 +1,6 @@
 import { mountTranslation } from "./render";
 import { isOptionalEnglishArticle } from "./translation-quality";
-import { isElementEffectivelyHidden, isTranslationControl, isTranslationRootElement, isTranslationDisabled } from "./dom-policy";
+import { isElementEffectivelyHidden, isTranslationControl, isNestedOwnerBoundary, isTranslationDisabled } from "./dom-policy";
 import {canCollapseProseWhitespace, canWriteFrozenProseGap, isAsciiWhitespace, isAsciiWhitespaceOrEmpty} from "./collapsible-whitespace";
 import {cjkSpacingBoundaryUnchanged, cjkSpacingContextUnchanged, normalizeCjkSpacing} from "./cjk-spacing";
 
@@ -22,7 +22,7 @@ function sourceNodes(root: HTMLElement): Node[] {
   const nodes: Node[] = [];
   const walk = (node: Node) => {
     if (node.nodeType === Node.ELEMENT_NODE && (node as Element).hasAttribute("data-flt-generated")) return;
-    if (node !== root && node.nodeType === Node.ELEMENT_NODE && isTranslationRootElement(node)) return;
+    if (node !== root && node.nodeType === Node.ELEMENT_NODE && isNestedOwnerBoundary(node, root)) return;
     nodes.push(node);
     for (const child of Array.from(node.childNodes)) walk(child);
   };
@@ -105,7 +105,7 @@ function bilingualFragment(root: HTMLElement, record: FixedTextRecord): Document
     if (source.nodeType === Node.TEXT_NODE && translated.has(source as Text)) target.textContent = translated.get(source as Text)!;
     if (target.nodeType === Node.ELEMENT_NODE) {
       const element = target as HTMLElement;
-      if (source !== root && (isTranslationRootElement(source) || (source as Element).matches("ul,ol,dl,table,script,style,noscript,template,button,input,select,textarea,iframe,object,embed,svg,math,canvas,video,audio,[data-flt-generated],[contenteditable]:not([contenteditable='false']),relative-time,time-ago,local-time")
+      if (source !== root && (isNestedOwnerBoundary(source, root) || (source as Element).matches("ul,ol,dl,table,script,style,noscript,template,button,input,select,textarea,iframe,object,embed,svg,math,canvas,video,audio,[data-flt-generated],[contenteditable]:not([contenteditable='false']),relative-time,time-ago,local-time")
           || isElementEffectivelyHidden(source))) {
         removed.push(element); return;
       }

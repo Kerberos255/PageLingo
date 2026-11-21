@@ -391,6 +391,114 @@ interface PlainTextTemplate {
   originalHtml: string;
 }
 
+type PlainTextPiece =
+  | { kind: "literal"; text: string }
+  | { kind: "translate"; leading: string; core: string; trailing: string };
+
+const PLAIN_BLANK_LINE_SPLIT_RE = /(\r?\n(?:[ \t]*\r?\n)+)/u;
+const PLAIN_SINGLE_LINE_SPLIT_RE = /(\r?\n)/u;
+
+function splitOversizedTextByBoundary(text: string, maxChars: number): Array<{ text: string; separator: string }> {
+  if (text.length <= maxChars) return [{ text, separator: "" }];
+  const pieces: Array<{ text: string; separator: string }> = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    if (text.length - cursor <= maxChars) {
+      pieces.push({ text: text.slice(cursor), separator: "" });
+      break;
+    }
+    const window = text.slice(cursor, cursor + maxChars);
+    let splitAt = -1;
+    let sepLen = 0;
+    const sentenceMatches = Array.from(window.matchAll(/(?<=[.!?。！？])([ \t]+)/gu));
+    const lastSentence = sentenceMatches.at(-1);
+    if (lastSentence && typeof lastSentence.index === "number" && lastSentence.index >= Math.floor(maxChars * 0.3)) {
+      splitAt = lastSentence.index;
+      sepLen = lastSentence[1]!.length;
+    } else {
+      const wsMatch = window.match(/^([\s\S]*?)([ \t]+)\S*$/u);
+      if (wsMatch && wsMatch[1]!.length >= Math.floor(maxChars * 0.3)) {
+        splitAt = wsMatch[1]!.length;
+        sepLen = wsMatch[2]!.length;
+      }
+    }
+    if (splitAt <= 0) {
+      splitAt = maxChars;
+      sepLen = 0;
+    }
+    pieces.push({
+      text: text.slice(cursor, cursor + splitAt),
+      separator: text.slice(cursor + splitAt, cursor + splitAt + sepLen),
+    });
+    cursor += splitAt + sepLen;
+  }
+  return pieces;
+}
+
+function splitPlainTextPieces(core: string, maxPieceChars: number): PlainTextPiece[] {
+  const pushTranslatable = (out: PlainTextPiece[], raw: string) => {
+    if (!raw) return;
+    if (!raw.trim() || !/\p{L}/u.test(raw)) {
+      out.push({ kind: "literal", text: raw });
+      return;
+    }
+    const leading = raw.match(/^\s*/u)?.[0] ?? "";
+    const trailing = raw.match(/\s*$/u)?.[0] ?? "";
+    const inner = raw.slice(leading.length, raw.length - trailing.length);
+    if (!inner) {
+      out.push({ kind: "literal", text: raw });
+      return;
+    }
+    if (inner.length <= maxPieceChars) {
+      out.push({ kind: "translate", leading, core: inner, trailing });
+      return;
+    }
+    if (leading) out.push({ kind: "literal", text: leading });
+    const lineParts = inner.split(PLAIN_SINGLE_LINE_SPLIT_RE);
+    for (let i = 0; i < lineParts.length; i += 1) {
+      const part = lineParts[i] ?? "";
+      if (i % 2 === 1) {
+        out.push({ kind: "literal", text: part });
+        continue;
+      }
+      if (!part.trim() || !/\p{L}/u.test(part)) {
+        out.push({ kind: "literal", text: part });
+        continue;
+      }
+      if (part.length <= maxPieceChars) {
+        const l = part.match(/^\s*/u)?.[0] ?? "";
+        const t = part.match(/\s*$/u)?.[0] ?? "";
+        out.push({ kind: "translate", leading: l, core: part.slice(l.length, part.length - t.length), trailing: t });
+      } else {
+        for (const chunk of splitOversizedTextByBoundary(part, maxPieceChars)) {
+          if (chunk.text.trim() && /\p{L}/u.test(chunk.text)) {
+            const l = chunk.text.match(/^\s*/u)?.[0] ?? "";
+            const t = chunk.text.match(/\s*$/u)?.[0] ?? "";
+            out.push({ kind: "translate", leading: l, core: chunk.text.slice(l.length, chunk.text.length - t.length), trailing: t });
+          } else if (chunk.text) {
+            out.push({ kind: "literal", text: chunk.text });
+          }
+          if (chunk.separator) out.push({ kind: "literal", text: chunk.separator });
+        }
+      }
+    }
+    if (trailing) out.push({ kind: "literal", text: trailing });
+  };
+
+  const out: PlainTextPiece[] = [];
+  if (PLAIN_BLANK_LINE_SPLIT_RE.test(core)) {
+    const parts = core.split(PLAIN_BLANK_LINE_SPLIT_RE);
+    for (let i = 0; i < parts.length; i += 1) {
+      const part = parts[i] ?? "";
+      if (i % 2 === 1) out.push({ kind: "literal", text: part });
+      else pushTranslatable(out, part);
+    }
+    return out;
+  }
+  pushTranslatable(out, core);
+  return out;
+}
+
 function extractPlainTextTemplate(html: string): PlainTextTemplate {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const slots: PlainTextSlotRef[] = [];
@@ -419,14 +527,24 @@ async function translatePlainTextTemplates(
   maxCharsPerCall: number,
   translateChunk: (texts: string[]) => Promise<Array<string | undefined>>,
 ): Promise<Array<string | undefined>> {
-  const templates = requests.map((request) => extractPlainTextTemplate(request.html));
+  const maxPieceChars = Math.max(400, Math.floor(maxCharsPerCall * 0.75));
+  const templates = requests.map((request) => {
+    const template = extractPlainTextTemplate(request.html);
+    return {
+      ...template,
+      slotPieces: template.slots.map((slot) => splitPlainTextPieces(slot.core, maxPieceChars)),
+    };
+  });
   const uniqueTexts: string[] = [];
   const textIndex = new Map<string, number>();
   for (const template of templates) {
-    for (const slot of template.slots) {
-      if (!textIndex.has(slot.core)) {
-        textIndex.set(slot.core, uniqueTexts.length);
-        uniqueTexts.push(slot.core);
+    for (const pieces of template.slotPieces) {
+      for (const piece of pieces) {
+        if (piece.kind !== "translate") continue;
+        if (!textIndex.has(piece.core)) {
+          textIndex.set(piece.core, uniqueTexts.length);
+          uniqueTexts.push(piece.core);
+        }
       }
     }
   }
@@ -462,10 +580,20 @@ async function translatePlainTextTemplates(
 
   return templates.map((template) => {
     if (template.slots.length === 0) return template.originalHtml;
-    for (const slot of template.slots) {
-      const translated = translatedByText.get(slot.core);
-      if (typeof translated !== "string") return undefined;
-      slot.node.data = `${slot.leading}${translated}${slot.trailing}`;
+    for (let s = 0; s < template.slots.length; s += 1) {
+      const slot = template.slots[s]!;
+      const pieces = template.slotPieces[s]!;
+      let joined = "";
+      for (const piece of pieces) {
+        if (piece.kind === "literal") {
+          joined += piece.text;
+        } else {
+          const translated = translatedByText.get(piece.core);
+          if (typeof translated !== "string") return undefined;
+          joined += `${piece.leading}${translated}${piece.trailing}`;
+        }
+      }
+      slot.node.data = `${slot.leading}${joined}${slot.trailing}`;
     }
     return template.doc.body.innerHTML;
   });

@@ -238,20 +238,75 @@ export function isEligibleTextContext(node, visibilityCache = undefined) {
   return Boolean(parent && (!control || isTranslationControl(control)) && !isTranslationDisabled(parent)
     && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent, visibilityCache));
 }
+const KEY_MODIFIER_PREFIX = /^(?:(?:(?:ctrl|control|alt|opt|option|shift|cmd|command|meta|win|super)\s*[+-]\s*)+|(?:[⌘⌃⌥⇧⇑↑↓←→]\s*)+)/iu;
+const UNAMBIGUOUS_KEYCAP_TOKEN = /^(?:F(?:[1-9]|1\d|2[0-4])|Esc|Ctrl|Alt|Cmd|Fn|PgUp|PgDn|PrtSc|SysRq|CapsLock|NumLock|ScrollLock)$/iu;
+const STANDALONE_SHORTCUT_KEY = /^(?:[A-Za-z]|F(?:[1-9]|1\d|2[0-4])|Esc|Ctrl|Alt|Cmd|Fn|PgUp|PgDn|PrtSc|SysRq|CapsLock|NumLock|ScrollLock)$/iu;
+const MODIFIED_SHORTCUT_KEY = /^(?:[A-Za-z0-9]|F(?:[1-9]|1\d|2[0-4])|Esc|Tab|Enter|Return|Space|Backspace|Delete|Del|Insert|Ins|Home|End|PageUp|PageDown|PgUp|PgDn|Up|Down|Left|Right|ArrowUp|ArrowDown|ArrowLeft|ArrowRight)$/iu;
+
+function isUnambiguousKeycapText(text) {
+  if (!text || text.length > 32) return false;
+  if (UNAMBIGUOUS_KEYCAP_TOKEN.test(text)) return true;
+  if (KEY_MODIFIER_PREFIX.test(text)) {
+    const remainder = text.replace(KEY_MODIFIER_PREFIX, "").trim();
+    if (remainder && MODIFIED_SHORTCUT_KEY.test(remainder)) return true;
+  }
+  return false;
+}
+
+export function isStandaloneShortcutLabel(value) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!text || text.length > 32) return false;
+  if (STANDALONE_SHORTCUT_KEY.test(text)) return true;
+  return isUnambiguousKeycapText(text);
+}
+
 export function isEligibleTextNode(node, visibilityCache = undefined) {
   const text = node.data.trim();
   if (!text || !isEligibleTextContext(node, visibilityCache)) return false;
-  // Pure counters/dates/version badges do not need translation and duplicating them can
-  // surface otherwise hidden UI state (for example GitHub's hidden "0" tab counters).
-  return /\p{L}/u.test(text) && !/^v\d+(?:\.\d+)+(?:[-+][\w.-]+)?$/i.test(text);
+  // Pure counters/dates/version badges and explicit keycaps (Esc, F1, Ctrl+S, ⇑Q)
+  // do not need translation and translating them turns shortcuts into nonsense.
+  return /\p{L}/u.test(text)
+    && !/^v\d+(?:\.\d+)+(?:[-+][\w.-]+)?$/i.test(text)
+    && !isUnambiguousKeycapText(text);
 }
+var FALLBACK_CONTAINER_TAGS = new Set([
+  "DIV", "SPAN", "LABEL", "STRONG", "B", "EM", "I", "U", "S", "SMALL", "MARK", "Q", "CITE", "ABBR", "DEL", "INS"
+]);
+var MIXED_CONTAINER_TAGS = new Set([
+  "DIV", "SPAN", "SECTION", "ARTICLE", "MAIN", "ASIDE", "HEADER", "FOOTER", "NAV", "FIGURE", "FORM", "FIELDSET"
+]);
+var INLINE_PROSE_TAGS = new Set([
+  "SPAN", "STRONG", "EM", "B", "I", "U", "S", "SMALL", "SUB", "SUP", "MARK", "ABBR", "CITE", "Q", "DEL", "INS", "A", "LABEL"
+]);
+var NON_STRUCTURAL_BLOCK_BOUNDARY_TAGS = new Set([
+  "DIV", "SECTION", "ARTICLE", "MAIN", "HEADER", "FOOTER", "NAV", "ASIDE",
+  "FIGURE", "UL", "OL", "DL", "TABLE", "FORM", "FIELDSET", "DETAILS",
+  "DIALOG", "HR", "IMG", "PICTURE"
+]);
+
+export function isNestedOwnerBoundary(element, root) {
+  if (!element || element === root) return false;
+  if (isTranslationRootElement(element)) return true;
+  if (root && !isTranslationRootElement(root) && NON_STRUCTURAL_BLOCK_BOUNDARY_TAGS.has(element.tagName)) {
+    return true;
+  }
+  return false;
+}
+
+export function hasNestedOwnerBoundaryBetween(descendant, root) {
+  for (let current = descendant; current && current !== root; current = current.parentElement) {
+    if (isNestedOwnerBoundary(current, root)) return true;
+  }
+  return false;
+}
+
 var FALLBACK_STRUCTURAL_SELECTOR = [
   "a", "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "section",
   "article", "header", "footer", "nav", "aside", "figure", "svg", "img", "picture", "video", "canvas",
   "button", "input", "select", "textarea", "iframe"
 ].join(",");
 function isFallbackLeafContainer(element) {
-  if (!["DIV", "SPAN", "LABEL", "STRONG", "B", "EM", "SMALL"].includes(element.tagName)) return false;
+  if (!FALLBACK_CONTAINER_TAGS.has(element.tagName)) return false;
   if (element.closest(SKIP_SELECTOR) || element.closest("button")) return false;
   if (element.querySelector(FALLBACK_STRUCTURAL_SELECTOR)) return false;
   return Boolean((element.textContent ?? "").trim());
@@ -288,7 +343,15 @@ function isSimpleInlineContainer(element) {
   }
   return true;
 }
+function isDirectCodeWidgetContainer(element) {
+  if (!element || element === element.ownerDocument.body) return false;
+  if (element.matches("pre,code,kbd,samp,var")) return true;
+  if (isTranslationRootElement(element)) return false;
+  const directPre = element.querySelector(":scope > pre");
+  return Boolean(directPre && element.children.length <= 8);
+}
 function isInsideCodeWidgetFallback(element) {
+    if (isDirectCodeWidgetContainer(element)) return true;
     let current = element.parentElement;
     for (let depth = 0; current && current !== current.ownerDocument.body && depth < 4; depth += 1) {
         if (current.matches("pre,code,kbd,samp,var")) return true;
@@ -298,11 +361,59 @@ function isInsideCodeWidgetFallback(element) {
         // Only treat a compact wrapper with its own direct <pre> as a code widget.
         // The old descendant search (:scope > div > pre / div > div > pre) made an
         // entire article look like a code widget whenever any sibling code block existed.
-        const directPre = current.querySelector(":scope > pre");
-        if (directPre && current.children.length <= 8) return true;
+        if (isDirectCodeWidgetContainer(current)) return true;
         current = current.parentElement;
     }
     return false;
+}
+function hasDirectEligibleText(element, visibilityCache = undefined) {
+  for (const child of element.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE && isEligibleTextNode(child, visibilityCache)) return true;
+  }
+  return false;
+}
+function findMixedContainerRoot(node, doc) {
+  let current = node.parentElement;
+  while (current && current !== doc.body && current !== doc.documentElement) {
+    if (isProtectedTranslationSubtree(current) || isTranslationRootElement(current)) return null;
+    if (isInsideCodeWidgetFallback(current)) return null;
+    if (MIXED_CONTAINER_TAGS.has(current.tagName)) return current;
+    if (!INLINE_PROSE_TAGS.has(current.tagName)) return null;
+    current = current.parentElement;
+  }
+  return null;
+}
+function promoteInlineOwner(root, doc, visibilityCache = undefined) {
+  if (!root || isTranslationRootElement(root) || NON_STRUCTURAL_BLOCK_BOUNDARY_TAGS.has(root.tagName)) {
+    return root;
+  }
+  let owner = root;
+  for (let current = root.parentElement; current && current !== doc.body && current !== doc.documentElement; current = current.parentElement) {
+    if (isProtectedTranslationSubtree(current) || isTranslationRootElement(current)) break;
+    if (isInsideCodeWidgetFallback(current)) break;
+    const isBlockBoundary = NON_STRUCTURAL_BLOCK_BOUNDARY_TAGS.has(current.tagName);
+    if (current.matches("a,label")) {
+      owner = current;
+      continue;
+    }
+    if ((MIXED_CONTAINER_TAGS.has(current.tagName) || FALLBACK_CONTAINER_TAGS.has(current.tagName))
+      && hasDirectEligibleText(current, visibilityCache)) {
+      owner = current;
+    }
+    if (isBlockBoundary) break;
+  }
+  return owner;
+}
+function ownedTextSummary(root, excludeNestedRoots = false) {
+  let text = "";
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let current = walker.nextNode(); current; current = walker.nextNode()) {
+    const parent = current.parentElement;
+    if (!parent || parent.closest(SKIP_SELECTOR)) continue;
+    if (excludeNestedRoots && hasNestedOwnerBoundaryBetween(parent, root)) continue;
+    text += current.data;
+  }
+  return text;
 }
 export function findTranslationRoot(node) {
   let current = node.parentElement;
@@ -427,24 +538,35 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false, 
       // The fixed renderer keeps controls/icons in place, so an inline fallback
       // inside a paragraph must not become a second, overlapping translation root.
       const structural = node.parentElement?.closest(FIXED_ROOT_SELECTOR);
-      let root = structural && !isInsideCodeWidgetFallback(structural)
-        ? structural : findTranslationRoot(node) ?? node.parentElement?.closest("a,label");
-      if (!structural) {
-        // One inline owner must include both direct text and nested spans.
-        // Otherwise a standalone anchor can race with its descendant fallback.
-        for (let inline = node.parentElement; inline && inline !== doc.body; inline = inline.parentElement) {
-          if (inline.matches("a,label")) root = inline;
-        }
+      let root = null;
+      if (structural) {
+        root = !isInsideCodeWidgetFallback(structural) ? structural : null;
+      } else {
+        root = findTranslationRoot(node)
+          ?? node.parentElement?.closest("a,label")
+          ?? findMixedContainerRoot(node, doc);
+        if (root) root = promoteInlineOwner(root, doc, visibility);
       }
       if (root) roots.add(root);
     }
-    // A fallback span may own both direct text and a nested fallback span.
+    // A fallback container may own both direct text and nested inline elements.
     // Keep the selected outer owner so concurrent translations cannot invalidate
-    // each other's source. Structural roots retain their independent ownership.
+    // each other's source, while preserving independent structural roots and
+    // nested block boundaries.
     for (const root of roots) {
       if (isTranslationRootElement(root)) continue;
       for (let ancestor = root.parentElement; ancestor; ancestor = ancestor.parentElement) {
-        if (roots.has(ancestor)) {roots.delete(root); break;}
+        if (roots.has(ancestor) && !hasNestedOwnerBoundaryBetween(root, ancestor)) {
+          roots.delete(root);
+          break;
+        }
+      }
+    }
+    // Skip standalone single-letter / keycap shortcut badges (e.g. Q, W, Esc, F1)
+    // without excluding single-letter words inside prose sentences.
+    for (const root of roots) {
+      if (isStandaloneShortcutLabel(ownedTextSummary(root, true))) {
+        roots.delete(root);
       }
     }
     return Array.from(roots);
@@ -461,6 +583,11 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false, 
       if (root) roots.add(root);
     }
     current = walker.nextNode();
+  }
+  for (const root of roots) {
+    if (isStandaloneShortcutLabel(ownedTextSummary(root, false))) {
+      roots.delete(root);
+    }
   }
   return Array.from(roots);
 }
