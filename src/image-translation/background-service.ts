@@ -6,7 +6,9 @@ import { sendFrameMessage } from "../shared/main-frame-message";
 
 const IMAGE_MENU_ID = "pagelingo-translate-image";
 const PAGE_MENU_ID = "pagelingo-translate-page";
+const SELECTION_MENU_ID = "pagelingo-translate-selection";
 const RETRANSLATE_SEGMENT_MENU_ID = "pagelingo-retranslate-segment";
+const OPEN_PDF_MENU_ID = "pagelingo-open-pdf-reader";
 
 interface ImageRuntimeMessage {
   type?: string;
@@ -15,6 +17,7 @@ interface ImageRuntimeMessage {
   height?: unknown;
   pixels?: unknown;
   requestId?: unknown;
+  profileId?: unknown;
 }
 
 interface WorkerProgressMessage {
@@ -198,25 +201,58 @@ export async function handleImageRuntimeMessage(
 ): Promise<unknown | undefined> {
   const message = rawMessage as ImageRuntimeMessage;
   if (message.type === "get-image-ocr-status") {
-    return { ok: true, status: await getImageOcrStatus() };
+    const settings = await loadSettings();
+    const profileId = typeof message.profileId === "string" && message.profileId.trim()
+      ? message.profileId.trim()
+      : settings.imageOcrProfileId;
+    return { ok: true, status: await getImageOcrStatus(profileId) };
   }
 
   if (message.type === "download-image-ocr-models") {
     try {
-      const status = await getImageOcrStatus();
+      const settings = await loadSettings();
+      const profileId = typeof message.profileId === "string" && message.profileId.trim()
+        ? message.profileId.trim()
+        : settings.imageOcrProfileId;
+      const status = await getImageOcrStatus(profileId);
       if (!status.runtimeSupported) throw new Error("当前 Firefox 环境不支持本地文字识别");
-      if (status.installed) return { ok: true, status };
-      await getImageOcrBundle();
-      return { ok: true, status: await getImageOcrStatus() };
+      await getImageOcrBundle(profileId);
+      return { ok: true, status: await getImageOcrStatus(settings.imageOcrProfileId) };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
 
   if (message.type === "delete-image-ocr-models") {
-    await deleteImageOcrModels();
+    const settings = await loadSettings();
+    const profileId = typeof message.profileId === "string" && message.profileId.trim()
+      ? message.profileId.trim()
+      : settings.imageOcrProfileId;
+    await deleteImageOcrModels(profileId);
     ocrWorker.reset();
-    return { ok: true, status: await getImageOcrStatus() };
+    return { ok: true, status: await getImageOcrStatus(settings.imageOcrProfileId) };
+  }
+
+  if (message.type === "fetch-document-bytes") {
+    if (typeof message.url !== "string" || !/^https?:\/\//i.test(message.url)) {
+      return { ok: false, error: "仅支持通过 HTTP/HTTPS 打开在线文档，本地文件请直接拖入阅读器" };
+    }
+    try {
+      const response = await fetch(message.url, { cache: "force-cache", credentials: "omit" });
+      if (!response.ok) throw new Error(`文档读取失败：HTTP ${response.status}`);
+      const bytes = await response.arrayBuffer();
+      if (bytes.byteLength > 64 * 1024 * 1024) {
+        throw new Error("文档体积超过 64 MB 限制");
+      }
+      return {
+        ok: true,
+        bytes,
+        contentType: response.headers.get("content-type") || "application/octet-stream",
+        finalUrl: response.url || message.url,
+      };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   if (message.type === "fetch-image-bytes") {
@@ -246,7 +282,11 @@ export async function handleImageRuntimeMessage(
       return { ok: false, error: "无效的图片像素数据" };
     }
     try {
-      const bundle = await getImageOcrBundle(undefined, (status: string) => {
+      const settings = await loadSettings();
+      const profileId = typeof message.profileId === "string" && message.profileId.trim()
+        ? message.profileId.trim()
+        : settings.imageOcrProfileId;
+      const bundle = await getImageOcrBundle(profileId, (status: string) => {
         void sendProgress(sender, status, requestId, 0.12);
       });
       await sendProgress(sender, "正在检测图片文字", requestId, 0.2);
@@ -282,9 +322,16 @@ async function syncContextMenu(): Promise<void> {
   await Promise.all([
     removeContextMenu(IMAGE_MENU_ID),
     removeContextMenu(PAGE_MENU_ID),
+    removeContextMenu(SELECTION_MENU_ID),
     removeContextMenu(RETRANSLATE_SEGMENT_MENU_ID),
+    removeContextMenu(OPEN_PDF_MENU_ID),
   ]);
   const settings = await loadSettings();
+  browser.contextMenus.create({
+    id: SELECTION_MENU_ID,
+    title: "PageLingo · 翻译所选内容",
+    contexts: ["selection"],
+  });
   browser.contextMenus.create({
     id: PAGE_MENU_ID,
     title: "PageLingo · 翻译文字",
@@ -295,6 +342,12 @@ async function syncContextMenu(): Promise<void> {
     title: "PageLingo · 重新翻译此段",
     contexts: ["page", "selection", "link"],
     visible: false,
+  });
+  browser.contextMenus.create({
+    id: OPEN_PDF_MENU_ID,
+    title: "PageLingo · 在阅读器中打开 PDF",
+    contexts: ["link"],
+    targetUrlPatterns: ["http://*/*.pdf*", "https://*/*.pdf*", "http://*/*.PDF*", "https://*/*.PDF*"],
   });
   if (settings.imageTranslationEnabled) {
     browser.contextMenus.create({
@@ -353,6 +406,19 @@ async function refreshContextMenuTitles(
 export function initializeImageTranslation(): void {
   browser.contextMenus.onClicked.addListener((info, tab) => {
     if (!tab?.id) return;
+    if (info.menuItemId === SELECTION_MENU_ID) {
+      const selectionText = typeof info.selectionText === "string" ? info.selectionText : undefined;
+      void sendFrameMessage(tab.id, info.frameId ?? 0, {
+        type: "translate-selection",
+        selectionText,
+      }).catch(() => undefined);
+      return;
+    }
+    if (info.menuItemId === OPEN_PDF_MENU_ID && typeof info.linkUrl === "string") {
+      const readerUrl = `${browser.runtime.getURL("reader.html")}?url=${encodeURIComponent(info.linkUrl)}`;
+      void browser.tabs.create({ url: readerUrl }).catch(() => undefined);
+      return;
+    }
     if (info.menuItemId === IMAGE_MENU_ID && typeof info.srcUrl === "string") {
       void sendFrameMessage(tab.id, info.frameId ?? 0, { type: "toggle-image-translation", srcUrl: info.srcUrl }).catch(() => undefined);
       return;

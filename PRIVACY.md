@@ -22,7 +22,11 @@ When a language pack is downloaded or checked for updates, PageLingo connects to
 
 Image translation is disabled by default. When enabled and invoked by the user, PageLingo may retrieve the selected image URL so Firefox can read its bytes for local OCR. OCR runs locally in a WebAssembly worker.
 
-On first use, OCR model-data files are downloaded from the upstream model hosts identified in the source code and verified by size and SHA-256. PageLingo does not send OCR output to a remote service when the Firefox local translation engine is selected.
+On first use (or when the user downloads an optional multilingual OCR recognition pack), OCR model-data files are downloaded from the upstream model hosts identified in the source code and verified by pinned size and SHA-256. PageLingo does not send OCR output to a remote service when the Firefox local translation engine is selected.
+
+## Local PDF & document reader
+
+When you open a local PDF, Markdown, HTML, EPUB, DOCX, or TXT file—or choose to open an online PDF/document URL inside PageLingo's built-in reader (`reader.html`)—parsing and rendering run entirely inside Firefox using bundled `pdfjs-dist` and native Web APIs. With the default Firefox local translation engine, document text stays on your device.
 
 ## Video subtitle translation
 

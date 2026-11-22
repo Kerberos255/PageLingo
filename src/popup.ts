@@ -10,7 +10,7 @@ import {
   type DisplayMode,
 } from "./shared/settings";
 import { sendRuntimeMessage } from "./shared/runtime-message";
-import { sendMainFrameMessage } from "./shared/main-frame-message";
+import { sendMainFrameMessage, sendAllVisibleFramesMessage } from "./shared/main-frame-message";
 import { requestExternalTranslationConsent } from "./shared/data-consent";
 import {
   BUILTIN_GOOGLE_ENGINE_ID,
@@ -33,6 +33,12 @@ const statusEl = document.querySelector<HTMLElement>("#status");
 const translate = document.querySelector<HTMLButtonElement>("#translate");
 const restore = document.querySelector<HTMLButtonElement>("#restore");
 const settingsButton = document.querySelector<HTMLButtonElement>("#settings");
+const openReaderButton = document.querySelector<HTMLButtonElement>("#open-reader");
+const pdfOpenBanner = document.querySelector<HTMLElement>("#pdf-open-banner");
+const openCurrentPdfButton = document.querySelector<HTMLButtonElement>("#open-current-pdf");
+const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-popup-tab]"));
+const panelPage = document.querySelector<HTMLElement>("#popup-panel-page");
+const panelText = document.querySelector<HTMLElement>("#popup-panel-text");
 const sourceSelect = document.querySelector<HTMLSelectElement>("#source-language");
 const targetSelect = document.querySelector<HTMLSelectElement>("#target-language");
 const engineSelect = document.querySelector<HTMLSelectElement>("#active-engine");
@@ -50,7 +56,10 @@ const textResultWrap = document.querySelector<HTMLElement>("#text-translate-resu
 const textResultEl = document.querySelector<HTMLElement>("#text-translate-result");
 const textResultLangEl = document.querySelector<HTMLElement>("#text-translate-result-lang");
 const textCopyButton = document.querySelector<HTMLButtonElement>("#text-translate-copy");
+const textRetryButton = document.querySelector<HTMLButtonElement>("#text-translate-retry");
+const textEngineLabelEl = document.querySelector<HTMLElement>("#text-engine-label");
 let currentHostname = "";
+let currentTabUrl = "";
 let neverTranslateSites: string[] = [];
 let alwaysTranslateSites: string[] = [];
 let neverTranslateLanguages: string[] = [];
@@ -99,6 +108,30 @@ async function activeTab(): Promise<browser.tabs.Tab> {
   return tab;
 }
 
+function isPdfTabUrl(rawUrl: string): boolean {
+  if (!rawUrl) return false;
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:" && parsed.protocol !== "file:") return false;
+    return /\.pdf$/i.test(parsed.pathname) || parsed.searchParams.get("format")?.toLowerCase() === "pdf";
+  } catch {
+    return false;
+  }
+}
+
+function setActiveTab(tabName: "page" | "text"): void {
+  for (const btn of tabButtons) {
+    const active = btn.dataset.popupTab === tabName;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", String(active));
+  }
+  if (panelPage) panelPage.hidden = tabName !== "page";
+  if (panelText) panelText.hidden = tabName !== "text";
+  if (tabName === "text") {
+    textInput?.focus();
+  }
+}
+
 function engineLabel(id: string): string {
   if (id === LOCAL_TRANSLATION_ENGINE_ID) return "Firefox 本地翻译";
   if (id === BUILTIN_MICROSOFT_ENGINE_ID) return "微软翻译";
@@ -107,7 +140,10 @@ function engineLabel(id: string): string {
 }
 
 function renderEngineSelect(): void {
-  if (!engineSelect) return;
+  if (!engineSelect) {
+    if (textEngineLabelEl) textEngineLabelEl.textContent = engineLabel(activeEngineId);
+    return;
+  }
   engineSelect.replaceChildren();
   const builtins: Array<{ id: string; label: string }> = [
     { id: LOCAL_TRANSLATION_ENGINE_ID, label: "Firefox 本地翻译" },
@@ -131,6 +167,7 @@ function renderEngineSelect(): void {
     activeEngineId = LOCAL_TRANSLATION_ENGINE_ID;
     engineSelect.value = LOCAL_TRANSLATION_ENGINE_ID;
   }
+  if (textEngineLabelEl) textEngineLabelEl.textContent = engineLabel(activeEngineId);
 }
 
 function applyEngineState(state: EngineStateResponse["state"]): void {
@@ -235,8 +272,11 @@ async function routeSupported(source: string, target: string): Promise<boolean> 
 
 async function refreshLanguage(): Promise<void> {
   currentHostname = "";
+  currentTabUrl = "";
   try {
     const tab = await activeTab();
+    currentTabUrl = typeof tab.url === "string" ? tab.url : "";
+    if (pdfOpenBanner) pdfOpenBanner.hidden = !isPdfTabUrl(currentTabUrl);
     const url = tab.url ? new URL(tab.url) : null;
     currentHostname = url && (url.protocol === "http:" || url.protocol === "https:") ? url.hostname : "";
     const response = await sendMainFrameMessage<LanguageResponse>(tab.id!, { type: "get-page-language" });
@@ -254,6 +294,7 @@ async function refreshLanguage(): Promise<void> {
     }
     refreshSiteAuto();
   } catch {
+    if (pdfOpenBanner) pdfOpenBanner.hidden = !isPdfTabUrl(currentTabUrl);
     detectedCode = null;
     pageTranslated = false;
     syncTranslateButton();
@@ -270,15 +311,22 @@ async function send(type: "translate-page" | "restore-page"): Promise<void> {
   }
   try {
     const tab = await activeTab();
-    const response = await sendMainFrameMessage<{ok?: boolean; count?: number; failedCount?: number; error?: string}>(tab.id!, {
+    const results = await sendAllVisibleFramesMessage<{ok?: boolean; count?: number; failedCount?: number; error?: string}>(tab.id!, {
       type,
       sourceLanguage: sourceSelect?.value ?? "auto",
       targetLanguage: targetSelect?.value ?? "zh-Hans",
       ...(bypassCache ? { bypassCache: true } : {}),
     });
-    if (!response?.ok) throw new Error(response?.error ?? "操作失败");
+    const okResults = results.filter((entry) => entry.response?.ok === true);
+    if (okResults.length === 0) {
+      const mainEntry = results.find((entry) => entry.frameId === 0) ?? results[0];
+      if (mainEntry?.error instanceof Error) throw mainEntry.error;
+      throw new Error(mainEntry?.response?.error ?? "操作失败");
+    }
+    const totalCount = okResults.reduce((sum, entry) => sum + (entry.response?.count ?? 0), 0);
+    const totalFailed = okResults.reduce((sum, entry) => sum + (entry.response?.failedCount ?? 0), 0);
     if (type === "translate-page") {
-      pageTranslated = (response.count ?? 0) > 0 || pageTranslated;
+      pageTranslated = totalCount > 0 || pageTranslated;
       engineSwitchedSinceTranslate = false;
     } else {
       pageTranslated = false;
@@ -287,9 +335,9 @@ async function send(type: "translate-page" | "restore-page"): Promise<void> {
     syncTranslateButton();
     if (statusEl) {
       if (type === "translate-page") {
-        statusEl.textContent = (response.count ?? 0) === 0 && !response.failedCount
+        statusEl.textContent = totalCount === 0 && !totalFailed
           ? ""
-          : `${bypassCache ? "已重新翻译" : "已翻译"} ${response.count ?? 0} 个段落${response.failedCount ? `；${response.failedCount} 个未完成，已保留原文` : ""}`;
+          : `${bypassCache ? "已重新翻译" : "已翻译"} ${totalCount} 个段落${totalFailed ? `；${totalFailed} 个未完成，已保留原文` : ""}`;
       } else {
         statusEl.textContent = "已恢复原文";
       }
@@ -468,9 +516,30 @@ function swapTextLanguages(): void {
   }
 }
 
+function openReaderPage(pdfUrl?: string): void {
+  const baseUrl = browser.runtime.getURL("reader.html");
+  const targetUrl = pdfUrl && isPdfTabUrl(pdfUrl) ? `${baseUrl}?url=${encodeURIComponent(pdfUrl)}` : baseUrl;
+  void browser.tabs.create({ url: targetUrl }).then(() => window.close()).catch(() => undefined);
+}
+
+function autoSizeTextInput(): void {
+  if (!textInput) return;
+  textInput.style.height = "auto";
+  const nextHeight = Math.max(98, Math.min(176, textInput.scrollHeight));
+  textInput.style.height = `${nextHeight}px`;
+}
+
+for (const btn of tabButtons) {
+  btn.addEventListener("click", () => {
+    setActiveTab(btn.dataset.popupTab === "text" ? "text" : "page");
+  });
+}
+
 translate?.addEventListener("click", () => void send("translate-page"));
 restore?.addEventListener("click", () => void send("restore-page"));
 settingsButton?.addEventListener("click", () => void browser.runtime.openOptionsPage());
+openReaderButton?.addEventListener("click", () => openReaderPage(currentTabUrl));
+openCurrentPdfButton?.addEventListener("click", () => openReaderPage(currentTabUrl));
 sourceSelect?.addEventListener("change", () => void refreshLanguage());
 targetSelect?.addEventListener("change", () => {
   storedTargetLanguage = targetSelect.value;
@@ -478,6 +547,7 @@ targetSelect?.addEventListener("change", () => {
 });
 engineSelect?.addEventListener("change", () => void switchEngine(engineSelect.value));
 textSubmitButton?.addEventListener("click", () => void translateInputText());
+textRetryButton?.addEventListener("click", () => void translateInputText());
 textSwapButton?.addEventListener("click", () => swapTextLanguages());
 textSourceSelect?.addEventListener("change", () => {
   if (textInput?.value.trim() && textResultWrap && !textResultWrap.hidden) void translateInputText();
@@ -487,6 +557,7 @@ textTargetSelect?.addEventListener("change", () => {
 });
 textInput?.addEventListener("input", () => {
   updateTextClearVisibility();
+  autoSizeTextInput();
   if (!textInput.value.trim()) {
     setTextMeta("");
     if (textResultWrap) textResultWrap.hidden = true;
@@ -503,7 +574,10 @@ textInput?.addEventListener("keydown", (event) => {
 textClearButton?.addEventListener("click", () => {
   textTranslateSeq += 1;
   lastTextTranslationKey = "";
-  if (textInput) textInput.value = "";
+  if (textInput) {
+    textInput.value = "";
+    textInput.style.height = "";
+  }
   if (textResultEl) textResultEl.textContent = "";
   if (textResultWrap) textResultWrap.hidden = true;
   if (textSubmitButton) {

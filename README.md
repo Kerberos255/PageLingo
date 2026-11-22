@@ -5,12 +5,14 @@ PageLingo is a local-first Firefox translation extension built to preserve the s
 ## Highlights
 
 - **Local by default** — webpage translation runs in Firefox with Bergamot WASM and Mozilla Marian translation models.
-- **Layout-preserving translation** — links, buttons, forms, icons, code, IDs, event listeners, accessibility-only content, and dynamic SPA structure are kept intact.
+- **Layout-preserving & mixed-language translation** — links, buttons, forms, icons, code, IDs, event listeners, accessibility-only content, dynamic SPA structure, and multi-frame webmail (`<iframe>` / `about:blank`) are handled cleanly while skipping target-language UI labels.
 - **Translation-only or customizable bilingual mode** — switch between translated text only and bilingual view with configurable order, themes, scale, color, learning blur mode, and live preview.
+- **Selection translation & redesigned dual-tab popup** — right-click selected text (or enable the optional floating quick button) for an isolated Shadow DOM popover with auto-pivot CN↔EN, copy, cache-bypass retranslate, and inline bilingual insert; use the dedicated `网页翻译 | 文本翻译` popup tabs with independent text language controls.
+- **Built-in local PDF & document reader** — open local or online PDF, Markdown, HTML, EPUB, DOCX, and TXT files in `reader.html` with synchronized HiDPI PDF canvas + structured 2-column reading-order reconstruction and formula protection (display/inline math, LaTeX `$...$`/`$$...$$`, MathML, and DOCX Office Math).
 - **Automatic translation rules & single-paragraph refresh** — manage site and language rules cleanly, and right-click any paragraph to bypass cache and force a fresh re-translation.
 - **Offline language packs** — download supported Firefox translation models (103 directional pairs across 54 non-English languages, with automatic local English pivot) and use them without a translation API.
 - **Terminology protection** — built-in proper names are protected before translation; custom terminology collections can preserve names or specify preferred translations.
-- **Optional image translation** — local PP-OCRv5 + ONNX Runtime Web OCR with visual hierarchy preservation (dynamic font size, stroke-weight estimation, foreground sampling), standalone button centering, orphan control, and UI short-term mapping.
+- **Optional multilingual image translation** — local PP-OCRv5 + ONNX Runtime Web OCR sharing one 4.8 MB text detector across 5 on-demand recognition packs (CJK/EN/JA, Latin, Korean, Cyrillic, Thai), with visual hierarchy preservation, Unicode word-boundary wrapping, and standalone button centering.
 - **Optional video soft-subtitle translation** — disabled by default; translates soft subtitle tracks (YouTube, Bilibili, HTML5 `<track>`) with customizable bilingual overlay styling and live preview.
 - **Optional external engines** — built-in keyless Microsoft Translator and Google Translate, plus API integrations for Microsoft Translator, Google Cloud Translation, DeepL API, OpenAI, Anthropic (Claude), Gemini, DeepSeek, xAI, OpenRouter, Groq, Mistral, DashScope, Moonshot, Zhipu, SiliconFlow, Volcengine, Ollama, LibreTranslate, OpenAI-compatible endpoints (with live model discovery), and a constrained custom REST integration.
 

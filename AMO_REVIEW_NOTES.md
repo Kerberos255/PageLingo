@@ -22,7 +22,8 @@ PageLingo does not download or execute remote JavaScript or WebAssembly.
 
 - Bergamot JavaScript and WebAssembly are bundled with the extension.
 - ONNX Runtime Web code and WebAssembly are bundled at build time from the pinned npm dependency.
-- Translation model files and OCR model files downloaded at runtime are data files only. They are verified by expected size and SHA-256 before use.
+- Mozilla PDF.js (`pdfjs-dist` 5.4.624), its same-origin worker (`vendor/pdfjs/pdf.worker.mjs`), CMap tables, and standard fonts are bundled at build time for the local document reader (`reader.html`). Build-time hardening hardcodes `isEvalSupported()` to `false` and disables dynamic `import()` fallbacks so `web-ext lint` passes with zero errors, warnings, or notices.
+- Translation model files and multilingual PP-OCRv5 OCR model files downloaded at runtime are data files only. They are verified by expected byte size and SHA-256 before use.
 - The model updater changes model data only; it never updates extension JavaScript or WebAssembly.
 
 ## Data transmission
@@ -48,18 +49,23 @@ Custom REST accepts declarative JSON header templates, JSON body templates (obje
 
 Translated HTML is structure-checked and is then parsed through PageLingo's allowlist renderer, which strips unapproved tags/attributes and restores link destinations from the source DOM.
 
+## Local PDF & document reader
+
+`reader.html` parses local or user-selected online PDF, Markdown, HTML, EPUB, DOCX, and TXT files inside the extension origin using bundled `pdfjs-dist`, native `DecompressionStream("deflate-raw")`, and `DOMParser` (zero `innerHTML`). Online documents are fetched via `fetch-document-bytes` only when explicitly initiated by the user (HTTPS/HTTP, capped at 64 MB).
+
 ## Video soft-subtitle translation
 
 Disabled by default. When explicitly enabled by the user, the content script discovers soft subtitle tracks on supported players (YouTube, Bilibili, HTML5 `<track>`) and asks the background script to fetch the HTTPS subtitle track payload (`fetch-subtitle-track`) for translation through the selected engine. No remote code is fetched or executed.
 
 ## Permissions
 
-- `storage`: settings, terminology, engine configuration, bilingual/subtitle style preferences, update state.
+- `storage`: settings, terminology, engine configuration, bilingual/subtitle style preferences, OCR profile selection, update state.
 - `alarms`: periodic translation-model metadata/update checks.
-- `contextMenus`: page translation, single-paragraph re-translation, and image translation commands.
-- `scripting`: load the bundled content script in the selected page or image frame if a translation command has no receiver.
+- `contextMenus`: page translation, selection translation, single-paragraph re-translation, image translation, and opening PDF links in `reader.html`.
+- `scripting`: discover visible frames on multi-frame sites (e.g. webmail iframes) and load the bundled content script in the selected page or image frame if a translation command has no receiver.
 - `unlimitedStorage`: locally cached model data.
-- HTTP/HTTPS host permissions: PageLingo is a webpage translator and its content script must operate on arbitrary user-selected sites; the background also downloads user-selected image/subtitle/model data and calls user-selected external translation endpoints only after optional data consent is granted.
+- `content_scripts` includes `match_about_blank: true` so webmail email-body iframes (`about:blank` / `srcdoc`) receive page and selection translation.
+- HTTP/HTTPS host permissions: PageLingo is a webpage translator and its content script must operate on arbitrary user-selected sites; the background also downloads user-selected image/subtitle/document/model data and calls user-selected external translation endpoints only after optional data consent is granted.
 
 `activeTab` is not requested.
 
@@ -71,9 +77,10 @@ Key review references:
 
 - Mozilla/Bergamot generated runtime: embedded version `v0.6.0+eea6e5a8`, generated from Mozilla Translations source commit `eea6e5a80aa4ddd86d9cc35ce9a65b79aa3ab96d`; MPL-2.0. The full MPL-2.0 text is bundled at `vendor/bergamot/LICENSE`.
 - Mozilla Firefox translation models: downloaded as data at runtime; Mozilla's translations repository states that the model files are MPL-2.0.
+- `pdfjs-dist` 5.4.624: Apache-2.0, pinned by `package-lock.json`.
 - `onnxruntime-web` 1.30.0: MIT, pinned by `package-lock.json`.
 - `paddleocr` 1.2.0: MIT, pinned by `package-lock.json`.
-- PP-OCRv5 ONNX model data: official PaddlePaddle model repositories publish the model assets as Apache-2.0; model payloads are downloaded as data and integrity-pinned.
+- PP-OCRv5 ONNX model data (shared detector + 5 recognition language packs: CJK/EN/JA, Latin, Korean, Cyrillic, Thai): PaddlePaddle and RapidOCR publish the model assets as Apache-2.0; model payloads are downloaded as data and integrity-pinned by exact byte size and SHA-256.
 - `fzstd` 0.1.1: MIT.
 
 PageLingo does not relicense third-party code or model assets under its PolyForm license.

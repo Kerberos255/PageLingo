@@ -9,9 +9,11 @@ import {
     saveBuiltinGlossaryEnabled,
     saveDisplayMode,
     saveGlossaryCollections,
+    saveImageOcrProfileId,
     saveImageTranslationEnabled,
     saveLanguageRules,
     saveModelUpdatePolicy,
+    saveSelectionQuickTranslateButton,
     saveSiteRules,
     saveTargetLanguage,
     type DisplayMode,
@@ -58,10 +60,23 @@ interface LanguageCatalog {
     updateCount: number;
 }
 
+interface ImageOcrProfileStatus {
+    id: string;
+    label: string;
+    languagesLabel: string;
+    installed: boolean;
+    recognitionBytes: number;
+    totalBytes: number;
+}
+
 interface ImageOcrStatus {
     installed: boolean;
     totalBytes: number;
     runtimeSupported: boolean;
+    activeProfileId?: string;
+    detectionInstalled?: boolean;
+    detectionBytes?: number;
+    profiles?: ImageOcrProfileStatus[];
 }
 
 interface OptionsRuntimeResponse {
@@ -78,6 +93,7 @@ const INLINE_RULE_CHIP_LIMIT = 12;
 const radios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="display-mode"]'));
 const status = document.querySelector<HTMLElement>("#save-status");
 const autoToggle = document.querySelector<HTMLInputElement>("#auto-translate-enabled");
+const selectionQuickButtonToggle = document.querySelector<HTMLInputElement>("#selection-quick-translate-button");
 const targetSelect = document.querySelector<HTMLSelectElement>("#target-language");
 const neverSiteInput = document.querySelector<HTMLInputElement>("#never-site-input");
 const neverSiteAdd = document.querySelector<HTMLButtonElement>("#never-site-add");
@@ -112,6 +128,8 @@ const updatePolicy = document.querySelector<HTMLSelectElement>("#model-update-po
 const checkUpdates = document.querySelector<HTMLButtonElement>("#check-model-updates");
 const updateStatus = document.querySelector<HTMLElement>("#model-update-status");
 const imageToggle = document.querySelector<HTMLInputElement>("#image-translation-enabled");
+const imageOcrProfileSelect = document.querySelector<HTMLSelectElement>("#image-ocr-profile-select");
+const imageOcrProfileList = document.querySelector<HTMLElement>("#image-ocr-profile-list");
 const builtinGlossaryToggle = document.querySelector<HTMLInputElement>("#builtin-glossary-enabled");
 const glossaryCollectionList = document.querySelector<HTMLElement>("#glossary-collection-list");
 const createGlossaryButton = document.querySelector<HTMLButtonElement>("#create-glossary");
@@ -624,26 +642,102 @@ async function refreshImageOcrStatus(): Promise<void> {
 function renderImageOcrStatus(current: ImageOcrStatus): void {
     if (!imageStatus || !imageOcrAction) return;
     currentImageOcrStatus = current;
+    const profiles = current.profiles ?? [];
+    const activeId = current.activeProfileId ?? "pp-ocrv5-mobile";
+    const activeProfile = profiles.find((item) => item.id === activeId);
+
+    if (imageOcrProfileSelect && profiles.length > 0) {
+        imageOcrProfileSelect.replaceChildren();
+        for (const item of profiles) {
+            const opt = document.createElement("option");
+            opt.value = item.id;
+            opt.textContent = `${item.label}${item.installed ? "（已下载）" : ""}`;
+            imageOcrProfileSelect.append(opt);
+        }
+        imageOcrProfileSelect.value = activeId;
+    }
+
+    const activeLabel = activeProfile?.label ?? "PP-OCRv5 Mobile";
+    const detNote = current.detectionInstalled ? " · 共享检测模型已缓存" : "";
     imageStatus.textContent = !current.runtimeSupported
         ? "当前 Firefox 环境不支持本地文字识别"
-        : `PP-OCRv5 Mobile · ${current.installed ? "已下载" : "可下载"} ${formatBytes(current.totalBytes)}`;
-    imageOcrAction.textContent = current.installed ? "删除模型" : "下载模型";
+        : `${activeLabel} · ${current.installed ? "已下载" : "可下载"} ${formatBytes(current.totalBytes)}${detNote}`;
+    imageOcrAction.textContent = current.installed ? "删除当前包" : "下载当前包";
     imageOcrAction.disabled = !current.installed && !current.runtimeSupported;
+
+    if (imageOcrProfileList) {
+        imageOcrProfileList.replaceChildren();
+        for (const profile of profiles) {
+            const row = document.createElement("div");
+            row.className = "pack-item";
+
+            const copy = document.createElement("div");
+            copy.className = "pack-copy";
+            const title = document.createElement("strong");
+            title.textContent = profile.id === activeId ? `${profile.label}（当前使用）` : profile.label;
+            const detail = document.createElement("small");
+            const sizeText = current.detectionInstalled
+                ? `识别包 ${formatBytes(profile.recognitionBytes)}`
+                : `含检测模型 ${formatBytes(profile.totalBytes)}`;
+            detail.textContent = `${profile.languagesLabel} · ${sizeText}`;
+            copy.append(title, detail);
+
+            const stateBadge = document.createElement("span");
+            stateBadge.className = `pack-state ${profile.installed ? "installed" : ""}`;
+            stateBadge.textContent = profile.installed ? "已下载" : "未下载";
+
+            const actions = document.createElement("div");
+            actions.className = "pack-actions";
+            if (profile.id !== activeId) {
+                const useBtn = document.createElement("button");
+                useBtn.type = "button";
+                useBtn.className = "pack-action";
+                useBtn.textContent = "设为当前";
+                useBtn.addEventListener("click", () => {
+                    void saveImageOcrProfileId(profile.id).then(async () => {
+                        await refreshImageOcrStatus();
+                        showSaved(`已切换图片识别包为 ${profile.label}`);
+                    });
+                });
+                actions.append(useBtn);
+            }
+            const toggleBtn = document.createElement("button");
+            toggleBtn.type = "button";
+            toggleBtn.className = profile.installed ? "pack-action danger" : "pack-action";
+            toggleBtn.textContent = profile.installed ? "删除" : "下载";
+            toggleBtn.disabled = !profile.installed && !current.runtimeSupported;
+            toggleBtn.addEventListener("click", () => {
+                void changeImageOcrModels(profile.id, profile.installed, toggleBtn);
+            });
+            actions.append(toggleBtn);
+
+            row.append(copy, stateBadge, actions);
+            imageOcrProfileList.append(row);
+        }
+    }
 }
 
-async function changeImageOcrModels(): Promise<void> {
+async function changeImageOcrModels(
+    profileId?: string,
+    forceDeleting?: boolean,
+    triggerButton?: HTMLButtonElement,
+): Promise<void> {
     if (!imageStatus || !imageOcrAction || !currentImageOcrStatus) return;
-    const deleting = currentImageOcrStatus.installed;
+    const targetProfileId = profileId ?? currentImageOcrStatus.activeProfileId ?? "pp-ocrv5-mobile";
+    const deleting = typeof forceDeleting === "boolean" ? forceDeleting : currentImageOcrStatus.installed;
     const type = deleting ? "delete-image-ocr-models" : "download-image-ocr-models";
-    imageOcrAction.disabled = true;
-    imageOcrAction.textContent = deleting ? "删除中…" : "下载中…";
-    imageStatus.textContent = deleting ? "正在删除模型…" : "正在下载文字识别模型…";
+    const btn = triggerButton ?? imageOcrAction;
+    btn.disabled = true;
+    btn.textContent = deleting ? "删除中…" : "下载中…";
+    if (!triggerButton) {
+        imageStatus.textContent = deleting ? "正在删除模型…" : "正在下载文字识别模型…";
+    }
     try {
-        const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type });
-        if (!response?.ok || !response.status || response.status.installed === deleting)
+        const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type, profileId: targetProfileId });
+        if (!response?.ok || !response.status)
             throw new Error(response?.error ?? (deleting ? "删除模型失败" : "下载模型失败"));
         renderImageOcrStatus(response.status);
-        showSaved(deleting ? "文字识别模型已删除" : "文字识别模型已下载");
+        showSaved(deleting ? "文字识别包已删除" : "文字识别包已下载并校验完成");
     }
     catch (error) {
         await refreshImageOcrStatus();
@@ -699,6 +793,8 @@ async function initialize(): Promise<void> {
     setChecked(settings.displayMode);
     if (autoToggle)
         autoToggle.checked = settings.autoTranslateEnabled;
+    if (selectionQuickButtonToggle)
+        selectionQuickButtonToggle.checked = settings.selectionQuickTranslateButton;
     if (targetSelect)
         targetSelect.value = catalog.targetLanguages.some((item) => item.code === settings.targetLanguage)
             ? settings.targetLanguage
@@ -836,6 +932,19 @@ if (downloadPackButton) {
 }
 
 imageOcrAction?.addEventListener("click", () => void changeImageOcrModels());
+imageOcrProfileSelect?.addEventListener("change", () => {
+    const nextId = imageOcrProfileSelect.value;
+    if (!nextId) return;
+    void saveImageOcrProfileId(nextId).then(async () => {
+        await refreshImageOcrStatus();
+        showSaved("图片识别语种包已切换");
+    });
+});
+selectionQuickButtonToggle?.addEventListener("change", () => {
+    void saveSelectionQuickTranslateButton(selectionQuickButtonToggle.checked).then(() => {
+        showSaved(selectionQuickButtonToggle.checked ? "已开启划词浮动翻译按钮" : "已关闭划词浮动翻译按钮");
+    });
+});
 clearCacheButton?.addEventListener("click", () => void clearTranslationCache());
 if (updatePolicy) {
     updatePolicy.addEventListener("change", () => {

@@ -36,6 +36,10 @@
                 <label><input type="radio" name="display-mode" value="bilingual" /><span>双语对照</span></label>
               </fieldset>
             </div>
+            <label class="setting-row">
+              <span><strong>划词浮动翻译按钮</strong><small>选中文字后在光标旁显示轻量翻译图标（右键「翻译所选内容」始终可用）</small></span>
+              <span class="switch"><input id="selection-quick-translate-button" type="checkbox" /><i aria-hidden="true"></i></span>
+            </label>
             <div class="setting-row">
               <span><strong>翻译缓存</strong><small id="translation-cache-status">正在读取缓存状态…</small></span>
               <button id="clear-translation-cache" type="button" class="ghost-button">清空缓存</button>
@@ -185,8 +189,15 @@
           <div class="section-heading"><h2>图片翻译</h2><p>右键网页中的图片可翻译；翻译完成后再次右键可还原图片</p></div>
           <div class="setting-card stack-card">
             <label class="setting-row"><strong>启用图片翻译</strong><span class="switch"><input id="image-translation-enabled" type="checkbox" /><i aria-hidden="true"></i></span></label>
-            <div class="ocr-status-row"><div><strong>本地文字识别模型</strong><small id="image-ocr-status" role="status">正在读取模型状态…</small></div><button id="image-ocr-action" type="button" disabled>下载模型</button></div>
-            <div class="hint">当前默认模型支持简中、繁中、英语和日语</div>
+            <label class="setting-row" for="image-ocr-profile-select">
+              <span><strong>当前识别语种包</strong><small>所有语种包共享同一套 4.8 MB 通用文字检测模型，按需下载对应识别包即可</small></span>
+              <select id="image-ocr-profile-select"></select>
+            </label>
+            <div class="ocr-status-row"><div><strong>当前模型状态</strong><small id="image-ocr-status" role="status">正在读取模型状态…</small></div><button id="image-ocr-action" type="button" disabled>下载模型</button></div>
+          </div>
+          <div class="setting-card">
+            <div class="setting-copy"><div><strong>多语种 OCR 识别包</strong><span>支持中日英（默认）、拉丁语系（法/德/西/葡/意/越等）、韩语、西里尔语系（俄/乌等）与泰语，均经 SHA-256 校验。</span></div></div>
+            <div id="image-ocr-profile-list" class="pack-list"><div class="empty-state">正在读取识别包…</div></div>
           </div>
         </section>
         <section id="video-translation" class="section settings-page">

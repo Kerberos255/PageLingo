@@ -92,18 +92,24 @@ SOFTWARE.
 
 ## PP-OCRv5 model data
 
-Image OCR model payloads are not redistributed in this repository. When image translation is enabled and first used, PageLingo downloads the official PaddlePaddle PP-OCRv5 Mobile ONNX detection and recognition models and a compatible PP-OCRv5 dictionary as data files, verifies pinned byte sizes and SHA-256 hashes, and caches them locally. These files are model/data payloads only and are never executed as extension code.
+Image OCR model payloads are not redistributed in this repository. When image translation is enabled and used, PageLingo downloads the shared PP-OCRv5 Mobile ONNX text detection model (`pp-ocrv5-mobile-det`) once and downloads the user-selected PP-OCRv5 Mobile recognition model and character dictionary as data files, verifies pinned byte sizes and SHA-256 hashes, and caches them locally. These files are model/data payloads only and are never executed as extension code.
 
-The detection and recognition model repositories used by PageLingo are published by PaddlePaddle on Hugging Face with the Apache License 2.0:
+- Shared detection & default CJK/EN/JA recognition (PaddlePaddle on Hugging Face, Apache-2.0):
+  - Detection: https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx
+  - Recognition: https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx
+- Multilingual PP-OCRv5 Mobile recognition packs (Latin, Korean, Cyrillic, Thai) and PP-OCRv5 character dictionaries (RapidOCR `v3.9.0` / `v3.10.0` on ModelScope, Apache-2.0):
+  - RapidOCR source: https://github.com/RapidAI/RapidOCR
+  - Model host: https://www.modelscope.cn/models/RapidAI/RapidOCR
+  - RapidOCR's model licensing documentation states that its hosted/converted PaddleOCR model assets are distributed under Apache-2.0 and retain upstream PaddleOCR attribution.
 
-- Detection: https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx
-- Recognition: https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx
+## PDF.js (`pdfjs-dist`)
+
+PageLingo bundles Mozilla's PDF.js library, its same-origin Web Worker (`pdf.worker.mjs`), CMap tables, and standard font data inside the extension package to render and parse PDF documents locally in `reader.html` with zero remote code execution (`isEvalSupported` is hardcoded to `false` at build time).
+
+- Project: Mozilla PDF.js
+- Package: `pdfjs-dist` 5.4.624
+- Source: https://github.com/mozilla/pdf.js
 - License: Apache-2.0
-
-The OCR dictionary is downloaded from RapidOCR's published PP-OCRv5 data path on ModelScope and is pinned by PageLingo by byte size and SHA-256.
-
-- RapidOCR source: https://github.com/RapidAI/RapidOCR
-- RapidOCR's current model licensing documentation states that its hosted/converted PaddleOCR model assets are distributed under Apache-2.0 and retain the upstream PaddleOCR attribution.
 
 ## fzstd
 

@@ -476,7 +476,7 @@ function hasCjkText(text: string): boolean {
 }
 
 function isWordJoinChar(char: string): boolean {
-  return /[A-Za-z0-9'’_-]/.test(char);
+  return /[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Script=Hangul}\p{Mark}0-9'’_-]/u.test(char);
 }
 
 export function wrapTranslatedParagraphs(
@@ -912,6 +912,35 @@ export function renderTranslatedImageToCanvas(
       maxX = Math.max(maxX, eb.x + eb.width);
       maxY = Math.max(maxY, eb.y + eb.height);
     }
+
+    const isSingleOriginalLine = rawLineBoxes.length === 1 && region.box.height <= lineHeight * 1.65;
+    if (isSingleOriginalLine && appearance.isUniform && rawLineBoxes[0]) {
+      const expandCapX = clamp(Math.round(lineHeight * 2.2), 12, 48);
+      const expanded = clampBoxToUniformBackground(
+        pixelBytes,
+        ocrWidth,
+        ocrHeight,
+        rawLineBoxes[0],
+        appearance.bgRgb,
+        expandCapX,
+        maxPadY,
+      );
+      let safeLeft = expanded.x + 3;
+      let safeRight = expanded.x + expanded.width - 3;
+      // Never intrude into any neighboring OCR region on the same horizontal band.
+      for (const sibling of regions) {
+        if (sibling === region) continue;
+        const sibTop = sibling.box.y;
+        const sibBottom = sibling.box.y + sibling.box.height;
+        if (sibBottom <= minY - 2 || sibTop >= maxY + 2) continue;
+        const sibRight = sibling.box.x + sibling.box.width;
+        if (sibRight <= minX + 1) safeLeft = Math.max(safeLeft, sibRight + 4);
+        if (sibling.box.x >= maxX - 1) safeRight = Math.min(safeRight, sibling.box.x - 4);
+      }
+      if (safeLeft < minX) minX = safeLeft;
+      if (safeRight > maxX) maxX = safeRight;
+    }
+
     const textBoxOcr: OcrBox = {
       x: minX,
       y: minY,
@@ -920,7 +949,6 @@ export function renderTranslatedImageToCanvas(
     };
 
     const alignment = inferTextAlignment(region.box, rawLineBoxes);
-    const isSingleOriginalLine = rawLineBoxes.length === 1 && region.box.height <= lineHeight * 1.65;
     return {
       region,
       lineHeight,

@@ -19,7 +19,11 @@ import { renderTranslatedImageToCanvas } from "./image-translation/image-rendere
 import { matchImageUiShortTerm, normalizeImagePunctuation } from "./image-translation/ui-short-terms";
 import { initializeVideoSubtitles } from "./video-translation/video-subtitle-controller";
 import { parseHtmlDocument } from "./shared/html-parser";
+import { SelectionTranslatorController } from "./core/selection-popover";
+import { detectForeignLanguageFromSample, extractForeignTextSample, fragmentAlreadyInTargetScript } from "./shared/mixed-language";
 var translator = null;
+var selectionTranslator = new SelectionTranslatorController(document);
+selectionTranslator.attach();
 var imageOverlays = new Map();
 var imageRequests = new Map();
 var imageOverlayCleanups = new WeakMap();
@@ -97,19 +101,33 @@ function routeLocaleHint() {
     }
     return null;
 }
-async function resolveSourceLanguage(sourceLanguage) {
+async function resolveSourceLanguage(sourceLanguage, targetLanguage = null, manualOverride = false) {
     if (sourceLanguage !== "auto")
         return normalizeDetectedLanguage(sourceLanguage) ?? sourceLanguage;
+    const normalizedTarget = targetLanguage ? (normalizeDetectedLanguage(targetLanguage) ?? targetLanguage) : null;
     // Explicit locale routes are the strongest automatic source-language signal.
     // This is especially important for bilingual SPA docs whose shell/sidebar can be
     // rendered in the target language while the current article is under /en/.
     const routeLanguage = routeLocaleHint();
-    if (routeLanguage) return routeLanguage;
+    if (routeLanguage && (!manualOverride || routeLanguage !== normalizedTarget)) return routeLanguage;
     const declaredLanguage = normalizeDetectedLanguage(document.documentElement.lang);
-    if (declaredLanguage) return declaredLanguage;
+    if (declaredLanguage && (!manualOverride || !normalizedTarget || declaredLanguage !== normalizedTarget)) {
+        return declaredLanguage;
+    }
     const info = await detectPageLanguage();
-    if (info.detectedLanguage) return info.detectedLanguage;
-    if (info.effectiveLanguage) return info.effectiveLanguage;
+    const detected = info.detectedLanguage ?? info.effectiveLanguage;
+    if (detected && (!manualOverride || !normalizedTarget || detected !== normalizedTarget)) {
+        return detected;
+    }
+    // Mixed-language page (e.g. Chinese webmail containing English emails):
+    // strip text already in targetLanguage and detect the dominant foreign language.
+    if (manualOverride && normalizedTarget) {
+        const foreignSample = extractForeignTextSample(document, normalizedTarget);
+        const foreignLanguage = await detectForeignLanguageFromSample(foreignSample, normalizedTarget);
+        if (foreignLanguage) return foreignLanguage;
+    }
+    if (declaredLanguage) return declaredLanguage;
+    if (detected) return detected;
     throw new Error("无法可靠识别当前页面语言，请手动选择原文语言");
 }
 async function canTranslate(sourceLanguage, targetLanguage) {
@@ -164,7 +182,10 @@ function routeLooksEnglish() {
     return /(?:^|\/)en(?:\/|$)/i.test(location.pathname);
 }
 async function detectRootLanguage(root) {
-    const declared = normalizeDetectedLanguage(root.lang || root.closest("[lang]")?.lang);
+    const closestLangEl = root.lang ? root : root.closest("[lang]");
+    const declared = closestLangEl && closestLangEl !== document.documentElement
+        ? normalizeDetectedLanguage(closestLangEl.lang)
+        : null;
     if (declared)
         return declared;
     const sample = (root.innerText || root.textContent || "").replace(/\s+/g, " ").trim().slice(0, 1200);
@@ -234,11 +255,11 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     const stale = () => expectedAutoGeneration !== null && expectedAutoGeneration !== autoTranslateGeneration;
     const settings = await loadSettings();
     if (stale()) return 0;
+    const normalizedTarget = normalizeDetectedLanguage(targetLanguage) ?? targetLanguage;
     const resolvedSource = (sourceLanguage === "auto" && translator && activeTranslationSourceLanguage)
         ? activeTranslationSourceLanguage
-        : await resolveSourceLanguage(sourceLanguage);
+        : await resolveSourceLanguage(sourceLanguage, normalizedTarget, manualOverride);
     if (stale()) return 0;
-    const normalizedTarget = normalizeDetectedLanguage(targetLanguage) ?? targetLanguage;
     if (resolvedSource === normalizedTarget)
         return 0;
     if (!await canTranslate(resolvedSource, normalizedTarget)) {
@@ -267,10 +288,11 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         // using innerText here would mistake our own Chinese output for source-language content
         // and immediately remove the translation on the next mutation/rescan.
         const rootText = sourceFingerprint(root, { excludeNestedRoots: true }).replace(/\s+/g, " ").trim();
+        if (fragmentAlreadyInTargetScript(rootText, normalizedTarget)) return false;
         if (targetLooksChinese(normalizedTarget) && looksLikeChineseFragment(rootText)) return false;
         // A direct user action outranks automatic language/site rules. Keep only the
-        // per-block target-language safety check above so already-Chinese fragments
-        // are not sent through an English→Chinese model again.
+        // per-block target-language safety check above so already-target-language fragments
+        // (such as Chinese webmail menus/labels) are not sent through an English→Chinese model.
         if (manualOverride) return true;
         if (settings.neverTranslateLanguages.length === 0) return true;
         const rootLanguage = await detectRootLanguage(root);
@@ -926,6 +948,16 @@ browser.runtime.onMessage.addListener(async (message) => {
             canRetranslateSegment: Boolean(segmentRoot),
         };
     }
+    if (message.type === "translate-selection") {
+        try {
+            const selectionText = typeof message.selectionText === "string" ? message.selectionText : undefined;
+            void selectionTranslator.translateSelection(selectionText);
+            return { ok: true };
+        }
+        catch (error) {
+            return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+    }
     if (message.type === "retranslate-segment") {
         try {
             if (!translator) throw new Error("当前页面尚未翻译");
@@ -990,6 +1022,8 @@ browser.runtime.onMessage.addListener(async (message) => {
     if (message.type === "restore-page") {
         translator?.restore();
         translator = null;
+        selectionTranslator.closePopover();
+        for (const el of Array.from(document.querySelectorAll('[data-pagelingo-selection-inline="true"]'))) el.remove();
         activeTranslationIsAutomatic = false;
         activeTranslationSourceLanguage = null;
         activeTranslationTargetLanguage = null;
@@ -1001,8 +1035,15 @@ browser.runtime.onMessage.addListener(async (message) => {
     }
     return undefined;
 });
+void loadSettings().then((settings) => {
+    selectionTranslator.setQuickButtonEnabled(settings.selectionQuickTranslateButton);
+}).catch(() => {});
 browser.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "local" || !translator)
+    if (areaName !== "local") return;
+    if (changes.selectionQuickTranslateButton) {
+        selectionTranslator.setQuickButtonEnabled(changes.selectionQuickTranslateButton.newValue === true);
+    }
+    if (!translator)
         return;
     if (changes.displayMode) {
         const mode = normalizeDisplayMode(changes.displayMode.newValue);
@@ -1090,12 +1131,17 @@ async function runAutoTranslate(generation) {
     if (isSiteListed(location.hostname, settings.neverTranslateSites))
         return;
     const targetLanguage = normalizeDetectedLanguage(settings.targetLanguage) ?? settings.targetLanguage;
+    const alwaysSite = isSiteListed(location.hostname, settings.alwaysTranslateSites);
     const resolved = await resolveAutomaticSourceLanguage(targetLanguage);
     if (generation !== autoTranslateGeneration) return;
-    const { sourceLanguage, info } = resolved;
+    let { sourceLanguage, info } = resolved;
+    if (alwaysSite && (!sourceLanguage || sourceLanguage === targetLanguage)) {
+        const foreignSample = extractForeignTextSample(document, targetLanguage);
+        sourceLanguage = await detectForeignLanguageFromSample(foreignSample, targetLanguage);
+        if (generation !== autoTranslateGeneration) return;
+    }
     if (!sourceLanguage || sourceLanguage === targetLanguage)
         return;
-    const alwaysSite = isSiteListed(location.hostname, settings.alwaysTranslateSites);
     if (!alwaysSite && settings.neverTranslateLanguages.includes(sourceLanguage))
         return;
     const explicitAlways = alwaysSite || settings.alwaysTranslateLanguages.includes(sourceLanguage);

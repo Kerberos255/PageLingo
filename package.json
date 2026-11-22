@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "onnxruntime-web": "1.30.0",
-    "paddleocr": "1.2.0"
+    "paddleocr": "1.2.0",
+    "pdfjs-dist": "5.4.624"
   },
   "devDependencies": {
     "@types/firefox-webext-browser": "^143.0.0",

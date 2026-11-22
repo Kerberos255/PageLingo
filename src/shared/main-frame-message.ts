@@ -33,3 +33,54 @@ export async function sendFrameMessage<T>(tabId: number, frameId: number, messag
 export function sendMainFrameMessage<T>(tabId: number, message: unknown): Promise<T> {
   return sendFrameMessage(tabId, 0, message);
 }
+
+export interface FrameMessageResult<T> {
+  frameId: number;
+  response?: T;
+  error?: unknown;
+}
+
+/**
+ * Discovers visible subframes via MV3 scripting (without requiring webNavigation permission)
+ * and sends `message` to frame 0 plus all visible subframes (e.g. webmail reading-pane iframes).
+ */
+export async function sendAllVisibleFramesMessage<T>(
+  tabId: number,
+  message: unknown,
+): Promise<FrameMessageResult<T>[]> {
+  let frameIds = [0];
+  try {
+    const executeScript = browser.scripting?.executeScript;
+    if (typeof executeScript === "function") {
+      const results = await executeScript({
+        target: { tabId, allFrames: true },
+        func: (() => ({
+          visible: window.innerWidth >= 80 && window.innerHeight >= 40,
+          hasText: Boolean((document.body?.innerText || "").trim().length > 0),
+        })) as unknown as () => void,
+      });
+      const discovered = new Set<number>([0]);
+      for (const entry of results ?? []) {
+        const fid = typeof entry.frameId === "number" ? entry.frameId : -1;
+        const val = entry.result as { visible?: boolean; hasText?: boolean } | undefined;
+        if (fid > 0 && val?.visible && val?.hasText) {
+          discovered.add(fid);
+        }
+      }
+      frameIds = Array.from(discovered);
+    }
+  } catch {
+    frameIds = [0];
+  }
+
+  return Promise.all(
+    frameIds.map(async (frameId): Promise<FrameMessageResult<T>> => {
+      try {
+        const response = await sendFrameMessage<T>(tabId, frameId, message);
+        return { frameId, response };
+      } catch (error) {
+        return { frameId, error };
+      }
+    }),
+  );
+}

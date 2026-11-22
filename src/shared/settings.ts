@@ -29,7 +29,7 @@ export interface BilingualStyleSettings {
 }
 export interface GlossaryEntry { source:string; target:string; mode:"protect"|"replace"; caseSensitive?:boolean }
 export interface GlossaryCollection { id:string; name:string; enabled:boolean; entries:GlossaryEntry[] }
-export interface PageLingoSettings { displayMode:DisplayMode; autoTranslateEnabled:boolean; targetLanguage:string; neverTranslateSites:string[]; alwaysTranslateSites:string[]; neverTranslateLanguages:string[]; alwaysTranslateLanguages:string[]; modelUpdatePolicy:ModelUpdatePolicy; imageTranslationEnabled:boolean; terminologyText:string; builtinGlossaryEnabled:boolean; glossaryCollections:GlossaryCollection[]; videoSubtitle:VideoSubtitleSettings; bilingualStyle:BilingualStyleSettings }
+export interface PageLingoSettings { displayMode:DisplayMode; autoTranslateEnabled:boolean; targetLanguage:string; neverTranslateSites:string[]; alwaysTranslateSites:string[]; neverTranslateLanguages:string[]; alwaysTranslateLanguages:string[]; modelUpdatePolicy:ModelUpdatePolicy; imageTranslationEnabled:boolean; imageOcrProfileId:string; selectionQuickTranslateButton:boolean; terminologyText:string; builtinGlossaryEnabled:boolean; glossaryCollections:GlossaryCollection[]; videoSubtitle:VideoSubtitleSettings; bilingualStyle:BilingualStyleSettings }
 
 export const VIDEO_SUBTITLE_COLORS = ["#ffffff", "#fde047", "#fdba74", "#7dd3fc"] as const;
 export const BILINGUAL_TRANSLATION_COLORS = ["inherit", "#2563eb", "#b45309", "#0f766e", "#6b7280"] as const;
@@ -68,6 +68,8 @@ export const DEFAULT_SETTINGS: PageLingoSettings = {
     alwaysTranslateLanguages: [],
     modelUpdatePolicy: "auto",
     imageTranslationEnabled: false,
+    imageOcrProfileId: "pp-ocrv5-mobile",
+    selectionQuickTranslateButton: false,
     terminologyText: "",
     builtinGlossaryEnabled: true,
     glossaryCollections: [],
@@ -318,6 +320,10 @@ export async function loadSettings(): Promise<PageLingoSettings> {
         alwaysTranslateLanguages: normalizeLanguageList(stored.alwaysTranslateLanguages),
         modelUpdatePolicy: normalizeModelUpdatePolicy(stored.modelUpdatePolicy),
         imageTranslationEnabled: stored.imageTranslationEnabled === true,
+        imageOcrProfileId: typeof stored.imageOcrProfileId === "string" && stored.imageOcrProfileId.trim()
+            ? stored.imageOcrProfileId.trim()
+            : DEFAULT_SETTINGS.imageOcrProfileId,
+        selectionQuickTranslateButton: stored.selectionQuickTranslateButton === true,
         terminologyText: typeof stored.terminologyText === "string" ? stored.terminologyText : "",
         builtinGlossaryEnabled: stored.builtinGlossaryEnabled !== false,
         glossaryCollections,
@@ -358,6 +364,15 @@ export async function saveModelUpdatePolicy(modelUpdatePolicy: ModelUpdatePolicy
 
 export async function saveImageTranslationEnabled(imageTranslationEnabled: boolean): Promise<void> {
     await browser.storage.local.set({ imageTranslationEnabled });
+}
+
+export async function saveImageOcrProfileId(imageOcrProfileId: string): Promise<void> {
+    const normalized = imageOcrProfileId.trim() || DEFAULT_SETTINGS.imageOcrProfileId;
+    await browser.storage.local.set({ imageOcrProfileId: normalized });
+}
+
+export async function saveSelectionQuickTranslateButton(selectionQuickTranslateButton: boolean): Promise<void> {
+    await browser.storage.local.set({ selectionQuickTranslateButton });
 }
 
 export async function saveBuiltinGlossaryEnabled(builtinGlossaryEnabled: boolean): Promise<void> {
