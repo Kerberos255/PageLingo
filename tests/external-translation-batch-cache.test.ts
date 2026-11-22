@@ -92,13 +92,11 @@ describe("built-in free Microsoft (Edge) and Google Translate engines", () => {
       }
       const items = JSON.parse(String(init?.body)) as string[];
       expect(Array.isArray(items)).toBe(true);
-      expect(items).not.toContain("Claude");
-      expect(items).not.toContain("GPT");
+      // Whole sentence containing protected terms is sent intact (not fragmented into "and" + "models").
       const map: Record<string, string> = {
         Hello: "你好",
         World: "世界",
-        and: "和",
-        models: "模型",
+        "Claude and GPT models": "Claude 和 GPT 模型",
       };
       return Response.json(items.map((text) => ({
         detectedLanguage: { language: "en", score: 1 },
@@ -177,24 +175,20 @@ describe("built-in free Microsoft (Edge) and Google Translate engines", () => {
     })).resolves.toBe('<span data-flt-text-id="0">你好 GPT</span>');
   });
 
-  it("batches Google Free plain text via translate_a/t while preserving HTML slots, links, code, and protected terms", async () => {
+  it("batches Google Free as whole-sentence compact HTML via translate_a/t while preserving slots, links, code, and protected terms", async () => {
     const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       const target = String(url);
       expect(target).toContain("https://translate.googleapis.com/translate_a/t?client=dict-chrome-ex");
       const params = new URLSearchParams(String(init?.body));
       const queries = params.getAll("q");
-      // Protected brand terms (Claude, GPT) and opaque code must NOT be sent to Google!
-      expect(queries).not.toContain("Claude");
-      expect(queries).not.toContain("GPT");
-      expect(queries).not.toContain("__FLT_OPAQUE_0__");
-      const map: Record<string, string> = {
-        "and": "和",
-        "models": "模型",
-        "Use": "使用",
-        "the guide": "指南",
-        "with": "搭配",
-      };
-      return Response.json(queries.map((q) => [map[q] ?? q, "en"]));
+      expect(queries).toEqual([
+        '<span class="notranslate" data-pl-t="0">Claude</span> and <span class="notranslate" data-pl-t="1">GPT</span> models',
+        'Use <a data-pl-el="0">the guide</a> with <span class="notranslate" data-pl-a="0">__FLT_OPAQUE_0__</span>',
+      ]);
+      return Response.json([
+        ['<span class="notranslate" data-pl-t="0">Claude</span> 和 <span class="notranslate" data-pl-t="1">GPT</span> 模型', "en"],
+        ['使用 <a data-pl-el="0">指南</a> 搭配 <span class="notranslate" data-pl-a="0">__FLT_OPAQUE_0__</span>', "en"],
+      ]);
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -216,6 +210,40 @@ describe("built-in free Microsoft (Edge) and Google Translate engines", () => {
     expect(restoreTerminologyHtml(document, results[0]!, ["Claude", "GPT"])).toBe('<span data-flt-text-id="0">Claude 和 GPT 模型</span>');
     expect(results[1]).toContain('<span data-flt-text-id="1">指南</span>');
     expect(results[1]).toContain("<code>__FLT_OPAQUE_0__</code>");
+  });
+
+  it("falls back per paragraph to plain-text slots when Google reorders inline tags", async () => {
+    let callCount = 0;
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      callCount += 1;
+      const target = String(url);
+      expect(target).toContain("https://translate.googleapis.com/translate_a/t?client=dict-chrome-ex");
+      const params = new URLSearchParams(String(init?.body));
+      const queries = params.getAll("q");
+      if (callCount === 1) {
+        // Simulate Google reordering <a> after <code>.
+        return Response.json([
+          ['在生产中运行 <span class="notranslate" data-pl-a="0">__FLT_OPAQUE_0__</span> 之前，请阅读 <a data-pl-el="0">安装指南</a>。', "en"],
+        ]);
+      }
+      const map: Record<string, string> = {
+        "Read": "阅读",
+        "the guide": "指南",
+        "before running": "在运行之前",
+      };
+      return Response.json(queries.map((q) => [map[q] ?? q, "en"]));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const googleFree = builtinFreeEngineConfig(BUILTIN_GOOGLE_ENGINE_ID)!;
+    const html = await translateWithExternalEngine(googleFree, {
+      html: '<span data-flt-text-id="0">Read </span><a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0"><code>__FLT_LINK_START_0__</code><span data-flt-text-id="1">the guide</span><code>__FLT_LINK_END_0__</code></a><span data-flt-text-id="2"> before running </span><code>__FLT_OPAQUE_0__</code>',
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(callCount).toBe(2);
+    expect(html).toContain('<span data-flt-text-id="1">指南</span>');
+    expect(html).toContain("<code>__FLT_OPAQUE_0__</code>");
   });
 
   it("retries Google Free on HTTP 429 and falls back to translate_a/single when translate_a/t returns unexpected format", async () => {

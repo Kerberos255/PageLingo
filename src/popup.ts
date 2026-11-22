@@ -61,6 +61,9 @@ let storedTargetLanguage = "zh-Hans";
 let lastTextDetectedLanguage: string | null = null;
 let textTranslateSeq = 0;
 let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
+let pageTranslated = false;
+let engineSwitchedSinceTranslate = false;
+let lastTextTranslationKey = "";
 
 interface LanguageOption { code: string; label: string }
 interface CatalogResponse {
@@ -83,6 +86,7 @@ interface EngineStateResponse {
 }
 interface LanguageResponse {
   ok?: boolean;
+  pageTranslated?: boolean;
   language?: { effectiveLanguage?: string | null; detectedLanguage?: string | null; percentage?: number; isReliable?: boolean };
 }
 
@@ -146,6 +150,13 @@ async function refreshEngines(): Promise<void> {
   }
 }
 
+function syncTranslateButton(): void {
+  if (!translate) return;
+  const forceMode = pageTranslated && !engineSwitchedSinceTranslate;
+  translate.textContent = forceMode ? "重新翻译" : "翻译本页";
+  translate.title = forceMode ? "跳过缓存，重新翻译当前页面" : "";
+}
+
 async function switchEngine(nextId: string): Promise<void> {
   if (!engineSelect) return;
   const previousId = activeEngineId;
@@ -166,19 +177,22 @@ async function switchEngine(nextId: string): Promise<void> {
       throw new Error(response?.error ?? "切换翻译引擎失败");
     }
     applyEngineState(response.state);
+    engineSwitchedSinceTranslate = true;
     await refreshLanguage();
 
-    let pageTranslated = false;
+    let translatedNow = pageTranslated;
     try {
       const tab = await activeTab();
       const menuState = await sendMainFrameMessage<{ ok?: boolean; pageTranslated?: boolean }>(tab.id!, { type: "get-context-menu-state" });
-      pageTranslated = menuState?.pageTranslated === true;
+      translatedNow = menuState?.pageTranslated === true;
+      pageTranslated = translatedNow;
     } catch {
       // Non-web tabs do not have a content script.
     }
+    syncTranslateButton();
     if (statusEl && !statusEl.textContent?.startsWith("暂不支持") && statusEl.textContent !== "当前页面已经是目标语言") {
       const label = engineLabel(activeEngineId);
-      statusEl.textContent = pageTranslated
+      statusEl.textContent = translatedNow
         ? `已切换到 ${label}，可点击「翻译本页」重新翻译`
         : `已切换到 ${label}`;
     }
@@ -226,6 +240,8 @@ async function refreshLanguage(): Promise<void> {
     const url = tab.url ? new URL(tab.url) : null;
     currentHostname = url && (url.protocol === "http:" || url.protocol === "https:") ? url.hostname : "";
     const response = await sendMainFrameMessage<LanguageResponse>(tab.id!, { type: "get-page-language" });
+    pageTranslated = response?.pageTranslated === true;
+    syncTranslateButton();
     const info = response?.language;
     detectedCode = info?.effectiveLanguage ?? info?.detectedLanguage ?? null;
     const confidence = info?.percentage ? ` · ${info.percentage}%` : "";
@@ -241,23 +257,39 @@ async function refreshLanguage(): Promise<void> {
     refreshSiteAuto();
   } catch {
     detectedCode = null;
+    pageTranslated = false;
+    syncTranslateButton();
     if (detectedEl) detectedEl.textContent = "暂时无法检测当前页面";
     refreshSiteAuto();
   }
 }
 
 async function send(type: "translate-page" | "restore-page"): Promise<void> {
-  if (statusEl) statusEl.textContent = type === "translate-page" ? "正在翻译…" : "恢复中…";
+  const bypassCache = type === "translate-page" && pageTranslated && !engineSwitchedSinceTranslate;
+  if (statusEl) {
+    statusEl.textContent = type === "translate-page"
+      ? (bypassCache ? "正在跳过缓存重新翻译…" : "正在翻译…")
+      : "恢复中…";
+  }
   try {
     const tab = await activeTab();
     const response = await sendMainFrameMessage<{ok?: boolean; count?: number; failedCount?: number; error?: string}>(tab.id!, {
       type,
       sourceLanguage: sourceSelect?.value ?? "auto",
       targetLanguage: targetSelect?.value ?? "zh-Hans",
+      ...(bypassCache ? { bypassCache: true } : {}),
     });
     if (!response?.ok) throw new Error(response?.error ?? "操作失败");
+    if (type === "translate-page") {
+      pageTranslated = true;
+      engineSwitchedSinceTranslate = false;
+    } else {
+      pageTranslated = false;
+      engineSwitchedSinceTranslate = false;
+    }
+    syncTranslateButton();
     if (statusEl) statusEl.textContent = type === "translate-page"
-      ? `已翻译 ${response.count ?? 0} 个段落${response.failedCount ? `；${response.failedCount} 个未完成，已保留原文` : ""}`
+      ? `${bypassCache ? "已重新翻译" : "已翻译"} ${response.count ?? 0} 个段落${response.failedCount ? `；${response.failedCount} 个未完成，已保留原文` : ""}`
       : "已恢复原文";
   } catch (error) {
     if (statusEl) statusEl.textContent = error instanceof Error ? error.message : String(error);
@@ -322,6 +354,7 @@ async function translateInputText(): Promise<void> {
   if (!raw.trim()) {
     textResultWrap.hidden = true;
     textResultEl.textContent = "";
+    lastTextTranslationKey = "";
     setTextMeta("");
     return;
   }
@@ -358,6 +391,9 @@ async function translateInputText(): Promise<void> {
       throw new Error(`暂不支持 ${languageLabel(sourceLanguage)} → ${languageLabel(targetLanguage)}`);
     }
 
+    const requestKey = `${activeEngineId}\u0000${sourceLanguage}\u0000${targetLanguage}\u0000${raw}`;
+    const bypassCache = !textResultWrap.hidden && lastTextTranslationKey === requestKey;
+
     const settings = await loadSettings();
     if (seq !== textTranslateSeq) return;
     const terminology = parseTerminology(
@@ -376,6 +412,7 @@ async function translateInputText(): Promise<void> {
         sourceLanguage,
         targetLanguage,
         terminology: terminologyForText(terminology, line),
+        ...(bypassCache ? { bypassCache: true } : {}),
       });
       html = restoreTerminologyHtml(document, html, protectedLine.replacements);
       html = applyTerminologyCorrectionsHtml(document, html, line, terminology);
@@ -383,13 +420,14 @@ async function translateInputText(): Promise<void> {
     }));
     if (seq !== textTranslateSeq) return;
 
+    lastTextTranslationKey = requestKey;
     textResultEl.textContent = translatedLines.join("\n");
     textResultWrap.hidden = false;
     if (textResultLangEl) {
       textResultLangEl.textContent = `${languageLabel(sourceLanguage)} → ${languageLabel(targetLanguage)}`;
     }
     if (textCopyButton) textCopyButton.textContent = "复制";
-    setTextMeta("");
+    setTextMeta(bypassCache ? "已跳过缓存重新翻译" : "");
   } catch (error) {
     if (seq !== textTranslateSeq) return;
     setTextMeta(error instanceof Error ? error.message : String(error), true);
@@ -461,6 +499,7 @@ textInput?.addEventListener("keydown", (event) => {
 });
 textClearButton?.addEventListener("click", () => {
   textTranslateSeq += 1;
+  lastTextTranslationKey = "";
   if (textInput) textInput.value = "";
   if (textResultEl) textResultEl.textContent = "";
   if (textResultWrap) textResultWrap.hidden = true;

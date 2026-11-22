@@ -197,6 +197,23 @@ export class ExternalTranslationCache {
     return this.#memory.size;
   }
 
+  async count(): Promise<number> {
+    if (!this.#durableEnabled) return this.#memory.size;
+    const db = await this.#openDb();
+    if (!db) return this.#memory.size;
+    try {
+      const idbCount = await new Promise<number>((resolve) => {
+        const tx = db.transaction(CACHE_DB_STORE, "readonly");
+        const request = tx.objectStore(CACHE_DB_STORE).count();
+        request.onsuccess = () => resolve(typeof request.result === "number" ? request.result : 0);
+        request.onerror = () => resolve(0);
+      });
+      return Math.max(idbCount, this.#memory.size);
+    } catch {
+      return this.#memory.size;
+    }
+  }
+
   #openDb(): Promise<IDBDatabase | null> {
     if (!this.#durableEnabled) return Promise.resolve(null);
     if (!this.#dbPromise) {

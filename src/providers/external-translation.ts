@@ -8,6 +8,7 @@ import {
 } from "../shared/translation-engine-settings";
 import { restoreFixedHtmlTransport } from "../core/fixed-html-transport";
 import { assessTranslationQuality } from "../core/translation-quality";
+import { packGoogleFreeHtml, unpackGoogleFreeHtml, type GoogleFreeHtmlPlan } from "./google-free-html";
 
 export interface ExternalTranslationTerminologyEntry {
   source: string;
@@ -385,9 +386,18 @@ interface PlainTextSlotRef {
   trailing: string;
 }
 
+interface PlainTextTermSlotRef {
+  element: Element;
+  terms: Array<{ id: string; text: string }>;
+  leading: string;
+  core: string;
+  trailing: string;
+}
+
 interface PlainTextTemplate {
   doc: Document;
   slots: PlainTextSlotRef[];
+  termSlots: PlainTextTermSlotRef[];
   originalHtml: string;
 }
 
@@ -568,13 +578,130 @@ function splitPlainTextPieces(core: string, maxPieceChars: number): PlainTextPie
   return out;
 }
 
-function extractPlainTextTemplate(html: string): PlainTextTemplate {
+function isSimpleTermSlotContainer(element: Element): boolean {
+  let hasTerm = false;
+  let outsideText = "";
+  for (const child of Array.from(element.childNodes)) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      outsideText += child.textContent ?? "";
+      continue;
+    }
+    if (child.nodeType === Node.ELEMENT_NODE) {
+      const el = child as Element;
+      if (
+        el.tagName === "SPAN"
+        && /^\d+$/u.test(el.getAttribute("data-flt-term-id") ?? "")
+        && el.childElementCount === 0
+      ) {
+        hasTerm = true;
+        continue;
+      }
+    }
+    return false;
+  }
+  return hasTerm && /\p{L}/u.test(outsideText);
+}
+
+function countPlainVerbatim(text: string, term: string): number {
+  if (!term) return 0;
+  const wordLike = /^[A-Za-z0-9_.-]+$/.test(term);
+  let count = 0;
+  for (let at = text.indexOf(term); at >= 0; at = text.indexOf(term, at + term.length)) {
+    if (wordLike) {
+      const before = at > 0 ? text[at - 1]! : "";
+      const after = text[at + term.length] ?? "";
+      if (/[A-Za-z0-9_]/.test(before) || /[A-Za-z0-9_]/.test(after)) continue;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function rebuildTermSlotNodes(
+  doc: Document,
+  translated: string,
+  terms: ReadonlyArray<{ id: string; text: string }>,
+): Node[] | null {
+  const expectedByText = new Map<string, string[]>();
+  for (const term of terms) {
+    if (!term.text) return null;
+    const queue = expectedByText.get(term.text);
+    if (queue) queue.push(term.id);
+    else expectedByText.set(term.text, [term.id]);
+  }
+  for (const [termText, ids] of expectedByText) {
+    if (countPlainVerbatim(translated, termText) !== ids.length) return null;
+  }
+
+  const hits: Array<{ at: number; length: number; id: string; text: string }> = [];
+  for (const [termText, ids] of expectedByText) {
+    const wordLike = /^[A-Za-z0-9_.-]+$/.test(termText);
+    let idx = 0;
+    for (let at = translated.indexOf(termText); at >= 0 && idx < ids.length; at = translated.indexOf(termText, at + termText.length)) {
+      if (wordLike) {
+        const before = at > 0 ? translated[at - 1]! : "";
+        const after = translated[at + termText.length] ?? "";
+        if (/[A-Za-z0-9_]/.test(before) || /[A-Za-z0-9_]/.test(after)) continue;
+      }
+      hits.push({ at, length: termText.length, id: ids[idx++]!, text: termText });
+    }
+    if (idx !== ids.length) return null;
+  }
+
+  hits.sort((a, b) => a.at - b.at);
+  for (let i = 1; i < hits.length; i += 1) {
+    if (hits[i]!.at < hits[i - 1]!.at + hits[i - 1]!.length) return null;
+  }
+
+  const nodes: Node[] = [];
+  let cursor = 0;
+  for (const hit of hits) {
+    if (hit.at > cursor) nodes.push(doc.createTextNode(translated.slice(cursor, hit.at)));
+    const span = doc.createElement("span");
+    span.setAttribute("data-flt-term-id", hit.id);
+    span.textContent = hit.text;
+    nodes.push(span);
+    cursor = hit.at + hit.length;
+  }
+  if (cursor < translated.length) nodes.push(doc.createTextNode(translated.slice(cursor)));
+  return nodes;
+}
+
+function extractPlainTextTemplate(html: string, keepTermsInline = true): PlainTextTemplate {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const slots: PlainTextSlotRef[] = [];
+  const termSlots: PlainTextTermSlotRef[] = [];
+  const coveredTermContainers = new Set<Element>();
+
+  if (keepTermsInline) {
+    const candidates = Array.from(doc.body.querySelectorAll("span[data-flt-text-id]"));
+    if (candidates.length === 0 && isSimpleTermSlotContainer(doc.body)) {
+      candidates.push(doc.body);
+    }
+    for (const candidate of candidates) {
+      if (!isSimpleTermSlotContainer(candidate)) continue;
+      const fullText = candidate.textContent ?? "";
+      if (PLAIN_BLANK_LINE_SPLIT_RE.test(fullText)) continue;
+      const leading = fullText.match(/^\s*/u)?.[0] ?? "";
+      const trailing = fullText.match(/\s*$/u)?.[0] ?? "";
+      const core = fullText.slice(leading.length, fullText.length - trailing.length);
+      if (!core) continue;
+      const terms: Array<{ id: string; text: string }> = [];
+      for (const child of Array.from(candidate.children)) {
+        const tid = child.getAttribute("data-flt-term-id");
+        if (tid !== null) terms.push({ id: tid, text: child.textContent ?? "" });
+      }
+      if (!terms.length) continue;
+      coveredTermContainers.add(candidate);
+      termSlots.push({ element: candidate, terms, leading, core, trailing });
+    }
+  }
+
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
   for (let current = walker.nextNode(); current; current = walker.nextNode()) {
     const textNode = current as Text;
     const parent = textNode.parentElement;
+    if (parent && coveredTermContainers.has(parent)) continue;
     if (parent?.closest("code,kbd,samp,var,[data-flt-fixed],[data-flt-term-id]")) continue;
     const raw = textNode.data;
     const trimmed = raw.trim();
@@ -587,7 +714,43 @@ function extractPlainTextTemplate(html: string): PlainTextTemplate {
     if (!core) continue;
     slots.push({ node: textNode, leading, core, trailing });
   }
-  return { doc, slots, originalHtml: html };
+  return { doc, slots, termSlots, originalHtml: html };
+}
+
+async function runPlainTextChunks(
+  uniqueTexts: string[],
+  maxItemsPerCall: number,
+  maxCharsPerCall: number,
+  translateChunk: (texts: string[]) => Promise<Array<string | undefined>>,
+): Promise<Map<string, string>> {
+  const translatedByText = new Map<string, string>();
+  if (uniqueTexts.length === 0) return translatedByText;
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let currentChars = 0;
+  for (const text of uniqueTexts) {
+    if (
+      current.length > 0
+      && (current.length >= maxItemsPerCall || currentChars + text.length > maxCharsPerCall)
+    ) {
+      chunks.push(current);
+      current = [];
+      currentChars = 0;
+    }
+    current.push(text);
+    currentChars += text.length;
+  }
+  if (current.length > 0) chunks.push(current);
+
+  for (const chunk of chunks) {
+    const translatedChunk = await translateChunk(chunk);
+    for (let i = 0; i < chunk.length; i += 1) {
+      const source = chunk[i]!;
+      const target = translatedChunk[i];
+      if (typeof target === "string") translatedByText.set(source, target);
+    }
+  }
+  return translatedByText;
 }
 
 async function translatePlainTextTemplates(
@@ -595,60 +758,43 @@ async function translatePlainTextTemplates(
   maxItemsPerCall: number,
   maxCharsPerCall: number,
   translateChunk: (texts: string[]) => Promise<Array<string | undefined>>,
+  keepTermsInline = true,
 ): Promise<Array<string | undefined>> {
   const maxPieceChars = Math.max(400, Math.floor(maxCharsPerCall * 0.75));
   const templates = requests.map((request) => {
-    const template = extractPlainTextTemplate(request.html);
+    const template = extractPlainTextTemplate(request.html, keepTermsInline);
     return {
       ...template,
       slotPieces: template.slots.map((slot) => splitPlainTextPieces(slot.core, maxPieceChars)),
+      termSlotPieces: template.termSlots.map((slot) => splitPlainTextPieces(slot.core, maxPieceChars)),
     };
   });
   const uniqueTexts: string[] = [];
   const textIndex = new Map<string, number>();
+  const addText = (text: string) => {
+    if (!textIndex.has(text)) {
+      textIndex.set(text, uniqueTexts.length);
+      uniqueTexts.push(text);
+    }
+  };
   for (const template of templates) {
     for (const pieces of template.slotPieces) {
       for (const piece of pieces) {
-        if (piece.kind !== "translate") continue;
-        if (!textIndex.has(piece.core)) {
-          textIndex.set(piece.core, uniqueTexts.length);
-          uniqueTexts.push(piece.core);
-        }
+        if (piece.kind === "translate") addText(piece.core);
+      }
+    }
+    for (const pieces of template.termSlotPieces) {
+      for (const piece of pieces) {
+        if (piece.kind === "translate") addText(piece.core);
       }
     }
   }
 
-  const translatedByText = new Map<string, string>();
-  if (uniqueTexts.length > 0) {
-    const chunks: string[][] = [];
-    let current: string[] = [];
-    let currentChars = 0;
-    for (const text of uniqueTexts) {
-      if (
-        current.length > 0
-        && (current.length >= maxItemsPerCall || currentChars + text.length > maxCharsPerCall)
-      ) {
-        chunks.push(current);
-        current = [];
-        currentChars = 0;
-      }
-      current.push(text);
-      currentChars += text.length;
-    }
-    if (current.length > 0) chunks.push(current);
+  const translatedByText = await runPlainTextChunks(uniqueTexts, maxItemsPerCall, maxCharsPerCall, translateChunk);
+  const splitFallbackIndices: number[] = [];
 
-    for (const chunk of chunks) {
-      const translatedChunk = await translateChunk(chunk);
-      for (let i = 0; i < chunk.length; i += 1) {
-        const source = chunk[i]!;
-        const target = translatedChunk[i];
-        if (typeof target === "string") translatedByText.set(source, target);
-      }
-    }
-  }
-
-  return templates.map((template) => {
-    if (template.slots.length === 0) return template.originalHtml;
+  const outputs = templates.map((template, index) => {
+    if (template.slots.length === 0 && template.termSlots.length === 0) return template.originalHtml;
     for (let s = 0; s < template.slots.length; s += 1) {
       const slot = template.slots[s]!;
       const pieces = template.slotPieces[s]!;
@@ -664,8 +810,61 @@ async function translatePlainTextTemplates(
       }
       slot.node.data = `${slot.leading}${joined}${slot.trailing}`;
     }
+
+    for (let s = 0; s < template.termSlots.length; s += 1) {
+      const termSlot = template.termSlots[s]!;
+      const pieces = template.termSlotPieces[s]!;
+      let joined = "";
+      for (const piece of pieces) {
+        if (piece.kind === "literal") {
+          joined += piece.text;
+        } else {
+          const translated = translatedByText.get(piece.core);
+          if (typeof translated !== "string") return undefined;
+          joined += `${piece.leading}${translated}${piece.trailing}`;
+        }
+      }
+      const rebuilt = rebuildTermSlotNodes(template.doc, joined, termSlot.terms);
+      if (!rebuilt) {
+        if (keepTermsInline) splitFallbackIndices.push(index);
+        return undefined;
+      }
+      const first = rebuilt[0];
+      if (first && first.nodeType === Node.TEXT_NODE) {
+        first.textContent = termSlot.leading + (first.textContent ?? "");
+      } else if (termSlot.leading) {
+        rebuilt.unshift(template.doc.createTextNode(termSlot.leading));
+      }
+      const last = rebuilt[rebuilt.length - 1];
+      if (last && last.nodeType === Node.TEXT_NODE) {
+        last.textContent = (last.textContent ?? "") + termSlot.trailing;
+      } else if (termSlot.trailing) {
+        rebuilt.push(template.doc.createTextNode(termSlot.trailing));
+      }
+      termSlot.element.replaceChildren(...rebuilt);
+    }
+
     return template.doc.body.innerHTML;
   });
+
+  // If the translation service altered or dropped a protected term in any inline
+  // term-slot, re-translate ONLY those paragraphs with split term boundaries so
+  // terminology protection stays 100% intact.
+  if (keepTermsInline && splitFallbackIndices.length > 0) {
+    const fallbackRequests = splitFallbackIndices.map((idx) => requests[idx]!);
+    const fallbackOutputs = await translatePlainTextTemplates(
+      fallbackRequests,
+      maxItemsPerCall,
+      maxCharsPerCall,
+      translateChunk,
+      false,
+    );
+    for (let i = 0; i < splitFallbackIndices.length; i += 1) {
+      outputs[splitFallbackIndices[i]!] = fallbackOutputs[i];
+    }
+  }
+
+  return outputs;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -807,18 +1006,23 @@ async function translateGoogleFreeSingleText(text: string, sl: string, tl: strin
   return translated;
 }
 
-async function translateGoogleFreeChunk(texts: string[], sl: string, tl: string): Promise<string[]> {
+async function translateGoogleFreeBatchOnly(texts: string[], sl: string, tl: string): Promise<string[] | null> {
   const endpoint = `${GOOGLE_FREE_BATCH_URL}?client=dict-chrome-ex&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(tl)}`;
   const params = new URLSearchParams();
   for (const text of texts) params.append("q", text);
   try {
     const data = await googleFreeJsonPost(endpoint, params);
-    const parsed = parseGoogleFreeBatchPayload(data, texts.length);
-    if (parsed) return parsed;
+    return parseGoogleFreeBatchPayload(data, texts.length);
   } catch (error) {
     if (error instanceof HttpStatusError && error.status === 429) throw error;
-    // Fall back to translate_a/single (client=gtx) when translate_a/t rejects or changes shape.
+    return null;
   }
+}
+
+async function translateGoogleFreeChunk(texts: string[], sl: string, tl: string): Promise<string[]> {
+  const parsed = await translateGoogleFreeBatchOnly(texts, sl, tl);
+  if (parsed) return parsed;
+  // Fall back to translate_a/single (client=gtx) when translate_a/t rejects or changes shape.
   const fallbackResults: string[] = [];
   for (const text of texts) {
     fallbackResults.push(await translateGoogleFreeSingleText(text, sl, tl));
@@ -834,12 +1038,83 @@ async function translateGoogleFree(
     ? apiLanguage(first.sourceLanguage, "google-free")
     : "auto";
   const tl = apiLanguage(first.targetLanguage, "google-free");
-  return translatePlainTextTemplates(
-    requests,
-    GOOGLE_FREE_MAX_ITEMS_PER_CALL,
-    GOOGLE_FREE_MAX_CHARS_PER_CALL,
-    (chunk) => translateGoogleFreeChunk(chunk, sl, tl),
-  );
+
+  const results: Array<string | undefined> = new Array(requests.length).fill(undefined);
+  const htmlItems: Array<{ index: number; request: ExternalTranslationRequest; plan: GoogleFreeHtmlPlan }> = [];
+  const fallbackIndices: number[] = [];
+
+  for (let index = 0; index < requests.length; index += 1) {
+    const request = requests[index]!;
+    const plan = packGoogleFreeHtml(request.html);
+    if (plan) htmlItems.push({ index, request, plan });
+    else fallbackIndices.push(index);
+  }
+
+  if (htmlItems.length > 0) {
+    const chunks: typeof htmlItems[] = [];
+    let current: typeof htmlItems = [];
+    let currentChars = 0;
+    for (const item of htmlItems) {
+      const len = item.plan.wireHtml.length;
+      if (
+        current.length > 0
+        && (current.length >= GOOGLE_FREE_MAX_ITEMS_PER_CALL || currentChars + len > GOOGLE_FREE_MAX_CHARS_PER_CALL)
+      ) {
+        chunks.push(current);
+        current = [];
+        currentChars = 0;
+      }
+      current.push(item);
+      currentChars += len;
+    }
+    if (current.length > 0) chunks.push(current);
+
+    for (const chunk of chunks) {
+      const translatedChunk = await translateGoogleFreeBatchOnly(
+        chunk.map((item) => item.plan.wireHtml),
+        sl,
+        tl,
+      );
+      if (!translatedChunk) {
+        for (const item of chunk) fallbackIndices.push(item.index);
+        continue;
+      }
+      for (let i = 0; i < chunk.length; i += 1) {
+        const item = chunk[i]!;
+        const wireOut = translatedChunk[i];
+        let restored: string | undefined;
+        if (typeof wireOut === "string") {
+          const unpacked = unpackGoogleFreeHtml(item.plan, wireOut);
+          if (typeof unpacked === "string") {
+            try {
+              restored = /<span\b[^>]*\bdata-flt-text-id\s*=/iu.test(item.request.html)
+                ? restoreFixedHtmlTransport(item.request.html, unpacked)
+                : unpacked;
+            } catch {
+              restored = undefined;
+            }
+          }
+        }
+        if (typeof restored === "string") results[item.index] = restored;
+        else fallbackIndices.push(item.index);
+      }
+    }
+  }
+
+  if (fallbackIndices.length > 0) {
+    fallbackIndices.sort((a, b) => a - b);
+    const fallbackOutputs = await translatePlainTextTemplates(
+      fallbackIndices.map((index) => requests[index]!),
+      GOOGLE_FREE_MAX_ITEMS_PER_CALL,
+      GOOGLE_FREE_MAX_CHARS_PER_CALL,
+      (chunk) => translateGoogleFreeChunk(chunk, sl, tl),
+    );
+    for (let i = 0; i < fallbackIndices.length; i += 1) {
+      results[fallbackIndices[i]!] = fallbackOutputs[i];
+    }
+  }
+
+  return results;
 }
 
 /* -------------------------------------------------------------------------- */

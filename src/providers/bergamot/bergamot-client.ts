@@ -213,8 +213,13 @@ export class BergamotClient {
     return this.#repairTranslations(sources, prepared, translated, route, session);
   }
 
-  async translateHtmlBatch(htmls: string[], route: TranslationRoute): Promise<string[]> {
+  async translateHtmlBatch(
+    htmls: string[],
+    route: TranslationRoute,
+    options: { bypassCache?: boolean } = {},
+  ): Promise<string[]> {
     if (route.sourceLanguage === route.targetLanguage || htmls.length === 0) return [...htmls];
+    const bypassCache = options.bypassCache === true;
     const results = [...htmls];
     const pending: number[] = [];
     for (let index = 0; index < htmls.length; index += 1) {
@@ -228,7 +233,7 @@ export class BergamotClient {
     // Pass 1: plain sentences. Protection spans are unwrapped because Marian already
     // copies most names verbatim and the extra tags damage the surrounding sentence.
     const plans = pending.map((index) => planTermGuard(htmls[index]!));
-    const first = await this.#translateCached(pending.map((index, k) => plans[k]?.unprotected ?? htmls[index]!), route);
+    const first = await this.#translateCached(pending.map((index, k) => plans[k]?.unprotected ?? htmls[index]!), route, bypassCache);
     const retries: Array<{ index: number; plan: TermGuardPlan; damaged: Set<string> }> = [];
     pending.forEach((index, k) => {
       const plan = plans[k];
@@ -241,30 +246,32 @@ export class BergamotClient {
 
     // Pass 2: protect only the names that were damaged. If that shifts another name,
     // pass 3 falls back to the fully protected source.
-    const partial = await this.#translateCached(retries.map(({ index, damaged }) => protectOnly(htmls[index]!, damaged)), route);
+    const partial = await this.#translateCached(retries.map(({ index, damaged }) => protectOnly(htmls[index]!, damaged)), route, bypassCache);
     const full: number[] = [];
     retries.forEach(({ index, plan, damaged }, k) => {
       if (damaged.size === plan.expected.size || !damagedTerms(plan, partial[k]!, damaged).size) results[index] = partial[k]!;
       else full.push(index);
     });
     if (full.length) {
-      const protectedOutputs = await this.#translateCached(full.map((index) => htmls[index]!), route);
+      const protectedOutputs = await this.#translateCached(full.map((index) => htmls[index]!), route, bypassCache);
       full.forEach((index, k) => { results[index] = protectedOutputs[k]!; });
     }
     return results;
   }
 
-  async #translateCached(htmls: string[], route: TranslationRoute): Promise<string[]> {
+  async #translateCached(htmls: string[], route: TranslationRoute, bypassCache = false): Promise<string[]> {
     const results = [...htmls];
     const missing = new Map<string, { html: string; indexes: number[] }>();
     for (let index = 0; index < htmls.length; index += 1) {
       const html = htmls[index] ?? "";
       if (!html.trim()) continue;
 
-      const cached = this.#cache.get(route.key, html);
-      if (cached !== undefined) {
-        results[index] = cached;
-        continue;
+      if (!bypassCache) {
+        const cached = this.#cache.get(route.key, html);
+        if (cached !== undefined) {
+          results[index] = cached;
+          continue;
+        }
       }
 
       const existing = missing.get(html);
@@ -293,16 +300,14 @@ export class BergamotClient {
     return results;
   }
 
-  async translateHtml(html: string, route: TranslationRoute): Promise<string> {
+  async translateHtml(
+    html: string,
+    route: TranslationRoute,
+    options: { bypassCache?: boolean } = {},
+  ): Promise<string> {
     if (!html.trim() || route.sourceLanguage === route.targetLanguage) return html;
-    const cached = this.#cache.get(route.key, html);
-    if (cached !== undefined) return cached;
-
-    const session = this.#session(route);
-    const prepared = prepareBergamotFixedHtml(html);
-    const [translated] = await this.#repairTranslations([html], [prepared], [await session.translateHtml(prepared)], route, session);
-    this.#cache.set(route.key, html, translated!);
-    return translated!;
+    const [translated] = await this.translateHtmlBatch([html], route, options);
+    return translated ?? html;
   }
 
   async #repairTranslations(
@@ -402,6 +407,14 @@ export class BergamotClient {
 
   resetPerformanceStats(): void {
     for (const session of this.#sessions.values()) session.resetPerformanceStats();
+  }
+
+  cacheSize(): number {
+    return this.#cache.size();
+  }
+
+  clearCache(): void {
+    this.#cache.clear();
   }
 
   reset(): void {

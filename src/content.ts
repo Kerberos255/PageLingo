@@ -19,6 +19,10 @@ var translator = null;
 var imageOverlays = new Map();
 var imageRequests = new Map();
 var imageOverlayCleanups = new WeakMap();
+var lastContextMenuTarget = null;
+document.addEventListener("contextmenu", (event) => {
+    lastContextMenuTarget = event.target instanceof Node ? event.target : null;
+}, true);
 function ensureStyle() {
     if (document.getElementById("flt-style"))
         return;
@@ -216,7 +220,7 @@ function stopRelativeTimeLocalization() {
     }
     relativeTimeLangSnapshots.clear();
 }
-async function translatePage(sourceLanguage, targetLanguage, expectedAutoGeneration = null, manualOverride = false) {
+async function translatePage(sourceLanguage, targetLanguage, expectedAutoGeneration = null, manualOverride = false, bypassCache = false) {
     const stale = () => expectedAutoGeneration !== null && expectedAutoGeneration !== autoTranslateGeneration;
     const settings = await loadSettings();
     if (stale()) return 0;
@@ -268,6 +272,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         displayMode: settings.displayMode,
         shouldTranslateRoot,
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
+        bypassCache,
     });
     translator = pageTranslator;
     let count = 0;
@@ -895,11 +900,25 @@ browser.runtime.onMessage.addListener(async (message) => {
     }
     if (message.type === "get-context-menu-state") {
         const image = typeof message.srcUrl === "string" ? findImage(message.srcUrl) : null;
+        const segmentRoot = translator ? translator.findTranslatedRootForNode(lastContextMenuTarget) : null;
         return {
             ok: true,
             pageTranslated: Boolean(translator),
             imageTranslated: Boolean(image && imageOverlays.has(image)),
+            canRetranslateSegment: Boolean(segmentRoot),
         };
+    }
+    if (message.type === "retranslate-segment") {
+        try {
+            if (!translator) throw new Error("当前页面尚未翻译");
+            const segmentRoot = translator.findTranslatedRootForNode(lastContextMenuTarget);
+            if (!segmentRoot) throw new Error("当前位置没有可重新翻译的段落");
+            const translated = await translator.retranslateRoot(segmentRoot, { bypassCache: true });
+            return { ok: true, translated };
+        }
+        catch (error) {
+            return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
     }
     if (message.type === "toggle-page-translation") {
         try {
@@ -922,11 +941,17 @@ browser.runtime.onMessage.addListener(async (message) => {
         }
     }
     if (message.type === "get-page-language")
-        return { ok: true, language: await detectPageLanguage() };
+        return { ok: true, pageTranslated: Boolean(translator), language: await detectPageLanguage() };
     if (message.type === "translate-page") {
         try {
             const settings = await loadSettings();
-            const count = await translatePage(message.sourceLanguage ?? "auto", message.targetLanguage ?? settings.targetLanguage, null, true);
+            const count = await translatePage(
+                message.sourceLanguage ?? "auto",
+                message.targetLanguage ?? settings.targetLanguage,
+                null,
+                true,
+                message.bypassCache === true,
+            );
             return { ok: true, count, failedCount: translator?.failedCount ?? 0 };
         }
         catch (error) {

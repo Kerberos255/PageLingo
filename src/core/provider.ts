@@ -11,6 +11,7 @@ export interface TranslationRequest {
   terminology?: TranslationTerminologyEntry[];
   signal?: AbortSignal;
   context?: import("./translation-context").TranslationContext | undefined;
+  bypassCache?: boolean;
 }
 
 export interface TranslationProvider {

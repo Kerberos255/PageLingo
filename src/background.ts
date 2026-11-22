@@ -69,12 +69,14 @@ interface RuntimeMessage {
     targetLanguage?: unknown;
     terminology?: unknown;
     context?: unknown;
+    bypassCache?: unknown;
   };
   requests?: Array<{
     html?: unknown;
     sourceLanguage?: unknown;
     targetLanguage?: unknown;
     terminology?: unknown;
+    bypassCache?: unknown;
   }>;
   sourceLanguage?: unknown;
   targetLanguage?: unknown;
@@ -88,7 +90,11 @@ function asLanguage(value: unknown): string | null {
   return normalizeDetectedLanguage(value);
 }
 
-function parseTranslationRequest(request: RuntimeMessage["request"]) {
+interface ParsedTranslationRequest extends ExternalTranslationRequest {
+  bypassCache: boolean;
+}
+
+function parseTranslationRequest(request: RuntimeMessage["request"]): ParsedTranslationRequest {
   if (!request || typeof request.html !== "string") throw new Error("Invalid translation request");
   const sourceLanguage = asLanguage(request.sourceLanguage);
   const targetLanguage = asLanguage(request.targetLanguage);
@@ -106,7 +112,13 @@ function parseTranslationRequest(request: RuntimeMessage["request"]) {
         )
         .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }))
     : [];
-  return {html: request.html, sourceLanguage, targetLanguage, terminology};
+  return {
+    html: request.html,
+    sourceLanguage,
+    targetLanguage,
+    terminology,
+    bypassCache: request.bypassCache === true,
+  };
 }
 
 async function currentOverrides(): Promise<ModelCatalogOverrides> {
@@ -158,13 +170,13 @@ async function activeExternalEngine(): Promise<RuntimeExternalEngineConfig | nul
 
 async function translateExternalSingleCached(
   external: RuntimeExternalEngineConfig,
-  request: ExternalTranslationRequest,
+  request: ParsedTranslationRequest,
 ): Promise<string> {
   const cacheable = externalCache.isCacheable(request.html);
   const key = cacheable
     ? externalTranslationCacheKey(external, request.sourceLanguage, request.targetLanguage, request.html, request.terminology)
     : "";
-  if (key) {
+  if (key && !request.bypassCache) {
     const cached = await externalCache.get(key);
     if (cached !== undefined) return cached;
     const inFlight = externalCache.getInFlight(key);
@@ -175,19 +187,20 @@ async function translateExternalSingleCached(
       if (key) externalCache.set(key, html);
       return html;
     });
-  return key ? externalCache.trackInFlight(key, promise) : promise;
+  return key && !request.bypassCache ? externalCache.trackInFlight(key, promise) : promise;
 }
 
 async function translateExternalBatchCached(
   external: RuntimeExternalEngineConfig,
-  requests: ExternalTranslationRequest[],
+  requests: ParsedTranslationRequest[],
 ): Promise<Array<string | null>> {
   const keys = requests.map((request) =>
     externalCache.isCacheable(request.html)
       ? externalTranslationCacheKey(external, request.sourceLanguage, request.targetLanguage, request.html, request.terminology)
       : "",
   );
-  const cacheHits = await externalCache.getMany(keys.filter(Boolean));
+  const lookupKeys = keys.filter((key, index) => Boolean(key) && !requests[index]?.bypassCache);
+  const cacheHits = lookupKeys.length > 0 ? await externalCache.getMany(lookupKeys) : new Map<string, string>();
   const results: Array<string | null> = new Array(requests.length).fill(null);
   const awaitedInFlight: Array<Promise<void>> = [];
 
@@ -196,26 +209,29 @@ async function translateExternalBatchCached(
   const uncacheableMisses: Array<{ request: ExternalTranslationRequest; index: number }> = [];
 
   for (let index = 0; index < requests.length; index += 1) {
+    const req = requests[index]!;
     const key = keys[index]!;
     if (key) {
-      const hit = cacheHits.get(key);
-      if (hit !== undefined) {
-        results[index] = hit;
-        continue;
-      }
-      const inFlight = externalCache.getInFlight(key);
-      if (inFlight) {
-        awaitedInFlight.push(inFlight.then((html) => { results[index] = html; }, () => {}));
-        continue;
+      if (!req.bypassCache) {
+        const hit = cacheHits.get(key);
+        if (hit !== undefined) {
+          results[index] = hit;
+          continue;
+        }
+        const inFlight = externalCache.getInFlight(key);
+        if (inFlight) {
+          awaitedInFlight.push(inFlight.then((html) => { results[index] = html; }, () => {}));
+          continue;
+        }
       }
       const existing = missGroups.get(key);
       if (existing) {
         existing.indices.push(index);
       } else {
-        missGroups.set(key, { request: requests[index]!, indices: [index] });
+        missGroups.set(key, { request: req, indices: [index] });
       }
     } else {
-      uncacheableMisses.push({ request: requests[index]!, index });
+      uncacheableMisses.push({ request: req, index });
     }
   }
 
@@ -591,7 +607,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const overrides = await currentOverrides();
       const route = routeFor(request.sourceLanguage, request.targetLanguage, overrides);
       if (!route) throw new Error(`当前本地模型不支持 ${languageLabel(request.sourceLanguage)} → ${languageLabel(request.targetLanguage)}`);
-      const html = await bergamot.translateHtml(request.html, route);
+      const html = await bergamot.translateHtml(request.html, route, { bypassCache: request.bypassCache });
       return { ok: true, html };
     }
 
@@ -628,8 +644,21 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const overrides = await currentOverrides();
       const route = routeFor(first.sourceLanguage, first.targetLanguage, overrides);
       if (!route) throw new Error(`当前本地模型不支持 ${languageLabel(first.sourceLanguage)} → ${languageLabel(first.targetLanguage)}`);
-      const htmls = await bergamot.translateHtmlBatch(normalized.map((request) => request.html), route);
+      const bypassCache = normalized.some((request) => request.bypassCache);
+      const htmls = await bergamot.translateHtmlBatch(normalized.map((request) => request.html), route, { bypassCache });
       return { ok: true, htmls };
+    }
+
+    if (message.type === "get-translation-cache-stats") {
+      const externalCount = await externalCache.count();
+      const localCount = bergamot.cacheSize();
+      return { ok: true, externalCount, localCount, totalCount: externalCount + localCount };
+    }
+
+    if (message.type === "clear-translation-cache") {
+      await externalCache.clearAll();
+      bergamot.clearCache();
+      return { ok: true, externalCount: 0, localCount: 0, totalCount: 0 };
     }
 
     if (message.type === "can-translate") {

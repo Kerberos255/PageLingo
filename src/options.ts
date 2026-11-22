@@ -106,6 +106,8 @@ const closeGlossaryEditorButton = document.querySelector<HTMLButtonElement>("#cl
 const deleteGlossaryButton = document.querySelector<HTMLButtonElement>("#delete-glossary");
 const imageStatus = document.querySelector<HTMLElement>("#image-ocr-status");
 const imageOcrAction = document.querySelector<HTMLButtonElement>("#image-ocr-action");
+const translationCacheStatus = document.querySelector<HTMLElement>("#translation-cache-status");
+const clearCacheButton = document.querySelector<HTMLButtonElement>("#clear-translation-cache");
 const navItems = Array.from(document.querySelectorAll<HTMLElement>("[data-settings-page]"));
 const pages = Array.from(document.querySelectorAll<HTMLElement>(".settings-page"));
 
@@ -477,6 +479,41 @@ async function changeImageOcrModels(): Promise<void> {
     }
 }
 
+async function refreshTranslationCacheStatus(): Promise<void> {
+    if (!translationCacheStatus || !clearCacheButton) return;
+    try {
+        const response = await sendRuntimeMessage<{ ok?: boolean; totalCount?: number; externalCount?: number; localCount?: number; error?: string }>({
+            type: "get-translation-cache-stats",
+        });
+        if (!response?.ok) throw new Error(response?.error ?? "无法读取缓存状态");
+        const total = response.totalCount ?? 0;
+        translationCacheStatus.textContent = total > 0
+            ? `已缓存 ${total} 条译文，重复内容可直接复用以减少调用`
+            : "当前暂无缓存译文";
+        clearCacheButton.disabled = total === 0;
+    } catch {
+        translationCacheStatus.textContent = "外置引擎译文自动缓存 14 天，重复内容可免重复调用";
+        clearCacheButton.disabled = false;
+    }
+}
+
+async function clearTranslationCache(): Promise<void> {
+    if (!clearCacheButton) return;
+    clearCacheButton.disabled = true;
+    clearCacheButton.textContent = "清空中…";
+    try {
+        const response = await sendRuntimeMessage<{ ok?: boolean; error?: string }>({ type: "clear-translation-cache" });
+        if (!response?.ok) throw new Error(response?.error ?? "清空缓存失败");
+        await refreshTranslationCacheStatus();
+        showSaved("翻译缓存已清空");
+    } catch (error) {
+        clearCacheButton.disabled = false;
+        showSaved(error instanceof Error ? error.message : String(error), 5000);
+    } finally {
+        clearCacheButton.textContent = "清空缓存";
+    }
+}
+
 async function initialize(): Promise<void> {
     const [settings, response] = await Promise.all([
         loadSettings(),
@@ -507,7 +544,7 @@ async function initialize(): Promise<void> {
     alwaysTranslateLanguages = [...settings.alwaysTranslateLanguages];
     renderRuleLists();
     selectSettingsPage(location.hash.slice(1) || "translation");
-    await refreshImageOcrStatus();
+    await Promise.all([refreshImageOcrStatus(), refreshTranslationCacheStatus()]);
 }
 
 function selectSettingsPage(pageId: string): void {
@@ -627,6 +664,7 @@ if (downloadPackButton) {
 }
 
 imageOcrAction?.addEventListener("click", () => void changeImageOcrModels());
+clearCacheButton?.addEventListener("click", () => void clearTranslationCache());
 if (updatePolicy) {
     updatePolicy.addEventListener("change", () => {
         const value = updatePolicy.value;

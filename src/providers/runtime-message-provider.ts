@@ -60,7 +60,7 @@ export class RuntimeMessageProvider implements TranslationProvider {
 
   translateHtml(request: TranslationRequest): Promise<string> {
     if (request.signal?.aborted) return Promise.reject(new Error("Translation aborted"));
-    const key = request.signal ? "" : JSON.stringify(request);
+    const key = request.signal || request.bypassCache ? "" : JSON.stringify(request);
     const existing = key && this.#duplicates.get(key);
     if (existing) return existing;
     const pending = new Promise<string>((resolve, reject) => {
@@ -82,7 +82,7 @@ export class RuntimeMessageProvider implements TranslationProvider {
 
     const groups = new Map<string, PendingTranslation[]>();
     for (const item of pending) {
-      const key = `${item.request.sourceLanguage}\u0000${item.request.targetLanguage}`;
+      const key = `${item.request.sourceLanguage}\u0000${item.request.targetLanguage}\u0000${item.request.bypassCache ? "1" : "0"}`;
       const group = groups.get(key);
       if (group) group.push(item);
       else groups.set(key, [item]);

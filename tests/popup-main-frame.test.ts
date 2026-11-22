@@ -213,3 +213,43 @@ it("translates multi-line text inside the popup card, supports auto-pivot, swap,
   expect(resultWrap.hidden).toBe(true);
   expect(clearBtn.hidden).toBe(true);
 });
+
+it("switches primary button to forced retranslate when page is already translated and reverts to cached mode after restore", async () => {
+  document.body.innerHTML = '<div id="status"></div><div id="detected-language"></div><button id="translate">翻译本页</button><button id="restore">显示原文</button><select id="source-language"></select><select id="target-language"></select><input id="site-auto" type="checkbox"><small id="site-auto-hint"></small>';
+  const sentMessages: Array<{ type: string; bypassCache?: boolean }> = [];
+  const sendMessage = vi.fn(async (_tab: number, message: { type: string; bypassCache?: boolean }) => {
+    sentMessages.push(message);
+    if (message.type === "get-page-language") {
+      return { ok: true, pageTranslated: true, language: { effectiveLanguage: "en" } };
+    }
+    if (message.type === "translate-page") return { ok: true, count: 5, failedCount: 0 };
+    return { ok: true };
+  });
+  vi.stubGlobal("browser", {
+    tabs: { query: vi.fn(async () => [{ id: 9, url: "https://example.org/" }]), sendMessage },
+    storage: { local: { get: vi.fn(async () => ({ targetLanguage: "zh-Hans", glossaryCollections: [] })), set: vi.fn(async () => {}) }, onChanged: { addListener: vi.fn() } },
+    runtime: {
+      sendMessage: vi.fn(async (msg: { type: string }) => msg.type === "get-language-catalog"
+        ? { ok: true, catalog: { sourceLanguages: [{ code: "en", label: "English" }], targetLanguages: [{ code: "zh-Hans", label: "简体中文" }] } }
+        : { ok: true, supported: true }),
+    },
+  });
+
+  await import("../src/popup");
+  const translateBtn = document.querySelector<HTMLButtonElement>("#translate")!;
+  const restoreBtn = document.querySelector<HTMLButtonElement>("#restore")!;
+  await vi.waitFor(() => expect(translateBtn.textContent).toBe("重新翻译"));
+
+  // Clicking on an already-translated page sends bypassCache: true.
+  translateBtn.click();
+  await vi.waitFor(() => expect(document.querySelector("#status")!.textContent).toBe("已重新翻译 5 个段落"));
+  expect(sentMessages.at(-1)).toMatchObject({ type: "translate-page", bypassCache: true });
+
+  // Restoring reverts the primary button back to cached '翻译本页'.
+  restoreBtn.click();
+  await vi.waitFor(() => expect(translateBtn.textContent).toBe("翻译本页"));
+
+  translateBtn.click();
+  await vi.waitFor(() => expect(document.querySelector("#status")!.textContent).toBe("已翻译 5 个段落"));
+  expect(sentMessages.at(-1)?.bypassCache).toBeUndefined();
+});

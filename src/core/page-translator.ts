@@ -16,7 +16,7 @@ import {
     translateRichHtmlTextNodesSafely,
 } from "./rich-segment-splitter";
 
-export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[]; showProgress?:boolean }
+export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[]; showProgress?:boolean; bypassCache?:boolean }
 function translatedPlainText(_doc, html) {
     const parsed = new DOMParser().parseFromString(html, "text/html");
     return (parsed.body.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -39,7 +39,7 @@ function hasBrokenTranslationHtml(html) {
 const COMPLEX_ROOT_MARKER_THRESHOLD = 8;
 const COMPLEX_CHUNK_MARKER_BUDGET = 6;
 
-async function translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology) {
+async function translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology, bypassCache = false) {
     const protectedChunk = protectTerminologyHtml(doc, html, terminology);
     const translated = await translateRichHtmlTextNodesSafely(protectedChunk.html, async (sourceText) => {
         const leafHtml = await provider.translateHtml({
@@ -47,6 +47,7 @@ async function translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, ta
             sourceLanguage,
             targetLanguage,
             terminology: terminologyForText(terminology, sourceText),
+            ...(bypassCache ? { bypassCache: true } : {}),
         });
         const leafText = translatedPlainText(doc, leafHtml);
         if (!leafText || hasBrokenTranslationText(leafText))
@@ -56,7 +57,7 @@ async function translateLeafSafeRichHtml(doc, provider, html, sourceLanguage, ta
     return restoreTerminologyHtml(doc, translated, protectedChunk.replacements);
 }
 
-async function translateComplexRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology) {
+async function translateComplexRichHtml(doc, provider, html, sourceLanguage, targetLanguage, terminology, bypassCache = false) {
     const translateChunk = async (chunk) => {
         const chunkSourceText = translatedPlainText(doc, chunk);
         const protectedChunk = protectTerminologyHtml(doc, chunk, terminology);
@@ -65,6 +66,7 @@ async function translateComplexRichHtml(doc, provider, html, sourceLanguage, tar
             sourceLanguage,
             targetLanguage,
             terminology: terminologyForText(terminology, chunkSourceText),
+            ...(bypassCache ? { bypassCache: true } : {}),
         });
 
         const translatedText = translatedPlainText(doc, translated);
@@ -80,6 +82,7 @@ async function translateComplexRichHtml(doc, provider, html, sourceLanguage, tar
                 sourceLanguage,
                 targetLanguage,
                 terminology,
+                bypassCache,
             );
         }
 
@@ -97,6 +100,7 @@ async function translateComplexRichHtml(doc, provider, html, sourceLanguage, tar
             sourceLanguage,
             targetLanguage,
             terminology,
+            bypassCache,
         ),
     );
 }
@@ -245,6 +249,8 @@ export class PageTranslator {
     #visibilityObserver = null;
     #deferredRoots = new Set();
     #contextModePromise = null;
+    #bypassCache = false;
+    #forceBypassRoots = new WeakSet();
     async #loadContextMode() {
         if (!this.#contextModePromise) this.#contextModePromise = Promise.all([
             Promise.resolve().then(() => this.#provider.prefersWholeSentenceHtml?.()).catch(() => false),
@@ -324,6 +330,7 @@ export class PageTranslator {
         this.#shouldTranslateRoot = options.shouldTranslateRoot ?? null;
         this.#displayMode = options.displayMode ?? "translation";
         this.#terminology = Array.isArray(options.terminology) ? options.terminology : [];
+        this.#bypassCache = options.bypassCache === true;
     }
     get translatedCount() {
         return this.#records.size + this.#fixedRecords.size;
@@ -333,6 +340,42 @@ export class PageTranslator {
     }
     get firstFailure() {
         return Array.from(this.#failures).find(([root]) => root.isConnected)?.[1] ?? null;
+    }
+    findTranslatedRootForNode(target) {
+        if (!target || this.#disposed) return null;
+        if (target.nodeType === Node.TEXT_NODE) {
+            const owner = this.#fixedOwners.get(target);
+            if (owner && this.#fixedRecords.get(owner.root) === owner && owner.root.isConnected) return owner.root;
+        }
+        const element = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
+        if (!element) return null;
+        const generated = element.closest?.('[data-flt-generated="translation"]');
+        if (generated) {
+            for (const [root, record] of this.#fixedRecords) {
+                if (record.translationNode === generated && root.isConnected) return root;
+            }
+            for (const [root, record] of this.#records) {
+                if (record.translationNode === generated && root.isConnected) return root;
+            }
+        }
+        for (let cursor = element; cursor && cursor !== this.#doc.body; cursor = cursor.parentElement) {
+            if ((this.#fixedRecords.has(cursor) || this.#records.has(cursor)) && cursor.isConnected) return cursor;
+        }
+        return null;
+    }
+    async retranslateRoot(root, options = {}) {
+        if (this.#disposed || !root || !root.isConnected) return false;
+        const fixedPrevious = this.#fixedRecords.get(root);
+        if (fixedPrevious) this.#clearFixedRecord(root, fixedPrevious);
+        const previous = this.#records.get(root);
+        if (previous) {
+            this.#clearDisplayMode(root);
+            previous.translationNode.remove();
+            this.#records.delete(root);
+        }
+        if (options.bypassCache !== false) this.#forceBypassRoots.add(root);
+        await this.translateRoot(root);
+        return this.#fixedRecords.has(root) || this.#records.has(root);
     }
     #clearFixedRecord(root, record) {
         clearFixedTextRecord(record); this.#fixedRecords.delete(root);
@@ -372,6 +415,10 @@ export class PageTranslator {
         await this.#loadContextMode();
         if (watchDuringPass) this.observe();
         const collected = this.#collect(scope);
+        if (this.#bypassCache) {
+            for (const root of collected) this.#forceBypassRoots.add(root);
+            this.#bypassCache = false;
+        }
         const hasGeometry = this.#hasRealViewportGeometry(collected);
         const ObserverCtor = this.#doc.defaultView?.IntersectionObserver ?? globalThis.IntersectionObserver;
         const useLazy = this.#lazyOffscreen && hasGeometry && typeof ObserverCtor === "function";
@@ -468,6 +515,7 @@ export class PageTranslator {
         const structuralFallbackAllowed =
             !this.#wholeSentenceContext && (complexRoot || nestingRiskRoot) &&
             await providerAllowsStructuralSplitting(this.#provider);
+        const bypassCache = this.#forceBypassRoots.has(root);
         const paragraphPlan = this.#wholeSentenceContext && isPreformattedNewlineContext(root)
             ? planPreformattedParagraphRuns(segment.html)
             : null;
@@ -485,6 +533,7 @@ export class PageTranslator {
                     targetLanguage: this.#targetLanguage,
                     terminology: runTerms,
                     context,
+                    ...(bypassCache ? { bypassCache: true } : {}),
                 });
                 runHtml = restoreTerminologyHtml(this.#doc, runHtml, protectedRun.replacements);
                 if (hasBrokenTranslationHtml(runHtml)) {
@@ -524,6 +573,7 @@ export class PageTranslator {
                 this.#sourceLanguage,
                 this.#targetLanguage,
                 this.#terminology,
+                bypassCache,
             );
         }
         else if (structuralFallbackAllowed && complexRoot) {
@@ -534,6 +584,7 @@ export class PageTranslator {
                 this.#sourceLanguage,
                 this.#targetLanguage,
                 this.#terminology,
+                bypassCache,
             );
         }
         else {
@@ -545,6 +596,7 @@ export class PageTranslator {
                 targetLanguage: this.#targetLanguage,
                 terminology: requestTerminology,
                 context,
+                ...(bypassCache ? { bypassCache: true } : {}),
             });
             translatedHtml = restoreTerminologyHtml(this.#doc, translatedHtml, protectedSegment.replacements);
         }
@@ -596,6 +648,7 @@ export class PageTranslator {
                     sourceLanguage: this.#sourceLanguage,
                     targetLanguage: this.#targetLanguage,
                     terminology: terminologyForText(this.#terminology, link.sourceText),
+                    ...(bypassCache ? { bypassCache: true } : {}),
                 });
                 linkHtml = restoreTerminologyHtml(this.#doc, linkHtml, protectedLink.replacements);
                 linkHtml = applyTerminologyCorrectionsHtml(this.#doc, linkHtml, link.sourceText, this.#terminology);
@@ -620,6 +673,7 @@ export class PageTranslator {
                     sourceLanguage: this.#sourceLanguage,
                     targetLanguage: this.#targetLanguage,
                     terminology: terminologyForText(this.#terminology, gap.trim()),
+                    ...(bypassCache ? { bypassCache: true } : {}),
                 });
                 gapHtml = restoreTerminologyHtml(this.#doc, gapHtml, protectedGap.replacements);
                 gapHtml = applyTerminologyCorrectionsHtml(this.#doc, gapHtml, gap.trim(), this.#terminology);
@@ -647,6 +701,7 @@ export class PageTranslator {
             this.#failures.set(root, error instanceof Error ? error.message : String(error));
             throw error;
         } finally {
+            this.#forceBypassRoots.delete(root);
             this.#pendingProgress.get(root)?.();
             this.#pendingProgress.delete(root);
             this.#inFlight.delete(root);

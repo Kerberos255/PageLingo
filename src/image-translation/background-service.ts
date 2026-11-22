@@ -6,6 +6,7 @@ import { sendFrameMessage } from "../shared/main-frame-message";
 
 const IMAGE_MENU_ID = "pagelingo-translate-image";
 const PAGE_MENU_ID = "pagelingo-translate-page";
+const RETRANSLATE_SEGMENT_MENU_ID = "pagelingo-retranslate-segment";
 
 interface ImageRuntimeMessage {
   type?: string;
@@ -278,12 +279,22 @@ async function removeContextMenu(id: string): Promise<void> {
 }
 
 async function syncContextMenu(): Promise<void> {
-  await Promise.all([removeContextMenu(IMAGE_MENU_ID), removeContextMenu(PAGE_MENU_ID)]);
+  await Promise.all([
+    removeContextMenu(IMAGE_MENU_ID),
+    removeContextMenu(PAGE_MENU_ID),
+    removeContextMenu(RETRANSLATE_SEGMENT_MENU_ID),
+  ]);
   const settings = await loadSettings();
   browser.contextMenus.create({
     id: PAGE_MENU_ID,
     title: "PageLingo · 翻译文字",
     contexts: ["page", "selection", "link"],
+  });
+  browser.contextMenus.create({
+    id: RETRANSLATE_SEGMENT_MENU_ID,
+    title: "PageLingo · 重新翻译此段",
+    contexts: ["page", "selection", "link"],
+    visible: false,
   });
   if (settings.imageTranslationEnabled) {
     browser.contextMenus.create({
@@ -312,9 +323,12 @@ async function refreshContextMenuTitles(
     const state = await sendContextMessage(tab.id, info, {
       type: "get-context-menu-state",
       srcUrl: typeof info.srcUrl === "string" ? info.srcUrl : undefined,
-    }) as { pageTranslated?: boolean; imageTranslated?: boolean } | undefined;
+    }) as { pageTranslated?: boolean; imageTranslated?: boolean; canRetranslateSegment?: boolean } | undefined;
     await browser.contextMenus.update(PAGE_MENU_ID, {
       title: state?.pageTranslated ? "PageLingo · 显示原文" : "PageLingo · 翻译文字",
+    });
+    await browser.contextMenus.update(RETRANSLATE_SEGMENT_MENU_ID, {
+      visible: Boolean(state?.canRetranslateSegment),
     });
     if (typeof info.srcUrl === "string") {
       try {
@@ -327,7 +341,12 @@ async function refreshContextMenuTitles(
     }
     if (typeof browser.contextMenus.refresh === "function") await browser.contextMenus.refresh();
   } catch {
-    // Restricted pages have no content-script receiver; keep default titles.
+    try {
+      await browser.contextMenus.update(RETRANSLATE_SEGMENT_MENU_ID, { visible: false });
+      if (typeof browser.contextMenus.refresh === "function") await browser.contextMenus.refresh();
+    } catch {
+      // Ignore if menu is not ready yet.
+    }
   }
 }
 
@@ -340,6 +359,10 @@ export function initializeImageTranslation(): void {
     }
     if (info.menuItemId === PAGE_MENU_ID) {
       void sendFrameMessage(tab.id, info.frameId ?? 0, { type: "toggle-page-translation" }).catch(() => undefined);
+      return;
+    }
+    if (info.menuItemId === RETRANSLATE_SEGMENT_MENU_ID) {
+      void sendFrameMessage(tab.id, info.frameId ?? 0, { type: "retranslate-segment" }).catch(() => undefined);
     }
   });
   browser.contextMenus.onShown?.addListener((info, tab) => {
