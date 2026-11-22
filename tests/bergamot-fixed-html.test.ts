@@ -329,6 +329,90 @@ describe("Bergamot inline-phrase retry", () => {
       slot(2, " 配置。"),
     );
     expect(restoreFixedHtmlTransport(articleSource, articleRecovered!)).toContain("<code>foo</code>");
+
+    const anchor = (linkId: number, slotId: number, label: string) =>
+      `<a data-flt-link-id="${linkId}" href="https://pagelingo.invalid/__link/${linkId}"><code>__FLT_LINK_START_${linkId}__</code>${slot(slotId, label)}<code>__FLT_LINK_END_${linkId}__</code></a>`;
+
+    // 3. Cross-slot unmatched trailing '(' (e.g. "... without a working auth path (<a>architecture</a>, <a>network model</a>).")
+    const trailingOpenSource =
+      slot(0, "The Gateway owns the ") +
+      anchor(0, 1, "control-plane API") +
+      slot(2, ". It refuses non-loopback binds without a working auth path (") +
+      anchor(1, 3, "architecture") +
+      `<span data-flt-fixed="true">, </span>` +
+      anchor(2, 4, "network model") +
+      `<span data-flt-fixed="true">).</span>`;
+    const trailingOpenBroken =
+      slot(0, "网关拥有") +
+      anchor(0, 1, "控制平面 API") +
+      slot(2, "。它拒绝没有有效身份验证路径的非环回绑定。") +
+      anchor(1, 3, "架构") +
+      `<span data-flt-fixed="true">, </span>` +
+      anchor(2, 4, "网络模型") +
+      `<span data-flt-fixed="true">).</span>`;
+    const trailingOpenPlan = prepareBergamotSlotFallback(
+      trailingOpenSource,
+      trailingOpenBroken,
+      prepareBergamotFixedHtml,
+      repairBergamotFixedHtml,
+    )!;
+    expect(trailingOpenPlan).toBeDefined();
+    expect(trailingOpenPlan.slotPrepared[2]).toBe(
+      slot(0, ". It refuses non-loopback binds without a working auth path"),
+    );
+    const trailingOpenRecovered = trailingOpenPlan.restore([
+      slot(0, "网关拥有"),
+      slot(0, "控制平面 API"),
+      slot(0, "。它拒绝没有有效身份验证路径的非环回绑定"),
+      slot(0, "架构"),
+      slot(0, "网络模型"),
+    ])!;
+    expect(trailingOpenRecovered).toBeDefined();
+    expect(restoreFixedHtmlTransport(trailingOpenSource, trailingOpenRecovered)).toContain(
+      "非环回绑定 (",
+    );
+
+    // 4. Mid-slot unmatched '(' and leading ')' followed by optional English article
+    const midOpenSource =
+      slot(0, "Container images default to an exposed bind (pair with auth - see the ") +
+      anchor(0, 1, "exposure runbook") +
+      slot(2, "). The ") +
+      anchor(1, 3, "plugin") +
+      slot(4, " handles it.");
+    const midOpenBroken =
+      slot(0, "容器镜像默认暴露绑定（与认证配对）——参见") +
+      anchor(0, 1, "曝光手册") +
+      slot(2, ")。") +
+      anchor(1, 3, "插件") +
+      slot(4, "处理它。");
+    const midOpenPlan = prepareBergamotSlotFallback(
+      midOpenSource,
+      midOpenBroken,
+      prepareBergamotFixedHtml,
+      repairBergamotFixedHtml,
+    )!;
+    expect(midOpenPlan).toBeDefined();
+    // Slot 0 splits into 2 balanced pieces around the unmatched '(', so total units = 6.
+    expect(midOpenPlan.slotPrepared).toEqual([
+      slot(0, "Container images default to an exposed bind"),
+      slot(0, "pair with auth - see the"),
+      slot(0, "exposure runbook"),
+      slot(0, "The"),
+      slot(0, "plugin"),
+      slot(0, "handles it."),
+    ]);
+    const midOpenRecovered = midOpenPlan.restore([
+      slot(0, "容器镜像默认暴露绑定"),
+      slot(0, "与认证配对——参见"),
+      slot(0, "曝光手册"),
+      slot(0, ""),
+      slot(0, "插件"),
+      slot(0, "处理它。"),
+    ])!;
+    expect(midOpenRecovered).toBeDefined();
+    const midOpenRestored = restoreFixedHtmlTransport(midOpenSource, midOpenRecovered);
+    expect(midOpenRestored).toContain("容器镜像默认暴露绑定 (与认证配对——参见 ");
+    expect(midOpenRestored).toContain("). ");
   });
 });
 

@@ -101,4 +101,47 @@ describe("conservative predicate omission signal", () => {
   it("allows coordinated names with a shared Chinese predicate", () => {
     expect(quality("本手册由 Alice，并且 Bob 共同编写。", "The manual was written by Alice and Bob.").incompleteAgentClause).toBe(false);
   });
+
+  it("allows proper-noun/brand lists translated to Chinese while rejecting untranslated English prose", async () => {
+    const brandListSource =
+      '<span data-flt-text-id="0"><span data-flt-term-id="0">Discord</span>, <span data-flt-term-id="1">Feishu</span>, ' +
+      '<span data-flt-term-id="2">iMessage</span>, <span data-flt-term-id="3">Matrix</span>, <span data-flt-term-id="4">Microsoft Teams</span>, ' +
+      '<span data-flt-term-id="5">Signal</span>, <span data-flt-term-id="6">Slack</span>, <span data-flt-term-id="7">Telegram</span>, ' +
+      '<span data-flt-term-id="8">WhatsApp</span>, Zalo, and more.</span>';
+    const brandListTranslated =
+      '<span data-flt-text-id="0"><span data-flt-term-id="0">Discord</span>、<span data-flt-term-id="1">Feishu</span>、' +
+      '<span data-flt-term-id="2">iMessage</span>、<span data-flt-term-id="3">Matrix</span>、<span data-flt-term-id="4">Microsoft Teams</span>、' +
+      '<span data-flt-term-id="5">Signal</span>、<span data-flt-term-id="6">Slack</span>、<span data-flt-term-id="7">Telegram</span>、' +
+      '<span data-flt-term-id="8">WhatsApp</span>、Zalo 等。</span>';
+    respond({choices: [{finish_reason: "stop", message: {content: brandListTranslated}}]});
+    await expect(translateWithExternalEngine(engine, {...request, html: brandListSource})).resolves.toContain("Zalo 等。");
+
+    // Unprotected unlisted proper-noun list still passes when non-brand prose is translated.
+    expect(quality("Podman、OpenShell、Hermes、Zalo 等。", "Podman, OpenShell, Hermes, Zalo, and more.").accepted).toBe(true);
+    // Genuine untranslated English prose is still rejected.
+    expect(quality(
+      "The gateway owns channel connections and refuses non-loopback binds without auth.",
+      "The gateway owns channel connections and refuses non-loopback binds without auth.",
+    ).reasons).toContain("target_language_mismatch");
+  });
+
+  it("collapses mid-sentence HTML source line wraps in non-preformatted paragraphs while restoring exact source text", async () => {
+    document.body.innerHTML = '<p id="wrapped">This installs on Linux and\nWSL2 (with a per-user\nfallback item).</p>';
+    const root = document.querySelector("p")!;
+    const original = root.textContent!;
+    const seenHtml: string[] = [];
+    const translator = new PageTranslator(document, {
+      prefersWholeSentenceHtml: async () => true,
+      translateHtml: async (req: TranslationRequest) => {
+        seenHtml.push(req.html);
+        return req.html.replace("This installs on Linux and WSL2 (with a per-user fallback item).", "这会安装在 Linux 和 WSL2 上（带每用户回退项）。");
+      },
+    }, {displayMode: "translation"});
+
+    await translator.translateAll(document.body);
+    expect(seenHtml).toEqual(['<span data-flt-text-id="0">This installs on Linux and WSL2 (with a per-user fallback item).</span>']);
+    expect(root.textContent).toBe("这会安装在 Linux 和 WSL2 上（带每用户回退项）。");
+    translator.restore();
+    expect(root.textContent).toBe(original);
+  });
 });

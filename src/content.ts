@@ -183,6 +183,7 @@ let autoTranslateGeneration = 0;
 let autoTranslateInFlightGeneration = -1;
 let autoTranslateInFlightPromise = null;
 let activeTranslationIsAutomatic = false;
+let activeTranslationSourceLanguage = null;
 let activeTranslationTargetLanguage = null;
 let activeAutomaticSettingsSignature = null;
 var relativeTimeLangSnapshots = new Map();
@@ -231,11 +232,13 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     const stale = () => expectedAutoGeneration !== null && expectedAutoGeneration !== autoTranslateGeneration;
     const settings = await loadSettings();
     if (stale()) return 0;
-    const resolvedSource = await resolveSourceLanguage(sourceLanguage);
+    const resolvedSource = (sourceLanguage === "auto" && translator && activeTranslationSourceLanguage)
+        ? activeTranslationSourceLanguage
+        : await resolveSourceLanguage(sourceLanguage);
     if (stale()) return 0;
     const normalizedTarget = normalizeDetectedLanguage(targetLanguage) ?? targetLanguage;
     if (resolvedSource === normalizedTarget)
-        throw new Error("当前页面已经是目标语言");
+        return 0;
     if (!await canTranslate(resolvedSource, normalizedTarget)) {
         throw new Error(`当前本地模型不支持 ${languageLabel(resolvedSource)} → ${languageLabel(normalizedTarget)}`);
     }
@@ -246,6 +249,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
     restoreNavigationLayout();
     const automaticPass = expectedAutoGeneration !== null && !manualOverride;
     activeTranslationIsAutomatic = automaticPass;
+    activeTranslationSourceLanguage = resolvedSource;
     activeTranslationTargetLanguage = normalizedTarget;
     activeAutomaticSettingsSignature = automaticPass
         ? automaticTranslationSettingsSignature(settings, routeLocaleHint(), resolvedSource)
@@ -852,6 +856,7 @@ async function togglePageTranslation() {
         translator.restore();
         translator = null;
         activeTranslationIsAutomatic = false;
+        activeTranslationSourceLanguage = null;
         activeTranslationTargetLanguage = null;
         activeAutomaticSettingsSignature = null;
         stopRelativeTimeLocalization();
@@ -948,8 +953,19 @@ browser.runtime.onMessage.addListener(async (message) => {
             return { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
     }
-    if (message.type === "get-page-language")
-        return { ok: true, pageTranslated: Boolean(translator), language: await detectPageLanguage() };
+    if (message.type === "get-page-language") {
+        const language = translator && activeTranslationSourceLanguage
+            ? {
+                declaredLanguage: activeTranslationSourceLanguage,
+                detectedLanguage: activeTranslationSourceLanguage,
+                effectiveLanguage: activeTranslationSourceLanguage,
+                percentage: 100,
+                isReliable: true,
+                sampleLength: 0,
+            }
+            : await detectPageLanguage();
+        return { ok: true, pageTranslated: Boolean(translator), language };
+    }
     if (message.type === "translate-page") {
         try {
             const settings = await loadSettings();
@@ -970,6 +986,7 @@ browser.runtime.onMessage.addListener(async (message) => {
         translator?.restore();
         translator = null;
         activeTranslationIsAutomatic = false;
+        activeTranslationSourceLanguage = null;
         activeTranslationTargetLanguage = null;
         activeAutomaticSettingsSignature = null;
         stopRelativeTimeLocalization();
@@ -1131,6 +1148,7 @@ function softResetForRoute() {
     translator?.restore();
     translator = null;
     activeTranslationIsAutomatic = false;
+    activeTranslationSourceLanguage = null;
     activeTranslationTargetLanguage = null;
     activeAutomaticSettingsSignature = null;
     stopRelativeTimeLocalization();

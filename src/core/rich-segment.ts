@@ -55,7 +55,8 @@ function snapshotLink(element) {
         } : null,
     };
 }
-function serializeChildren(parent, root, links, opaque, textSlots, trace) {
+const MID_SENTENCE_NEWLINE_RE = /(?<=\S)[ \t]*\r?\n[ \t]*(?=\S)/gu;
+function serializeChildren(parent, root, links, opaque, textSlots, trace, collapseNewlines = false) {
     let html = "";
     for (const node of parent.childNodes) {
         if (node.nodeType === Node.TEXT_NODE) {
@@ -66,9 +67,11 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
                 trace?.push({kind: "text", node, source: node.data, slotId: null, editableContext: false});
                 continue;
             }
-            const text = escapeHtml(node.textContent ?? "");
+            const rawText = node.textContent ?? "";
+            const transportText = collapseNewlines ? rawText.replace(MID_SENTENCE_NEWLINE_RE, " ") : rawText;
+            const text = escapeHtml(transportText);
             let slotId = null;
-            if (textSlots && (node.textContent ?? "").trim()) {
+            if (textSlots && rawText.trim()) {
                 if (isEligibleTextNode(node)) {
                     const id = textSlots.length;
                     slotId = id;
@@ -116,7 +119,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
         }
         if (!INLINE_TAGS.has(tag)) {
             const children = trace ? [] : undefined;
-            html += serializeChildren(element, root, links, opaque, textSlots, children);
+            html += serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines);
             trace?.push({kind: "element", node: element, tagName: tag, inline: false, children});
             continue;
         }
@@ -132,7 +135,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
             // Legacy providers use link sentinels for recovery. Original-node mode additionally maps
             // each original text node to a fixed slot; link topology is application-owned.
             const children = trace ? [] : undefined;
-            const serializedLabel = serializeChildren(element, root, links, opaque, textSlots, children);
+            const serializedLabel = serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines);
             if (textSlots && !serializedLabel.replace(/<[^>]*>/gu, "").trim()) {
                 links.pop();
                 trace?.push({kind: "boundary", node: element, reason: "protected"});
@@ -152,7 +155,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace) {
             continue;
         }
         const children = trace ? [] : undefined;
-        html += `<${lower}>${serializeChildren(element, root, links, opaque, textSlots, children)}</${lower}>`;
+        html += `<${lower}>${serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines)}</${lower}>`;
         trace?.push({kind: "element", node: element, tagName: tag, inline: true, children});
     }
     return html;
@@ -200,13 +203,13 @@ function snapshotLinkGaps(root) {
     walk(root);
     return gaps;
 }
-export function serializeRichSegment(root, {fixedTextSlots = false, captureOwnership = false} = {}): RichSegment {
+export function serializeRichSegment(root, {fixedTextSlots = false, captureOwnership = false, collapseNewlines = false} = {}): RichSegment {
     if (captureOwnership && !fixedTextSlots) throw new Error("Source ownership requires fixed text slots");
     const links = [];
     const opaque = [];
     const textSlots = fixedTextSlots ? [] : undefined;
     const parts = captureOwnership ? [] : undefined;
-    const untrimmed = serializeChildren(root, root, links, opaque, textSlots, parts);
+    const untrimmed = serializeChildren(root, root, links, opaque, textSlots, parts, collapseNewlines);
     let html = untrimmed.trim();
     if (root.tagName === "A") {
         links.unshift(snapshotLink(root));

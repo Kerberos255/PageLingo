@@ -610,7 +610,11 @@ export class PageTranslator {
             previous.translationNode.remove();
             this.#records.delete(root);
         }
-        const segment = serializeRichSegment(root, {fixedTextSlots: this.#wholeSentenceContext});
+        const preformattedRoot = isPreformattedNewlineContext(root);
+        const segment = serializeRichSegment(root, {
+            fixedTextSlots: this.#wholeSentenceContext,
+            collapseNewlines: this.#wholeSentenceContext && !preformattedRoot,
+        });
         if (this.#wholeSentenceContext && !segment.textSlots.length) return;
         if (!segment.html.trim())
             return;

@@ -3,11 +3,11 @@ import {afterEach, expect, it, vi} from "vitest";
 afterEach(() => {vi.unstubAllGlobals(); document.body.replaceChildren(); vi.resetModules();});
 
 it("keeps language detection, translation count and restore tied to the main document when an iframe can answer first", async () => {
-  document.body.innerHTML = '<div id="status"></div><div id="detected-language"></div><button id="translate">translate</button><button id="restore">restore</button><select id="source-language"></select><select id="target-language"></select><input id="site-auto" type="checkbox"><small id="site-auto-hint"></small>';
+  document.body.innerHTML = '<div id="status"></div><button id="translate">translate</button><button id="restore">restore</button><select id="source-language"></select><select id="target-language"></select><input id="site-auto" type="checkbox"><small id="site-auto-hint"></small>';
   let tabUrl = "https://example.org/article";
   const sendMessage = vi.fn(async (_tab: number, message: {type: string}, options?: {frameId?: number}) => {
     const main = options?.frameId === 0;
-    if (message.type === "get-page-language") return {ok: true, language: {effectiveLanguage: main ? "en" : "zh-Hans"}};
+    if (message.type === "get-page-language") return {ok: true, language: {effectiveLanguage: main ? "en" : "zh-Hans", percentage: 92}};
     if (message.type === "translate-page") return {ok: true, count: main ? 7 : 0, failedCount: main ? 2 : 0};
     return {ok: main};
   });
@@ -15,11 +15,13 @@ it("keeps language detection, translation count and restore tied to the main doc
     tabs: {query: vi.fn(async () => [{id: 42, url: tabUrl}]), sendMessage},
     storage: {local: {get: vi.fn(async () => ({targetLanguage: "zh-Hans", glossaryCollections: []})), set: vi.fn(async () => {})}, onChanged: {addListener: vi.fn()}},
     runtime: {sendMessage: vi.fn(async (message: {type: string}) => message.type === "get-language-catalog"
-      ? {ok: true, catalog: {sourceLanguages: [{code: "en", label: "English"}], targetLanguages: [{code: "zh-Hans", label: "中文"}]}}
+      ? {ok: true, catalog: {sourceLanguages: [{code: "en", label: "English"}, {code: "zh-Hans", label: "中文"}], targetLanguages: [{code: "zh-Hans", label: "中文"}]}}
       : {ok: true, supported: true})},
   });
   await import("../src/popup");
-  await vi.waitFor(() => expect(document.querySelector("#detected-language")!.textContent).toMatch(/英语|English/u));
+  await vi.waitFor(() => expect(document.querySelector("#site-auto-hint")!.textContent).toBe("example.org"));
+  // Same-language detection does not show internal "当前页面已经是目标语言" noise in #status.
+  expect(document.querySelector("#status")!.textContent).toBe("");
   document.querySelector<HTMLButtonElement>("#translate")!.click();
   await vi.waitFor(() => expect(document.querySelector("#status")!.textContent).toBe("已翻译 7 个段落；2 个未完成，已保留原文"));
   document.querySelector<HTMLButtonElement>("#restore")!.click();
@@ -252,4 +254,29 @@ it("switches primary button to forced retranslate when page is already translate
   translateBtn.click();
   await vi.waitFor(() => expect(document.querySelector("#status")!.textContent).toBe("已翻译 5 个段落"));
   expect(sentMessages.at(-1)?.bypassCache).toBeUndefined();
+});
+
+it("does not display internal language-detection or already-target-language messages in the popup", async () => {
+  document.body.innerHTML = '<div id="status"></div><button id="translate">翻译本页</button><button id="restore">显示原文</button><select id="source-language"></select><select id="target-language"></select><input id="site-auto" type="checkbox"><small id="site-auto-hint"></small>';
+  vi.stubGlobal("browser", {
+    tabs: {
+      query: vi.fn(async () => [{ id: 12, url: "https://docs.openclaw.ai/" }]),
+      sendMessage: vi.fn(async (_tab: number, message: { type: string }) => {
+        if (message.type === "get-page-language") {
+          return { ok: true, pageTranslated: false, language: { effectiveLanguage: "zh-Hans", percentage: 72 } };
+        }
+        return { ok: true, count: 0, failedCount: 0 };
+      }),
+    },
+    storage: { local: { get: vi.fn(async () => ({ targetLanguage: "zh-Hans", glossaryCollections: [] })), set: vi.fn(async () => {}) }, onChanged: { addListener: vi.fn() } },
+    runtime: {
+      sendMessage: vi.fn(async (msg: { type: string }) => msg.type === "get-language-catalog"
+        ? { ok: true, catalog: { sourceLanguages: [{ code: "en", label: "English" }, { code: "zh-Hans", label: "简体中文" }], targetLanguages: [{ code: "zh-Hans", label: "简体中文" }] } }
+        : { ok: true, supported: true }),
+    },
+  });
+
+  await import("../src/popup");
+  await vi.waitFor(() => expect(document.querySelector("#site-auto-hint")!.textContent).toBe("docs.openclaw.ai"));
+  expect(document.querySelector("#status")!.textContent).toBe("");
 });

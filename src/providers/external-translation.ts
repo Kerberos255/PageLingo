@@ -1744,14 +1744,17 @@ function validateExternalTranslation(request: ExternalTranslationRequest, transl
     translated = restoreFixedHtmlTransport(request.html, translated);
   }
   const validated = validateTranslatedHtml(request.html, translated);
-  const plain = (html: string) => {
+  const plain = (html: string, stripTerms = false) => {
     const body = new DOMParser().parseFromString(html, "text/html").body;
-    for (const atom of body.querySelectorAll("code, [data-flt-fixed]")) atom.remove();
+    const selector = stripTerms ? "code, [data-flt-fixed], span[data-flt-term-id]" : "code, [data-flt-fixed]";
+    for (const atom of body.querySelectorAll(selector)) atom.remove();
     return body.textContent ?? "";
   };
   const quality = assessTranslationQuality({
     sourceText: plain(request.html),
     translatedText: plain(validated),
+    mismatchSourceText: plain(request.html, true),
+    mismatchTranslatedText: plain(validated, true),
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
   });

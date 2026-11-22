@@ -339,11 +339,42 @@ const BRACKET_PAIRS: ReadonlyArray<readonly [string, string]> = [
   ["⟬", "⟭"],
 ];
 
-function peelEdgeBrackets(raw: string): { prefix: string; core: string; suffix: string } {
+type SlotPiece =
+  | { kind: "literal"; text: string }
+  | { kind: "translate"; core: string; innerBalanced: boolean };
+
+function findUnmatchedBracketIndices(value: string): Set<number> {
+  const unmatched = new Set<number>();
+  const chars = Array.from(value);
+  // Map code-unit offsets for each Unicode character.
+  const offsets: number[] = [];
+  let cursor = 0;
+  for (const ch of chars) {
+    offsets.push(cursor);
+    cursor += ch.length;
+  }
+
+  for (const [open, close] of BRACKET_PAIRS) {
+    const stack: number[] = [];
+    for (let i = 0; i < chars.length; i += 1) {
+      const norm = chars[i]!.normalize("NFKC");
+      if (norm === open) {
+        stack.push(i);
+      } else if (norm === close) {
+        if (stack.length > 0) stack.pop();
+        else unmatched.add(offsets[i]!);
+      }
+    }
+    for (const openIdx of stack) unmatched.add(offsets[openIdx]!);
+  }
+  return unmatched;
+}
+
+function planBracketSafePieces(raw: string): SlotPiece[] {
   const leading = raw.match(/^\s*/u)?.[0] ?? "";
   const trailing = raw.match(/\s*$/u)?.[0] ?? "";
   let inner = raw.slice(leading.length, raw.length - trailing.length);
-  if (!inner) return { prefix: "", core: raw, suffix: "" };
+  if (!inner) return [{ kind: "literal", text: raw }];
 
   let prefix = leading;
   let suffix = trailing;
@@ -380,34 +411,75 @@ function peelEdgeBrackets(raw: string): { prefix: string; core: string; suffix: 
     }
   }
 
-  // Peel unmatched edge brackets whose partner lives in an adjacent fixed atom
-  // or sibling slot (e.g. `<span data-flt-fixed>(</span><b>...</b> text.)`).
-  for (const [open, close] of BRACKET_PAIRS) {
-    let depth = 0;
-    let minDepth = 0;
-    for (const ch of inner.normalize("NFKC")) {
-      if (ch === open) depth += 1;
-      else if (ch === close) {
-        depth -= 1;
-        if (depth < minDepth) minDepth = depth;
+  // Split on every unmatched bracket (leading, trailing, or mid-slot) whose partner
+  // lives in an adjacent fixed atom or sibling slot, e.g.:
+  //   "... without a working auth path ("  + <a>architecture</a> + ", " + <a>network model</a> + ")."
+  //   "... exposed bind (pair that with auth - see the " + <a>runbook</a> + "), and ..."
+  //   "). The " + <a>Codex plugin</a>
+  const unmatchedOffsets = findUnmatchedBracketIndices(inner);
+  const pieces: SlotPiece[] = [];
+  const pushLiteral = (text: string) => {
+    if (!text) return;
+    const prev = pieces.at(-1);
+    if (prev && prev.kind === "literal") prev.text += text;
+    else pieces.push({ kind: "literal", text });
+  };
+  const pushTranslatableSlice = (slice: string, afterLeadingCloseBracket: boolean) => {
+    if (!slice) return;
+    let lead = slice.match(/^\s*/u)?.[0] ?? "";
+    const trail = slice.match(/\s*$/u)?.[0] ?? "";
+    let core = slice.slice(lead.length, slice.length - trail.length);
+    if (!core || !/\p{L}/u.test(core)) {
+      pushLiteral(slice);
+      return;
+    }
+    // Right after an unmatched closing bracket (e.g. `). The` or `), so ...`), keep
+    // sentence-boundary punctuation with the bracket so Bergamot translates clean prose
+    // and optional articles like "The" are recognized cleanly if omitted.
+    if (afterLeadingCloseBracket) {
+      const punctMatch = core.match(/^([.,;:!?]+[\t\n\f\r ]+)(.+)$/su);
+      if (punctMatch && /\p{L}/u.test(punctMatch[2]!)) {
+        lead += punctMatch[1]!;
+        core = punctMatch[2]!;
       }
     }
-    if (depth < 0 && inner.endsWith(close)) {
-      const nextInner = inner.slice(0, inner.length - close.length);
-      if (nextInner.trim() && /\p{L}/u.test(nextInner)) {
-        suffix = close + suffix;
-        inner = nextInner;
+    pushLiteral(lead);
+    pieces.push({ kind: "translate", core, innerBalanced: bracketsBalanced(core) });
+    pushLiteral(trail);
+  };
+
+  pushLiteral(prefix);
+  if (unmatchedOffsets.size === 0) {
+    pushTranslatableSlice(inner, false);
+  } else {
+    const sorted = Array.from(unmatchedOffsets).sort((a, b) => a - b);
+    let pos = 0;
+    let prevWasClose = false;
+    for (const offset of sorted) {
+      if (offset > pos) {
+        pushTranslatableSlice(inner.slice(pos, offset), prevWasClose);
       }
-    } else if (depth > 0 && minDepth === 0 && inner.startsWith(open)) {
-      const nextInner = inner.slice(open.length);
-      if (nextInner.trim() && /\p{L}/u.test(nextInner)) {
-        prefix += open;
-        inner = nextInner;
-      }
+      const ch = inner[offset]!;
+      const norm = ch.normalize("NFKC");
+      pushLiteral(ch);
+      prevWasClose = BRACKET_PAIRS.some(([, close]) => close === norm);
+      pos = offset + ch.length;
+    }
+    if (pos < inner.length) {
+      pushTranslatableSlice(inner.slice(pos), prevWasClose);
     }
   }
+  pushLiteral(suffix);
 
-  return { prefix, core: inner, suffix };
+  // If splitting produced zero translatable pieces, keep original as a single piece.
+  if (!pieces.some((p) => p.kind === "translate")) {
+    return [
+      ...(leading ? [{ kind: "literal" as const, text: leading }] : []),
+      { kind: "translate", core: inner, innerBalanced: bracketsBalanced(inner) },
+      ...(trailing ? [{ kind: "literal" as const, text: trailing }] : []),
+    ];
+  }
+  return pieces;
 }
 
 function bracketsBalanced(value: string): boolean {
@@ -422,6 +494,41 @@ function bracketsBalanced(value: string): boolean {
   return true;
 }
 
+function peelTermSlotEdgeBrackets(slotClone: HTMLElement): { prefix: string; suffix: string } {
+  const full = slotClone.textContent ?? "";
+  const unmatched = findUnmatchedBracketIndices(full);
+  if (unmatched.size === 0) return { prefix: "", suffix: "" };
+  let prefix = "";
+  let suffix = "";
+
+  const first = slotClone.firstChild;
+  if (first && first.nodeType === Node.TEXT_NODE) {
+    const data = first.textContent ?? "";
+    const leading = data.match(/^\s*/u)?.[0] ?? "";
+    const rest = data.slice(leading.length);
+    if (rest && unmatched.has(leading.length)) {
+      const ch = rest[0]!;
+      prefix = leading + ch;
+      first.textContent = rest.slice(ch.length);
+    }
+  }
+  const last = slotClone.lastChild;
+  if (last && last.nodeType === Node.TEXT_NODE) {
+    const data = last.textContent ?? "";
+    const trailing = data.match(/\s*$/u)?.[0] ?? "";
+    const head = data.slice(0, data.length - trailing.length);
+    const fullBeforeTrail = full.length - (full.match(/\s*$/u)?.[0]?.length ?? 0);
+    if (head && unmatched.has(fullBeforeTrail - 1)) {
+      const ch = head.at(-1)!;
+      const beforeCh = head.slice(0, -1);
+      const innerTrail = beforeCh.match(/\s*$/u)?.[0] ?? "";
+      suffix = innerTrail + ch + trailing;
+      last.textContent = beforeCh.slice(0, beforeCh.length - innerTrail.length);
+    }
+  }
+  return { prefix, suffix };
+}
+
 export interface BergamotSlotFallbackPlan {
   slotSources: string[];
   slotPrepared: string[];
@@ -432,9 +539,9 @@ export interface BergamotSlotFallbackPlan {
  * Last-resort safe slot-level fallback for Bergamot when whole-sentence HTML
  * alignment breaks inline formatting (e.g. `<i>“...”</i> narrator, <i>“...”</i>`,
  * `<i>always</i>`, `<span data-flt-fixed>(</span><b>...</b> text.)`) or drops
- * enclosing parentheses. Re-inserts validated per-slot translations into a clean
- * clone of the exact original HTML template so every tag, link, fixed atom, and
- * protected term remains untouched.
+ * enclosing/cross-slot parentheses. Re-inserts validated per-slot translations into
+ * a clean clone of the exact original HTML template so every tag, link, fixed atom,
+ * and protected term remains untouched.
  */
 export function prepareBergamotSlotFallback(
   sourceHtml: string,
@@ -470,99 +577,156 @@ export function prepareBergamotSlotFallback(
   const sourceSlots = [...source.body.querySelectorAll(slotSelector)];
   if (!sourceSlots.length) return;
 
-  const slotPlans: Array<{
-    id: string;
-    hasTerms: boolean;
+  interface PreparedUnit {
     sourceSlotHtml: string;
     preparedSlotHtml: string;
     usedOpaque: boolean;
-    prefix: string;
-    suffix: string;
+    coreText: string;
     innerBalanced: boolean;
-    originalText: string;
-  }> = [];
+  }
+
+  const units: PreparedUnit[] = [];
+  const slotPlans: Array<
+    | {
+        kind: "plain";
+        id: string;
+        originalText: string;
+        pieces: Array<{ kind: "literal"; text: string } | { kind: "unit"; unitIndex: number }>;
+      }
+    | {
+        kind: "terms";
+        id: string;
+        originalText: string;
+        prefix: string;
+        suffix: string;
+        unitIndex: number;
+      }
+  > = [];
 
   for (const slot of sourceSlots) {
     const id = slot.getAttribute("data-flt-text-id");
     if (!id || !/^\d+$/u.test(id)) return;
     const hasTerms = slot.childElementCount > 0;
     const originalText = slot.textContent ?? "";
-    let prefix = "";
-    let suffix = "";
-    let sourceSlotHtml: string;
 
     if (!hasTerms) {
-      const peeled = peelEdgeBrackets(originalText);
-      prefix = peeled.prefix;
-      suffix = peeled.suffix;
-      sourceSlotHtml = `<span data-flt-text-id="0">${escapeHtml(peeled.core)}</span>`;
+      const rawPieces = planBracketSafePieces(originalText);
+      const mappedPieces: Array<{ kind: "literal"; text: string } | { kind: "unit"; unitIndex: number }> = [];
+      for (const piece of rawPieces) {
+        if (piece.kind === "literal") {
+          mappedPieces.push(piece);
+        } else {
+          const sourceSlotHtml = `<span data-flt-text-id="0">${escapeHtml(piece.core)}</span>`;
+          const preparedSlotHtml = prepareOpaque(sourceSlotHtml);
+          const unitIndex = units.length;
+          units.push({
+            sourceSlotHtml,
+            preparedSlotHtml,
+            usedOpaque: preparedSlotHtml !== sourceSlotHtml,
+            coreText: piece.core,
+            innerBalanced: piece.innerBalanced,
+          });
+          mappedPieces.push({ kind: "unit", unitIndex });
+        }
+      }
+      slotPlans.push({ kind: "plain", id, originalText, pieces: mappedPieces });
     } else {
       const clone = slot.cloneNode(true) as HTMLElement;
       clone.setAttribute("data-flt-text-id", "0");
-      sourceSlotHtml = clone.outerHTML;
+      const { prefix, suffix } = peelTermSlotEdgeBrackets(clone);
+      const sourceSlotHtml = clone.outerHTML;
+      const preparedSlotHtml = prepareOpaque(sourceSlotHtml);
+      const unitIndex = units.length;
+      const coreText = clone.textContent ?? "";
+      units.push({
+        sourceSlotHtml,
+        preparedSlotHtml,
+        usedOpaque: preparedSlotHtml !== sourceSlotHtml,
+        coreText,
+        innerBalanced: bracketsBalanced(coreText),
+      });
+      slotPlans.push({ kind: "terms", id, originalText, prefix, suffix, unitIndex });
     }
-
-    const preparedSlotHtml = prepareOpaque(sourceSlotHtml);
-    slotPlans.push({
-      id,
-      hasTerms,
-      sourceSlotHtml,
-      preparedSlotHtml,
-      usedOpaque: preparedSlotHtml !== sourceSlotHtml,
-      prefix,
-      suffix,
-      innerBalanced: bracketsBalanced(hasTerms ? originalText : originalText.slice(prefix.length, originalText.length - suffix.length)),
-      originalText,
-    });
   }
 
   return {
-    slotSources: slotPlans.map((item) => item.sourceSlotHtml),
-    slotPrepared: slotPlans.map((item) => item.preparedSlotHtml),
+    slotSources: units.map((item) => item.sourceSlotHtml),
+    slotPrepared: units.map((item) => item.preparedSlotHtml),
     restore(translatedSlots: string[]) {
-      if (translatedSlots.length !== slotPlans.length) return;
+      if (translatedSlots.length !== units.length) return;
       const resultBody = source.body.cloneNode(true) as HTMLElement;
       const targetSlots = new Map(
         [...resultBody.querySelectorAll(slotSelector)].map((el) => [el.getAttribute("data-flt-text-id")!, el]),
       );
 
       let anyChanged = false;
-      for (let i = 0; i < slotPlans.length; i += 1) {
-        const plan = slotPlans[i]!;
+      for (const plan of slotPlans) {
         const targetSlot = targetSlots.get(plan.id);
-        const raw = translatedSlots[i];
-        if (!targetSlot || typeof raw !== "string") return;
+        if (!targetSlot) return;
 
-        let repaired: string;
-        try {
-          repaired = repairSlot(plan.sourceSlotHtml, raw, plan.usedOpaque);
-        } catch {
-          return;
-        }
-        const parsed = parser.parseFromString(repaired, "text/html");
-        if (parsed.head.childNodes.length) return;
+        if (plan.kind === "plain") {
+          let combined = "";
+          let nonEmptyTranslatedCount = 0;
+          let translatedUnitCount = 0;
+          for (const piece of plan.pieces) {
+            if (piece.kind === "literal") {
+              combined += piece.text;
+              continue;
+            }
+            translatedUnitCount += 1;
+            const unit = units[piece.unitIndex]!;
+            const raw = translatedSlots[piece.unitIndex];
+            if (typeof raw !== "string") return;
 
-        if (!plan.hasTerms) {
-          // For plain text slots, Bergamot can move trailing newlines or punctuation
-          // outside <span data-flt-text-id="0">. Accept the complete body text as long
-          // as no foreign elements were injected.
-          const unexpectedElement = [...parsed.body.querySelectorAll("*")].some(
-            (el) => !el.matches('span[data-flt-text-id="0"]'),
-          );
-          if (unexpectedElement) return;
-          const slotText = (parsed.body.textContent ?? "").replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/gu, "");
-          if (/\uFFFD/u.test(slotText)) return;
-          if (!slotText && !isOptionalEnglishArticle(plan.originalText)) return;
-          if (plan.innerBalanced && !bracketsBalanced(slotText)) return;
+            let repaired: string;
+            try {
+              repaired = repairSlot(unit.sourceSlotHtml, raw, unit.usedOpaque);
+            } catch {
+              return;
+            }
+            const parsed = parser.parseFromString(repaired, "text/html");
+            if (parsed.head.childNodes.length) return;
+            // For plain text slots, Bergamot can move trailing newlines or punctuation
+            // outside <span data-flt-text-id="0">. Accept the complete body text as long
+            // as no foreign elements were injected.
+            const unexpectedElement = [...parsed.body.querySelectorAll("*")].some(
+              (el) => !el.matches('span[data-flt-text-id="0"]'),
+            );
+            if (unexpectedElement) return;
+            const slotText = (parsed.body.textContent ?? "").replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/gu, "");
+            if (/\uFFFD/u.test(slotText)) return;
+            if (!slotText && !isOptionalEnglishArticle(unit.coreText)) return;
+            if (unit.innerBalanced && !bracketsBalanced(slotText)) return;
+            if (slotText) nonEmptyTranslatedCount += 1;
+            combined += slotText;
+          }
 
-          const combined = !slotText && /^\s+$/u.test(plan.prefix) && /^\s+$/u.test(plan.suffix)
-            ? plan.prefix
-            : `${plan.prefix}${slotText}${plan.suffix}`;
+          if (translatedUnitCount === 1 && nonEmptyTranslatedCount === 0) {
+            const firstPiece = plan.pieces[0];
+            const lastPiece = plan.pieces.at(-1);
+            const leadingWs = firstPiece?.kind === "literal" ? firstPiece.text : "";
+            const trailingWs = lastPiece?.kind === "literal" ? lastPiece.text : "";
+            if (plan.pieces.length === 3 && /^\s+$/u.test(leadingWs) && /^\s+$/u.test(trailingWs)) {
+              combined = leadingWs;
+            }
+          }
+
           targetSlot.textContent = combined;
           if (combined.trim() !== plan.originalText.trim()) anyChanged = true;
           continue;
         }
 
+        const unit = units[plan.unitIndex]!;
+        const raw = translatedSlots[plan.unitIndex];
+        if (typeof raw !== "string") return;
+        let repaired: string;
+        try {
+          repaired = repairSlot(unit.sourceSlotHtml, raw, unit.usedOpaque);
+        } catch {
+          return;
+        }
+        const parsed = parser.parseFromString(repaired, "text/html");
+        if (parsed.head.childNodes.length) return;
         const meaningfulChildren = [...parsed.body.childNodes].filter(
           (node) => node.nodeType !== Node.TEXT_NODE || (node.textContent ?? "").trim() !== "",
         );
@@ -572,8 +736,8 @@ export function prepareBergamotSlotFallback(
         }
         const slotText = parsedSlot.textContent ?? "";
         if (/\uFFFD/u.test(slotText)) return;
-        if (!slotText.trim() && !isOptionalEnglishArticle(plan.originalText)) return;
-        if (plan.innerBalanced && !bracketsBalanced(slotText)) return;
+        if (!slotText.trim() && !isOptionalEnglishArticle(unit.coreText)) return;
+        if (unit.innerBalanced && !bracketsBalanced(slotText)) return;
 
         const fragment = resultBody.ownerDocument.createDocumentFragment();
         if (plan.prefix) fragment.append(resultBody.ownerDocument.createTextNode(plan.prefix));

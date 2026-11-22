@@ -29,7 +29,6 @@ import {
 import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 
 const statusEl = document.querySelector<HTMLElement>("#status");
-const detectedEl = document.querySelector<HTMLElement>("#detected-language");
 const translate = document.querySelector<HTMLButtonElement>("#translate");
 const restore = document.querySelector<HTMLButtonElement>("#restore");
 const settingsButton = document.querySelector<HTMLButtonElement>("#settings");
@@ -190,7 +189,7 @@ async function switchEngine(nextId: string): Promise<void> {
       // Non-web tabs do not have a content script.
     }
     syncTranslateButton();
-    if (statusEl && !statusEl.textContent?.startsWith("暂不支持") && statusEl.textContent !== "当前页面已经是目标语言") {
+    if (statusEl && !statusEl.textContent?.startsWith("暂不支持")) {
       const label = engineLabel(activeEngineId);
       statusEl.textContent = translatedNow
         ? `已切换到 ${label}，可点击「翻译本页」重新翻译`
@@ -244,14 +243,12 @@ async function refreshLanguage(): Promise<void> {
     syncTranslateButton();
     const info = response?.language;
     detectedCode = info?.effectiveLanguage ?? info?.detectedLanguage ?? null;
-    const confidence = info?.percentage ? ` · ${info.percentage}%` : "";
-    if (detectedEl) detectedEl.textContent = `检测到 ${detectedCode ? languageLabel(detectedCode) : "未知语言"}${confidence}`;
 
     const source = sourceSelect?.value === "auto" ? detectedCode : sourceSelect?.value;
     const target = targetSelect?.value;
-    if (source && target && !await routeSupported(source, target)) {
-      if (statusEl) statusEl.textContent = source === target ? "当前页面已经是目标语言" : `暂不支持 ${languageLabel(source)} → ${languageLabel(target)}`;
-    } else if (statusEl && (statusEl.textContent?.startsWith("暂不支持") || statusEl.textContent === "当前页面已经是目标语言")) {
+    if (source && target && source !== target && !await routeSupported(source, target)) {
+      if (statusEl) statusEl.textContent = `暂不支持 ${languageLabel(source)} → ${languageLabel(target)}`;
+    } else if (statusEl && statusEl.textContent?.startsWith("暂不支持")) {
       statusEl.textContent = "";
     }
     refreshSiteAuto();
@@ -259,7 +256,6 @@ async function refreshLanguage(): Promise<void> {
     detectedCode = null;
     pageTranslated = false;
     syncTranslateButton();
-    if (detectedEl) detectedEl.textContent = "暂时无法检测当前页面";
     refreshSiteAuto();
   }
 }
@@ -281,16 +277,22 @@ async function send(type: "translate-page" | "restore-page"): Promise<void> {
     });
     if (!response?.ok) throw new Error(response?.error ?? "操作失败");
     if (type === "translate-page") {
-      pageTranslated = true;
+      pageTranslated = (response.count ?? 0) > 0 || pageTranslated;
       engineSwitchedSinceTranslate = false;
     } else {
       pageTranslated = false;
       engineSwitchedSinceTranslate = false;
     }
     syncTranslateButton();
-    if (statusEl) statusEl.textContent = type === "translate-page"
-      ? `${bypassCache ? "已重新翻译" : "已翻译"} ${response.count ?? 0} 个段落${response.failedCount ? `；${response.failedCount} 个未完成，已保留原文` : ""}`
-      : "已恢复原文";
+    if (statusEl) {
+      if (type === "translate-page") {
+        statusEl.textContent = (response.count ?? 0) === 0 && !response.failedCount
+          ? ""
+          : `${bypassCache ? "已重新翻译" : "已翻译"} ${response.count ?? 0} 个段落${response.failedCount ? `；${response.failedCount} 个未完成，已保留原文` : ""}`;
+      } else {
+        statusEl.textContent = "已恢复原文";
+      }
+    }
   } catch (error) {
     if (statusEl) statusEl.textContent = error instanceof Error ? error.message : String(error);
   }
