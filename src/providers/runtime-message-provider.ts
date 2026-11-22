@@ -82,7 +82,7 @@ export class RuntimeMessageProvider implements TranslationProvider {
 
     const groups = new Map<string, PendingTranslation[]>();
     for (const item of pending) {
-      const key = `${item.request.sourceLanguage}\u0000${item.request.targetLanguage}\u0000${item.request.bypassCache ? "1" : "0"}`;
+      const key = `${item.request.sourceLanguage}\u0000${item.request.targetLanguage}\u0000${item.request.bypassCache ? "1" : "0"}\u0000${item.request.engineId ?? ""}`;
       const group = groups.get(key);
       if (group) group.push(item);
       else groups.set(key, [item]);

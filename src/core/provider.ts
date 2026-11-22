@@ -12,6 +12,7 @@ export interface TranslationRequest {
   signal?: AbortSignal;
   context?: import("./translation-context").TranslationContext | undefined;
   bypassCache?: boolean;
+  engineId?: string;
 }
 
 export interface TranslationProvider {

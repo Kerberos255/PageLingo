@@ -15,13 +15,15 @@ import { sourceTextSample } from "./shared/source-text-sample";
 import { MAX_OCR_IMAGE_SIDE } from "./image-translation/ocr-models";
 import { isUiMetadataText } from "./image-translation/ocr-layout";
 import { renderTranslatedImageToCanvas } from "./image-translation/image-renderer";
+import { initializeVideoSubtitles } from "./video-translation/video-subtitle-controller";
 var translator = null;
 var imageOverlays = new Map();
 var imageRequests = new Map();
 var imageOverlayCleanups = new WeakMap();
 var lastContextMenuTarget = null;
 document.addEventListener("contextmenu", (event) => {
-    lastContextMenuTarget = event.target instanceof Node ? event.target : null;
+    const target = event.composedPath?.()[0] ?? event.target;
+    lastContextMenuTarget = target instanceof Node ? target : null;
 }, true);
 function ensureStyle() {
     if (document.getElementById("flt-style"))
@@ -1224,3 +1226,4 @@ if (window.top === window) {
     setInterval(noticePossibleRouteChange, 400);
 }
 void maybeAutoTranslate(autoTranslateGeneration);
+initializeVideoSubtitles();

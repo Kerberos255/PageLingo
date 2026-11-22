@@ -1,9 +1,44 @@
 export type DisplayMode = "translation" | "bilingual";
 export type ModelUpdatePolicy = "auto" | "notify" | "manual";
 export type ManualSourceLanguage = "auto" | string;
+export type VideoSubtitleDisplayMode = "follow" | "bilingual" | "translation";
+export type VideoSubtitleOrder = "source-top" | "translation-top";
+export interface VideoSubtitleSettings {
+    enabled: boolean;
+    showPlayerButton: boolean;
+    engineId: string;
+    displayMode: VideoSubtitleDisplayMode;
+    order: VideoSubtitleOrder;
+    learningMode: boolean;
+    preferManualCaptions: boolean;
+    filterSoundEffects: boolean;
+    mergeAsrSegments: boolean;
+    translationFontSize: number;
+    sourceFontSize: number;
+    translationColor: string;
+    backgroundOpacity: number;
+}
 export interface GlossaryEntry { source:string; target:string; mode:"protect"|"replace"; caseSensitive?:boolean }
 export interface GlossaryCollection { id:string; name:string; enabled:boolean; entries:GlossaryEntry[] }
-export interface PageLingoSettings { displayMode:DisplayMode; autoTranslateEnabled:boolean; targetLanguage:string; neverTranslateSites:string[]; alwaysTranslateSites:string[]; neverTranslateLanguages:string[]; alwaysTranslateLanguages:string[]; modelUpdatePolicy:ModelUpdatePolicy; imageTranslationEnabled:boolean; terminologyText:string; builtinGlossaryEnabled:boolean; glossaryCollections:GlossaryCollection[] }
+export interface PageLingoSettings { displayMode:DisplayMode; autoTranslateEnabled:boolean; targetLanguage:string; neverTranslateSites:string[]; alwaysTranslateSites:string[]; neverTranslateLanguages:string[]; alwaysTranslateLanguages:string[]; modelUpdatePolicy:ModelUpdatePolicy; imageTranslationEnabled:boolean; terminologyText:string; builtinGlossaryEnabled:boolean; glossaryCollections:GlossaryCollection[]; videoSubtitle:VideoSubtitleSettings }
+
+export const VIDEO_SUBTITLE_COLORS = ["#ffffff", "#fde047", "#fdba74", "#7dd3fc"] as const;
+
+export const DEFAULT_VIDEO_SUBTITLE_SETTINGS: VideoSubtitleSettings = {
+    enabled: false,
+    showPlayerButton: true,
+    engineId: "follow",
+    displayMode: "bilingual",
+    order: "source-top",
+    learningMode: false,
+    preferManualCaptions: true,
+    filterSoundEffects: true,
+    mergeAsrSegments: true,
+    translationFontSize: 20,
+    sourceFontSize: 15,
+    translationColor: "#ffffff",
+    backgroundOpacity: 72,
+};
 
 export const DEFAULT_SETTINGS: PageLingoSettings = {
     displayMode: "translation",
@@ -18,6 +53,7 @@ export const DEFAULT_SETTINGS: PageLingoSettings = {
     terminologyText: "",
     builtinGlossaryEnabled: true,
     glossaryCollections: [],
+    videoSubtitle: { ...DEFAULT_VIDEO_SUBTITLE_SETTINGS },
 };
 
 const LABEL_OVERRIDES: Record<string, string> = {
@@ -182,6 +218,44 @@ export function isSiteListed(hostname: string, sites: readonly string[]): boolea
     return sites.some((site) => host === site || host.endsWith(`.${site}`));
 }
 
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+    if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+export function normalizeVideoSubtitleSettings(value: unknown): VideoSubtitleSettings {
+    if (!value || typeof value !== "object") return { ...DEFAULT_VIDEO_SUBTITLE_SETTINGS };
+    const record = value as Record<string, unknown>;
+    const displayMode: VideoSubtitleDisplayMode =
+        record.displayMode === "follow" || record.displayMode === "translation" || record.displayMode === "bilingual"
+            ? record.displayMode
+            : DEFAULT_VIDEO_SUBTITLE_SETTINGS.displayMode;
+    const order: VideoSubtitleOrder =
+        record.order === "translation-top" ? "translation-top" : "source-top";
+    const colorRaw = typeof record.translationColor === "string" ? record.translationColor.trim().toLowerCase() : "";
+    const translationColor = (VIDEO_SUBTITLE_COLORS as readonly string[]).includes(colorRaw)
+        ? colorRaw
+        : DEFAULT_VIDEO_SUBTITLE_SETTINGS.translationColor;
+    const engineId = typeof record.engineId === "string" && record.engineId.trim()
+        ? record.engineId.trim().slice(0, 96)
+        : "follow";
+    return {
+        enabled: record.enabled === true,
+        showPlayerButton: record.showPlayerButton !== false,
+        engineId,
+        displayMode,
+        order,
+        learningMode: record.learningMode === true,
+        preferManualCaptions: record.preferManualCaptions !== false,
+        filterSoundEffects: record.filterSoundEffects !== false,
+        mergeAsrSegments: record.mergeAsrSegments !== false,
+        translationFontSize: clampInt(record.translationFontSize, 14, 32, DEFAULT_VIDEO_SUBTITLE_SETTINGS.translationFontSize),
+        sourceFontSize: clampInt(record.sourceFontSize, 12, 24, DEFAULT_VIDEO_SUBTITLE_SETTINGS.sourceFontSize),
+        translationColor,
+        backgroundOpacity: clampInt(record.backgroundOpacity, 0, 90, DEFAULT_VIDEO_SUBTITLE_SETTINGS.backgroundOpacity),
+    };
+}
+
 export async function loadSettings(): Promise<PageLingoSettings> {
     const stored = await browser.storage.local.get();
     const legacyExcludedSites = normalizeExcludedSites(stored.excludedSites);
@@ -204,6 +278,7 @@ export async function loadSettings(): Promise<PageLingoSettings> {
         terminologyText: typeof stored.terminologyText === "string" ? stored.terminologyText : "",
         builtinGlossaryEnabled: stored.builtinGlossaryEnabled !== false,
         glossaryCollections,
+        videoSubtitle: normalizeVideoSubtitleSettings(stored.videoSubtitle),
     };
 }
 
@@ -247,4 +322,11 @@ export async function saveBuiltinGlossaryEnabled(builtinGlossaryEnabled: boolean
 
 export async function saveGlossaryCollections(glossaryCollections: readonly GlossaryCollection[]): Promise<void> {
     await browser.storage.local.set({ glossaryCollections: normalizeGlossaryCollections(glossaryCollections) });
+}
+
+export async function saveVideoSubtitleSettings(videoSubtitle: Partial<VideoSubtitleSettings>): Promise<VideoSubtitleSettings> {
+    const current = await loadSettings();
+    const merged = normalizeVideoSubtitleSettings({ ...current.videoSubtitle, ...videoSubtitle });
+    await browser.storage.local.set({ videoSubtitle: merged });
+    return merged;
 }

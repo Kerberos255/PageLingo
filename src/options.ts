@@ -20,6 +20,7 @@ import {
 } from "./shared/settings";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { initializeTranslationEngines } from "./options-engines";
+import { initializeVideoSubtitleSettings } from "./options-video-subtitles";
 
 interface LanguageOption {
     code: string;
@@ -699,3 +700,4 @@ if (checkUpdates) {
 
 void initialize().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));
 void initializeTranslationEngines().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));
+void initializeVideoSubtitleSettings().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));

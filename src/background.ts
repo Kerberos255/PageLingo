@@ -70,6 +70,7 @@ interface RuntimeMessage {
     terminology?: unknown;
     context?: unknown;
     bypassCache?: unknown;
+    engineId?: unknown;
   };
   requests?: Array<{
     html?: unknown;
@@ -77,6 +78,7 @@ interface RuntimeMessage {
     targetLanguage?: unknown;
     terminology?: unknown;
     bypassCache?: unknown;
+    engineId?: unknown;
   }>;
   sourceLanguage?: unknown;
   targetLanguage?: unknown;
@@ -84,6 +86,7 @@ interface RuntimeMessage {
   config?: unknown;
   id?: unknown;
   enabled?: unknown;
+  url?: unknown;
 }
 
 function asLanguage(value: unknown): string | null {
@@ -92,6 +95,7 @@ function asLanguage(value: unknown): string | null {
 
 interface ParsedTranslationRequest extends ExternalTranslationRequest {
   bypassCache: boolean;
+  engineId?: string;
 }
 
 function parseTranslationRequest(request: RuntimeMessage["request"]): ParsedTranslationRequest {
@@ -112,12 +116,14 @@ function parseTranslationRequest(request: RuntimeMessage["request"]): ParsedTran
         )
         .map((entry) => ({ source: entry.source, target: entry.target, mode: entry.mode }))
     : [];
+  const rawEngineId = typeof request.engineId === "string" ? request.engineId.trim() : "";
   return {
     html: request.html,
     sourceLanguage,
     targetLanguage,
     terminology,
     bypassCache: request.bypassCache === true,
+    ...(rawEngineId && rawEngineId !== "follow" ? { engineId: rawEngineId } : {}),
   };
 }
 
@@ -160,12 +166,25 @@ async function refreshTranslationEngineState() {
   return state;
 }
 
-async function activeExternalEngine(): Promise<RuntimeExternalEngineConfig | null> {
+async function externalEngineForId(engineId?: string): Promise<RuntimeExternalEngineConfig | null> {
   const state = await currentTranslationEngineState();
-  if (state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID) return null;
-  const builtinFree = builtinFreeEngineConfig(state.activeEngineId);
+  const resolvedId = engineId && engineId !== "follow" ? engineId : state.activeEngineId;
+  if (resolvedId === LOCAL_TRANSLATION_ENGINE_ID) return null;
+  const builtinFree = builtinFreeEngineConfig(resolvedId);
   if (builtinFree) return builtinFree;
-  return state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled) ?? null;
+  const matched = state.engines.find((engine) => engine.id === resolvedId && engine.enabled);
+  if (matched) return matched;
+  // If a dedicated override engine was deleted/disabled, fall back cleanly to active engine.
+  if (engineId && engineId !== "follow" && state.activeEngineId !== LOCAL_TRANSLATION_ENGINE_ID) {
+    return builtinFreeEngineConfig(state.activeEngineId)
+      ?? state.engines.find((engine) => engine.id === state.activeEngineId && engine.enabled)
+      ?? null;
+  }
+  return null;
+}
+
+async function activeExternalEngine(): Promise<RuntimeExternalEngineConfig | null> {
+  return externalEngineForId();
 }
 
 async function translateExternalSingleCached(
@@ -596,7 +615,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
   try {
     if (message.type === "translate-html") {
       const request = parseTranslationRequest(message.request);
-      const external = await activeExternalEngine();
+      const external = await externalEngineForId(request.engineId);
       if (external) {
         if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
           throw new Error("外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权");
@@ -619,19 +638,26 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const normalized = requests.map(parseTranslationRequest);
       const first = normalized[0]!;
       if (normalized.some((request) =>
-        request.sourceLanguage !== first.sourceLanguage || request.targetLanguage !== first.targetLanguage
+        request.sourceLanguage !== first.sourceLanguage
+        || request.targetLanguage !== first.targetLanguage
+        || request.engineId !== first.engineId
       )) {
-        throw new Error("Translation batch must use one language route");
+        throw new Error("Translation batch must use one language route and engine");
       }
-      const external = await activeExternalEngine();
+      const external = await externalEngineForId(first.engineId);
       if (external) {
         const size = externalBatchSize(external);
-        if (size < 2 || normalized.length > size) return { ok: false, batchUnsupported: true };
+        if (size < 2) return { ok: false, batchUnsupported: true };
         if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
           return { ok: false, retrySingles: false, error: "外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权" };
         }
         try {
-          const htmls = await translateExternalBatchCached(external, normalized);
+          const htmls: Array<string | null> = [];
+          for (let offset = 0; offset < normalized.length; offset += size) {
+            const slice = normalized.slice(offset, offset + size);
+            const translatedSlice = await translateExternalBatchCached(external, slice);
+            htmls.push(...translatedSlice);
+          }
           return { ok: true, htmls };
         } catch (error) {
           return {
@@ -649,6 +675,28 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       return { ok: true, htmls };
     }
 
+    if (message.type === "fetch-subtitle-track") {
+      const rawUrl = typeof message.url === "string" ? message.url.trim() : "";
+      if (!rawUrl) throw new Error("字幕地址无效");
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(rawUrl);
+      } catch {
+        throw new Error("字幕地址格式无效");
+      }
+      if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+        throw new Error("仅支持 HTTP/HTTPS 字幕地址");
+      }
+      const signal = typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+        ? AbortSignal.timeout(15_000)
+        : undefined;
+      const response = await fetch(parsedUrl.href, { credentials: "include", ...(signal ? { signal } : {}) });
+      if (!response.ok) throw new Error(`获取字幕失败（HTTP ${response.status}）`);
+      const text = await response.text();
+      if (text.length > 5_000_000) throw new Error("字幕文件过大");
+      return { ok: true, text, contentType: response.headers.get("content-type") ?? "" };
+    }
+
     if (message.type === "get-translation-cache-stats") {
       const externalCount = await externalCache.count();
       const localCount = bergamot.cacheSize();
@@ -664,7 +712,8 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "can-translate") {
       const sourceLanguage = asLanguage(message.sourceLanguage);
       const targetLanguage = asLanguage(message.targetLanguage);
-      const external = await activeExternalEngine();
+      const engineId = typeof message.id === "string" ? message.id : undefined;
+      const external = await externalEngineForId(engineId);
       const externalReady = external
         ? await hasExternalTranslationConsent(Boolean(external.apiKey))
         : false;

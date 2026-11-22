@@ -251,6 +251,9 @@ export class PageTranslator {
     #contextModePromise = null;
     #bypassCache = false;
     #forceBypassRoots = new WeakSet();
+    #shadowRoots = new Set();
+    #shadowObservers = new Map();
+    #watchedFadeScopes = new WeakSet();
     async #loadContextMode() {
         if (!this.#contextModePromise) this.#contextModePromise = Promise.all([
             Promise.resolve().then(() => this.#provider.prefersWholeSentenceHtml?.()).catch(() => false),
@@ -404,6 +407,7 @@ export class PageTranslator {
             this.#applyDisplayMode(root, record.translationNode);
         }
         for (const [root, record] of this.#fixedRecords) {
+            if (displayMode === "bilingual") this.#ensureShadowStyle(root);
             if (!applyFixedTextRecord(root, record, displayMode, this.#targetLanguage)) {
                 this.#clearFixedRecord(root, record); this.#queue(root);
             }
@@ -446,9 +450,40 @@ export class PageTranslator {
         await Promise.all(ranked.map(({ root }) => this.#queue(root)));
         return this.translatedCount;
     }
+    #watchHiddenFade(element) {
+        this.#hiddenScopes.add(element);
+        if (this.#watchedFadeScopes.has(element) || typeof element.getAnimations !== "function") return;
+        const animations = element.getAnimations().filter(animation => animation && animation.playState !== "finished");
+        if (!animations.length) return;
+        this.#watchedFadeScopes.add(element);
+        void Promise.allSettled(animations.map(animation => animation.finished)).then(() => {
+            this.#watchedFadeScopes.delete(element);
+            this.#queueVisibleScope(element);
+        });
+    }
+    #registerShadowRoot(shadowRoot) {
+        if (!shadowRoot || this.#disposed) return;
+        this.#shadowRoots.add(shadowRoot);
+        if (this.#observer && !this.#shadowObservers.has(shadowRoot)) {
+            this.#observeShadowRoot(shadowRoot);
+        }
+    }
+    #ensureShadowStyle(root) {
+        const rootNode = root.getRootNode?.();
+        if (!rootNode || rootNode === this.#doc || rootNode.nodeType !== Node.DOCUMENT_FRAGMENT_NODE || !("host" in rootNode)) return;
+        this.#shadowRoots.add(rootNode);
+        if (rootNode.querySelector('style[data-flt-generated="style"]')) return;
+        const style = this.#doc.createElement("style");
+        style.dataset.fltGenerated = "style";
+        style.textContent = ".flt-translation { display: block !important; margin-block-start: 0.28em !important; font: inherit !important; line-height: inherit !important; letter-spacing: inherit !important; text-transform: none !important; } .flt-translation a { display: inline !important; } .flt-source-hidden { display: none !important; }";
+        rootNode.append(style);
+    }
     #collect(scope) {
-        return collectTranslationRoots(scope, {preserveInlineContext: this.#wholeSentenceContext,
-            onHidden: element => this.#hiddenScopes.add(element)});
+        return collectTranslationRoots(scope, {
+            preserveInlineContext: this.#wholeSentenceContext,
+            onHidden: element => this.#watchHiddenFade(element),
+            onShadowRoot: shadowRoot => this.#registerShadowRoot(shadowRoot),
+        });
     }
     async translateRoot(root) {
         if (this.#disposed || !root.isConnected || isGeneratedNode(root) || isProtectedApiSignature(root))
@@ -687,12 +722,14 @@ export class PageTranslator {
         if (this.#disposed || !root.isConnected || sourceFingerprint(root, {excludeNestedRoots: this.#wholeSentenceContext}) !== segment.fingerprint)
             return;
         if (this.#wholeSentenceContext) {
+            if (this.#displayMode === "bilingual") this.#ensureShadowStyle(root);
             const record = prepareFixedTextRecord(root, segment.textSlots, translatedHtml, this.#targetLanguage);
             if (!applyFixedTextRecord(root, record, this.#displayMode, this.#targetLanguage)) return;
             this.#fixedRecords.set(root, record);
             for (const edit of record.edits) this.#fixedOwners.set(edit.node, record);
             return;
         }
+        this.#ensureShadowStyle(root);
         const fragment = createSafeTranslatedFragment(this.#doc, translatedHtml, segment.links, segment.opaque, translatedLinkTexts, translatedGapTexts, []);
         const translationNode = mountTranslation(root, fragment, this.#targetLanguage);
         this.#records.set(root, { translationNode, fingerprint: segment.fingerprint });
@@ -714,77 +751,88 @@ export class PageTranslator {
             this.#queueVisibleScope(event.target);
         }
     };
-    observe() {
-        if (this.#observer || !this.#doc.body)
-            return;
-        this.#observer = new MutationObserver((mutations) => {
-            const revealed = new Set();
-            for (const mutation of mutations) {
-                if (isGeneratedNode(mutation.target))
-                    continue;
-                if (mutation.type === "attributes") {
-                    const region = mutation.target;
-                    if (["aria-expanded", "aria-selected"].includes(mutation.attributeName)) {
-                        if (region.getAttribute(mutation.attributeName) !== "true") continue;
-                        for (const id of (region.getAttribute("aria-controls") ?? "").split(/\s+/)) {
-                            const panel = this.#doc.getElementById(id);
-                            if (panel) revealed.add(panel);
-                        }
-                        continue;
+    #handleMutations = (mutations) => {
+        const revealed = new Set();
+        for (const mutation of mutations) {
+            if (isGeneratedNode(mutation.target))
+                continue;
+            if (mutation.type === "attributes") {
+                const region = mutation.target;
+                if (["aria-expanded", "aria-selected"].includes(mutation.attributeName)) {
+                    if (region.getAttribute(mutation.attributeName) !== "true") continue;
+                    const scopeRoot = region.getRootNode?.();
+                    for (const id of (region.getAttribute("aria-controls") ?? "").split(/\s+/)) {
+                        const panel = scopeRoot?.getElementById?.(id) ?? this.#doc.getElementById(id);
+                        if (panel) revealed.add(panel);
                     }
-                    if (["class", "style"].includes(mutation.attributeName)
-                        && !this.#hiddenScopes.has(region)
-                        && !region.matches("dialog,[popover],[role='dialog'],[role='tabpanel'],[role='menu'],[role='listbox']")) continue;
-                    if ((mutation.attributeName !== "open" || region.hasAttribute("open"))
-                        && !region.closest("[hidden],[inert],[aria-hidden='true']")) revealed.add(region);
                     continue;
                 }
-                if (mutation.type === "characterData" && mutation.target.nodeType === Node.TEXT_NODE) {
-                    const owner = this.#fixedOwners.get(mutation.target);
-                    const edit = owner?.edits.find(edit => edit.node === mutation.target);
-                    if (edit && mutation.target.data === (owner.mode === "translation" ? edit.translated : edit.source)) continue;
-                    const parent = mutation.target.parentElement;
+                if (["class", "style"].includes(mutation.attributeName)
+                    && !this.#hiddenScopes.has(region)
+                    && !region.matches("dialog,[popover],[role='dialog'],[role='tabpanel'],[role='menu'],[role='listbox']")) continue;
+                if ((mutation.attributeName !== "open" || region.hasAttribute("open"))
+                    && !region.closest("[hidden],[inert],[aria-hidden='true']")) revealed.add(region);
+                continue;
+            }
+            if (mutation.type === "characterData" && mutation.target.nodeType === Node.TEXT_NODE) {
+                const owner = this.#fixedOwners.get(mutation.target);
+                const edit = owner?.edits.find(edit => edit.node === mutation.target);
+                if (edit && mutation.target.data === (owner.mode === "translation" ? edit.translated : edit.source)) continue;
+                const parent = mutation.target.parentElement;
+                if (parent) {
+                    for (const root of this.#collect(parent))
+                        this.#queue(root);
+                }
+                continue;
+            }
+            for (const added of Array.from(mutation.addedNodes)) {
+                if (isGeneratedNode(added))
+                    continue;
+                if (added.nodeType === Node.TEXT_NODE) {
+                    const parent = added.parentElement;
                     if (parent) {
                         for (const root of this.#collect(parent))
                             this.#queue(root);
                     }
-                    continue;
                 }
-                for (const added of Array.from(mutation.addedNodes)) {
-                    if (isGeneratedNode(added))
+                else if (added.nodeType === Node.ELEMENT_NODE) {
+                    if (added.matches?.("[data-flt-source-text-wrapper]"))
                         continue;
-                    if (added.nodeType === Node.TEXT_NODE) {
-                        const parent = added.parentElement;
-                        if (parent) {
-                            for (const root of this.#collect(parent))
-                                this.#queue(root);
-                        }
-                    }
-                    else if (added.nodeType === Node.ELEMENT_NODE) {
-                        if (added.matches?.("[data-flt-source-text-wrapper]"))
-                            continue;
-                        for (const root of this.#collect(added))
-                            this.#queue(root);
-                    }
+                    for (const root of this.#collect(added))
+                        this.#queue(root);
                 }
             }
-            for (const region of revealed) {
-                if ([...revealed].some(parent => parent !== region && parent.contains(region))) continue;
-                if (!isElementEffectivelyHidden(region)) {
-                    this.#queueVisibleScope(region);
-                    continue;
-                }
-                // Accessibility state can change before a CSS fade makes a panel visible.
-                this.#hiddenScopes.add(region);
-                const fades = region.getAnimations?.().filter(animation => animation.transitionProperty === "opacity");
-                if (fades?.length) void Promise.allSettled(fades.map(animation => animation.finished))
-                    .then(() => this.#queueVisibleScope(region));
+        }
+        for (const region of revealed) {
+            if ([...revealed].some(parent => parent !== region && parent.contains(region))) continue;
+            if (!isElementEffectivelyHidden(region)) {
+                this.#queueVisibleScope(region);
+                continue;
             }
+            // Accessibility state or added nodes can appear before a CSS fade completes.
+            this.#watchHiddenFade(region);
+        }
+    };
+    #observeShadowRoot(shadowRoot) {
+        if (this.#disposed || this.#shadowObservers.has(shadowRoot)) return;
+        const observer = new MutationObserver(this.#handleMutations);
+        observer.observe(shadowRoot, {
+            childList: true, subtree: true, characterData: true, attributes: true,
+            attributeFilter: ["hidden", "aria-hidden", "inert", "open", "class", "style", "data-state", "aria-expanded", "aria-selected"],
         });
+        this.#shadowObservers.set(shadowRoot, observer);
+    }
+    observe() {
+        if (this.#observer || !this.#doc.body)
+            return;
+        this.#observer = new MutationObserver(this.#handleMutations);
         this.#observer.observe(this.#doc.body, {
             childList: true, subtree: true, characterData: true, attributes: true,
             attributeFilter: ["hidden", "aria-hidden", "inert", "open", "class", "style", "data-state", "aria-expanded", "aria-selected"],
         });
+        for (const shadowRoot of this.#shadowRoots) {
+            this.#observeShadowRoot(shadowRoot);
+        }
         this.#doc.addEventListener("toggle", this.#handleToggle, true);
     }
     #queueVisibleScope(region) {
@@ -840,6 +888,8 @@ export class PageTranslator {
         this.#disposed = true;
         this.#observer?.disconnect();
         this.#observer = null;
+        for (const observer of this.#shadowObservers.values()) observer.disconnect();
+        this.#shadowObservers.clear();
         this.#visibilityObserver?.disconnect();
         this.#visibilityObserver = null;
         this.#deferredRoots.clear();
@@ -867,21 +917,30 @@ export class PageTranslator {
         }
         this.#tooltipSnapshots.clear();
         this.#records.clear();
-        for (const translationNode of Array.from(this.#doc.querySelectorAll('[data-flt-generated="translation"]'))) {
-            translationNode.remove();
+        const cleanupScopes = [this.#doc, ...Array.from(this.#shadowRoots)];
+        for (const scope of cleanupScopes) {
+            for (const translationNode of Array.from(scope.querySelectorAll('[data-flt-generated="translation"]'))) {
+                translationNode.remove();
+            }
+            if (scope !== this.#doc) {
+                for (const styleNode of Array.from(scope.querySelectorAll('style[data-flt-generated="style"]'))) {
+                    styleNode.remove();
+                }
+            }
+            for (const root of Array.from(scope.querySelectorAll('.flt-source-hidden, .flt-source-content-hidden, .flt-source-list-hidden, [data-flt-source-link-hidden]'))) {
+                this.#clearDisplayMode(root);
+            }
+            for (const wrapper of Array.from(scope.querySelectorAll("[data-flt-source-text-wrapper]"))) {
+                wrapper.replaceWith(...Array.from(wrapper.childNodes));
+            }
         }
-        for (const root of Array.from(this.#doc.querySelectorAll('.flt-source-hidden, .flt-source-content-hidden, .flt-source-list-hidden, [data-flt-source-link-hidden]'))) {
-            this.#clearDisplayMode(root);
-        }
+        this.#shadowRoots.clear();
         for (const [link, styleAttribute] of this.#sourceLinkStyleSnapshots) {
             if (styleAttribute === null) link.removeAttribute("style");
             else link.setAttribute("style", styleAttribute);
             link.removeAttribute("data-flt-source-link-hidden");
         }
         this.#sourceLinkStyleSnapshots.clear();
-        for (const wrapper of Array.from(this.#doc.querySelectorAll("[data-flt-source-text-wrapper]"))) {
-            wrapper.replaceWith(...Array.from(wrapper.childNodes));
-        }
     }
     #applyDisplayMode(root, translationNode) {
         if (!this.#sourceHadClassAttribute.has(root)) {

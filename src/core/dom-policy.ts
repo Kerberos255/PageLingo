@@ -55,9 +55,22 @@ var SKIP_SELECTOR = [
 export function isProtectedApiSignature(element) {
   return Boolean(element?.closest?.("dt.sig,dt.sig-object"));
 }
+function parentAcrossShadow(element) {
+  if (!element) return null;
+  if (element.parentElement) return element.parentElement;
+  const parent = element.parentNode;
+  if (parent && parent.nodeType === Node.DOCUMENT_FRAGMENT_NODE && "host" in parent) {
+    return parent.host;
+  }
+  return null;
+}
 export function isGeneratedNode(node) {
-  const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
-  return Boolean(element?.closest("[data-flt-generated]"));
+  let current = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  while (current) {
+    if (current.hasAttribute?.("data-flt-generated")) return true;
+    current = parentAcrossShadow(current);
+  }
+  return false;
 }
 export function isTranslationControl(element) {
   return element.matches(TRANSLATION_CONTROLS) && !element.parentElement?.closest("p,figcaption");
@@ -66,7 +79,7 @@ export function isTranslationRootElement(element) {
   return ROOT_TAGS.has(element.tagName) || isTranslationControl(element);
 }
 export function isTranslationDisabled(element) {
-  for (let current = element; current; current = current.parentElement) {
+  for (let current = element; current; current = parentAcrossShadow(current)) {
     const value = current.getAttribute("translate")?.toLowerCase();
     if (value === "no") return true;
     if (value === "yes" || value === "") return false;
@@ -226,7 +239,7 @@ export function isElementEffectivelyHidden(element, cache = undefined) {
       isScreenReaderOnlyStyle(style)
     ) { hidden = true; break; }
     if (current === current.ownerDocument.documentElement) break;
-    current = current.parentElement;
+    current = parentAcrossShadow(current);
   }
   for (const visited of checked ?? []) cache.set(visited, hidden);
   return hidden;
@@ -305,8 +318,12 @@ var FALLBACK_STRUCTURAL_SELECTOR = [
   "article", "header", "footer", "nav", "aside", "figure", "svg", "img", "picture", "video", "canvas",
   "button", "input", "select", "textarea", "iframe"
 ].join(",");
+const EXCLUDED_CUSTOM_TAGS = new Set(["RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME", "TOOL-TIP"]);
+function isCustomProseContainer(element) {
+  return Boolean(element?.tagName?.includes("-")) && !EXCLUDED_CUSTOM_TAGS.has(element.tagName);
+}
 function isFallbackLeafContainer(element) {
-  if (!FALLBACK_CONTAINER_TAGS.has(element.tagName)) return false;
+  if (!FALLBACK_CONTAINER_TAGS.has(element.tagName) && !isCustomProseContainer(element)) return false;
   if (element.closest(SKIP_SELECTOR) || element.closest("button")) return false;
   if (element.querySelector(FALLBACK_STRUCTURAL_SELECTOR)) return false;
   return Boolean((element.textContent ?? "").trim());
@@ -348,7 +365,13 @@ function isDirectCodeWidgetContainer(element) {
   if (element.matches("pre,code,kbd,samp,var")) return true;
   if (isTranslationRootElement(element)) return false;
   const directPre = element.querySelector(":scope > pre");
-  return Boolean(directPre && element.children.length <= 8);
+  if (!directPre || element.children.length > 8) return false;
+  // A prose container (such as a rendered Markdown message) holding semantic paragraphs
+  // or headings alongside a <pre> block is prose with code examples, not a code widget.
+  if (element.querySelector(":scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6, :scope > blockquote, :scope > ul, :scope > ol")) {
+    return false;
+  }
+  return true;
 }
 function isInsideCodeWidgetFallback(element) {
     if (isDirectCodeWidgetContainer(element)) return true;
@@ -377,7 +400,7 @@ function findMixedContainerRoot(node, doc) {
   while (current && current !== doc.body && current !== doc.documentElement) {
     if (isProtectedTranslationSubtree(current) || isTranslationRootElement(current)) return null;
     if (isInsideCodeWidgetFallback(current)) return null;
-    if (MIXED_CONTAINER_TAGS.has(current.tagName)) return current;
+    if (MIXED_CONTAINER_TAGS.has(current.tagName) || isCustomProseContainer(current)) return current;
     if (!INLINE_PROSE_TAGS.has(current.tagName)) return null;
     current = current.parentElement;
   }
@@ -396,7 +419,7 @@ function promoteInlineOwner(root, doc, visibilityCache = undefined) {
       owner = current;
       continue;
     }
-    if ((MIXED_CONTAINER_TAGS.has(current.tagName) || FALLBACK_CONTAINER_TAGS.has(current.tagName))
+    if ((MIXED_CONTAINER_TAGS.has(current.tagName) || FALLBACK_CONTAINER_TAGS.has(current.tagName) || isCustomProseContainer(current))
       && hasDirectEligibleText(current, visibilityCache)) {
       owner = current;
     }
@@ -515,39 +538,57 @@ function wrapDirectAnchorTextNodes(scope) {
     wrapTextNodesInside(anchor, doc);
   }
 }
-export function collectTranslationRoots(scope, { preserveInlineContext = false, onHidden = undefined } = {}) {
+export function collectTranslationRoots(scope, { preserveInlineContext = false, onHidden = undefined, onShadowRoot = undefined } = {}) {
   const doc = scope instanceof Document ? scope : scope.ownerDocument;
   if (!doc) return [];
   if (preserveInlineContext) {
     // Fixed text rendering needs no source wrappers, including inside toolbars or anchors.
     const roots = new Set();
     const visibility = new WeakMap();
-    if (scope instanceof Element && isElementEffectivelyHidden(scope, visibility)) {
-      onHidden?.(scope);
-      return [];
-    }
-    const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, node => {
-      if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
-      if (isElementEffectivelyHidden(node, visibility)) { onHidden?.(node); return NodeFilter.FILTER_REJECT; }
-      if (node.matches(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_SKIP;
-    });
-    let node;
-    while ((node = walker.nextNode())) {
-      if (!isEligibleTextNode(node, visibility)) continue;
-      // The fixed renderer keeps controls/icons in place, so an inline fallback
-      // inside a paragraph must not become a second, overlapping translation root.
-      const structural = node.parentElement?.closest(FIXED_ROOT_SELECTOR);
-      let root = null;
-      if (structural) {
-        root = !isInsideCodeWidgetFallback(structural) ? structural : null;
-      } else {
-        root = findTranslationRoot(node)
-          ?? node.parentElement?.closest("a,label")
-          ?? findMixedContainerRoot(node, doc);
-        if (root) root = promoteInlineOwner(root, doc, visibility);
+    if (scope instanceof Element) {
+      if (isElementEffectivelyHidden(scope, visibility)) {
+        onHidden?.(scope);
+        return [];
       }
-      if (root) roots.add(root);
+      if (scope.matches(SKIP_SELECTOR)) return [];
+    }
+    const scopes = [scope];
+    const seenShadows = new Set();
+    if (scope instanceof Element && scope.shadowRoot && !seenShadows.has(scope.shadowRoot)) {
+      seenShadows.add(scope.shadowRoot);
+      onShadowRoot?.(scope.shadowRoot);
+      scopes.push(scope.shadowRoot);
+    }
+    while (scopes.length) {
+      const currentScope = scopes.shift();
+      const walker = doc.createTreeWalker(currentScope, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, node => {
+        if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+        if (isElementEffectivelyHidden(node, visibility)) { onHidden?.(node); return NodeFilter.FILTER_REJECT; }
+        if (node.matches(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+        if (node.shadowRoot && !seenShadows.has(node.shadowRoot)) {
+          seenShadows.add(node.shadowRoot);
+          onShadowRoot?.(node.shadowRoot);
+          scopes.push(node.shadowRoot);
+        }
+        return NodeFilter.FILTER_SKIP;
+      });
+      let node;
+      while ((node = walker.nextNode())) {
+        if (!isEligibleTextNode(node, visibility)) continue;
+        // The fixed renderer keeps controls/icons in place, so an inline fallback
+        // inside a paragraph must not become a second, overlapping translation root.
+        const structural = node.parentElement?.closest(FIXED_ROOT_SELECTOR);
+        let root = null;
+        if (structural) {
+          root = !isInsideCodeWidgetFallback(structural) ? structural : null;
+        } else {
+          root = findTranslationRoot(node)
+            ?? node.parentElement?.closest("a,label")
+            ?? findMixedContainerRoot(node, doc);
+          if (root) root = promoteInlineOwner(root, doc, visibility);
+        }
+        if (root) roots.add(root);
+      }
     }
     // A fallback container may own both direct text and nested inline elements.
     // Keep the selected outer owner so concurrent translations cannot invalidate
@@ -571,18 +612,37 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false, 
     }
     return Array.from(roots);
   }
-  wrapDirectAnchorTextNodes(scope);
-  wrapDecoratedStructuralTextNodes(scope);
   const roots = /* @__PURE__ */ new Set();
-  const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
-  let current = walker.nextNode();
-  while (current) {
-    const text = current;
-    if (isEligibleTextNode(text)) {
-      const root = findTranslationRoot(text);
-      if (root) roots.add(root);
+  const seenShadows = new Set();
+  const scopes = [scope];
+  if (scope instanceof Element && !scope.matches(SKIP_SELECTOR) && !isElementEffectivelyHidden(scope) && scope.shadowRoot) {
+    seenShadows.add(scope.shadowRoot);
+    onShadowRoot?.(scope.shadowRoot);
+    scopes.push(scope.shadowRoot);
+  }
+  while (scopes.length) {
+    const currentScope = scopes.shift();
+    wrapDirectAnchorTextNodes(currentScope);
+    wrapDecoratedStructuralTextNodes(currentScope);
+    const walker = doc.createTreeWalker(currentScope, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, node => {
+      if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+      if (node.matches(SKIP_SELECTOR) || isElementEffectivelyHidden(node)) return NodeFilter.FILTER_REJECT;
+      if (node.shadowRoot && !seenShadows.has(node.shadowRoot)) {
+        seenShadows.add(node.shadowRoot);
+        onShadowRoot?.(node.shadowRoot);
+        scopes.push(node.shadowRoot);
+      }
+      return NodeFilter.FILTER_SKIP;
+    });
+    let current = walker.nextNode();
+    while (current) {
+      const text = current;
+      if (isEligibleTextNode(text)) {
+        const root = findTranslationRoot(text);
+        if (root) roots.add(root);
+      }
+      current = walker.nextNode();
     }
-    current = walker.nextNode();
   }
   for (const root of roots) {
     if (isStandaloneShortcutLabel(ownedTextSummary(root, false))) {
