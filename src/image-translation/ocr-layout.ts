@@ -67,11 +67,10 @@ function joinVerticalBlockText(first: string, second: string): string {
   const right = second.trimStart();
   if (!left) return right;
   if (!right) return left;
-  // Preserve explicit sentence/paragraph/list breaks, while letting wrapped
-  // mid-sentence lines inside a narrow bubble flow naturally as one sentence.
-  const endsSentence = /[.!?。！？:：]$/u.test(left);
+  // Keep explicit list items on separate lines, while letting multi-line titles
+  // and continuous sentences inside the same paragraph flow together for translation.
   const startsListItem = /^(?:[-•·*]\s|\d+[.)]\s)/u.test(right);
-  if (endsSentence || startsListItem) return `${left}\n${right}`;
+  if (startsListItem) return `${left}\n${right}`;
   return joinHorizontalText(left, right);
 }
 
@@ -147,7 +146,40 @@ function sampleRingBackground(context: OcrPixelContext, box: OcrBox): RgbTuple |
   ];
 }
 
-function backgroundsCompatible(
+function sampleLineForeground(
+  context: OcrPixelContext,
+  box: OcrBox,
+  bgRgb: RgbTuple,
+): RgbTuple | null {
+  const { pixels, width, height } = context;
+  const x0 = Math.max(0, Math.floor(box.x));
+  const y0 = Math.max(0, Math.floor(box.y));
+  const x1 = Math.min(width - 1, Math.ceil(box.x + box.width));
+  const y1 = Math.min(height - 1, Math.ceil(box.y + box.height));
+  const stepX = Math.max(1, Math.floor((x1 - x0) / 40));
+  const stepY = Math.max(1, Math.floor((y1 - y0) / 12));
+  const scored: Array<{ rgb: RgbTuple; dist: number }> = [];
+
+  for (let y = y0; y <= y1; y += stepY) {
+    for (let x = x0; x <= x1; x += stepX) {
+      const offset = (y * width + x) * 4;
+      if ((pixels[offset + 3] ?? 0) < 128) continue;
+      const rgb: RgbTuple = [pixels[offset] ?? 0, pixels[offset + 1] ?? 0, pixels[offset + 2] ?? 0];
+      const dist = rgbDistance(rgb, bgRgb);
+      if (dist >= 32) scored.push({ rgb, dist });
+    }
+  }
+  if (scored.length < 4) return null;
+  scored.sort((a, b) => b.dist - a.dist);
+  const top = scored.slice(0, Math.max(4, Math.floor(scored.length * 0.4)));
+  const medianChannel = (idx: 0 | 1 | 2) => {
+    const vals = top.map((item) => item.rgb[idx]).sort((a, b) => a - b);
+    return vals[Math.floor(vals.length / 2)]!;
+  };
+  return [medianChannel(0), medianChannel(1), medianChannel(2)];
+}
+
+function backgroundsAndForegroundsCompatible(
   upper: LayoutOcrRegion,
   lower: LayoutOcrRegion,
   pixelContext?: OcrPixelContext,
@@ -158,12 +190,17 @@ function backgroundsCompatible(
   const upperBg = sampleRingBackground(pixelContext, upperLine);
   const lowerBg = sampleRingBackground(pixelContext, lowerLine);
   if (!upperBg || !lowerBg) return true;
-  if (rgbDistance(upperBg, lowerBg) > 38) return false;
+  if (rgbDistance(upperBg, lowerBg) > 26) return false;
 
-  // Check if a bubble border or canvas background interrupts the vertical gap between lines.
+  const upperFg = sampleLineForeground(pixelContext, upperLine, upperBg);
+  const lowerFg = sampleLineForeground(pixelContext, lowerLine, lowerBg);
+  if (upperFg && lowerFg && rgbDistance(upperFg, lowerFg) > 58) return false;
+
+  // Check if a bubble border, button outline, or canvas divider interrupts the vertical gap between lines.
   const gapTop = Math.ceil(upperLine.y + upperLine.height);
   const gapBottom = Math.floor(lowerLine.y);
-  if (gapBottom - gapTop >= 3) {
+  const gapSpan = gapBottom - gapTop;
+  if (gapSpan >= 3) {
     const startX = Math.max(0, Math.floor(Math.max(upperLine.x, lowerLine.x)));
     const endX = Math.min(
       pixelContext.width - 1,
@@ -175,25 +212,32 @@ function backgroundsCompatible(
         Math.round((upperBg[1] + lowerBg[1]) / 2),
         Math.round((upperBg[2] + lowerBg[2]) / 2),
       ];
-      const midY = Math.round((gapTop + gapBottom) / 2);
-      const step = Math.max(1, Math.floor((endX - startX) / 24));
-      let total = 0;
-      let divergent = 0;
-      for (let x = startX; x <= endX; x += step) {
-        const offset = (midY * pixelContext.width + x) * 4;
-        if ((pixelContext.pixels[offset + 3] ?? 0) < 128) continue;
-        total += 1;
-        const sample: RgbTuple = [
-          pixelContext.pixels[offset] ?? 0,
-          pixelContext.pixels[offset + 1] ?? 0,
-          pixelContext.pixels[offset + 2] ?? 0,
-        ];
-        if (rgbDistance(sample, avgBg) > 34) divergent += 1;
+      const stepX = Math.max(1, Math.floor((endX - startX) / 24));
+      const rowStep = Math.max(1, Math.floor(gapSpan / 5));
+      for (let scanY = gapTop + 1; scanY < gapBottom; scanY += rowStep) {
+        let total = 0;
+        let divergent = 0;
+        for (let x = startX; x <= endX; x += stepX) {
+          const offset = (scanY * pixelContext.width + x) * 4;
+          if ((pixelContext.pixels[offset + 3] ?? 0) < 128) continue;
+          total += 1;
+          const sample: RgbTuple = [
+            pixelContext.pixels[offset] ?? 0,
+            pixelContext.pixels[offset + 1] ?? 0,
+            pixelContext.pixels[offset + 2] ?? 0,
+          ];
+          if (rgbDistance(sample, avgBg) > 26) divergent += 1;
+        }
+        if (total >= 4 && divergent / total > 0.35) return false;
       }
-      if (total >= 4 && divergent / total > 0.35) return false;
     }
   }
   return true;
+}
+
+function medianHeight(boxes: readonly OcrBox[], fallback: number): number {
+  const heights = boxes.map((item) => item.height).filter((h) => Number.isFinite(h) && h > 0).sort((a, b) => a - b);
+  return heights.length ? heights[Math.floor(heights.length / 2)]! : fallback;
 }
 
 function mergeRegionPair(left: LayoutOcrRegion, right: LayoutOcrRegion, verticalBlock = false): LayoutOcrRegion {
@@ -223,16 +267,15 @@ function mergeRegionPair(left: LayoutOcrRegion, right: LayoutOcrRegion, vertical
     lineBoxes = [unionBox(left.box, right.box)];
   }
 
-  const leftLineHeight = left.lineHeight || left.box.height;
-  const rightLineHeight = right.lineHeight || right.box.height;
-  const avgLineHeight = (leftLineHeight + rightLineHeight) / 2;
+  const fallbackLineHeight = ((left.lineHeight || left.box.height) + (right.lineHeight || right.box.height)) / 2;
+  const blockLineHeight = medianHeight(lineBoxes, fallbackLineHeight);
   return {
     text,
     confidence: (left.confidence * leftWeight + right.confidence * rightWeight) / (leftWeight + rightWeight),
     box: unionBox(left.box, right.box),
     lineBoxes,
-    lineHeight: avgLineHeight,
-    _lineHeight: avgLineHeight,
+    lineHeight: blockLineHeight,
+    _lineHeight: blockLineHeight,
   };
 }
 
@@ -278,16 +321,32 @@ function sameTextBlock(
   const lowerLine = lower.lineHeight || lower.box.height;
   const maxLine = Math.max(upperLine, lowerLine);
   const minLine = Math.max(1, Math.min(upperLine, lowerLine));
-  // Large headings and smaller descriptions keep independent paint boxes.
-  if (maxLine / minLine > 1.4) return false;
+  // Require line heights within 20% so headings and descriptions stay distinct blocks.
+  if ((maxLine - minLine) / maxLine >= 0.2) return false;
   const gap = lower.box.y - (upper.box.y + upper.box.height);
-  if (gap < -minLine * 0.35 || gap > Math.max(8, minLine * 0.72)) return false;
+  if (gap < -minLine * 0.35 || gap > Math.max(8, minLine * 1.5)) return false;
+  if (upper.lineBoxes.length >= 2) {
+    const internalGaps: number[] = [];
+    for (let i = 0; i < upper.lineBoxes.length - 1; i += 1) {
+      const a = upper.lineBoxes[i]!;
+      const b = upper.lineBoxes[i + 1]!;
+      internalGaps.push(Math.max(0, b.y - (a.y + a.height)));
+    }
+    internalGaps.sort((a, b) => a - b);
+    const medianInternalGap = internalGaps[Math.floor(internalGaps.length / 2)] ?? 0;
+    if (gap > Math.max(medianInternalGap * 1.85 + 4, minLine * 0.55)) return false;
+  }
   const overlap = horizontalOverlapRatio(upper, lower);
-  const leftAligned = Math.abs(upper.box.x - lower.box.x) <= minLine * 1.35;
-  const rightAligned = Math.abs((upper.box.x + upper.box.width) - (lower.box.x + lower.box.width)) <= minLine * 1.35;
-  const centerAligned = Math.abs((upper.box.x + upper.box.width / 2) - (lower.box.x + lower.box.width / 2)) <= minLine * 1.35;
-  if (!(overlap >= 0.36 || leftAligned || rightAligned || centerAligned)) return false;
-  return backgroundsCompatible(upper, lower, pixelContext);
+  const alignTolerance = gap > minLine * 0.85 ? minLine * 1.05 : minLine * 1.35;
+  const leftAligned = Math.abs(upper.box.x - lower.box.x) <= alignTolerance;
+  const rightAligned = Math.abs((upper.box.x + upper.box.width) - (lower.box.x + lower.box.width)) <= alignTolerance;
+  const centerAligned = Math.abs((upper.box.x + upper.box.width / 2) - (lower.box.x + lower.box.width / 2)) <= alignTolerance;
+  if (gap > minLine * 0.85) {
+    if (!(leftAligned || centerAligned)) return false;
+  } else if (!(overlap >= 0.36 || leftAligned || rightAligned || centerAligned)) {
+    return false;
+  }
+  return backgroundsAndForegroundsCompatible(upper, lower, pixelContext);
 }
 
 function mergeTextBlocks(

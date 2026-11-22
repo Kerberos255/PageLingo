@@ -131,20 +131,29 @@ function dominantClusterRgb(samples: readonly RgbColor[], fallback: RgbColor): {
   return { rgb, spread };
 }
 
-function ensureReadableForeground(fg: RgbColor, bg: RgbColor): RgbColor {
-  if (contrastRatio(fg, bg) >= 4.5) return fg;
+function medianChannelRgb(samples: readonly RgbColor[], fallback: RgbColor): RgbColor {
+  if (samples.length === 0) return fallback;
+  const pick = (channel: 0 | 1 | 2): number => {
+    const sorted = samples.map((item) => item[channel]).sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)]!;
+  };
+  return [pick(0), pick(1), pick(2)];
+}
+
+function ensureReadableForeground(fg: RgbColor, bg: RgbColor, minContrast = 3.0): RgbColor {
+  if (contrastRatio(fg, bg) >= minContrast) return fg;
   const bgLum = relativeLuminance(bg);
   const darken = bgLum > 0.32;
   let current: RgbColor = [...fg];
-  for (let step = 0; step < 8; step += 1) {
+  for (let step = 0; step < 12; step += 1) {
     current = darken
-      ? [Math.round(current[0] * 0.72), Math.round(current[1] * 0.72), Math.round(current[2] * 0.72)]
+      ? [Math.round(current[0] * 0.84), Math.round(current[1] * 0.84), Math.round(current[2] * 0.84)]
       : [
-          Math.round(current[0] + (255 - current[0]) * 0.35),
-          Math.round(current[1] + (255 - current[1]) * 0.35),
-          Math.round(current[2] + (255 - current[2]) * 0.35),
+          Math.round(current[0] + (255 - current[0]) * 0.25),
+          Math.round(current[1] + (255 - current[1]) * 0.25),
+          Math.round(current[2] + (255 - current[2]) * 0.25),
         ];
-    if (contrastRatio(current, bg) >= 4.5) return current;
+    if (contrastRatio(current, bg) >= minContrast) return current;
   }
   return darken ? [24, 26, 30] : [248, 250, 252];
 }
@@ -227,41 +236,137 @@ export function analyzeRegionAppearance(
   const fallbackBg: RgbColor = [245, 245, 245];
   const { rgb: bgRgb, spread: bgSpread } = dominantClusterRgb(ringSamples, fallbackBg);
 
-  // Sample interior pixels of original text lines to extract true stroke color and density.
+  // Sample interior pixels of original text lines to extract farthest foreground cluster
+  // and measure stroke coverage inside tight glyph bounding boxes.
   const interiorScored: Array<{ rgb: RgbColor; dist: number }> = [];
-  let interiorTotal = 0;
-  let strokePixels = 0;
+  const lineGrids: Array<{ cols: number; rows: number; dists: Float32Array }> = [];
+
   for (const line of targetBoxes) {
     const x0 = clamp(Math.floor(line.x), 0, imageWidth - 1);
     const y0 = clamp(Math.floor(line.y), 0, imageHeight - 1);
     const x1 = clamp(Math.ceil(line.x + line.width), 0, imageWidth - 1);
     const y1 = clamp(Math.ceil(line.y + line.height), 0, imageHeight - 1);
-    const stepX = Math.max(1, Math.floor((x1 - x0) / 48));
-    const stepY = Math.max(1, Math.floor((y1 - y0) / 14));
-    for (let y = y0; y <= y1; y += stepY) {
-      for (let x = x0; x <= x1; x += stepX) {
+    const stepX = Math.max(1, Math.floor((x1 - x0) / 140));
+    const stepY = Math.max(1, Math.floor((y1 - y0) / 36));
+    const cols = Math.floor((x1 - x0) / stepX) + 1;
+    const rows = Math.floor((y1 - y0) / stepY) + 1;
+    const dists = new Float32Array(cols * rows);
+
+    let r = 0;
+    for (let y = y0; y <= y1; y += stepY, r += 1) {
+      let c = 0;
+      for (let x = x0; x <= x1; x += stepX, c += 1) {
         const px = samplePixel(x, y);
         if (!px) continue;
-        interiorTotal += 1;
         const dist = rgbDistance(px, bgRgb);
-        if (dist >= 42) {
-          strokePixels += 1;
+        dists[r * cols + c] = dist;
+        if (dist >= 32) {
           interiorScored.push({ rgb: px, dist });
         }
       }
     }
+    lineGrids.push({ cols, rows, dists });
   }
 
   let rawFg: RgbColor = relativeLuminance(bgRgb) > 0.32 ? [24, 26, 30] : [248, 250, 252];
   if (interiorScored.length >= 4) {
     interiorScored.sort((a, b) => b.dist - a.dist);
-    const topCount = Math.max(4, Math.floor(interiorScored.length * 0.45));
-    const topSamplesFg = interiorScored.slice(0, topCount).map((entry) => entry.rgb);
-    rawFg = dominantClusterRgb(topSamplesFg, rawFg).rgb;
+    const topCount = Math.max(4, Math.floor(interiorScored.length * 0.35));
+    const farthestSamples = interiorScored.slice(0, topCount).map((entry) => entry.rgb);
+    rawFg = medianChannelRgb(farthestSamples, rawFg);
   }
-  const fgRgb = ensureReadableForeground(rawFg, bgRgb);
-  const strokeRatio = interiorTotal > 0 ? strokePixels / interiorTotal : 0.16;
-  const fontWeight = strokeRatio >= 0.34 ? 600 : 400;
+  const fgRgb = ensureReadableForeground(rawFg, bgRgb, 3.0);
+
+  // Measure foreground stroke area ratio inside each line's core tight glyph band
+  // (excluding outer OCR padding, sparse ascender/descender tails, and inter-word spaces).
+  const fgDist = Math.max(36, rgbDistance(rawFg, bgRgb));
+  const strokeThreshold = Math.max(32, fgDist * 0.42);
+  let totalTightInk = 0;
+  let totalTightArea = 0;
+
+  for (const grid of lineGrids) {
+    const { cols, rows, dists } = grid;
+    let minRow = rows;
+    let maxRow = -1;
+    const colHasStroke = new Uint8Array(cols);
+    const rowInk = new Float32Array(rows);
+
+    for (let r = 0; r < rows; r += 1) {
+      const rowOffset = r * cols;
+      for (let c = 0; c < cols; c += 1) {
+        const d = dists[rowOffset + c]!;
+        if (d >= strokeThreshold) {
+          if (r < minRow) minRow = r;
+          if (r > maxRow) maxRow = r;
+          colHasStroke[c] = 1;
+        }
+        if (d >= 24) {
+          rowInk[r] = (rowInk[r] ?? 0) + Math.min(1, d / fgDist);
+        }
+      }
+    }
+    if (maxRow < minRow) continue;
+
+    // Isolate the core glyph body band (rows carrying >= 35% of peak row ink) so
+    // stroke density does not fluctuate with whether a line contains descenders (g, p, y).
+    let peakRowInk = 0;
+    for (let r = minRow; r <= maxRow; r += 1) {
+      if ((rowInk[r] ?? 0) > peakRowInk) peakRowInk = rowInk[r]!;
+    }
+    let coreMinRow = rows;
+    let coreMaxRow = -1;
+    for (let r = minRow; r <= maxRow; r += 1) {
+      if ((rowInk[r] ?? 0) >= peakRowInk * 0.35) {
+        if (r < coreMinRow) coreMinRow = r;
+        if (r > coreMaxRow) coreMaxRow = r;
+      }
+    }
+    if (coreMaxRow < coreMinRow) {
+      coreMinRow = minRow;
+      coreMaxRow = maxRow;
+    }
+
+    const coreHeight = coreMaxRow - coreMinRow + 1;
+    const wordGapCols = Math.max(2, Math.round(coreHeight * 0.28));
+
+    // Identify word-level tight horizontal spans by skipping empty gaps wider than wordGapCols.
+    let c = 0;
+    while (c < cols) {
+      while (c < cols && !colHasStroke[c]) c += 1;
+      if (c >= cols) break;
+      const spanStart = c;
+      let spanEnd = c;
+      let emptyRun = 0;
+      c += 1;
+      while (c < cols) {
+        if (colHasStroke[c]) {
+          spanEnd = c;
+          emptyRun = 0;
+        } else {
+          emptyRun += 1;
+          if (emptyRun > wordGapCols) break;
+        }
+        c += 1;
+      }
+
+      const spanWidth = spanEnd - spanStart + 1;
+      let inkSum = 0;
+      for (let r = coreMinRow; r <= coreMaxRow; r += 1) {
+        const rowOffset = r * cols;
+        for (let sc = spanStart; sc <= spanEnd; sc += 1) {
+          const d = dists[rowOffset + sc]!;
+          if (d >= 24) {
+            inkSum += Math.min(1, d / fgDist);
+          }
+        }
+      }
+      totalTightInk += inkSum;
+      totalTightArea += spanWidth * coreHeight;
+    }
+  }
+
+  const tightStrokeRatio = totalTightArea > 0 ? totalTightInk / totalTightArea : 0.32;
+  const fontWeight = tightStrokeRatio >= 0.49 ? 700 : tightStrokeRatio >= 0.43 ? 600 : 400;
 
   return {
     bgRgb,
@@ -472,6 +577,108 @@ export function inferTextAlignment(box: OcrBox, lineBoxes: readonly OcrBox[]): "
   return "left";
 }
 
+function estimateCjkEquivalentLength(text: string): number {
+  let length = 0;
+  for (const char of Array.from(text)) {
+    if (/\s/u.test(char)) length += 0.3;
+    else if (hasCjkText(char)) length += 1;
+    else length += 0.55;
+  }
+  return length;
+}
+
+function boxVerticalOverlapRatio(left: OcrBox, right: OcrBox): number {
+  const top = Math.max(left.y, right.y);
+  const bottom = Math.min(left.y + left.height, right.y + right.height);
+  const overlap = Math.max(0, bottom - top);
+  return overlap / Math.max(1, Math.min(left.height, right.height));
+}
+
+function boxHorizontalGap(left: OcrBox, right: OcrBox): number {
+  if (left.x + left.width <= right.x) return right.x - (left.x + left.width);
+  if (right.x + right.width <= left.x) return left.x - (right.x + right.width);
+  return 0;
+}
+
+export function isStandaloneShortBox(
+  region: OcrRegion,
+  allRegions: readonly OcrRegion[],
+  translatedText: string,
+  regionBgByRef?: ReadonlyMap<OcrRegion, RgbColor>,
+): boolean {
+  const rawLineBoxes = Array.isArray(region.lineBoxes) && region.lineBoxes.length > 0
+    ? region.lineBoxes
+    : [region.box];
+  const lineHeight = Math.max(1, Number(region.lineHeight ?? region._lineHeight) || region.box.height);
+  if (rawLineBoxes.length > 1 || region.box.height > lineHeight * 1.65) return false;
+  if (region.box.width > lineHeight * 7.5) return false;
+
+  const trimmed = String(translatedText ?? "").trim();
+  if (!trimmed || trimmed.includes("\n")) return false;
+  const withoutTrailingEllipsis = trimmed.replace(/(?:\.{3}|…)\s*$/u, "").trim();
+  if (!withoutTrailingEllipsis) return false;
+  if (/[，。！？；：,.!?;]/u.test(withoutTrailingEllipsis)) return false;
+  if (estimateCjkEquivalentLength(withoutTrailingEllipsis) > 5.5) return false;
+
+  const closeInlineGap = Math.max(10, lineHeight * 0.9);
+  let hasRowPeer = false;
+  for (const other of allRegions) {
+    if (other === region) continue;
+    if (boxVerticalOverlapRatio(region.box, other.box) >= 0.4) {
+      hasRowPeer = true;
+      if (boxHorizontalGap(region.box, other.box) < closeInlineGap) return false;
+    }
+  }
+
+  // Keep left-aligned single-line headings directly above a left-aligned subtitle or
+  // body block on the same background left-aligned instead of shifting them right.
+  if (!hasRowPeer) {
+    const myBg = regionBgByRef?.get(region);
+    const maxHeadingGap = Math.max(24, lineHeight * 2.2);
+    const leftTolerance = Math.max(8, lineHeight * 0.55);
+    for (const other of allRegions) {
+      if (other === region) continue;
+      const gapY = other.box.y - (region.box.y + region.box.height);
+      if (gapY < 0 || gapY > maxHeadingGap) continue;
+      if (Math.abs(other.box.x - region.box.x) > leftTolerance) continue;
+      const otherLines = Array.isArray(other.lineBoxes) ? other.lineBoxes.length : 1;
+      if (other.box.width < region.box.width * 0.85 && otherLines < 2) continue;
+      const otherBg = regionBgByRef?.get(other);
+      if (myBg && otherBg && rgbDistance(myBg, otherBg) > 26) continue;
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isOrphanLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  const totalChars = Array.from(trimmed);
+  const coreChars = Array.from(trimmed.replace(/[\s\p{P}\p{S}]/gu, ""));
+  return coreChars.length <= 2 && totalChars.length <= 4;
+}
+
+function countOrphanLines(paragraphs: readonly string[][]): number {
+  let count = 0;
+  for (const lines of paragraphs) {
+    if (lines.length < 2) continue;
+    const joined = lines.join("");
+    if (!hasCjkText(joined)) continue;
+    if (isOrphanLine(lines.at(-1) ?? "")) count += 1;
+  }
+  return count;
+}
+
+export function hasOrphanLastLine(paragraphs: readonly string[][]): boolean {
+  return countOrphanLines(paragraphs) > 0;
+}
+
+function totalLineCount(paragraphs: readonly string[][]): number {
+  return paragraphs.reduce((sum, lines) => sum + lines.length, 0);
+}
+
 export function fitRegionTypography(
   context: CanvasRenderingContext2D,
   text: string,
@@ -479,6 +686,7 @@ export function fitRegionTypography(
   targetFontSize: number,
   minFontSize: number,
   fontWeight: number,
+  extraWidthSlack = 0,
 ): CanvasTextLayout {
   const cjk = hasCjkText(text);
   const lineHeightRatio = cjk ? 1.34 : 1.24;
@@ -486,33 +694,62 @@ export function fitRegionTypography(
   const maxWidth = Math.max(8, textBox.width);
   const maxHeight = Math.max(8, textBox.height);
 
-  const measureAt = (fontSize: number): CanvasTextLayout => {
+  const measureAt = (fontSize: number, widthBudget = maxWidth): CanvasTextLayout => {
     context.font = `${fontWeight} ${fontSize}px ${IMAGE_FONT_STACK}`;
-    const paragraphs = wrapTranslatedParagraphs((value) => context.measureText(value).width, text, maxWidth);
+    const paragraphs = wrapTranslatedParagraphs((value) => context.measureText(value).width, text, widthBudget);
     const lineHeight = fontSize * lineHeightRatio;
     const paragraphGap = paragraphs.length > 1 ? fontSize * paragraphGapRatio : 0;
-    const lineCount = paragraphs.reduce((sum, lines) => sum + lines.length, 0);
+    const lineCount = totalLineCount(paragraphs);
     const totalHeight = lineCount * lineHeight + Math.max(0, paragraphs.length - 1) * paragraphGap;
     return { fontSize, lineHeight, paragraphGap, paragraphs, totalHeight };
   };
 
   const upper = Math.max(minFontSize, targetFontSize);
-  const initial = measureAt(upper);
-  if (initial.totalHeight <= maxHeight + 0.5) return initial;
-
-  let low = minFontSize;
-  let high = upper;
-  let best = measureAt(minFontSize);
-  for (let iter = 0; iter < 9; iter += 1) {
-    const mid = (low + high) / 2;
-    const candidate = measureAt(mid);
-    if (candidate.totalHeight <= maxHeight + 0.5) {
-      best = candidate;
-      low = mid;
-    } else {
-      high = mid;
+  let best = measureAt(upper);
+  if (best.totalHeight > maxHeight + 0.5) {
+    let low = minFontSize;
+    let high = upper;
+    best = measureAt(minFontSize);
+    for (let iter = 0; iter < 9; iter += 1) {
+      const mid = (low + high) / 2;
+      const candidate = measureAt(mid);
+      if (candidate.totalHeight <= maxHeight + 0.5) {
+        best = candidate;
+        low = mid;
+      } else {
+        high = mid;
+      }
     }
   }
+
+  // Orphan control: if a multi-line CJK paragraph ends with 1-2 characters (e.g. "序。"),
+  // try relaxing right padding by 2-3px and/or shrinking font size by 5%-8% to pull it up.
+  const baseOrphans = countOrphanLines(best.paragraphs);
+  if (baseOrphans > 0) {
+    const baseLines = totalLineCount(best.paragraphs);
+    const slack = Math.max(0, extraWidthSlack);
+    const attempts: Array<{ size: number; width: number }> = [];
+    if (slack > 0) attempts.push({ size: best.fontSize, width: maxWidth + slack });
+    for (const scale of [0.95, 0.92]) {
+      const scaledSize = Math.max(minFontSize, best.fontSize * scale);
+      if (scaledSize < best.fontSize - 0.05) {
+        attempts.push({ size: scaledSize, width: maxWidth });
+        if (slack > 0) attempts.push({ size: scaledSize, width: maxWidth + slack });
+      }
+    }
+    for (const attempt of attempts) {
+      const candidate = measureAt(attempt.size, attempt.width);
+      if (
+        candidate.totalHeight <= maxHeight + 0.5
+        && countOrphanLines(candidate.paragraphs) < baseOrphans
+        && totalLineCount(candidate.paragraphs) < baseLines
+      ) {
+        best = candidate;
+        break;
+      }
+    }
+  }
+
   return best;
 }
 
@@ -628,10 +865,11 @@ export function renderTranslatedImageToCanvas(
   const medianLineHeight = medianNumber(lineHeights, 18);
 
   const prepared = regions.map((region) => {
-    const lineHeight = Math.max(1, Number(region.lineHeight ?? region._lineHeight) || medianLineHeight);
     const rawLineBoxes = Array.isArray(region.lineBoxes) && region.lineBoxes.length > 0
       ? region.lineBoxes
       : [region.box];
+    const fallbackLineHeight = Math.max(1, Number(region.lineHeight ?? region._lineHeight) || medianLineHeight);
+    const lineHeight = medianNumber(rawLineBoxes.map((line) => line.height), fallbackLineHeight);
     const appearance = analyzeRegionAppearance(pixelBytes, ocrWidth, ocrHeight, region.box, rawLineBoxes);
     const maxPadX = clamp(Math.round(lineHeight * 0.24), 2, 8);
     const maxPadY = clamp(Math.round(lineHeight * 0.20), 2, 6);
@@ -695,6 +933,10 @@ export function renderTranslatedImageToCanvas(
     };
   });
 
+  const regionBgByRef = new Map<OcrRegion, RgbColor>(
+    prepared.map((entry) => [entry.region, entry.appearance.bgRgb]),
+  );
+
   // Pass 1: Erase every source text line first so adjacent erasures never clip rendered translations.
   for (const entry of prepared) {
     const radius = clamp(entry.lineHeight * 0.16 * scaleY, 1, 6);
@@ -706,17 +948,12 @@ export function renderTranslatedImageToCanvas(
     }
   }
 
-  // Harmonize body-sized regions to a consistent base font size while preserving heading scale.
-  const bodyFontCanvas = Math.max(9, medianLineHeight * 0.78 * scaleY);
-
-  // Pass 2: Draw crisp, properly aligned, non-squished translations.
+  // Pass 2: Draw crisp, properly aligned, non-squished translations while preserving visual hierarchy.
   for (const entry of prepared) {
-    const ownTargetFont = Math.max(9, entry.lineHeight * 0.78 * scaleY);
-    const ratioToMedian = entry.lineHeight / Math.max(1, medianLineHeight);
-    const targetFont = ratioToMedian >= 0.78 && ratioToMedian <= 1.22
-      ? bodyFontCanvas
-      : ownTargetFont;
-    const weight = ratioToMedian >= 1.32 ? Math.max(600, entry.appearance.fontWeight) : entry.appearance.fontWeight;
+    // Derive each block's initial font size directly from its own median OCR line height
+    // so headings, body text, and secondary captions retain their original size hierarchy.
+    const targetFont = Math.max(9, entry.lineHeight * 0.78 * scaleY);
+    const weight = entry.appearance.fontWeight;
 
     const padX = Math.max(2, Math.min(6, targetFont * 0.16));
     const padY = Math.max(1, Math.min(4, targetFont * 0.10));
@@ -728,32 +965,60 @@ export function renderTranslatedImageToCanvas(
     };
 
     const minFont = Math.max(7, Math.min(10, targetFont * 0.55));
-    const layout = fitRegionTypography(context, entry.region.text, textBoxCanvas, targetFont, minFont, weight);
+    const extraWidthSlack = Math.min(3 * scaleX, padX);
+    const layout = fitRegionTypography(
+      context,
+      entry.region.text,
+      textBoxCanvas,
+      targetFont,
+      minFont,
+      weight,
+      extraWidthSlack,
+    );
 
     context.save();
     context.fillStyle = entry.appearance.foregroundCss;
     context.font = `${weight} ${layout.fontSize}px ${IMAGE_FONT_STACK}`;
-    context.textBaseline = "top";
-    context.textAlign = entry.alignment;
 
-    const drawX = entry.alignment === "center"
-      ? textBoxCanvas.x + textBoxCanvas.width / 2
-      : entry.alignment === "right"
-        ? textBoxCanvas.x + textBoxCanvas.width
-        : textBoxCanvas.x;
+    const standaloneCenter = isStandaloneShortBox(entry.region, regions, entry.region.text, regionBgByRef);
+    const isSingleRenderedLine = layout.paragraphs.length === 1 && (layout.paragraphs[0]?.length ?? 0) === 1;
 
-    const extraHeight = Math.max(0, textBoxCanvas.height - layout.totalHeight);
-    let y = entry.isSingleOriginalLine && layout.paragraphs.length === 1 && (layout.paragraphs[0]?.length ?? 0) === 1
-      ? textBoxCanvas.y + extraHeight / 2
-      : textBoxCanvas.y + Math.min(extraHeight * 0.25, layout.fontSize * 0.35);
+    if (standaloneCenter && isSingleRenderedLine) {
+      const line = layout.paragraphs[0]![0]!;
+      const rawCenterX = (entry.region.box.x + entry.region.box.width / 2) * scaleX;
+      const rawCenterY = (entry.region.box.y + entry.region.box.height / 2) * scaleY;
+      const measuredW = context.measureText(line).width;
+      const eraseLeft = entry.textBoxOcr.x * scaleX;
+      const eraseRight = (entry.textBoxOcr.x + entry.textBoxOcr.width) * scaleX;
+      const drawCenterX = eraseRight - eraseLeft >= measuredW
+        ? clamp(rawCenterX, eraseLeft + measuredW / 2, eraseRight - measuredW / 2)
+        : (eraseLeft + eraseRight) / 2;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(line, drawCenterX, rawCenterY);
+    } else {
+      context.textBaseline = "top";
+      context.textAlign = entry.alignment;
 
-    for (let pIndex = 0; pIndex < layout.paragraphs.length; pIndex += 1) {
-      const lines = layout.paragraphs[pIndex]!;
-      for (const line of lines) {
-        context.fillText(line, drawX, y);
-        y += layout.lineHeight;
+      const drawX = entry.alignment === "center"
+        ? textBoxCanvas.x + textBoxCanvas.width / 2
+        : entry.alignment === "right"
+          ? textBoxCanvas.x + textBoxCanvas.width
+          : textBoxCanvas.x;
+
+      const extraHeight = Math.max(0, textBoxCanvas.height - layout.totalHeight);
+      let y = entry.isSingleOriginalLine && isSingleRenderedLine
+        ? textBoxCanvas.y + extraHeight / 2
+        : textBoxCanvas.y + Math.min(extraHeight * 0.25, layout.fontSize * 0.35);
+
+      for (let pIndex = 0; pIndex < layout.paragraphs.length; pIndex += 1) {
+        const lines = layout.paragraphs[pIndex]!;
+        for (const line of lines) {
+          context.fillText(line, drawX, y);
+          y += layout.lineHeight;
+        }
+        if (pIndex < layout.paragraphs.length - 1) y += layout.paragraphGap;
       }
-      if (pIndex < layout.paragraphs.length - 1) y += layout.paragraphGap;
     }
     context.restore();
   }

@@ -16,6 +16,7 @@ import { sourceTextSample } from "./shared/source-text-sample";
 import { MAX_OCR_IMAGE_SIDE } from "./image-translation/ocr-models";
 import { isUiMetadataText } from "./image-translation/ocr-layout";
 import { renderTranslatedImageToCanvas } from "./image-translation/image-renderer";
+import { matchImageUiShortTerm, normalizeImagePunctuation } from "./image-translation/ui-short-terms";
 import { initializeVideoSubtitles } from "./video-translation/video-subtitle-controller";
 var translator = null;
 var imageOverlays = new Map();
@@ -775,6 +776,8 @@ async function translateOcrRegions(regions) {
         // Timestamps, read receipts, counters and tiny status labels are interface
         // metadata, not message content. Keep them pixel-identical.
         if (isUiMetadataText(region.text)) return { ...region };
+        const exactUiLabel = matchImageUiShortTerm(region.text, targetLanguage);
+        if (exactUiLabel) return { ...region, text: exactUiLabel };
         const protectedRegion = protectTerminologyHtml(document, escapeHtml(region.text), terminology);
         let html = await provider.translateHtml({
             html: protectedRegion.html,
@@ -784,7 +787,8 @@ async function translateOcrRegions(regions) {
         });
         html = applyTerminologyCorrectionsHtml(document, html, region.text, terminology);
         const restoredHtml = restoreTerminologyHtml(document, html, protectedRegion.replacements);
-        return { ...region, text: translatedTextFromHtml(restoredHtml) || region.text };
+        const translatedText = translatedTextFromHtml(restoredHtml) || region.text;
+        return { ...region, text: normalizeImagePunctuation(translatedText) };
     }));
 }
 async function translateImage(srcUrl) {
