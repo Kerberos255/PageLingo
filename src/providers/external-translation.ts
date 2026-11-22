@@ -135,6 +135,7 @@ function deepLLanguage(code: string, direction: "source" | "target"): string {
   if (code === "zh-Hans") return direction === "target" ? "ZH-HANS" : "ZH";
   if (code === "zh-Hant") return direction === "target" ? "ZH-HANT" : "ZH";
   if (code === "en" && direction === "target") return "EN-US";
+  if (code === "pt" && direction === "target") return "PT-PT";
   return code.toUpperCase();
 }
 
@@ -1558,6 +1559,33 @@ function modelListEndpoint(base: string): string {
   return `${trimmed}/models`;
 }
 
+const KEYLESS_MODEL_LIST_TYPES = new Set<RuntimeExternalEngineType>([
+  "openrouter",
+  "opencode-go",
+  "ollama",
+  "openai-compatible",
+]);
+
+function isLoopbackUrl(urlValue: string): boolean {
+  try {
+    return isLoopbackHostname(new URL(urlValue).hostname);
+  } catch {
+    return false;
+  }
+}
+
+async function fetchModelListJson(url: string, init: RequestInit): Promise<unknown> {
+  try {
+    return await jsonRequest(url, init);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/\bHTTP\s*(?:401|403)\b/i.test(message)) {
+      throw new Error("当前接口需要有效的 API Key 才能获取模型列表，请先填写正确的 API Key");
+    }
+    throw error;
+  }
+}
+
 export async function listExternalTranslationModels(config: RuntimeExternalEngineConfig): Promise<ExternalModelInfo[]> {
   if (config.type === "anthropic") {
     const base = requireBaseUrl(config, "https://api.anthropic.com/v1");
@@ -1567,7 +1595,7 @@ export async function listExternalTranslationModels(config: RuntimeExternalEngin
       "anthropic-version": ANTHROPIC_API_VERSION,
       "anthropic-dangerous-direct-browser-access": "true",
     };
-    const result = await jsonRequest(modelListEndpoint(base), { method: "GET", headers }) as {
+    const result = await fetchModelListJson(modelListEndpoint(base), { method: "GET", headers }) as {
       data?: Array<{ id?: unknown; display_name?: unknown; name?: unknown }>;
     };
     const models = Array.isArray(result.data)
@@ -1587,16 +1615,54 @@ export async function listExternalTranslationModels(config: RuntimeExternalEngin
     return models.sort((a, b) => a.id.localeCompare(b.id));
   }
 
+  if (config.type === "gemini") {
+    const base = requireBaseUrl(config, "https://generativelanguage.googleapis.com/v1beta");
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "x-goog-api-key": requireApiKey(config),
+    };
+    const result = await fetchModelListJson(modelListEndpoint(base), { method: "GET", headers }) as {
+      models?: Array<{
+        name?: unknown;
+        displayName?: unknown;
+        supportedGenerationMethods?: unknown;
+        inputTokenLimit?: unknown;
+        outputTokenLimit?: unknown;
+      }>;
+    };
+    const models = Array.isArray(result.models)
+      ? result.models
+          .filter((item) => !Array.isArray(item?.supportedGenerationMethods) || item.supportedGenerationMethods.includes("generateContent"))
+          .map((item) => {
+            const rawName = typeof item?.name === "string" ? item.name.trim() : "";
+            const id = rawName.replace(/^models\//u, "");
+            return {
+              id,
+              name: typeof item?.displayName === "string" && item.displayName.trim() ? item.displayName.trim() : undefined,
+              ownedBy: "google",
+              contextWindow: typeof item?.inputTokenLimit === "number" ? item.inputTokenLimit : undefined,
+              maxOutputTokens: typeof item?.outputTokenLimit === "number" ? item.outputTokenLimit : undefined,
+            };
+          })
+          .filter((item) => item.id)
+      : [];
+    if (!models.length) throw new Error("模型列表为空或返回格式不兼容");
+    return models.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
   if (!Object.prototype.hasOwnProperty.call(OPENAI_COMPATIBLE_DEFAULT_BASE_URLS, config.type)) {
     throw new Error("当前翻译引擎不支持自动获取模型");
   }
   const fallback = OPENAI_COMPATIBLE_DEFAULT_BASE_URLS[config.type] ?? "";
   const base = requireBaseUrl(config, fallback);
+  if (!config.apiKey.trim() && !KEYLESS_MODEL_LIST_TYPES.has(config.type) && !isLoopbackUrl(base)) {
+    throw new Error("当前引擎需要 API Key 才能查看模型列表，请先填写 API Key");
+  }
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
   if (config.type === "opencode-go" || isOpenCodeGoUrl(base)) headers["x-opencode-session"] = OPENCODE_GO_SESSION_ID;
   if (config.type === "openrouter") headers["X-OpenRouter-Title"] = "PageLingo";
-  const result = await jsonRequest(modelListEndpoint(base), { method: "GET", headers }) as {
+  const result = await fetchModelListJson(modelListEndpoint(base), { method: "GET", headers }) as {
     data?: Array<{
       id?: unknown;
       name?: unknown;

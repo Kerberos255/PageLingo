@@ -551,6 +551,97 @@ describe("external translation HTML safety", () => {
     });
     expect(html).toBe("你好 <strong>世界</strong>");
   });
+
+  it("discovers Gemini models via x-goog-api-key and filters to generateContent models", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://generativelanguage.googleapis.com/v1beta/models");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["x-goog-api-key"]).toBe("gem-key");
+      return new Response(JSON.stringify({
+        models: [
+          {
+            name: "models/gemini-2.5-flash",
+            displayName: "Gemini 2.5 Flash",
+            supportedGenerationMethods: ["generateContent", "countTokens"],
+            inputTokenLimit: 1048576,
+            outputTokenLimit: 65536,
+          },
+          {
+            name: "models/text-embedding-004",
+            displayName: "Embedding",
+            supportedGenerationMethods: ["embedContent"],
+          },
+        ],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    const models = await listExternalTranslationModels(config({
+      type: "gemini",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      apiKey: "gem-key",
+      model: "",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }));
+    expect(models).toEqual([{
+      id: "gemini-2.5-flash",
+      name: "Gemini 2.5 Flash",
+      ownedBy: "google",
+      contextWindow: 1048576,
+      maxOutputTokens: 65536,
+    }]);
+  });
+
+  it("prompts clearly when cloud model discovery lacks a valid API key while allowing keyless OpenRouter/Ollama", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: { message: "Authentication Fails (governor)" } }), { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listExternalTranslationModels(config({
+      type: "deepseek",
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "",
+      model: "",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }))).rejects.toThrow(/需要 API Key/);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(listExternalTranslationModels(config({
+      type: "deepseek",
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "bad-key",
+      model: "",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }))).rejects.toThrow(/有效的 API Key/);
+  });
+
+  it("maps Portuguese target language to PT-PT for DeepL API v2", async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { source_lang: string; target_lang: string };
+      expect(body.source_lang).toBe("EN");
+      expect(body.target_lang).toBe("PT-PT");
+      return new Response(JSON.stringify({ translations: [{ text: "Olá" }] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await translateWithExternalEngine(config({
+      type: "deepl",
+      baseUrl: "https://api.deepl.com/v2",
+      apiKey: "test-key",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "pt",
+    });
+    expect(html).toBe("Olá");
+  });
 });
 
 describe("slow LLM translation requests",()=>{

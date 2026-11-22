@@ -50,8 +50,9 @@ interface RemoteResponse { data?: RemoteRecord[] }
 
 function normalizeLanguage(code: string | undefined): string {
   const raw = (code ?? "").replaceAll("_", "-");
-  if (raw === "zh") return "zh-Hans";
-  if (raw === "zh-hant") return "zh-Hant";
+  const lower = raw.toLowerCase();
+  if (lower === "zh" || lower === "zh-hans") return "zh-Hans";
+  if (lower === "zh-hant") return "zh-Hant";
   return raw;
 }
 

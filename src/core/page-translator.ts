@@ -477,7 +477,7 @@ export class PageTranslator {
         }
         if (this.#displayMode === "bilingual" && prev.order !== normalized.order) {
             for (const [root, record] of this.#fixedRecords) {
-                if (record.translationNode?.isConnected) {
+                if (record.translationNode?.isConnected && record.translationNode.dataset.fltControl !== "true") {
                     this.#syncRecordOrder(root, record.translationNode);
                 } else if (!applyFixedTextRecord(root, record, "bilingual", this.#targetLanguage, normalized.order)) {
                     this.#clearFixedRecord(root, record); this.#queue(root);

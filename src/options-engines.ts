@@ -56,19 +56,19 @@ const PRESETS: Record<ExternalTranslationEngineType, EnginePreset> = {
   google: { name: "Google Cloud Translation", baseUrl: "https://translation.googleapis.com/language/translate/v2" },
   deepl: { name: "DeepL API", baseUrl: "https://api.deepl.com/v2" },
   libretranslate: { name: "LibreTranslate", baseUrl: "https://libretranslate.com" },
-  openai: { name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini" },
-  anthropic: { name: "Anthropic (Claude)", baseUrl: "https://api.anthropic.com/v1", model: "claude-haiku-4-5" },
-  gemini: { name: "Gemini API", baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-3.8-flash" },
-  deepseek: { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
-  xai: { name: "xAI (Grok)", baseUrl: "https://api.x.ai/v1", model: "grok-3-mini-fast" },
-  openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free" },
-  "opencode-go": { name: "OpenCode Go", baseUrl: OPENCODE_GO_BASE_URL, model: "deepseek-v4.1-flash" },
-  groq: { name: "Groq", baseUrl: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile" },
-  mistral: { name: "Mistral", baseUrl: "https://api.mistral.ai/v1", model: "mistral-small-latest" },
-  dashscope: { name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
-  moonshot: { name: "Moonshot (Kimi)", baseUrl: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
-  zhipu: { name: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash" },
-  siliconflow: { name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen2.5-7B-Instruct" },
+  openai: { name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "" },
+  anthropic: { name: "Anthropic (Claude)", baseUrl: "https://api.anthropic.com/v1", model: "" },
+  gemini: { name: "Gemini API", baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "" },
+  deepseek: { name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "" },
+  xai: { name: "xAI (Grok)", baseUrl: "https://api.x.ai/v1", model: "" },
+  openrouter: { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "" },
+  "opencode-go": { name: "OpenCode Go", baseUrl: OPENCODE_GO_BASE_URL, model: "" },
+  groq: { name: "Groq", baseUrl: "https://api.groq.com/openai/v1", model: "" },
+  mistral: { name: "Mistral", baseUrl: "https://api.mistral.ai/v1", model: "" },
+  dashscope: { name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "" },
+  moonshot: { name: "Moonshot (Kimi)", baseUrl: "https://api.moonshot.cn/v1", model: "" },
+  zhipu: { name: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "" },
+  siliconflow: { name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", model: "" },
   volcengine: { name: "火山方舟", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", model: "" },
   ollama: { name: "Ollama (本地)", baseUrl: "http://127.0.0.1:11434/v1", model: "" },
   "openai-compatible": { name: "OpenAI Compatible", baseUrl: "", model: "" },
@@ -154,7 +154,7 @@ function currentType(): ExternalTranslationEngineType {
 }
 
 function supportsModelDiscovery(type: ExternalTranslationEngineType): boolean {
-  return isLlmEngineType(type) && type !== "gemini";
+  return isLlmEngineType(type);
 }
 
 function updateConditionalFields(): void {
@@ -467,6 +467,9 @@ async function testConfig(): Promise<void> {
   testButton.textContent = "测试中…";
   try {
     const config = collectConfig();
+    if (isLlmEngineType(config.type) && !config.model) {
+      throw new Error("请先点击「获取模型」选择模型，或手动填写模型 ID");
+    }
     const granted = await requestExternalTranslationConsent(Boolean(config.apiKey));
     if (!granted) throw new Error("未授权向外部翻译服务发送测试内容");
     const response = await sendRuntimeMessage<EngineResponse>({ type: "test-translation-engine", config });
@@ -486,6 +489,9 @@ async function addConfig(): Promise<void> {
   addButton.textContent = "添加中…";
   try {
     const config = collectConfig();
+    if (isLlmEngineType(config.type) && !config.model) {
+      throw new Error("请先点击「获取模型」选择模型，或手动填写模型 ID");
+    }
     await requestState({ type: "save-translation-engine", config });
     if (apiKeyInput) apiKeyInput.value = "";
     notify(`${config.name} 已添加`);

@@ -37,20 +37,29 @@ See `PRIVACY.md`.
 
 ## External engines
 
-Supported presets are Microsoft Translator, Google Cloud Translation, DeepL API, Gemini, OpenRouter, OpenAI-compatible endpoints, LibreTranslate, and a constrained custom REST integration.
+Built-in optional keyless engines (disabled by default; require explicit user selection and Firefox's optional `websiteContent` permission):
+
+- Built-in Microsoft Translator (`https://edge.microsoft.com/translate/translatetext`)
+- Built-in Google Translate (`https://translate.googleapis.com/translate_a/t` with fallback to `https://translate.googleapis.com/translate_a/single`)
+
+Supported API presets (user-configured, with live `/models` discovery for LLM providers and no hardcoded stale LLM model defaults): Microsoft Translator, Google Cloud Translation, DeepL API, LibreTranslate, OpenAI, Anthropic (Claude), Gemini API, DeepSeek, xAI, OpenRouter, OpenCode Go, Groq, Mistral, DashScope, Moonshot, Zhipu, SiliconFlow, Volcengine, Ollama, OpenAI-compatible endpoints, and a constrained custom REST integration.
 
 Custom REST accepts declarative JSON header templates, JSON body templates (object or array), and a JSON response path. It does not execute user-provided JavaScript.
 
 Translated HTML is structure-checked and is then parsed through PageLingo's allowlist renderer, which strips unapproved tags/attributes and restores link destinations from the source DOM.
 
+## Video soft-subtitle translation
+
+Disabled by default. When explicitly enabled by the user, the content script discovers soft subtitle tracks on supported players (YouTube, Bilibili, HTML5 `<track>`) and asks the background script to fetch the HTTPS subtitle track payload (`fetch-subtitle-track`) for translation through the selected engine. No remote code is fetched or executed.
+
 ## Permissions
 
-- `storage`: settings, terminology, engine configuration, update state.
+- `storage`: settings, terminology, engine configuration, bilingual/subtitle style preferences, update state.
 - `alarms`: periodic translation-model metadata/update checks.
-- `contextMenus`: page/image translation commands.
+- `contextMenus`: page translation, single-paragraph re-translation, and image translation commands.
 - `scripting`: load the bundled content script in the selected page or image frame if a translation command has no receiver.
 - `unlimitedStorage`: locally cached model data.
-- HTTP/HTTPS host permissions: PageLingo is a webpage translator and its content script must operate on arbitrary user-selected sites; the background also downloads user-selected image/model data and can call user-configured translation endpoints.
+- HTTP/HTTPS host permissions: PageLingo is a webpage translator and its content script must operate on arbitrary user-selected sites; the background also downloads user-selected image/subtitle/model data and calls user-selected external translation endpoints only after optional data consent is granted.
 
 `activeTab` is not requested.
 

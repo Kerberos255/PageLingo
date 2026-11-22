@@ -41,24 +41,26 @@ The patch scan is a release-safety check, not a mathematical guarantee that arbi
 
 ## Final validation
 
-- Controlled release verification marker: 2026-09-23.
-- [x] Controlled release verification run #1 / `35815469856` passed on `5d999a8395f1fe7dfe5ae6ee0b9f4b656a8600c0`: 40/40 tests, production audit 0 vulnerabilities, `web-ext lint` 0 errors / 0 warnings / 0 notices.
-- [ ] Run the manually controlled live Firefox regression from the exact final release commit.
+- Controlled release verification marker: 2026-11-22.
+- [x] `npm run verify` passes with 0 TypeScript errors, all Vitest suites passing, production audit 0 vulnerabilities, and `web-ext lint` 0 errors / 0 warnings / 0 notices.
+- [x] Real Bergamot WASM direct and pivot language-pack check + Mozilla CDN 313/313 URL verification completed.
+- [x] Bilingual DOM/layout structure check (`source-top` / `translation-top` / mode switching / restore) and image-translation visual self-test completed in Chromium.
+- [ ] Run the manually controlled live Firefox regression from the exact final `main` release commit.
 - [ ] Inspect the production XPI contents and manifest.
 - [ ] Confirm production XPI keeps `websiteContent` / `authenticationInfo` optional.
-- [ ] Create the matching source archive from the exact same release tag.
+- [ ] Create the matching source archive from the exact same release tag (`git archive --format=zip --output pagelingo-<version>-source.zip v<version>`).
 - [ ] Record SHA-256 for production XPI and source archive.
 
 ## Public repository
 
 Do not perform these until explicitly approved:
 
-- [ ] Merge/rebase the release candidate into `main`.
-- [ ] Decide final public-history strategy.
+- [ ] Merge/squash the release candidate into `main` (recommended: publish a clean squashed history so earlier private research/MT-training commits are excluded).
+- [ ] Close obsolete pre-release PRs (#13, #15, #19).
 - [ ] Change repository visibility from private to public.
 - [ ] Set repository description/topics/homepage.
 - [ ] Enable appropriate branch protection for `main`.
-- [ ] Create signed/annotated `v0.1.30` tag if desired.
+- [ ] Create signed/annotated release tag (`v0.1.30` or `v1.0.0`).
 - [ ] Create GitHub Release and attach release artifacts.
 
 ## AMO submission

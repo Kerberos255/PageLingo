@@ -1,6 +1,6 @@
 # PageLingo Privacy Policy
 
-Last updated: 2026-09-23
+Last updated: 2026-11-22
 
 PageLingo is local-first. The default Firefox/Bergamot translation engine runs inside Firefox and does not send the text of pages you translate to PageLingo or to a translation service.
 
@@ -24,13 +24,17 @@ Image translation is disabled by default. When enabled and invoked by the user, 
 
 On first use, OCR model-data files are downloaded from the upstream model hosts identified in the source code and verified by size and SHA-256. PageLingo does not send OCR output to a remote service when the Firefox local translation engine is selected.
 
+## Video subtitle translation
+
+Video soft-subtitle translation is disabled by default. When enabled by the user on a video page (such as YouTube, Bilibili, or standard HTML5 `<track>` videos), PageLingo reads the video's soft subtitle track on the active page and translates cues using the user's chosen translation engine. With the default Firefox local engine, subtitle text stays on your device.
+
 ## External translation engines
 
-External translation engines are optional and are never the default.
+External translation engines—including the built-in keyless Microsoft Translator (`edge.microsoft.com`) and Google Translate (`translate.googleapis.com`) options as well as user-configured API providers—are optional and are never the default.
 
-If you explicitly select an external engine, text or HTML needed for translation is sent to the service you configured. Depending on the page, this website content can include text that is personal or sensitive. If an API key is configured, the key is sent only as needed to authenticate requests to that service.
+If you explicitly select an external engine, text or HTML needed for translation is sent directly from Firefox to that service. Depending on the page, this website content can include text that is personal or sensitive. If an API key is configured, the key is sent only as needed to authenticate translation or live model-list requests to that service.
 
-PageLingo asks Firefox for the relevant optional data-transmission permission before an external engine can be used. You can revoke optional data permissions in Firefox and switch back to the local engine at any time.
+PageLingo asks Firefox for the relevant optional data-transmission permission (`websiteContent`, and `authenticationInfo` when an API key is used) before an external engine can be used. You can revoke optional data permissions in Firefox and switch back to the local engine at any time.
 
 The external service's own privacy policy and data-retention practices apply to data sent to that service. PageLingo does not proxy these requests through a PageLingo server.
 

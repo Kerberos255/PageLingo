@@ -153,12 +153,18 @@ export function applyFixedTextRecord(
   if (mode === "translation") {
     // Validate the entire paragraph before the first write; only existing Text.data changes.
     for (const edit of record.edits) edit.node.data = edit.translated;
+  } else if (record.edits.every(edit => edit.translated.trim() === edit.source.trim())) {
+    // Never inject a duplicate bilingual copy (e.g. a brand/logo inside a flex header)
+    // when the translation is identical to the source text.
+    record.mode = mode;
+    return true;
   } else if (isTranslationControl(root)) {
-    if (record.edits.every(edit => edit.translated.trim() === edit.source.trim())) return true;
-    // A second row inside the label keeps the original control clickable.
+    // Keep the original control clickable and anchor the bilingual label directly
+    // beside the text slot so leading/trailing <svg> icons stay in place.
     const node = root.ownerDocument.createElement("span");
     node.className = "flt-translation";
     node.dataset.fltGenerated = "translation";
+    node.dataset.fltControl = "true";
     if (bilingualOrder === "translation-top") node.dataset.fltOrder = "translation-top";
     node.lang = language;
     node.setAttribute("aria-hidden", "true");
@@ -167,8 +173,20 @@ export function applyFixedTextRecord(
     node.textContent = record.edits.map(edit => edit.translated.trim()).filter(Boolean).join(" ");
     const parent = record.edits[0]?.node.parentElement;
     const host = parent && record.edits.every(edit => parent.contains(edit.node)) ? parent : root;
-    if (bilingualOrder === "translation-top") host.prepend(node);
-    else host.append(node);
+    const directChildAnchor = (target: Node | undefined): ChildNode | null => {
+      let cursor: Node | null = target ?? null;
+      while (cursor && cursor.parentNode !== host) cursor = cursor.parentNode;
+      return cursor && cursor.parentNode === host ? (cursor as ChildNode) : null;
+    };
+    if (bilingualOrder === "translation-top") {
+      const firstAnchor = directChildAnchor(record.edits[0]?.node);
+      if (firstAnchor) host.insertBefore(node, firstAnchor);
+      else host.prepend(node);
+    } else {
+      const lastAnchor = directChildAnchor(record.edits.at(-1)?.node);
+      if (lastAnchor) host.insertBefore(node, lastAnchor.nextSibling);
+      else host.append(node);
+    }
     record.translationNode = node;
   } else {
     record.translationNode = mountTranslation(root, bilingualFragment(root, record), language, true, bilingualOrder);

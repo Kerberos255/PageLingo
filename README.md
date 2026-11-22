@@ -6,18 +6,19 @@ PageLingo is a local-first Firefox translation extension built to preserve the s
 
 - **Local by default** — webpage translation runs in Firefox with Bergamot WASM and Mozilla Marian translation models.
 - **Layout-preserving translation** — links, buttons, forms, icons, code, IDs, event listeners, accessibility-only content, and dynamic SPA structure are kept intact.
-- **Translation-only or bilingual mode** — switch between translated text only and source + translation.
-- **Automatic translation rules** — configure sites and languages that should always or never translate.
-- **Offline language packs** — download supported Firefox translation models and use them without a translation API.
+- **Translation-only or customizable bilingual mode** — switch between translated text only and bilingual view with configurable order, themes, scale, color, learning blur mode, and live preview.
+- **Automatic translation rules & single-paragraph refresh** — manage site and language rules cleanly, and right-click any paragraph to bypass cache and force a fresh re-translation.
+- **Offline language packs** — download supported Firefox translation models (103 directional pairs across 54 non-English languages, with automatic local English pivot) and use them without a translation API.
 - **Terminology protection** — built-in proper names are protected before translation; custom terminology collections can preserve names or specify preferred translations.
-- **Optional image translation** — local PP-OCRv5 + ONNX Runtime Web OCR with translated text rendered over the original image.
-- **Optional external engines** — Microsoft Translator, Google Cloud Translation, DeepL API, Gemini, OpenRouter, OpenAI-compatible APIs, LibreTranslate, and a constrained custom REST integration.
+- **Optional image translation** — local PP-OCRv5 + ONNX Runtime Web OCR with visual hierarchy preservation (dynamic font size, stroke-weight estimation, foreground sampling), standalone button centering, orphan control, and UI short-term mapping.
+- **Optional video soft-subtitle translation** — disabled by default; translates soft subtitle tracks (YouTube, Bilibili, HTML5 `<track>`) with customizable bilingual overlay styling and live preview.
+- **Optional external engines** — built-in keyless Microsoft Translator and Google Translate, plus API integrations for Microsoft Translator, Google Cloud Translation, DeepL API, OpenAI, Anthropic (Claude), Gemini, DeepSeek, xAI, OpenRouter, Groq, Mistral, DashScope, Moonshot, Zhipu, SiliconFlow, Volcengine, Ollama, LibreTranslate, OpenAI-compatible endpoints (with live model discovery), and a constrained custom REST integration.
 
 ## Privacy
 
 The default Firefox/Bergamot engine does not send page text to a translation service.
 
-External engines are optional. Before PageLingo can use one, Firefox asks for optional permission to transmit website content (and authentication information when an API key is used). Remote endpoints must use HTTPS; plain HTTP is accepted only for loopback/local-host services.
+External engines (including the built-in keyless Microsoft and Google options) are optional and never enabled by default. Before PageLingo can use one, Firefox asks for optional permission to transmit website content (and authentication information when an API key is used). Remote endpoints must use HTTPS; plain HTTP is accepted only for loopback/local-host services.
 
 PageLingo contains no analytics, advertising, affiliate injection, or PageLingo-operated telemetry backend.
 

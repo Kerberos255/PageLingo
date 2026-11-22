@@ -326,7 +326,7 @@
               <label><span>名称</span><input id="engine-name" type="text" /></label>
               <label class="engine-wide"><span>Base URL / Endpoint（公网必须 HTTPS）</span><input id="engine-base-url" type="text" spellcheck="false" /></label>
               <label><span>API Key</span><input id="engine-api-key" type="password" autocomplete="off" /></label>
-              <div class="engine-field" data-engine-field="model"><span>模型</span><div class="engine-model-row"><input id="engine-model" type="text" spellcheck="false" /><button id="get-engine-models" type="button">获取模型</button></div></div>
+              <div class="engine-field" data-engine-field="model"><span>模型</span><div class="engine-model-row"><input id="engine-model" type="text" spellcheck="false" placeholder="点击「获取模型」选择或手动输入模型 ID" /><button id="get-engine-models" type="button">获取模型</button></div></div>
               <label data-engine-field="region"><span>Azure Region（可选）</span><input id="engine-region" type="text" spellcheck="false" /></label>
               <label class="engine-wide engine-checkbox" data-engine-field="llm"><input id="engine-disable-thinking" type="checkbox" checked /><span>关闭思考模式（推荐，显著降低支持思考/推理模式模型的翻译延迟）</span></label>
               <label class="engine-wide" data-engine-field="prompt"><span>LLM 提示词（可选）</span><textarea id="engine-prompt" rows="4" placeholder="留空使用 PageLingo 的 HTML 安全翻译提示词"></textarea></label>

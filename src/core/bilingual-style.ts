@@ -26,20 +26,26 @@ export function buildBilingualRulesCss(
       }`;
   } else if (style.theme === "border-left") {
     themeCss = `
-      .flt-translation:not([data-flt-display-mode="translation"]) {
+      .flt-translation:not([data-flt-display-mode="translation"]):not([data-flt-control="true"]) {
         border-inline-start: 2.5px solid color-mix(in srgb, currentColor 58%, transparent) !important;
         --pagelingo-bilingual-pad-start: 0.65em;
         padding-inline-start: 0.65em !important;
+      }
+      .flt-translation[data-flt-control="true"]:not([data-flt-display-mode="translation"]) {
+        opacity: 0.84 !important;
       }`;
   } else if (style.theme === "highlight") {
     themeCss = `
-      .flt-translation:not([data-flt-display-mode="translation"]) {
+      .flt-translation:not([data-flt-display-mode="translation"]):not([data-flt-control="true"]) {
         padding-block: 0.2em !important;
         --pagelingo-bilingual-pad-start: 0.5em;
         --pagelingo-bilingual-pad-end: 0.5em;
         padding-inline: 0.5em !important;
         border-radius: 5px !important;
         background: color-mix(in srgb, currentColor 8%, transparent) !important;
+      }
+      .flt-translation[data-flt-control="true"]:not([data-flt-display-mode="translation"]) {
+        opacity: 0.86 !important;
       }`;
   } else if (style.theme === "underline") {
     themeCss = `

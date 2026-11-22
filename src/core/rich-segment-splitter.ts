@@ -69,9 +69,16 @@ function serializeNode(node: Node): string {
   return "";
 }
 
+function setElementHtml(element: Element, innerHtml: string): void {
+  const parsed = parseBody(innerHtml);
+  const owner = element.ownerDocument;
+  const imported = Array.from(parsed.childNodes, (child) => owner.importNode(child, true));
+  element.replaceChildren(...imported);
+}
+
 function wrapElement(element: Element, innerHtml: string): string {
   const clone = element.cloneNode(false) as Element;
-  clone.innerHTML = innerHtml;
+  setElementHtml(clone, innerHtml);
   return clone.outerHTML;
 }
 
@@ -148,7 +155,7 @@ export async function translateRichHtmlByStructureBudgetPreservingWrappers(
     if (ATOMIC_TAGS.has(node.tagName)) return translateLeaf(node.outerHTML);
 
     const clone = node.cloneNode(false) as Element;
-    clone.innerHTML = await translateChildren(Array.from(node.childNodes));
+    setElementHtml(clone, await translateChildren(Array.from(node.childNodes)));
     return clone.outerHTML;
   }
 

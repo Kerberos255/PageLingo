@@ -132,4 +132,47 @@ describe("webpage bilingual style settings and CSS generation", () => {
     expect(document.querySelector('[data-flt-generated="translation"]')).toBeNull();
     expect(prose.textContent).toBe("Read the guide carefully.");
   });
+
+  it("skips duplicate unchanged brand labels and keeps control SVG icons ahead of translated labels", async () => {
+    document.body.innerHTML = `
+      <header>
+        <strong id="brand">PageLingo</strong>
+        <button id="install-btn"><svg id="btn-icon"></svg>Install language pack</button>
+      </header>
+    `;
+    const provider = {
+      prefersWholeSentenceHtml: async () => true,
+      translateHtml: async (req: TranslationRequest) =>
+        req.html.replace("Install language pack", "安装语言包"),
+    };
+
+    const translator = new PageTranslator(document, provider, {
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+      displayMode: "bilingual",
+      bilingualStyle: { order: "translation-top", theme: "border-left" },
+    });
+
+    await translator.translateAll(document.body);
+
+    // Unchanged brand text ("PageLingo" === "PageLingo") must NOT mount a duplicate flex sibling.
+    const header = document.querySelector("header")!;
+    expect(header.querySelectorAll('[data-flt-generated="translation"]')).toHaveLength(1);
+    expect(document.getElementById("brand")!.nextElementSibling?.id).toBe("install-btn");
+
+    // Control with leading SVG keeps <svg> as first child even in translation-top mode.
+    const button = document.getElementById("install-btn")!;
+    const controlTranslation = button.querySelector<HTMLElement>('[data-flt-generated="translation"]')!;
+    expect(controlTranslation).not.toBeNull();
+    expect(controlTranslation.dataset.fltControl).toBe("true");
+    expect(button.firstElementChild?.id).toBe("btn-icon");
+    expect(button.children[1]).toBe(controlTranslation);
+
+    // Live switch back to source-top keeps <svg> first and places translation after source text.
+    translator.setBilingualStyle({ order: "source-top" });
+    const remountedControl = button.querySelector<HTMLElement>('[data-flt-generated="translation"]')!;
+    expect(button.firstElementChild?.id).toBe("btn-icon");
+    expect(button.lastElementChild).toBe(remountedControl);
+    expect(remountedControl.dataset.fltOrder).toBeUndefined();
+  });
 });

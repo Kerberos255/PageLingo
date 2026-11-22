@@ -22,15 +22,16 @@ The default translation engine runs locally in Firefox using Bergamot WebAssembl
 
 Features include:
 
-- local webpage translation with downloadable language packs;
-- translation-only and bilingual display modes;
-- automatic translation rules for selected sites and languages;
+- local webpage translation with downloadable offline language packs (103 directional pairs, plus automatic local English pivot);
+- translation-only and customizable bilingual display modes (order, themes, scale, color, learning blur mode, and live preview);
+- automatic translation rules for selected sites and languages, plus right-click single-paragraph cache-bypass re-translation;
 - layout-preserving translation for dynamic and SPA-style pages;
 - built-in proper-name protection and user terminology collections;
-- optional local image OCR and translation;
-- optional external translation engines for users who explicitly configure them.
+- optional local image OCR and translation with visual hierarchy preservation and button centering;
+- optional video soft-subtitle translation (YouTube, Bilibili, HTML5 tracks) with customizable bilingual overlay styling;
+- optional external translation engines (built-in keyless Microsoft / Google plus user-configured API and LLM providers with live model discovery).
 
-External engines are not required. If a user chooses one, PageLingo requests Firefox's optional data-transmission permission before sending website content to that provider. Remote external endpoints must use HTTPS, except loopback services such as localhost.
+External engines are not required and never enabled by default. If a user chooses one, PageLingo requests Firefox's optional data-transmission permission before sending website content to that provider. Remote external endpoints must use HTTPS, except loopback services such as localhost.
 
 PageLingo contains no analytics, advertising, affiliate injection, or PageLingo-operated telemetry backend.
 
@@ -38,7 +39,7 @@ PageLingo contains no analytics, advertising, affiliate injection, or PageLingo-
 
 PageLingo itself does not require payment and its default local translation path does not require a paid service.
 
-Optional third-party translation providers may require their own account, API key, quota, or payment. Those services are user-configured and are not required for the extension's core local translation functionality.
+Optional third-party API providers may require their own account, API key, quota, or payment. Those services are user-configured and are not required for the extension's core local translation functionality.
 
 ## Privacy policy
 

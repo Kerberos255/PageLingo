@@ -313,7 +313,7 @@ export class BergamotClient {
   async #repairTranslations(
     sources: string[], prepared: string[], translations: string[], route: TranslationRoute, session: RouteSession,
   ): Promise<string[]> {
-    const canRecoverChinese = route.sourceLanguage === "en" && route.targetLanguage === "zh-Hans";
+    const canRecoverChinese = route.sourceLanguage === "en" && (route.targetLanguage === "zh-Hans" || route.targetLanguage === "zh-Hant");
     const opaqueFallbacks: number[] = [];
     const outputs = sources.map((html, index) => {
       const raw = translations[index] ?? html;
