@@ -1,0 +1,71 @@
+{
+  "manifest_version": 3,
+  "name": "PageLingo",
+  "version": "1.0.0",
+  "description": "Local-first, layout-preserving webpage translation for Firefox.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "contextMenus",
+    "scripting",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; object-src 'self'"
+  },
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "options_ui": {
+    "page": "settings.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "48": "icons/pagelingo-48.png",
+    "96": "icons/pagelingo-96.png"
+  },
+  "action": {
+    "default_title": "PageLingo",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/pagelingo-16.png",
+      "32": "icons/pagelingo-32.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "builtin-glossary.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "pagelingo@kerberos255",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ],
+        "optional": [
+          "websiteContent",
+          "authenticationInfo"
+        ]
+      }
+    }
+  },
+  "homepage_url": "https://github.com/Kerberos255/PageLingo"
+}

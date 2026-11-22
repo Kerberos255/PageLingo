@@ -1,0 +1,82 @@
+name: PageLingo DOM marker telemetry
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/core/translation-telemetry.ts"
+      - "src/content.ts"
+      - "tests/dom_marker_telemetry.py"
+      - "tests/translation-telemetry.test.ts"
+      - ".github/workflows/dom-marker-telemetry.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  telemetry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit test telemetry
+        run: npx vitest run tests/translation-telemetry.test.ts
+
+      - name: Build
+        run: npm run build
+
+      - name: Package telemetry XPI
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = Path("dist/manifest.json")
+          data = json.loads(manifest.read_text(encoding="utf-8"))
+          perms = data["browser_specific_settings"]["gecko"]["data_collection_permissions"]
+          perms["required"] = ["websiteContent"]
+          perms["optional"] = ["authenticationInfo"]
+          manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+          npx web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest
+          PACKAGE="$(find artifacts -maxdepth 1 -type f -name '*.zip' | head -n 1)"
+          test -n "$PACKAGE"
+          cp "$PACKAGE" artifacts/pagelingo-telemetry.xpi
+
+      - name: Setup Firefox
+        uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+
+      - name: Setup geckodriver
+        uses: browser-actions/setup-geckodriver@latest
+
+      - name: Install Selenium
+        run: python -m pip install --disable-pip-version-check selenium==4.35.0
+
+      - name: Collect live DOM marker telemetry
+        run: python tests/dom_marker_telemetry.py artifacts/pagelingo-telemetry.xpi artifacts/dom-marker-telemetry.json
+
+      - name: Upload telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pagelingo-dom-marker-telemetry
+          path: artifacts/dom-marker-telemetry.json
+          if-no-files-found: warn
+          retention-days: 14

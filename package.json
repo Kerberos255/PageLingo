@@ -1,0 +1,35 @@
+{
+  "name": "pagelingo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "verify": "npm run typecheck && npm test && npm run audit:prod && npm run build && npm run lint:addon",
+    "lint:addon": "web-ext lint --source-dir dist",
+    "package": "npm run build && web-ext build --source-dir dist --artifacts-dir artifacts --overwrite-dest",
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
+  },
+  "dependencies": {
+    "onnxruntime-web": "1.30.0",
+    "paddleocr": "1.2.0"
+  },
+  "devDependencies": {
+    "@types/firefox-webext-browser": "^143.0.0",
+    "esbuild": "^0.25.0",
+    "fzstd": "^0.1.1",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "web-ext": "^10.6.0"
+  },
+  "description": "Local-first Firefox translation with layout-preserving webpage translation, terminology protection, optional OCR, and optional external engines.",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kerberos255/PageLingo.git"
+  },
+  "homepage": "https://github.com/Kerberos255/PageLingo"
+}

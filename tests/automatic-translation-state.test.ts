@@ -1,0 +1,40 @@
+import { describe, expect, it } from "vitest";
+import {
+  automaticTranslationLifecyclePending,
+  automaticTranslationSettingsSignature,
+} from "../src/shared/automatic-translation-state";
+import { DEFAULT_SETTINGS } from "../src/shared/settings";
+
+describe("automatic translation settings signature", () => {
+  it("changes when route or translation-affecting settings change", () => {
+    const base = { ...DEFAULT_SETTINGS };
+    const signature = automaticTranslationSettingsSignature(base, "en", "en");
+
+    expect(automaticTranslationSettingsSignature({ ...base, targetLanguage: "zh-Hant" }, "en", "en"))
+      .not.toBe(signature);
+    expect(automaticTranslationSettingsSignature({ ...base, autoTranslateEnabled: true }, "en", "en"))
+      .not.toBe(signature);
+    expect(automaticTranslationSettingsSignature({ ...base, neverTranslateSites: ["github.com"] }, "en", "en"))
+      .not.toBe(signature);
+    expect(automaticTranslationSettingsSignature(base, "fr", "en"))
+      .not.toBe(signature);
+    expect(automaticTranslationSettingsSignature(base, "en", "fr"))
+      .not.toBe(signature);
+  });
+
+  it("is stable for equivalent settings and route", () => {
+    const base = {
+      ...DEFAULT_SETTINGS,
+      autoTranslateEnabled: true,
+      neverTranslateSites: ["example.com"],
+    };
+    expect(automaticTranslationSettingsSignature(base, "en", "en"))
+      .toBe(automaticTranslationSettingsSignature({ ...base }, "en", "en"));
+  });
+
+  it("keeps settings invalidation active while a restart is still in flight", () => {
+    expect(automaticTranslationLifecyclePending(false, 12)).toBe(true);
+    expect(automaticTranslationLifecyclePending(true, -1)).toBe(true);
+    expect(automaticTranslationLifecyclePending(false, -1)).toBe(false);
+  });
+});

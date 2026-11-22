@@ -1,0 +1,668 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { externalBatchSize, listExternalTranslationModels, translateExternalBatch, translateWithExternalEngine, validateTranslatedHtml } from "../src/providers/external-translation";
+import type { TranslationEngineConfig } from "../src/shared/translation-engine-settings";
+
+function config(overrides: Partial<TranslationEngineConfig> = {}): TranslationEngineConfig {
+  return {
+    id: "engine-test",
+    name: "Test",
+    type: "custom-rest",
+    enabled: true,
+    baseUrl: "https://example.invalid/translate",
+    apiKey: "test-key",
+    model: "test-model",
+    region: "",
+    prompt: "",
+    headersJson: '{"Authorization":"Bearer {{apiKey}}"}',
+    bodyJson: '{"q":"{{html}}","source":"{{source}}","target":"{{target}}"}',
+    responsePath: "data.translatedText",
+    ...overrides,
+  };
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("external translation HTML safety", () => {
+  it("matches LLM batch answers by id and leaves only malformed fragments for retry", async () => {
+    const first = '<span data-flt-text-id="0">Read the manual.</span>';
+    const second = '<strong><span data-flt-text-id="0">Complete the setup.</span></strong>';
+    const request = (html: string) => ({ html, sourceLanguage: "en", targetLanguage: "zh-Hans" });
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const userContent = JSON.parse(String(init.body)).messages[1].content as string;
+      expect(userContent).toContain(`[[SEG_0]]\n${first}\n[[/SEG_0]]`);
+      expect(userContent).toContain(`[[SEG_1]]\n${second}\n[[/SEG_1]]`);
+      const content = [
+        '[[SEG_1]]\n<em><span data-flt-text-id="0">完成设置。</span></em>\n[[/SEG_1]]',
+        '[[SEG_0]]\n<span data-flt-text-id="0">阅读手册。</span>\n[[/SEG_0]]',
+      ].join("\n");
+      return Response.json({ choices: [{ finish_reason: "stop", message: { content } }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const llm = config({ type: "openai-compatible" });
+    expect(externalBatchSize(llm)).toBeGreaterThan(1);
+    expect(externalBatchSize({ ...llm, prompt: "Custom single-fragment prompt" })).toBe(1);
+    await expect(translateExternalBatch(llm, [request(first), request(second)]))
+      .resolves.toEqual(['<span data-flt-text-id="0">阅读手册。</span>', null]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts translations that preserve the HTML skeleton and opaque placeholders", () => {
+    expect(validateTranslatedHtml("Hello <strong>world</strong><code>__FLT_OPAQUE_0__</code>", "你好 <strong>世界</strong><code>__FLT_OPAQUE_0__</code>"))
+      .toBe("你好 <strong>世界</strong><code>__FLT_OPAQUE_0__</code>");
+  });
+
+  it("rejects changed tag structure", () => {
+    expect(() => validateTranslatedHtml("Hello <strong>world</strong>", "你好 <em>世界</em>"))
+      .toThrow(/HTML 结构/);
+  });
+
+  it("rejects changed opaque placeholders", () => {
+    expect(() => validateTranslatedHtml("<code>__FLT_OPAQUE_0__</code>", "<code>translated</code>"))
+      .toThrow(/代码占位符/);
+  });
+
+  it("sends declarative custom REST templates and reads the configured response path", async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string>;
+      const body = JSON.parse(String(init?.body)) as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer test-key");
+      expect(body).toEqual({ q: "Hello <strong>world</strong>", source: "en", target: "zh-Hans" });
+      return new Response(JSON.stringify({ data: { translatedText: "你好 <strong>世界</strong>" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await translateWithExternalEngine(config(), {
+      html: "Hello <strong>world</strong>",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(html).toBe("你好 <strong>世界</strong>");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("uses OpenRouter's current title header and strips a markdown fence", async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://openrouter.ai/api/v1/chat/completions");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["X-OpenRouter-Title"]).toBe("PageLingo");
+      expect(headers["X-Title"]).toBeUndefined();
+      const body = JSON.parse(String(init?.body)) as { model: string; messages: Array<{ role: string; content: string }>; temperature: number };
+      expect(body.model).toBe("openrouter/free");
+      expect(body.temperature).toBe(0);
+      expect(body.messages[0]?.content).toContain("KEEP EXACTLY, character-for-character: Slack");
+      expect(body.messages[0]?.content).toContain("PREFERRED TRANSLATION: Gateway => 网关");
+      return new Response(JSON.stringify({ choices: [{ message: { content: "```html\n你好 <strong>世界</strong>\n```" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await translateWithExternalEngine(config({
+      type: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openrouter/free",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }), {
+      html: "Hello <strong>world</strong>",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+      terminology: [
+        { source: "Slack", target: "Slack", mode: "protect" },
+        { source: "Gateway", target: "网关", mode: "replace" },
+      ],
+    });
+    expect(html).toBe("你好 <strong>世界</strong>");
+  });
+
+
+  it("adds a stable x-opencode-session header for OpenCode Go", async () => {
+    const sessions: string[] = [];
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer test-key");
+      const session = headers["x-opencode-session"];
+      expect(session).toBe("pagelingo");
+      if (!session) throw new Error("missing x-opencode-session");
+      sessions.push(session);
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "你好" } }],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const engine = config({
+      type: "opencode-go",
+      baseUrl: "https://opencode.ai/zen/go/v1",
+      model: "deepseek-v4.1-flash",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    });
+
+    await translateWithExternalEngine(engine, {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    await translateWithExternalEngine(engine, {
+      html: "World",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0]).toBe(sessions[1]);
+  });
+
+
+  it("discovers OpenCode Go models with the required session header", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://opencode.ai/zen/go/v1/models");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer test-key");
+      expect(headers["x-opencode-session"]).toBe("pagelingo");
+      return new Response(JSON.stringify({
+        object: "list",
+        data: [
+          { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", owned_by: "opencode" },
+          { id: "hy4-preview", owned_by: "opencode" },
+        ],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    const models = await listExternalTranslationModels(config({
+      type: "opencode-go",
+      baseUrl: "https://opencode.ai/zen/go/v1",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }));
+    expect(models.map((model) => model.id)).toEqual(["deepseek-v4.1-flash", "hy4-preview"]);
+    expect(models[0]?.name).toBe("DeepSeek V4.1 Flash");
+  });
+
+  it.each([
+    {type:"openai-compatible" as const,baseUrl:"https://opencode.ai/inference/go/openai/v1"},
+    {type:"openai-compatible" as const,baseUrl:"https://opencode.ai/zen/go/v1"},
+    {type:"opencode-go" as const,baseUrl:"https://gateway.example.invalid/opencode"},
+    {type:"opencode-go" as const,baseUrl:""},
+  ])("includes the required Go session for translation and discovery: $type $baseUrl",async overrides=>{
+    const calls:Array<{url:string;session:string}>=[];
+    vi.stubGlobal('fetch',vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
+      const session=(init?.headers as Record<string,string>)['x-opencode-session'];expect(session).toBe('pagelingo');
+      calls.push({url:String(url),session:session!});
+      return new Response(JSON.stringify(String(url).endsWith('/models')?{data:[{id:'longcat-2.5-free'}]}:{choices:[{message:{content:'你好'}}]}));
+    }));
+    const engine=config({...overrides,model:'longcat-2.5-free'});
+    await expect(translateWithExternalEngine(engine,{html:'Hello',sourceLanguage:'en',targetLanguage:'zh-Hans'})).resolves.toBe('你好');
+    expect(await listExternalTranslationModels(engine)).toHaveLength(1);
+    expect(calls).toHaveLength(2);
+    if(!overrides.baseUrl)expect(calls[0]!.url).toBe('https://opencode.ai/inference/go/openai/v1/chat/completions');
+  });
+
+  it("keeps ordinary Zen requests distinct from the Go session protocol",async()=>{
+    vi.stubGlobal('fetch',vi.fn(async(_url:RequestInfo|URL,init?:RequestInit)=>{
+      expect((init?.headers as Record<string,string>)['x-opencode-session']).toBeUndefined();
+      return new Response(JSON.stringify({choices:[{message:{content:'你好'}}]}));
+    }));
+    await translateWithExternalEngine(config({type:'openai-compatible',baseUrl:'https://opencode.ai/inference/openai/v1',model:'fixture-model'}),{html:'Hello',sourceLanguage:'en',targetLanguage:'zh-Hans'});
+  });
+
+  it("discovers DeepSeek models and keeps picker metadata", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://api.deepseek.com/models");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer test-key");
+      return new Response(JSON.stringify({
+        object: "list",
+        data: [{
+          id: "deepseek-flash",
+          name: "DeepSeek-V4.1-Flash",
+          owned_by: "deepseek",
+          context_window: 1048576,
+          max_output_tokens: 393216,
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    const models = await listExternalTranslationModels(config({
+      type: "deepseek",
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-flash",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }));
+    expect(models).toEqual([{
+      id: "deepseek-flash",
+      name: "DeepSeek-V4.1-Flash",
+      ownedBy: "deepseek",
+      contextWindow: 1048576,
+      maxOutputTokens: 393216,
+    }]);
+  });
+
+  it("surfaces the provider error message for HTTP failures", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      type: "error",
+      error: {
+        type: "MissingSessionID",
+        message: "Request is missing x-opencode-session and cannot be routed efficiently.",
+      },
+    }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    })));
+
+    await expect(translateWithExternalEngine(config({
+      type: "openai-compatible",
+      baseUrl: "https://example.invalid/v1",
+      model: "test-model",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    })).rejects.toThrow(/HTTP 400.*missing x-opencode-session/i);
+  });
+
+  it("sends Microsoft Translator HTML requests with key and optional region", async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const endpoint = new URL(String(url));
+      expect(endpoint.origin + endpoint.pathname).toBe("https://api.cognitive.microsofttranslator.com/translate");
+      expect(endpoint.searchParams.get("api-version")).toBe("3.0");
+      expect(endpoint.searchParams.get("from")).toBe("en");
+      expect(endpoint.searchParams.get("to")).toBe("zh-Hans");
+      expect(endpoint.searchParams.get("textType")).toBe("html");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["Ocp-Apim-Subscription-Key"]).toBe("test-key");
+      expect(headers["Ocp-Apim-Subscription-Region"]).toBe("westus");
+      expect(JSON.parse(String(init?.body))).toEqual([{ Text: "Hello <strong>world</strong>" }]);
+      return new Response(JSON.stringify([{ translations: [{ text: "你好 <strong>世界</strong>" }] }]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await translateWithExternalEngine(config({
+      type: "microsoft",
+      baseUrl: "https://api.cognitive.microsofttranslator.com",
+      region: "westus",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }), {
+      html: "Hello <strong>world</strong>",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(html).toBe("你好 <strong>世界</strong>");
+  });
+
+  it("uses DeepL Free host selection and HTML translation semantics", async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://api-free.deepl.com/v2/translate");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("DeepL-Auth-Key test-key:fx");
+      const body = JSON.parse(String(init?.body)) as {
+        text: string[];
+        source_lang: string;
+        target_lang: string;
+        tag_handling: string;
+      };
+      expect(body).toEqual({
+        text: ["Hello <strong>world</strong>"],
+        source_lang: "EN",
+        target_lang: "ZH-HANS",
+        tag_handling: "html",
+      });
+      return new Response(JSON.stringify({ translations: [{ detected_source_language: "EN", text: "你好 <strong>世界</strong>" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await translateWithExternalEngine(config({
+      type: "deepl",
+      baseUrl: "https://api.deepl.com/v2",
+      apiKey: "test-key:fx",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }), {
+      html: "Hello <strong>world</strong>",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(html).toBe("你好 <strong>世界</strong>");
+  });
+
+  it("sends Google Cloud Translation API keys in x-goog-api-key instead of the URL", async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://translation.googleapis.com/language/translate/v2");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["x-goog-api-key"]).toBe("test-key");
+      const body = JSON.parse(String(init?.body)) as { q: string; source: string; target: string; format: string };
+      expect(body).toEqual({
+        q: "Hello <strong>world</strong>",
+        source: "en",
+        target: "zh-CN",
+        format: "html",
+      });
+      return new Response(JSON.stringify({ data: { translations: [{ translatedText: "你好 <strong>世界</strong>" }] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await translateWithExternalEngine(config({
+      type: "google",
+      baseUrl: "https://translation.googleapis.com/language/translate/v2",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }), {
+      html: "Hello <strong>world</strong>",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(html).toBe("你好 <strong>世界</strong>");
+  });
+
+  it("models DeepL through custom REST templates", async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://api.deepl.com/v2/translate");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("DeepL-Auth-Key test-key");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        text: ["Hello <strong>world</strong>"],
+        source_lang: "EN",
+        target_lang: "ZH-HANS",
+        tag_handling: "html",
+      });
+      return new Response(JSON.stringify({ translations: [{ text: "你好 <strong>世界</strong>" }] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const html = await translateWithExternalEngine(config({
+      type: "custom-rest",
+      baseUrl: "https://api.deepl.com/v2/translate",
+      headersJson: '{"Authorization":"DeepL-Auth-Key {{apiKey}}"}',
+      bodyJson: '{"text":["{{html}}"],"source_lang":"EN","target_lang":"ZH-HANS","tag_handling":"html"}',
+      responsePath: "translations.0.text",
+    }), {
+      html: "Hello <strong>world</strong>",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(html).toBe("你好 <strong>世界</strong>");
+  });
+
+  it("models Microsoft Translator through custom REST with a top-level JSON array body", async () => {
+    const endpoint = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=en&to=zh-Hans&textType=html";
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe(endpoint);
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["Ocp-Apim-Subscription-Key"]).toBe("test-key");
+      expect(JSON.parse(String(init?.body))).toEqual([{ Text: "Hello <strong>world</strong>" }]);
+      return new Response(JSON.stringify([{ translations: [{ text: "你好 <strong>世界</strong>" }] }]), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const html = await translateWithExternalEngine(config({
+      type: "custom-rest",
+      baseUrl: endpoint,
+      headersJson: '{"Ocp-Apim-Subscription-Key":"{{apiKey}}"}',
+      bodyJson: '[{"Text":"{{html}}"}]',
+      responsePath: "0.translations.0.text",
+    }), {
+      html: "Hello <strong>world</strong>",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(html).toBe("你好 <strong>世界</strong>");
+  });
+
+  it("models Google Cloud Translation through custom REST templates", async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://translation.googleapis.com/language/translate/v2");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["x-goog-api-key"]).toBe("test-key");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        q: "Hello <strong>world</strong>",
+        source: "en",
+        target: "zh-CN",
+        format: "html",
+      });
+      return new Response(JSON.stringify({ data: { translations: [{ translatedText: "你好 <strong>世界</strong>" }] } }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const html = await translateWithExternalEngine(config({
+      type: "custom-rest",
+      baseUrl: "https://translation.googleapis.com/language/translate/v2",
+      headersJson: '{"x-goog-api-key":"{{apiKey}}"}',
+      bodyJson: '{"q":"{{html}}","source":"en","target":"zh-CN","format":"html"}',
+      responsePath: "data.translations.0.translatedText",
+    }), {
+      html: "Hello <strong>world</strong>",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(html).toBe("你好 <strong>世界</strong>");
+  });
+
+  it("exposes terminology to custom REST templates without forcing an API shape", async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { glossary: string; q: string };
+      expect(body.glossary).toContain("Slack = Slack");
+      expect(body.glossary).toContain("Gateway = 网关");
+      return new Response(JSON.stringify({ data: { translatedText: "Slack 使用网关" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await translateWithExternalEngine(config({
+      bodyJson: '{"q":"{{html}}","glossary":"{{terminology}}"}',
+    }), {
+      html: "Slack uses Gateway",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+      terminology: [
+        { source: "Slack", target: "Slack", mode: "protect" },
+        { source: "Gateway", target: "网关", mode: "replace" },
+      ],
+    });
+    expect(html).toBe("Slack 使用网关");
+  });
+
+  it("rejects plaintext remote endpoints but allows loopback HTTP", async () => {
+    await expect(translateWithExternalEngine(config({
+      type: "libretranslate",
+      baseUrl: "http://example.com",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    })).rejects.toThrow(/HTTPS/);
+
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ translatedText: "你好" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const html = await translateWithExternalEngine(config({
+      type: "libretranslate",
+      baseUrl: "http://127.0.0.1:5000",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(html).toBe("你好");
+
+    const ipv6Html = await translateWithExternalEngine(config({
+      type: "libretranslate",
+      baseUrl: "http://[::1]:5000",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(ipv6Html).toBe("你好");
+  });
+
+  it("maps Traditional Chinese to LibreTranslate's zt language code", async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { source: string; target: string };
+      expect(body.source).toBe("en");
+      expect(body.target).toBe("zt");
+      return new Response(JSON.stringify({ translatedText: "你好 <strong>世界</strong>" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await translateWithExternalEngine(config({
+      type: "libretranslate",
+      baseUrl: "https://libretranslate.com",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }), {
+      html: "Hello <strong>world</strong>",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hant",
+    });
+    expect(html).toBe("你好 <strong>世界</strong>");
+  });
+
+  it("discovers Gemini models via x-goog-api-key and filters to generateContent models", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe("https://generativelanguage.googleapis.com/v1beta/models");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["x-goog-api-key"]).toBe("gem-key");
+      return new Response(JSON.stringify({
+        models: [
+          {
+            name: "models/gemini-2.5-flash",
+            displayName: "Gemini 2.5 Flash",
+            supportedGenerationMethods: ["generateContent", "countTokens"],
+            inputTokenLimit: 1048576,
+            outputTokenLimit: 65536,
+          },
+          {
+            name: "models/text-embedding-004",
+            displayName: "Embedding",
+            supportedGenerationMethods: ["embedContent"],
+          },
+        ],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    const models = await listExternalTranslationModels(config({
+      type: "gemini",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      apiKey: "gem-key",
+      model: "",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }));
+    expect(models).toEqual([{
+      id: "gemini-2.5-flash",
+      name: "Gemini 2.5 Flash",
+      ownedBy: "google",
+      contextWindow: 1048576,
+      maxOutputTokens: 65536,
+    }]);
+  });
+
+  it("prompts clearly when cloud model discovery lacks a valid API key while allowing keyless OpenRouter/Ollama", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: { message: "Authentication Fails (governor)" } }), { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listExternalTranslationModels(config({
+      type: "deepseek",
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "",
+      model: "",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }))).rejects.toThrow(/需要 API Key/);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(listExternalTranslationModels(config({
+      type: "deepseek",
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "bad-key",
+      model: "",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }))).rejects.toThrow(/有效的 API Key/);
+  });
+
+  it("maps Portuguese target language to PT-PT for DeepL API v2", async () => {
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { source_lang: string; target_lang: string };
+      expect(body.source_lang).toBe("EN");
+      expect(body.target_lang).toBe("PT-PT");
+      return new Response(JSON.stringify({ translations: [{ text: "Olá" }] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await translateWithExternalEngine(config({
+      type: "deepl",
+      baseUrl: "https://api.deepl.com/v2",
+      apiKey: "test-key",
+      headersJson: "",
+      bodyJson: "",
+      responsePath: "",
+    }), {
+      html: "Hello",
+      sourceLanguage: "en",
+      targetLanguage: "pt",
+    });
+    expect(html).toBe("Olá");
+  });
+});
+
+describe("slow LLM translation requests",()=>{
+  afterEach(()=>{vi.clearAllTimers();vi.useRealTimers();});
+  const delayed=(milliseconds:number,payload:unknown)=>vi.fn((_url:RequestInfo|URL,init?:RequestInit)=>new Promise<Response>((resolve,reject)=>{
+    const timer=setTimeout(()=>resolve(new Response(JSON.stringify(payload))),milliseconds);
+    init?.signal?.addEventListener('abort',()=>{clearTimeout(timer);reject(new DOMException('Aborted','AbortError'));},{once:true});
+  }));
+  it("allows a real-world 31-second Go response to complete past the previous limit",async()=>{
+    vi.useFakeTimers();vi.stubGlobal('fetch',delayed(31_000,{choices:[{message:{content:'你好'}}]}));
+    const result=translateWithExternalEngine(config({type:'opencode-go',baseUrl:'',model:'longcat-2.5-free'}),{html:'Hello',sourceLanguage:'en',targetLanguage:'zh-Hans'});
+    const assertion=expect(result).resolves.toBe('你好');await vi.advanceTimersByTimeAsync(31_000);await assertion;
+  });
+  it("keeps the slower LLM request bounded at two minutes",async()=>{
+    vi.useFakeTimers();vi.stubGlobal('fetch',delayed(121_000,{choices:[{message:{content:'你好'}}]}));
+    const result=translateWithExternalEngine(config({type:'openai-compatible',baseUrl:'https://example.invalid/v1'}),{html:'Hello',sourceLanguage:'en',targetLanguage:'zh-Hans'});
+    const assertion=expect(result).rejects.toThrow(/超时/);await vi.advanceTimersByTimeAsync(120_000);await assertion;
+  });
+  it("retains the 30-second deadline for ordinary translation APIs",async()=>{
+    vi.useFakeTimers();vi.stubGlobal('fetch',delayed(31_000,[{translations:[{text:'你好'}]}]));
+    const result=translateWithExternalEngine(config({type:'microsoft',baseUrl:''}),{html:'Hello',sourceLanguage:'en',targetLanguage:'zh-Hans'});
+    const assertion=expect(result).rejects.toThrow(/超时/);await vi.advanceTimersByTimeAsync(30_000);await assertion;
+  });
+});

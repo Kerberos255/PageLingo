@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="preferences-theme.css" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>PageLingo</title>
+  </head>
+  <body>
+    <main>
+      <header class="title-row">
+        <div class="popup-brand">
+          <img src="icons/pagelingo.png" alt="" width="32" height="32" />
+          <h1>PageLingo</h1>
+        </div>
+        <button id="settings" class="settings-button" type="button" aria-label="打开设置">设置</button>
+      </header>
+
+      <section class="language-pair" aria-label="翻译语言">
+        <label class="language-box">
+          <span>原文</span>
+          <select id="source-language">
+            <option value="auto">自动检测</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <div class="arrow" aria-hidden="true">→</div>
+        <label class="language-box">
+          <span>译文</span>
+          <select id="target-language">
+            <option value="zh-Hans">简体中文</option>
+          </select>
+        </label>
+      </section>
+
+      <label class="engine-row" for="active-engine">
+        <span>翻译引擎</span>
+        <select id="active-engine" aria-label="选择翻译引擎">
+          <option value="firefox-local">Firefox 本地翻译</option>
+          <option value="builtin-microsoft-free">微软翻译</option>
+          <option value="builtin-google-free">Google 翻译</option>
+        </select>
+      </label>
+
+      <div class="display-switch" aria-label="显示模式">
+        <button type="button" data-display-mode="translation">仅译文</button>
+        <button type="button" data-display-mode="bilingual">双语对照</button>
+      </div>
+
+      <div class="page-actions">
+        <button id="translate" class="primary" type="button">翻译本页</button>
+        <button id="restore" class="secondary" type="button">显示原文</button>
+      </div>
+
+      <label class="site-auto-row">
+        <span>
+          <strong>在此网站自动翻译</strong>
+          <small id="site-auto-hint"></small>
+        </span>
+        <span class="switch">
+          <input id="site-auto" type="checkbox" disabled />
+          <i aria-hidden="true"></i>
+        </span>
+      </label>
+
+      <p id="status" role="status"></p>
+
+      <section class="text-translate-card" aria-label="文本翻译">
+        <div class="text-translate-bar">
+          <select id="text-source-language" aria-label="文本原文语言">
+            <option value="auto">自动检测</option>
+            <option value="en">English</option>
+          </select>
+          <button id="text-swap-language" class="text-swap-button" type="button" title="交换语言" aria-label="交换原文和译文语言">⇄</button>
+          <select id="text-target-language" aria-label="文本译文语言">
+            <option value="zh-Hans">简体中文</option>
+          </select>
+        </div>
+        <div class="text-translate-body">
+          <textarea id="text-translate-input" rows="2" placeholder="请输入或粘贴文本…"></textarea>
+          <div class="text-translate-footer">
+            <span id="text-translate-meta" class="text-translate-meta"></span>
+            <div class="text-translate-actions">
+              <button id="text-translate-clear" class="text-ghost-button" type="button" hidden>清空</button>
+              <button id="text-translate-submit" class="text-submit-button" type="button">翻译 ↵</button>
+            </div>
+          </div>
+        </div>
+        <div id="text-translate-result-wrap" class="text-translate-result-wrap" hidden>
+          <div id="text-translate-result" class="text-translate-result" role="region" aria-live="polite"></div>
+          <div class="text-result-footer">
+            <span id="text-translate-result-lang" class="text-translate-meta"></span>
+            <button id="text-translate-copy" class="text-ghost-button" type="button">复制</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="builtin-glossary.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
