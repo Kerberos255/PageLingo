@@ -1,4 +1,4 @@
-# AMO Reviewer Notes — PageLingo 1.0.0
+# AMO Reviewer Notes — PageLingo 1.1.0
 
 ## Purpose
 

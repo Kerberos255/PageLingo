@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 — 2026-11-22
+
+### Added
+
+- **Built-in local PDF & document reader (`reader.html`)**: open local or online PDF, Markdown, HTML, EPUB, DOCX, and TXT files inside Firefox using bundled `pdfjs-dist` and native `DecompressionStream` ZIP extraction (zero remote code). Includes HiDPI PDF canvas synchronized with structured 2-column reading-order reconstruction, hyphenation repair, margin page-number filtering, and formula preservation (PDF display/inline math, Markdown LaTeX `$...$`/`$$...$$`, HTML MathML/KaTeX, and DOCX Office Math `m:oMath`/`m:oMathPara`).
+- **Selection translation**: right-click selected text (`PageLingo · 翻译所选内容`, shown only on text selection) or enable the optional floating quick-translate button in Settings to open an isolated Shadow DOM popover with CN↔EN auto-pivot, copy, cache-bypass retranslate, and inline bilingual insertion.
+- **Multilingual local image OCR**: reuse one shared 4.8 MB PP-OCRv5 Mobile text detector across 5 on-demand SHA-256-verified recognition packs (CJK/EN/JA default, Latin European/SEA, Korean + English, Cyrillic, and Thai + English) with Unicode word-boundary wrapping and safe horizontal button expansion.
+- **Redesigned dual-tab popup**: dedicated `网页翻译 | 文本翻译` tabs, header shortcut to the PDF/document reader, automatic PDF-tab quick-open banner, spacious auto-growing text input with independent `自动检测 ⇄ 简体中文` language bar, and always-visible copy/retranslate actions.
+
+### Fixed
+
+- **Mixed-language webpages and webmail iframes**: extract non-target foreign text samples on mixed-language pages (such as Chinese webmail displaying English emails), prevent `<html lang>` from overriding English blocks, skip short target-language UI labels (`删除`, `回复`, `收件箱`), broadcast popup translation/restore across visible frames, and enable `match_about_blank` for `about:blank`/`srcdoc` email body iframes.
+
 ## 1.0.0 — 2026-11-22
 
 First stable public release.
