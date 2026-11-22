@@ -131,7 +131,13 @@ function bilingualFragment(root: HTMLElement, record: FixedTextRecord): Document
   return fragment;
 }
 
-export function applyFixedTextRecord(root: HTMLElement, record: FixedTextRecord, mode: "translation" | "bilingual", language: string): boolean {
+export function applyFixedTextRecord(
+  root: HTMLElement,
+  record: FixedTextRecord,
+  mode: "translation" | "bilingual",
+  language: string,
+  bilingualOrder: "source-top" | "translation-top" = "source-top",
+): boolean {
   const unchanged = fixedTextRecordUnchanged(record);
   clearFixedTextRecord(record);
   if (record.edits.some(edit => isTranslationDisabled(edit.node.parentElement))) return false;
@@ -153,16 +159,19 @@ export function applyFixedTextRecord(root: HTMLElement, record: FixedTextRecord,
     const node = root.ownerDocument.createElement("span");
     node.className = "flt-translation";
     node.dataset.fltGenerated = "translation";
+    if (bilingualOrder === "translation-top") node.dataset.fltOrder = "translation-top";
     node.lang = language;
     node.setAttribute("aria-hidden", "true");
     node.style.setProperty("display", "block", "important");
     node.style.setProperty("margin", "0", "important");
     node.textContent = record.edits.map(edit => edit.translated.trim()).filter(Boolean).join(" ");
     const parent = record.edits[0]?.node.parentElement;
-    (parent && record.edits.every(edit => parent.contains(edit.node)) ? parent : root).append(node);
+    const host = parent && record.edits.every(edit => parent.contains(edit.node)) ? parent : root;
+    if (bilingualOrder === "translation-top") host.prepend(node);
+    else host.append(node);
     record.translationNode = node;
   } else {
-    record.translationNode = mountTranslation(root, bilingualFragment(root, record), language, true);
+    record.translationNode = mountTranslation(root, bilingualFragment(root, record), language, true, bilingualOrder);
   }
   record.mode = mode;
   return true;

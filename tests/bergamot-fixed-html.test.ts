@@ -259,5 +259,76 @@ describe("Bergamot inline-phrase retry", () => {
       slot(1, " 因此，你的属性会波动。)"),
     );
   });
+
+  it("recovers Bergamot slot fallback when Bergamot spills trailing newline/punctuation outside the slot or omits an optional English article", () => {
+    // 1. Plain slot with trailing newline/punctuation moved outside </span>
+    const source =
+      slot(0, "The core issue is isolated to ") +
+      `<code>foo()</code>` +
+      slot(1, " inside the ") +
+      `<code>bar()</code>` +
+      slot(2, " helper.\n");
+    const brokenWhole =
+      slot(0, "核心问题仅限于") +
+      `<code>foo()</code>` +
+      slot(1, "") +
+      `<code>bar()</code>` +
+      slot(2, "辅助函数。");
+
+    const plan = prepareBergamotSlotFallback(
+      source,
+      brokenWhole,
+      prepareBergamotFixedHtml,
+      repairBergamotFixedHtml,
+    )!;
+    expect(plan).toBeDefined();
+    expect(plan.slotPrepared).toHaveLength(3);
+
+    // Slot 2 simulates Bergamot spilling "。\n" outside the closing </span>.
+    const recovered = plan.restore([
+      slot(0, "核心问题仅限于"),
+      slot(0, "在其中"),
+      `${slot(0, "辅助函数")}。\n`,
+    ]);
+    expect(recovered).toBeDefined();
+    const restored = restoreFixedHtmlTransport(source, recovered!);
+    expect(restored).toContain(slot(0, "核心问题仅限于 "));
+    expect(restored).toContain("<code>foo()</code>");
+    expect(restored).toContain(slot(2, " 辅助函数。\n"));
+
+    // 2. Standalone optional English article ("the") translated as empty slot
+    const articleSource =
+      slot(0, "Check ") +
+      `<code>foo</code>` +
+      slot(1, " the ") +
+      `<code>bar</code>` +
+      slot(2, " config.");
+    const articleBroken =
+      slot(0, "检查") +
+      `<code>foo</code>` +
+      slot(1, "") +
+      `<code>bar</code>` +
+      slot(2, "");
+    const articlePlan = prepareBergamotSlotFallback(
+      articleSource,
+      articleBroken,
+      prepareBergamotFixedHtml,
+      repairBergamotFixedHtml,
+    )!;
+    expect(articlePlan).toBeDefined();
+    const articleRecovered = articlePlan.restore([
+      slot(0, "检查"),
+      slot(0, ""),
+      slot(0, "配置。"),
+    ]);
+    expect(articleRecovered).toBe(
+      slot(0, "检查 ") +
+      `<code>foo</code>` +
+      slot(1, " ") +
+      `<code>bar</code>` +
+      slot(2, " 配置。"),
+    );
+    expect(restoreFixedHtmlTransport(articleSource, articleRecovered!)).toContain("<code>foo</code>");
+  });
 });
 

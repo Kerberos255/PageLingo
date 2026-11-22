@@ -16,7 +16,10 @@ import {
     translateRichHtmlTextNodesSafely,
 } from "./rich-segment-splitter";
 
-export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[]; showProgress?:boolean; bypassCache?:boolean }
+import { buildBilingualRulesCss } from "./bilingual-style";
+import { DEFAULT_BILINGUAL_STYLE, normalizeBilingualStyle, type BilingualStyleSettings } from "../shared/settings";
+
+export interface PageTranslatorOptions { sourceLanguage?:string; targetLanguage?:string; concurrency?:number; displayMode?:"translation"|"bilingual"; bilingualStyle?:Partial<BilingualStyleSettings>; shouldTranslateRoot?:(root:HTMLElement)=>boolean|Promise<boolean>; terminology?:any[]; showProgress?:boolean; bypassCache?:boolean }
 function translatedPlainText(_doc, html) {
     const parsed = new DOMParser().parseFromString(html, "text/html");
     return (parsed.body.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -254,6 +257,8 @@ export class PageTranslator {
     #shadowRoots = new Set();
     #shadowObservers = new Map();
     #watchedFadeScopes = new WeakSet();
+    #bilingualStyle = { ...DEFAULT_BILINGUAL_STYLE };
+    #learningClickBound = false;
     async #loadContextMode() {
         if (!this.#contextModePromise) this.#contextModePromise = Promise.all([
             Promise.resolve().then(() => this.#provider.prefersWholeSentenceHtml?.()).catch(() => false),
@@ -332,8 +337,10 @@ export class PageTranslator {
         this.#concurrency = Math.max(1, options.concurrency ?? 4);
         this.#shouldTranslateRoot = options.shouldTranslateRoot ?? null;
         this.#displayMode = options.displayMode ?? "translation";
+        this.#bilingualStyle = normalizeBilingualStyle(options.bilingualStyle);
         this.#terminology = Array.isArray(options.terminology) ? options.terminology : [];
         this.#bypassCache = options.bypassCache === true;
+        this.#syncLearningClickListener();
     }
     get translatedCount() {
         return this.#records.size + this.#fixedRecords.size;
@@ -399,17 +406,85 @@ export class PageTranslator {
             if (root.contains(owner.root) || !fixedTextRecordUnchanged(owner)) this.#clearFixedRecord(owner.root, owner);
         }
     }
+    #handleLearningClick = (event) => {
+        if (this.#disposed || this.#displayMode !== "bilingual" || !this.#bilingualStyle.learningMode) return;
+        const target = event.composedPath?.()[0] ?? event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest("a")) return;
+        const box = target.closest('[data-flt-generated="translation"]');
+        if (!box) return;
+        const revealed = box.getAttribute("data-pagelingo-revealed") === "true";
+        if (revealed) box.removeAttribute("data-pagelingo-revealed");
+        else box.setAttribute("data-pagelingo-revealed", "true");
+    };
+    #syncLearningClickListener() {
+        const shouldBind = !this.#disposed && this.#displayMode === "bilingual" && this.#bilingualStyle.learningMode;
+        if (shouldBind && !this.#learningClickBound) {
+            this.#doc.addEventListener("click", this.#handleLearningClick, true);
+            this.#learningClickBound = true;
+        } else if (!shouldBind && this.#learningClickBound) {
+            this.#doc.removeEventListener("click", this.#handleLearningClick, true);
+            this.#learningClickBound = false;
+        }
+    }
+    #syncRecordOrder(root, node) {
+        if (!node || !node.isConnected || !root.isConnected) return;
+        const wantTop = this.#bilingualStyle.order === "translation-top";
+        const isTop = node.dataset.fltOrder === "translation-top";
+        if (wantTop === isTop) return;
+        if (wantTop) {
+            node.dataset.fltOrder = "translation-top";
+            if (root.contains(node) && node.parentElement) node.parentElement.prepend(node);
+            else root.insertAdjacentElement("beforebegin", node);
+        } else {
+            delete node.dataset.fltOrder;
+            if (root.contains(node) && node.parentElement) node.parentElement.append(node);
+            else root.insertAdjacentElement("afterend", node);
+        }
+    }
     setDisplayMode(displayMode) {
         if (this.#disposed || this.#displayMode === displayMode)
             return;
         this.#displayMode = displayMode;
+        this.#syncLearningClickListener();
         for (const [root, record] of this.#records) {
             this.#applyDisplayMode(root, record.translationNode);
+            if (displayMode === "bilingual") this.#syncRecordOrder(root, record.translationNode);
         }
         for (const [root, record] of this.#fixedRecords) {
             if (displayMode === "bilingual") this.#ensureShadowStyle(root);
-            if (!applyFixedTextRecord(root, record, displayMode, this.#targetLanguage)) {
+            if (!applyFixedTextRecord(root, record, displayMode, this.#targetLanguage, this.#bilingualStyle.order)) {
                 this.#clearFixedRecord(root, record); this.#queue(root);
+            }
+        }
+    }
+    setBilingualStyle(nextStyle) {
+        if (this.#disposed) return;
+        const prev = this.#bilingualStyle;
+        const normalized = normalizeBilingualStyle(nextStyle);
+        this.#bilingualStyle = normalized;
+        this.#syncLearningClickListener();
+        if (!normalized.learningMode) {
+            for (const scope of [this.#doc, ...Array.from(this.#shadowRoots)]) {
+                for (const node of Array.from(scope.querySelectorAll('[data-pagelingo-revealed="true"]'))) {
+                    node.removeAttribute("data-pagelingo-revealed");
+                }
+            }
+        }
+        for (const shadowRoot of this.#shadowRoots) {
+            const style = shadowRoot.querySelector('style[data-flt-generated="style"]');
+            if (style) style.textContent = this.#shadowStyleText();
+        }
+        if (this.#displayMode === "bilingual" && prev.order !== normalized.order) {
+            for (const [root, record] of this.#fixedRecords) {
+                if (record.translationNode?.isConnected) {
+                    this.#syncRecordOrder(root, record.translationNode);
+                } else if (!applyFixedTextRecord(root, record, "bilingual", this.#targetLanguage, normalized.order)) {
+                    this.#clearFixedRecord(root, record); this.#queue(root);
+                }
+            }
+            for (const [root, record] of this.#records) {
+                this.#syncRecordOrder(root, record.translationNode);
             }
         }
     }
@@ -468,14 +543,21 @@ export class PageTranslator {
             this.#observeShadowRoot(shadowRoot);
         }
     }
+    #shadowStyleText() {
+        return `.flt-translation { display: block !important; margin-block-start: 0.28em !important; font: inherit !important; line-height: inherit !important; letter-spacing: inherit !important; text-transform: none !important; } .flt-translation a { display: inline !important; } .flt-source-hidden { display: none !important; } ${buildBilingualRulesCss(this.#bilingualStyle, ":host")}`;
+    }
     #ensureShadowStyle(root) {
         const rootNode = root.getRootNode?.();
         if (!rootNode || rootNode === this.#doc || rootNode.nodeType !== Node.DOCUMENT_FRAGMENT_NODE || !("host" in rootNode)) return;
         this.#shadowRoots.add(rootNode);
-        if (rootNode.querySelector('style[data-flt-generated="style"]')) return;
+        const existing = rootNode.querySelector('style[data-flt-generated="style"]');
+        if (existing) {
+            existing.textContent = this.#shadowStyleText();
+            return;
+        }
         const style = this.#doc.createElement("style");
         style.dataset.fltGenerated = "style";
-        style.textContent = ".flt-translation { display: block !important; margin-block-start: 0.28em !important; font: inherit !important; line-height: inherit !important; letter-spacing: inherit !important; text-transform: none !important; } .flt-translation a { display: inline !important; } .flt-source-hidden { display: none !important; }";
+        style.textContent = this.#shadowStyleText();
         rootNode.append(style);
     }
     #collect(scope) {
@@ -724,14 +806,14 @@ export class PageTranslator {
         if (this.#wholeSentenceContext) {
             if (this.#displayMode === "bilingual") this.#ensureShadowStyle(root);
             const record = prepareFixedTextRecord(root, segment.textSlots, translatedHtml, this.#targetLanguage);
-            if (!applyFixedTextRecord(root, record, this.#displayMode, this.#targetLanguage)) return;
+            if (!applyFixedTextRecord(root, record, this.#displayMode, this.#targetLanguage, this.#bilingualStyle.order)) return;
             this.#fixedRecords.set(root, record);
             for (const edit of record.edits) this.#fixedOwners.set(edit.node, record);
             return;
         }
         this.#ensureShadowStyle(root);
         const fragment = createSafeTranslatedFragment(this.#doc, translatedHtml, segment.links, segment.opaque, translatedLinkTexts, translatedGapTexts, []);
-        const translationNode = mountTranslation(root, fragment, this.#targetLanguage);
+        const translationNode = mountTranslation(root, fragment, this.#targetLanguage, false, this.#bilingualStyle.order);
         this.#records.set(root, { translationNode, fingerprint: segment.fingerprint });
         this.#applyDisplayMode(root, translationNode);
         } catch (error) {
@@ -886,6 +968,7 @@ export class PageTranslator {
     restore() {
         this.#failures.clear();
         this.#disposed = true;
+        this.#syncLearningClickListener();
         this.#observer?.disconnect();
         this.#observer = null;
         for (const observer of this.#shadowObservers.values()) observer.disconnect();
@@ -947,6 +1030,7 @@ export class PageTranslator {
             this.#sourceHadClassAttribute.set(root, root.hasAttribute("class"));
         }
         this.#clearDisplayMode(root);
+        delete translationNode.dataset.fltDisplayMode;
         if (this.#displayMode !== "translation")
             return;
         if (root.tagName === "LI") {

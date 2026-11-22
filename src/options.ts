@@ -21,6 +21,7 @@ import {
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { initializeTranslationEngines } from "./options-engines";
 import { initializeVideoSubtitleSettings } from "./options-video-subtitles";
+import { initializeBilingualStyleSettings } from "./options-bilingual-style";
 
 interface LanguageOption {
     code: string;
@@ -71,6 +72,9 @@ interface OptionsRuntimeResponse {
     status?: ImageOcrStatus;
 }
 
+type RuleGroupKey = "always-site" | "never-site" | "always-language" | "never-language";
+const INLINE_RULE_CHIP_LIMIT = 12;
+
 const radios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="display-mode"]'));
 const status = document.querySelector<HTMLElement>("#save-status");
 const autoToggle = document.querySelector<HTMLInputElement>("#auto-translate-enabled");
@@ -78,15 +82,29 @@ const targetSelect = document.querySelector<HTMLSelectElement>("#target-language
 const neverSiteInput = document.querySelector<HTMLInputElement>("#never-site-input");
 const neverSiteAdd = document.querySelector<HTMLButtonElement>("#never-site-add");
 const neverSiteList = document.querySelector<HTMLElement>("#never-site-list");
+const neverSiteCount = document.querySelector<HTMLElement>("#never-site-count");
 const alwaysSiteInput = document.querySelector<HTMLInputElement>("#always-site-input");
 const alwaysSiteAdd = document.querySelector<HTMLButtonElement>("#always-site-add");
 const alwaysSiteList = document.querySelector<HTMLElement>("#always-site-list");
+const alwaysSiteCount = document.querySelector<HTMLElement>("#always-site-count");
 const neverLanguageSelect = document.querySelector<HTMLSelectElement>("#never-language-select");
 const neverLanguageAdd = document.querySelector<HTMLButtonElement>("#never-language-add");
 const neverLanguageList = document.querySelector<HTMLElement>("#never-language-list");
+const neverLanguageCount = document.querySelector<HTMLElement>("#never-language-count");
 const alwaysLanguageSelect = document.querySelector<HTMLSelectElement>("#always-language-select");
 const alwaysLanguageAdd = document.querySelector<HTMLButtonElement>("#always-language-add");
 const alwaysLanguageList = document.querySelector<HTMLElement>("#always-language-list");
+const alwaysLanguageCount = document.querySelector<HTMLElement>("#always-language-count");
+const manageRuleButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-manage-rules]"));
+const rulesManagerDialog = document.querySelector<HTMLDialogElement>("#rules-manager-dialog");
+const rulesManagerTitle = document.querySelector<HTMLElement>("#rules-manager-title");
+const rulesManagerCount = document.querySelector<HTMLElement>("#rules-manager-count");
+const rulesManagerSearch = document.querySelector<HTMLInputElement>("#rules-manager-search");
+const rulesManagerList = document.querySelector<HTMLElement>("#rules-manager-list");
+const rulesManagerEmpty = document.querySelector<HTMLElement>("#rules-manager-empty");
+const closeRulesManagerButton = document.querySelector<HTMLButtonElement>("#close-rules-manager");
+const doneRulesManagerButton = document.querySelector<HTMLButtonElement>("#done-rules-manager");
+const clearAllRulesButton = document.querySelector<HTMLButtonElement>("#clear-all-rules");
 const packSelect = document.querySelector<HTMLSelectElement>("#language-pack-select");
 const downloadPackButton = document.querySelector<HTMLButtonElement>("#download-language-pack");
 const packList = document.querySelector<HTMLElement>("#language-pack-list");
@@ -116,6 +134,7 @@ let neverTranslateSites: string[] = [];
 let alwaysTranslateSites: string[] = [];
 let neverTranslateLanguages: string[] = [];
 let alwaysTranslateLanguages: string[] = [];
+let activeRuleManagerGroup: RuleGroupKey | null = null;
 let sourceLanguages: LanguageOption[] = [];
 let packs: LanguagePackInfo[] = [];
 let currentImageOcrStatus: ImageOcrStatus | undefined;
@@ -173,54 +192,206 @@ function fillSelect(select: HTMLSelectElement | null, languages: readonly Langua
     }
 }
 
-function renderRuleList(
-    container: HTMLElement | null,
-    values: readonly string[],
-    emptyText: string,
-    labelFor: (value: string) => string,
-    removeValue: (value: string) => void,
-): void {
-    if (!container)
-        return;
-    container.replaceChildren();
+interface RuleGroupDescriptor {
+    key: RuleGroupKey;
+    title: string;
+    emptyText: string;
+    searchPlaceholder: string;
+    container: HTMLElement | null;
+    countEl: HTMLElement | null;
+    values: () => readonly string[];
+    labelFor: (value: string) => string;
+    removeValue: (value: string) => void;
+    clearAll: () => void;
+}
+
+function getRuleGroupDescriptor(key: RuleGroupKey): RuleGroupDescriptor {
+    if (key === "always-site") {
+        return {
+            key,
+            title: "网站规则 · 总是翻译",
+            emptyText: "暂无网址",
+            searchPlaceholder: "搜索域名...",
+            container: alwaysSiteList,
+            countEl: alwaysSiteCount,
+            values: () => alwaysTranslateSites,
+            labelFor: (value) => value,
+            removeValue: (value) => {
+                alwaysTranslateSites = alwaysTranslateSites.filter((item) => item !== value);
+                void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(() => { renderRuleLists(); showSaved(); });
+            },
+            clearAll: () => {
+                alwaysTranslateSites = [];
+                void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(() => { renderRuleLists(); showSaved("已清空该组规则"); });
+            },
+        };
+    }
+    if (key === "never-site") {
+        return {
+            key,
+            title: "网站规则 · 不自动翻译",
+            emptyText: "暂无网址",
+            searchPlaceholder: "搜索域名...",
+            container: neverSiteList,
+            countEl: neverSiteCount,
+            values: () => neverTranslateSites,
+            labelFor: (value) => value,
+            removeValue: (value) => {
+                neverTranslateSites = neverTranslateSites.filter((item) => item !== value);
+                void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(() => { renderRuleLists(); showSaved(); });
+            },
+            clearAll: () => {
+                neverTranslateSites = [];
+                void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(() => { renderRuleLists(); showSaved("已清空该组规则"); });
+            },
+        };
+    }
+    if (key === "always-language") {
+        return {
+            key,
+            title: "语言规则 · 总是翻译",
+            emptyText: "暂无语言",
+            searchPlaceholder: "搜索语言名称或代码...",
+            container: alwaysLanguageList,
+            countEl: alwaysLanguageCount,
+            values: () => alwaysTranslateLanguages,
+            labelFor: languageLabel,
+            removeValue: (value) => {
+                alwaysTranslateLanguages = alwaysTranslateLanguages.filter((item) => item !== value);
+                void saveLanguageRules(neverTranslateLanguages, alwaysTranslateLanguages).then(() => { renderRuleLists(); showSaved(); });
+            },
+            clearAll: () => {
+                alwaysTranslateLanguages = [];
+                void saveLanguageRules(neverTranslateLanguages, alwaysTranslateLanguages).then(() => { renderRuleLists(); showSaved("已清空该组规则"); });
+            },
+        };
+    }
+    return {
+        key: "never-language",
+        title: "语言规则 · 跳过翻译",
+        emptyText: "暂无语言",
+        searchPlaceholder: "搜索语言名称或代码...",
+        container: neverLanguageList,
+        countEl: neverLanguageCount,
+        values: () => neverTranslateLanguages,
+        labelFor: languageLabel,
+        removeValue: (value) => {
+            neverTranslateLanguages = neverTranslateLanguages.filter((item) => item !== value);
+            void saveLanguageRules(neverTranslateLanguages, alwaysTranslateLanguages).then(() => { renderRuleLists(); showSaved(); });
+        },
+        clearAll: () => {
+            neverTranslateLanguages = [];
+            void saveLanguageRules(neverTranslateLanguages, alwaysTranslateLanguages).then(() => { renderRuleLists(); showSaved("已清空该组规则"); });
+        },
+    };
+}
+
+function renderRuleGroupChips(descriptor: RuleGroupDescriptor): void {
+    const values = descriptor.values();
+    if (descriptor.countEl) descriptor.countEl.textContent = String(values.length);
+    const manageBtn = manageRuleButtons.find((button) => button.dataset.manageRules === descriptor.key);
+    if (manageBtn) manageBtn.hidden = values.length === 0;
+    if (!descriptor.container) return;
+    descriptor.container.replaceChildren();
     if (values.length === 0) {
         const empty = document.createElement("div");
         empty.className = "empty-state";
-        empty.textContent = emptyText;
-        container.append(empty);
+        empty.textContent = descriptor.emptyText;
+        descriptor.container.append(empty);
         return;
     }
-    for (const value of values) {
-        const row = document.createElement("div");
-        row.className = "exception-item";
+    const visibleValues = values.slice(0, INLINE_RULE_CHIP_LIMIT);
+    for (const value of visibleValues) {
+        const text = descriptor.labelFor(value);
+        const chip = document.createElement("span");
+        chip.className = "rule-chip";
         const label = document.createElement("span");
-        label.textContent = labelFor(value);
+        label.className = "rule-chip-label";
+        label.textContent = text;
+        label.title = text;
         const remove = document.createElement("button");
         remove.type = "button";
-        remove.textContent = "移除";
-        remove.addEventListener("click", () => removeValue(value));
-        row.append(label, remove);
-        container.append(row);
+        remove.className = "rule-chip-remove";
+        remove.textContent = "×";
+        remove.setAttribute("aria-label", `移除 ${text}`);
+        remove.addEventListener("click", () => descriptor.removeValue(value));
+        chip.append(label, remove);
+        descriptor.container.append(chip);
+    }
+    const hiddenCount = values.length - visibleValues.length;
+    if (hiddenCount > 0) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "rule-chip-more";
+        more.textContent = `+${hiddenCount} 项 · 查看全部`;
+        more.addEventListener("click", () => openRulesManager(descriptor.key));
+        descriptor.container.append(more);
     }
 }
 
+function renderRulesManagerDialog(): void {
+    if (!activeRuleManagerGroup || !rulesManagerList) return;
+    const descriptor = getRuleGroupDescriptor(activeRuleManagerGroup);
+    const allValues = descriptor.values();
+    const query = (rulesManagerSearch?.value ?? "").trim().toLowerCase();
+    const filtered = query
+        ? allValues.filter((value) => {
+            const label = descriptor.labelFor(value).toLowerCase();
+            return label.includes(query) || value.toLowerCase().includes(query);
+        })
+        : allValues;
+
+    if (rulesManagerTitle) rulesManagerTitle.textContent = descriptor.title;
+    if (rulesManagerSearch) rulesManagerSearch.placeholder = descriptor.searchPlaceholder;
+    if (rulesManagerCount) {
+        rulesManagerCount.textContent = query
+            ? `显示 ${filtered.length} / ${allValues.length} 项`
+            : `共 ${allValues.length} 项`;
+    }
+    if (clearAllRulesButton) clearAllRulesButton.disabled = allValues.length === 0;
+
+    rulesManagerList.replaceChildren();
+    if (rulesManagerEmpty) {
+        rulesManagerEmpty.hidden = filtered.length > 0;
+        rulesManagerEmpty.textContent = allValues.length === 0 ? descriptor.emptyText : "没有匹配的规则";
+    }
+    for (const value of filtered) {
+        const row = document.createElement("div");
+        row.className = "rules-manager-row";
+        const label = document.createElement("span");
+        label.textContent = descriptor.labelFor(value);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "移除";
+        remove.addEventListener("click", () => descriptor.removeValue(value));
+        row.append(label, remove);
+        rulesManagerList.append(row);
+    }
+}
+
+function openRulesManager(key: RuleGroupKey): void {
+    activeRuleManagerGroup = key;
+    if (rulesManagerSearch) rulesManagerSearch.value = "";
+    renderRulesManagerDialog();
+    if (rulesManagerDialog && !rulesManagerDialog.open) {
+        rulesManagerDialog.showModal();
+    }
+    rulesManagerSearch?.focus();
+}
+
+function closeRulesManager(): void {
+    activeRuleManagerGroup = null;
+    if (rulesManagerDialog?.open) rulesManagerDialog.close();
+}
+
 function renderRuleLists(): void {
-    renderRuleList(neverSiteList, neverTranslateSites, "暂无网址", (value) => value, (value) => {
-        neverTranslateSites = neverTranslateSites.filter((item) => item !== value);
-        void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(() => { renderRuleLists(); showSaved(); });
-    });
-    renderRuleList(alwaysSiteList, alwaysTranslateSites, "暂无网址", (value) => value, (value) => {
-        alwaysTranslateSites = alwaysTranslateSites.filter((item) => item !== value);
-        void saveSiteRules(neverTranslateSites, alwaysTranslateSites).then(() => { renderRuleLists(); showSaved(); });
-    });
-    renderRuleList(neverLanguageList, neverTranslateLanguages, "暂无语言", languageLabel, (value) => {
-        neverTranslateLanguages = neverTranslateLanguages.filter((item) => item !== value);
-        void saveLanguageRules(neverTranslateLanguages, alwaysTranslateLanguages).then(() => { renderRuleLists(); showSaved(); });
-    });
-    renderRuleList(alwaysLanguageList, alwaysTranslateLanguages, "暂无语言", languageLabel, (value) => {
-        alwaysTranslateLanguages = alwaysTranslateLanguages.filter((item) => item !== value);
-        void saveLanguageRules(neverTranslateLanguages, alwaysTranslateLanguages).then(() => { renderRuleLists(); showSaved(); });
-    });
+    const keys: RuleGroupKey[] = ["always-site", "never-site", "always-language", "never-language"];
+    for (const key of keys) {
+        renderRuleGroupChips(getRuleGroupDescriptor(key));
+    }
+    if (activeRuleManagerGroup && rulesManagerDialog?.open) {
+        renderRulesManagerDialog();
+    }
 }
 
 function packRouteLabel(label: string, directions: readonly LanguagePackDirection[]): string {
@@ -698,6 +869,29 @@ if (checkUpdates) {
     });
 }
 
+for (const button of manageRuleButtons) {
+    button.addEventListener("click", () => {
+        const key = button.dataset.manageRules;
+        if (key === "always-site" || key === "never-site" || key === "always-language" || key === "never-language") {
+            openRulesManager(key);
+        }
+    });
+}
+rulesManagerSearch?.addEventListener("input", () => renderRulesManagerDialog());
+closeRulesManagerButton?.addEventListener("click", closeRulesManager);
+doneRulesManagerButton?.addEventListener("click", closeRulesManager);
+rulesManagerDialog?.addEventListener("click", (event) => {
+    if (event.target === rulesManagerDialog) closeRulesManager();
+});
+rulesManagerDialog?.addEventListener("close", () => {
+    activeRuleManagerGroup = null;
+});
+clearAllRulesButton?.addEventListener("click", () => {
+    if (!activeRuleManagerGroup) return;
+    getRuleGroupDescriptor(activeRuleManagerGroup).clearAll();
+});
+
 void initialize().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));
+void initializeBilingualStyleSettings().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));
 void initializeTranslationEngines().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));
 void initializeVideoSubtitleSettings().catch((error) => showSaved(error instanceof Error ? error.message : String(error), 5000));

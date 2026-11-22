@@ -2,7 +2,8 @@
 import { PageTranslator } from "./core/page-translator";
 import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { sendRuntimeMessage } from "./shared/runtime-message";
-import { isSiteListed, languageLabel, loadSettings, normalizeDetectedLanguage, normalizeDisplayMode } from "./shared/settings";
+import { isSiteListed, languageLabel, loadSettings, normalizeBilingualStyle, normalizeDetectedLanguage, normalizeDisplayMode } from "./shared/settings";
+import { buildBilingualRulesCss } from "./core/bilingual-style";
 import { applyTerminologyCorrectionsHtml, escapeHtml, parseTerminology, protectTerminologyHtml, restoreTerminologyHtml, sourceFingerprint, terminologyForText } from "./core/rich-segment";
 import { freezeNavigationLayout, releaseNavigationLayoutAfterPaint, restoreNavigationLayout } from "./core/navigation-layout";
 import { collectTranslationTelemetry } from "./core/translation-telemetry";
@@ -25,12 +26,15 @@ document.addEventListener("contextmenu", (event) => {
     const target = event.composedPath?.()[0] ?? event.target;
     lastContextMenuTarget = target instanceof Node ? target : null;
 }, true);
-function ensureStyle() {
-    if (document.getElementById("flt-style"))
-        return;
-    const style = document.createElement("style");
-    style.id = "flt-style";
-    style.dataset.fltGenerated = "style";
+function ensureStyle(bilingualStyle = undefined) {
+    let style = document.getElementById("flt-style");
+    const isNew = !style;
+    if (!style) {
+        style = document.createElement("style");
+        style.id = "flt-style";
+        style.dataset.fltGenerated = "style";
+    }
+    const normalized = normalizeBilingualStyle(bilingualStyle);
     style.textContent = `
     .flt-translation { display: block !important; margin-block-start: 0.28em !important; font: inherit !important; line-height: inherit !important; letter-spacing: inherit !important; text-transform: none !important; }
     .flt-translation a { display: inline !important; }
@@ -48,8 +52,9 @@ function ensureStyle() {
     }
     @keyframes pagelingo-spin { to { transform: rotate(1turn); } }
     @media (prefers-reduced-motion: reduce) { [data-flt-generated="progress"] { animation: none !important; } }
+    ${buildBilingualRulesCss(normalized, ":root")}
   `;
-    (document.head ?? document.documentElement).append(style);
+    if (isNew) (document.head ?? document.documentElement).append(style);
 }
 function pageTextSample() {
     const root = document.querySelector("article, main, [role='main']") ?? document.body;
@@ -235,7 +240,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         throw new Error(`当前本地模型不支持 ${languageLabel(resolvedSource)} → ${languageLabel(normalizedTarget)}`);
     }
     if (stale()) return 0;
-    ensureStyle();
+    ensureStyle(settings.bilingualStyle);
     stopRelativeTimeLocalization();
     translator?.restore();
     restoreNavigationLayout();
@@ -272,6 +277,7 @@ async function translatePage(sourceLanguage, targetLanguage, expectedAutoGenerat
         targetLanguage: normalizedTarget,
         showProgress: true,
         displayMode: settings.displayMode,
+        bilingualStyle: settings.bilingualStyle,
         shouldTranslateRoot,
         terminology: parseTerminology(settings.glossaryCollections, resolvedSource, normalizedTarget, settings.builtinGlossaryEnabled),
         bypassCache,
@@ -974,18 +980,25 @@ browser.runtime.onMessage.addListener(async (message) => {
     return undefined;
 });
 browser.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "local" || !changes.displayMode || !translator)
+    if (areaName !== "local" || !translator)
         return;
-    const mode = normalizeDisplayMode(changes.displayMode.newValue);
-    const navigationHold = mode === "translation" ? freezeNavigationLayout() : null;
-    if (mode === "translation") {
-        if (activeTranslationTargetLanguage) startRelativeTimeLocalization(activeTranslationTargetLanguage);
-    } else {
-        restoreNavigationLayout();
-        stopRelativeTimeLocalization();
+    if (changes.displayMode) {
+        const mode = normalizeDisplayMode(changes.displayMode.newValue);
+        const navigationHold = mode === "translation" ? freezeNavigationLayout() : null;
+        if (mode === "translation") {
+            if (activeTranslationTargetLanguage) startRelativeTimeLocalization(activeTranslationTargetLanguage);
+        } else {
+            restoreNavigationLayout();
+            stopRelativeTimeLocalization();
+        }
+        translator.setDisplayMode(mode);
+        if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
     }
-    translator.setDisplayMode(mode);
-    if (navigationHold) releaseNavigationLayoutAfterPaint(navigationHold);
+    if (changes.bilingualStyle) {
+        const nextStyle = normalizeBilingualStyle(changes.bilingualStyle.newValue);
+        ensureStyle(nextStyle);
+        translator.setBilingualStyle(nextStyle);
+    }
 });
 const AUTO_TRANSLATION_INVALIDATING_SETTINGS = new Set([
     "autoTranslateEnabled",

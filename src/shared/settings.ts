@@ -18,11 +18,29 @@ export interface VideoSubtitleSettings {
     translationColor: string;
     backgroundOpacity: number;
 }
+export type BilingualOrder = "source-top" | "translation-top";
+export type BilingualTheme = "inherit" | "muted" | "border-left" | "highlight" | "underline";
+export interface BilingualStyleSettings {
+    order: BilingualOrder;
+    learningMode: boolean;
+    theme: BilingualTheme;
+    fontScale: number;
+    translationColor: string;
+}
 export interface GlossaryEntry { source:string; target:string; mode:"protect"|"replace"; caseSensitive?:boolean }
 export interface GlossaryCollection { id:string; name:string; enabled:boolean; entries:GlossaryEntry[] }
-export interface PageLingoSettings { displayMode:DisplayMode; autoTranslateEnabled:boolean; targetLanguage:string; neverTranslateSites:string[]; alwaysTranslateSites:string[]; neverTranslateLanguages:string[]; alwaysTranslateLanguages:string[]; modelUpdatePolicy:ModelUpdatePolicy; imageTranslationEnabled:boolean; terminologyText:string; builtinGlossaryEnabled:boolean; glossaryCollections:GlossaryCollection[]; videoSubtitle:VideoSubtitleSettings }
+export interface PageLingoSettings { displayMode:DisplayMode; autoTranslateEnabled:boolean; targetLanguage:string; neverTranslateSites:string[]; alwaysTranslateSites:string[]; neverTranslateLanguages:string[]; alwaysTranslateLanguages:string[]; modelUpdatePolicy:ModelUpdatePolicy; imageTranslationEnabled:boolean; terminologyText:string; builtinGlossaryEnabled:boolean; glossaryCollections:GlossaryCollection[]; videoSubtitle:VideoSubtitleSettings; bilingualStyle:BilingualStyleSettings }
 
 export const VIDEO_SUBTITLE_COLORS = ["#ffffff", "#fde047", "#fdba74", "#7dd3fc"] as const;
+export const BILINGUAL_TRANSLATION_COLORS = ["inherit", "#2563eb", "#b45309", "#0f766e", "#6b7280"] as const;
+
+export const DEFAULT_BILINGUAL_STYLE: BilingualStyleSettings = {
+    order: "source-top",
+    learningMode: false,
+    theme: "inherit",
+    fontScale: 100,
+    translationColor: "inherit",
+};
 
 export const DEFAULT_VIDEO_SUBTITLE_SETTINGS: VideoSubtitleSettings = {
     enabled: false,
@@ -54,6 +72,7 @@ export const DEFAULT_SETTINGS: PageLingoSettings = {
     builtinGlossaryEnabled: true,
     glossaryCollections: [],
     videoSubtitle: { ...DEFAULT_VIDEO_SUBTITLE_SETTINGS },
+    bilingualStyle: { ...DEFAULT_BILINGUAL_STYLE },
 };
 
 const LABEL_OVERRIDES: Record<string, string> = {
@@ -256,6 +275,30 @@ export function normalizeVideoSubtitleSettings(value: unknown): VideoSubtitleSet
     };
 }
 
+export function normalizeBilingualStyle(value: unknown): BilingualStyleSettings {
+    if (!value || typeof value !== "object") return { ...DEFAULT_BILINGUAL_STYLE };
+    const record = value as Record<string, unknown>;
+    const order: BilingualOrder = record.order === "translation-top" ? "translation-top" : "source-top";
+    const theme: BilingualTheme =
+        record.theme === "muted"
+        || record.theme === "border-left"
+        || record.theme === "highlight"
+        || record.theme === "underline"
+            ? record.theme
+            : "inherit";
+    const colorRaw = typeof record.translationColor === "string" ? record.translationColor.trim().toLowerCase() : "";
+    const translationColor = (BILINGUAL_TRANSLATION_COLORS as readonly string[]).includes(colorRaw)
+        ? colorRaw
+        : DEFAULT_BILINGUAL_STYLE.translationColor;
+    return {
+        order,
+        learningMode: record.learningMode === true,
+        theme,
+        fontScale: clampInt(record.fontScale, 85, 115, DEFAULT_BILINGUAL_STYLE.fontScale),
+        translationColor,
+    };
+}
+
 export async function loadSettings(): Promise<PageLingoSettings> {
     const stored = await browser.storage.local.get();
     const legacyExcludedSites = normalizeExcludedSites(stored.excludedSites);
@@ -279,6 +322,7 @@ export async function loadSettings(): Promise<PageLingoSettings> {
         builtinGlossaryEnabled: stored.builtinGlossaryEnabled !== false,
         glossaryCollections,
         videoSubtitle: normalizeVideoSubtitleSettings(stored.videoSubtitle),
+        bilingualStyle: normalizeBilingualStyle(stored.bilingualStyle),
     };
 }
 
@@ -328,5 +372,12 @@ export async function saveVideoSubtitleSettings(videoSubtitle: Partial<VideoSubt
     const current = await loadSettings();
     const merged = normalizeVideoSubtitleSettings({ ...current.videoSubtitle, ...videoSubtitle });
     await browser.storage.local.set({ videoSubtitle: merged });
+    return merged;
+}
+
+export async function saveBilingualStyle(bilingualStyle: Partial<BilingualStyleSettings>): Promise<BilingualStyleSettings> {
+    const current = await loadSettings();
+    const merged = normalizeBilingualStyle({ ...current.bilingualStyle, ...bilingualStyle });
+    await browser.storage.local.set({ bilingualStyle: merged });
     return merged;
 }

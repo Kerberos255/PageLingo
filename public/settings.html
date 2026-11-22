@@ -41,19 +41,86 @@
               <button id="clear-translation-cache" type="button" class="ghost-button">清空缓存</button>
             </div>
           </div>
+          <div class="setting-card stack-card bilingual-style-card">
+            <div class="subtitle-style-head">
+              <div><strong>双语样式与实时预览</strong><span>在“双语对照”模式下生效，修改后立即同步到已翻译网页</span></div>
+              <button id="bilingual-reset-style" type="button" class="ghost-button">恢复默认样式</button>
+            </div>
+            <div class="bilingual-preview-stage" id="bilingual-preview-stage" aria-label="网页双语样式实时预览">
+              <div class="bilingual-preview-bar">
+                <span class="bilingual-preview-chip" id="bilingual-preview-chip">实时预览 · 双语对照</span>
+                <span class="bilingual-preview-hint" id="bilingual-preview-hint" hidden>当前为仅译文模式，切换为双语对照后生效</span>
+              </div>
+              <article class="bilingual-preview-article" id="bilingual-preview-article" data-theme="inherit" data-learning="false">
+                <div class="bilingual-preview-pair is-heading" data-order="source-top">
+                  <div class="bilingual-preview-source">Quick Start Guide</div>
+                  <div class="bilingual-preview-translation" data-preview-translation="true">快速开始指南</div>
+                </div>
+                <div class="bilingual-preview-pair is-prose" data-order="source-top">
+                  <div class="bilingual-preview-source">Quick start reuses detected access, opens the <a href="#translation">web dashboard</a>, and runs <code>onboard --classic</code> when needed.</div>
+                  <div class="bilingual-preview-translation" data-preview-translation="true">快速启动会复用已检测到的访问权限，打开 <a href="#translation">Web 控制面板</a>，并在需要时运行 <code>onboard --classic</code>。</div>
+                </div>
+              </article>
+            </div>
+            <div class="bilingual-control-rows">
+              <div class="setting-row">
+                <span><strong>双语顺序</strong><small>双语对照中原文与译文的上下排列顺序</small></span>
+                <fieldset class="segmented" aria-label="网页双语顺序">
+                  <label><input type="radio" name="bilingual-order" value="source-top" checked /><span>原文在上</span></label>
+                  <label><input type="radio" name="bilingual-order" value="translation-top" /><span>译文在上</span></label>
+                </fieldset>
+              </div>
+              <label class="setting-row">
+                <span><strong>学习模式</strong><small>双语对照下默认模糊译文，鼠标悬停或点击段落时显示</small></span>
+                <span class="switch"><input id="bilingual-learning-mode" type="checkbox" /><i aria-hidden="true"></i></span>
+              </label>
+              <div class="setting-row">
+                <span><strong>译文样式</strong><small>为双语译文提供视觉区分，不破坏网页原有排版</small></span>
+                <fieldset class="segmented bilingual-theme-segmented" aria-label="双语译文样式预设">
+                  <label><input type="radio" name="bilingual-theme" value="inherit" checked /><span>默认继承</span></label>
+                  <label><input type="radio" name="bilingual-theme" value="muted" /><span>柔和弱化</span></label>
+                  <label><input type="radio" name="bilingual-theme" value="border-left" /><span>左侧竖线</span></label>
+                  <label><input type="radio" name="bilingual-theme" value="highlight" /><span>柔和底纹</span></label>
+                  <label><input type="radio" name="bilingual-theme" value="underline" /><span>虚线下划线</span></label>
+                </fieldset>
+              </div>
+            </div>
+            <div class="subtitle-style-grid">
+              <label class="subtitle-range-field" for="bilingual-font-scale">
+                <span class="subtitle-range-meta"><strong>译文字号比例</strong><output id="bilingual-font-scale-value" for="bilingual-font-scale">100%</output></span>
+                <input id="bilingual-font-scale" type="range" min="85" max="115" step="5" value="100" />
+              </label>
+              <div class="subtitle-color-field">
+                <span class="subtitle-range-meta"><strong>译文颜色</strong><span id="bilingual-color-label">跟随页面</span></span>
+                <div class="subtitle-color-swatches" role="radiogroup" aria-label="网页双语译文颜色">
+                  <button type="button" class="bilingual-swatch active" data-bilingual-color="inherit" data-color-name="跟随页面" aria-label="跟随页面" aria-checked="true" role="radio" title="跟随页面原色"></button>
+                  <button type="button" class="bilingual-swatch" data-bilingual-color="#2563eb" data-color-name="柔和蓝" aria-label="柔和蓝" aria-checked="false" role="radio" title="柔和蓝"></button>
+                  <button type="button" class="bilingual-swatch" data-bilingual-color="#b45309" data-color-name="暖琥珀" aria-label="暖琥珀" aria-checked="false" role="radio" title="暖琥珀"></button>
+                  <button type="button" class="bilingual-swatch" data-bilingual-color="#0f766e" data-color-name="翡翠绿" aria-label="翡翠绿" aria-checked="false" role="radio" title="翡翠绿"></button>
+                  <button type="button" class="bilingual-swatch" data-bilingual-color="#6b7280" data-color-name="淡灰" aria-label="淡灰" aria-checked="false" role="radio" title="淡灰"></button>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="rules-grid">
             <section class="rule-group" aria-labelledby="site-rules-title">
               <h3 id="site-rules-title">网站规则</h3>
               <div class="setting-card">
                 <div class="rule-block">
-                  <label for="always-site-input">总是翻译</label>
+                  <div class="rule-block-head">
+                    <div class="rule-block-title"><label for="always-site-input">总是翻译</label><span id="always-site-count" class="rule-count">0</span></div>
+                    <button type="button" class="rule-manage-btn" data-manage-rules="always-site" hidden>管理全部</button>
+                  </div>
                   <div class="exception-add"><input id="always-site-input" type="text" inputmode="url" placeholder="例如 docs.example.com" /><button id="always-site-add" type="button">添加</button></div>
-                  <div id="always-site-list" class="exception-list"></div>
+                  <div id="always-site-list" class="rule-chips"></div>
                 </div>
                 <div class="rule-block">
-                  <label for="never-site-input">不自动翻译</label>
+                  <div class="rule-block-head">
+                    <div class="rule-block-title"><label for="never-site-input">不自动翻译</label><span id="never-site-count" class="rule-count">0</span></div>
+                    <button type="button" class="rule-manage-btn" data-manage-rules="never-site" hidden>管理全部</button>
+                  </div>
                   <div class="exception-add"><input id="never-site-input" type="text" inputmode="url" placeholder="例如 github.com" /><button id="never-site-add" type="button">添加</button></div>
-                  <div id="never-site-list" class="exception-list"></div>
+                  <div id="never-site-list" class="rule-chips"></div>
                 </div>
               </div>
             </section>
@@ -61,14 +128,20 @@
               <h3 id="language-rules-title">语言规则</h3>
               <div class="setting-card">
                 <div class="rule-block">
-                  <label for="always-language-select">总是翻译</label>
+                  <div class="rule-block-head">
+                    <div class="rule-block-title"><label for="always-language-select">总是翻译</label><span id="always-language-count" class="rule-count">0</span></div>
+                    <button type="button" class="rule-manage-btn" data-manage-rules="always-language" hidden>管理全部</button>
+                  </div>
                   <div class="exception-add"><select id="always-language-select"></select><button id="always-language-add" type="button">添加</button></div>
-                  <div id="always-language-list" class="exception-list"></div>
+                  <div id="always-language-list" class="rule-chips"></div>
                 </div>
                 <div class="rule-block">
-                  <label for="never-language-select">跳过翻译</label>
+                  <div class="rule-block-head">
+                    <div class="rule-block-title"><label for="never-language-select">跳过翻译</label><span id="never-language-count" class="rule-count">0</span></div>
+                    <button type="button" class="rule-manage-btn" data-manage-rules="never-language" hidden>管理全部</button>
+                  </div>
                   <div class="exception-add"><select id="never-language-select"></select><button id="never-language-add" type="button">添加</button></div>
-                  <div id="never-language-list" class="exception-list"></div>
+                  <div id="never-language-list" class="rule-chips"></div>
                 </div>
               </div>
             </section>
@@ -281,6 +354,24 @@
                 <span></span>
                 <button id="cancel-model-picker" type="button">取消</button>
                 <button id="select-model-picker" type="button" class="primary" disabled>选择</button>
+              </div>
+            </div>
+          </dialog>
+          <dialog id="rules-manager-dialog" class="model-picker-dialog rules-manager-dialog">
+            <div class="model-picker-shell">
+              <div class="model-picker-head">
+                <div><strong id="rules-manager-title">管理规则</strong><span id="rules-manager-count">共 0 项</span></div>
+                <button id="close-rules-manager" type="button" class="model-picker-close" aria-label="关闭">×</button>
+              </div>
+              <div class="model-picker-search-row">
+                <input id="rules-manager-search" type="search" placeholder="搜索规则..." autocomplete="off" />
+              </div>
+              <div id="rules-manager-list" class="rules-manager-list"></div>
+              <div id="rules-manager-empty" class="model-picker-empty" hidden>没有匹配的规则</div>
+              <div class="model-picker-actions">
+                <button id="clear-all-rules" type="button" class="danger-button">清空全部</button>
+                <span></span>
+                <button id="done-rules-manager" type="button" class="primary">完成</button>
               </div>
             </div>
           </dialog>

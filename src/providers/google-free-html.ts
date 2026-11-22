@@ -19,8 +19,7 @@ function escapeWireHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/>/g, "&gt;");
 }
 
 function isLinkBoundaryMarker(node: Node): boolean {
@@ -87,20 +86,36 @@ interface ContainerPlan {
   >;
 }
 
+export type CompactHtmlDialect = "google" | "microsoft";
+
 export type GoogleFreeHtmlPlan =
   | {
       kind: "fixed-slots";
+      dialect: CompactHtmlDialect;
+      atomPrefix: string;
       sourceBody: HTMLElement;
       wireHtml: string;
       rootPlan: ContainerPlan;
     }
   | {
       kind: "simple";
+      dialect: CompactHtmlDialect;
+      atomPrefix: string;
       wireHtml: string;
       expectedTerms: Map<string, string>;
     };
 
-function serializeTermTextContainer(container: Element): { wire: string; expectedTerms: Map<string, string> } | null {
+function chooseAtomPrefix(sourceText: string): string {
+  for (const candidate of ["PLATOM", "PLCODE", "PLTOK", "PLXTOK"]) {
+    if (!sourceText.includes(candidate)) return candidate;
+  }
+  return "PLXATOMX";
+}
+
+function serializeTermTextContainer(
+  container: Element,
+  dialect: CompactHtmlDialect,
+): { wire: string; expectedTerms: Map<string, string> } | null {
   const expectedTerms = new Map<string, string>();
   let wire = "";
   for (const child of Array.from(container.childNodes)) {
@@ -111,7 +126,9 @@ function serializeTermTextContainer(container: Element): { wire: string; expecte
       const text = child.textContent ?? "";
       if (expectedTerms.has(tid)) return null;
       expectedTerms.set(tid, text);
-      wire += `<span class="notranslate" data-pl-t="${tid}">${escapeWireHtml(text)}</span>`;
+      wire += dialect === "microsoft"
+        ? `<t${tid}>${escapeWireHtml(text)}</t${tid}>`
+        : `<span class="notranslate" data-pl-t="${tid}">${escapeWireHtml(text)}</span>`;
     } else {
       return null;
     }
@@ -119,23 +136,26 @@ function serializeTermTextContainer(container: Element): { wire: string; expecte
   return { wire, expectedTerms };
 }
 
-export function packGoogleFreeHtml(sourceHtml: string): GoogleFreeHtmlPlan | null {
+function packCompactFreeHtml(sourceHtml: string, dialect: CompactHtmlDialect): GoogleFreeHtmlPlan | null {
   if (!sourceHtml || sourceHtml.length > MAX_GOOGLE_HTML_WIRE_CHARS || BLANK_LINE_RE.test(sourceHtml)) {
     return null;
   }
   const doc = new DOMParser().parseFromString(sourceHtml, "text/html");
   const body = doc.body;
   if (body.querySelector(UNSUPPORTED_VOID_SELECTOR)) return null;
+  const atomPrefix = chooseAtomPrefix(body.textContent ?? "");
 
   const hasTextSlots = Boolean(body.querySelector("[data-flt-text-id]"));
   if (!hasTextSlots) {
     // Simple non-slot HTML (e.g. popup text / image OCR): only pack if it consists
     // solely of text nodes and protected term spans.
-    const serialized = serializeTermTextContainer(body);
+    const serialized = serializeTermTextContainer(body, dialect);
     if (!serialized || serialized.expectedTerms.size === 0) return null;
     if (serialized.wire.length > MAX_GOOGLE_HTML_WIRE_CHARS) return null;
     return {
       kind: "simple",
+      dialect,
+      atomPrefix,
       wireHtml: serialized.wire,
       expectedTerms: serialized.expectedTerms,
     };
@@ -163,7 +183,7 @@ export function packGoogleFreeHtml(sourceHtml: string): GoogleFreeHtmlPlan | nul
       if (isTextSlotSpan(child)) {
         const gapIndex = structural.length;
         if (gapSlots[gapIndex] !== null) return null; // Adjacent slots without separator.
-        const serialized = serializeTermTextContainer(child);
+        const serialized = serializeTermTextContainer(child, dialect);
         if (!serialized) return null;
         const fullText = child.textContent ?? "";
         gapSlots[gapIndex] = {
@@ -182,7 +202,9 @@ export function packGoogleFreeHtml(sourceHtml: string): GoogleFreeHtmlPlan | nul
         const id = String(atomCounter++);
         structural.push({ kind: "atom", id, sourceEl: child });
         gapSlots.push(null);
-        wire += `<span class="notranslate" data-pl-a="${id}">${escapeWireHtml(child.textContent ?? "")}</span>`;
+        wire += dialect === "microsoft"
+          ? `${atomPrefix}${id}`
+          : `<span class="notranslate" data-pl-a="${id}">${escapeWireHtml(child.textContent ?? "")}</span>`;
         continue;
       }
 
@@ -194,8 +216,12 @@ export function packGoogleFreeHtml(sourceHtml: string): GoogleFreeHtmlPlan | nul
         if (!inner) return null;
         structural.push({ kind: "el", id, sourceEl: el, childPlan: inner.plan });
         gapSlots.push(null);
-        const tag = wireTagForElement(el.tagName);
-        wire += `<${tag} data-pl-el="${id}">${inner.wire}</${tag}>`;
+        if (dialect === "microsoft") {
+          wire += `<b${id}>${inner.wire}</b${id}>`;
+        } else {
+          const tag = wireTagForElement(el.tagName);
+          wire += `<${tag} data-pl-el="${id}">${inner.wire}</${tag}>`;
+        }
         continue;
       }
 
@@ -207,16 +233,33 @@ export function packGoogleFreeHtml(sourceHtml: string): GoogleFreeHtmlPlan | nul
 
   const built = buildContainer(body);
   if (!built || slotCount === 0 || built.wire.length > MAX_GOOGLE_HTML_WIRE_CHARS) return null;
-  // Require at least one inline structure or protected term; pure single-slot text
-  // without terms needs no HTML wrapping at all.
-  if (elCounter === 0 && atomCounter === 0 && !built.wire.includes("data-pl-t=")) return null;
+  const hasWireMarkers = dialect === "microsoft"
+    ? elCounter > 0 || atomCounter > 0 || /<t\d+>/.test(built.wire)
+    : elCounter > 0 || atomCounter > 0 || built.wire.includes("data-pl-t=");
+  // For Microsoft Free, plain single-slot paragraphs coalesce into the same Edge
+  // batch request (cutting HTTP calls on mixed pages), except when raw '&'/'<'/'>'
+  // characters are better sent unescaped via plain-text templates. For Google Free,
+  // plain single-slot paragraphs stay on the direct translate_a/t -> translate_a/single path.
+  if (!hasWireMarkers && (dialect === "google" || /[&<>]/u.test(body.textContent ?? ""))) {
+    return null;
+  }
 
   return {
     kind: "fixed-slots",
+    dialect,
+    atomPrefix,
     sourceBody: body,
     wireHtml: built.wire,
     rootPlan: built.plan,
   };
+}
+
+export function packGoogleFreeHtml(sourceHtml: string): GoogleFreeHtmlPlan | null {
+  return packCompactFreeHtml(sourceHtml, "google");
+}
+
+export function packMicrosoftFreeHtml(sourceHtml: string): GoogleFreeHtmlPlan | null {
+  return packCompactFreeHtml(sourceHtml, "microsoft");
 }
 
 function restoreTermNodesIntoSlot(
@@ -238,8 +281,9 @@ function restoreTermNodesIntoSlot(
     }
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as Element;
-      const tid = el.getAttribute("data-pl-t");
-      if (el.tagName !== "SPAN" || tid === null || !expectedTerms.has(tid) || seenTerms.has(tid)) {
+      const msTermMatch = /^T(\d+)$/u.exec(el.tagName);
+      const tid = el.tagName === "SPAN" ? el.getAttribute("data-pl-t") : (msTermMatch ? msTermMatch[1]! : null);
+      if (tid === null || !expectedTerms.has(tid) || seenTerms.has(tid)) {
         return false;
       }
       seenTerms.add(tid);
@@ -252,7 +296,7 @@ function restoreTermNodesIntoSlot(
     return false;
   }
 
-  // If Google unwrapped a <span data-pl-t> while keeping the exact protected text
+  // If the engine unwrapped a term marker while keeping the exact protected text
   // verbatim inside a text node in this gap, re-wrap that occurrence deterministically.
   if (seenTerms.size < expectedTerms.size) {
     for (const [tid, termText] of expectedTerms) {
@@ -304,9 +348,17 @@ function restoreTermNodesIntoSlot(
   return true;
 }
 
+function normalizeMicrosoftWireAtoms(translatedWireHtml: string, atomPrefix: string): string {
+  const atomRe = new RegExp(`${atomPrefix}(\\d+)`, "g");
+  return translatedWireHtml.replace(atomRe, '<span data-pl-a="$1"></span>');
+}
+
 export function unpackGoogleFreeHtml(plan: GoogleFreeHtmlPlan, translatedWireHtml: string): string | undefined {
   if (typeof translatedWireHtml !== "string" || !translatedWireHtml.trim()) return undefined;
-  const wireDoc = new DOMParser().parseFromString(translatedWireHtml, "text/html");
+  const normalizedWire = plan.dialect === "microsoft"
+    ? normalizeMicrosoftWireAtoms(translatedWireHtml, plan.atomPrefix)
+    : translatedWireHtml;
+  const wireDoc = new DOMParser().parseFromString(normalizedWire, "text/html");
   if (wireDoc.head.childNodes.length > 0) return undefined;
 
   if (plan.kind === "simple") {
@@ -353,7 +405,8 @@ export function unpackGoogleFreeHtml(plan: GoogleFreeHtmlPlan, translatedWireHtm
           wireGaps.push([]);
           continue;
         }
-        const elId = el.getAttribute("data-pl-el");
+        const msElMatch = plan.dialect === "microsoft" ? /^B(\d+)$/u.exec(el.tagName) : null;
+        const elId = msElMatch ? msElMatch[1]! : el.getAttribute("data-pl-el");
         if (elId !== null) {
           wireStructural.push({ kind: "el", id: elId, el });
           wireGaps.push([]);
@@ -407,4 +460,8 @@ export function unpackGoogleFreeHtml(plan: GoogleFreeHtmlPlan, translatedWireHtm
 
   const ok = applyContainer(plan.sourceBody, outDoc.body, wireDoc.body, plan.rootPlan);
   return ok ? outDoc.body.innerHTML : undefined;
+}
+
+export function unpackMicrosoftFreeHtml(plan: GoogleFreeHtmlPlan, translatedWireHtml: string): string | undefined {
+  return unpackGoogleFreeHtml(plan, translatedWireHtml);
 }

@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { PageTranslator } from "../src/core/page-translator";
 import type { TranslationRequest } from "../src/core/provider";
-import { packGoogleFreeHtml, unpackGoogleFreeHtml } from "../src/providers/google-free-html";
+import {
+  packGoogleFreeHtml,
+  packMicrosoftFreeHtml,
+  unpackGoogleFreeHtml,
+  unpackMicrosoftFreeHtml,
+} from "../src/providers/google-free-html";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -112,5 +117,41 @@ describe("Google Free whole-paragraph compact HTML transport", () => {
     const plan = packGoogleFreeHtml(sourceHtml)!;
     const reordered = '在 <i data-pl-el="1">B</i> 之前使用 <b data-pl-el="0">A</b>';
     expect(unpackGoogleFreeHtml(plan, reordered)).toBeUndefined();
+  });
+});
+
+describe("Microsoft Free whole-paragraph compact markup", () => {
+  it("packs attribute-free <bN>, <tN>, and PLATOMN markers and avoids collisions with literal PLATOM tokens", () => {
+    const sourceHtml =
+      '<span data-flt-text-id="0">Onboarding offers </span>' +
+      '<strong><span data-flt-text-id="1">Quick start</span></strong>' +
+      '<span data-flt-text-id="2"> and mentions PLATOM0 before </span>' +
+      '<code>openclaw onboard --classic</code>' +
+      '<span data-flt-text-id="3"> in <span data-flt-term-id="0">Firefox</span>.</span>';
+
+    const plan = packMicrosoftFreeHtml(sourceHtml);
+    expect(plan).not.toBeNull();
+    // Because source text already contains PLATOM0, the chosen atom prefix avoids collision.
+    expect(plan!.atomPrefix).not.toBe("PLATOM");
+    expect(plan!.wireHtml).toBe(
+      `Onboarding offers <b0>Quick start</b0> and mentions PLATOM0 before ${plan!.atomPrefix}0 in <t0>Firefox</t0>.`,
+    );
+
+    const wireTranslated =
+      `新手引导提供 <b0>快速启动</b0> 并在提到 PLATOM0 后运行 ${plan!.atomPrefix}0 以打开 <t0>Firefox</t0>。`;
+    const unpacked = unpackMicrosoftFreeHtml(plan!, wireTranslated);
+    expect(unpacked).toContain('<strong><span data-flt-text-id="1">快速启动</span></strong>');
+    expect(unpacked).toContain("<code>openclaw onboard --classic</code>");
+    expect(unpacked).toContain('<span data-flt-term-id="0">Firefox</span>');
+  });
+
+  it("rejects mismatched or unclosed <bN>/<tN> tags cleanly", () => {
+    const sourceHtml =
+      '<span data-flt-text-id="0">Use </span>' +
+      '<strong><span data-flt-text-id="1">Quick start</span></strong>' +
+      '<span data-flt-text-id="2">.</span>';
+    const plan = packMicrosoftFreeHtml(sourceHtml)!;
+    expect(unpackMicrosoftFreeHtml(plan, "使用 <b0>快速启动。")).toBeUndefined();
+    expect(unpackMicrosoftFreeHtml(plan, "使用 <b0>快速启动</b1>。")).toBeUndefined();
   });
 });

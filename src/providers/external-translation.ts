@@ -8,7 +8,13 @@ import {
 } from "../shared/translation-engine-settings";
 import { restoreFixedHtmlTransport } from "../core/fixed-html-transport";
 import { assessTranslationQuality } from "../core/translation-quality";
-import { packGoogleFreeHtml, unpackGoogleFreeHtml, type GoogleFreeHtmlPlan } from "./google-free-html";
+import {
+  packGoogleFreeHtml,
+  packMicrosoftFreeHtml,
+  unpackGoogleFreeHtml,
+  unpackMicrosoftFreeHtml,
+  type GoogleFreeHtmlPlan,
+} from "./google-free-html";
 
 export interface ExternalTranslationTerminologyEntry {
   source: string;
@@ -909,17 +915,84 @@ async function translateMicrosoftFreeChunk(
 async function translateMicrosoftFree(
   requests: ExternalTranslationRequest[],
 ): Promise<Array<string | undefined>> {
-  const request = requests[0]!;
-  const to = apiLanguage(request.targetLanguage, "microsoft-free");
-  const from = request.sourceLanguage && request.sourceLanguage !== "auto"
-    ? apiLanguage(request.sourceLanguage, "microsoft-free")
+  const first = requests[0]!;
+  const to = apiLanguage(first.targetLanguage, "microsoft-free");
+  const from = first.sourceLanguage && first.sourceLanguage !== "auto"
+    ? apiLanguage(first.sourceLanguage, "microsoft-free")
     : "";
-  return translatePlainTextTemplates(
-    requests,
-    MICROSOFT_FREE_MAX_ITEMS_PER_CALL,
-    MICROSOFT_FREE_MAX_CHARS_PER_CALL,
-    (chunk) => translateMicrosoftFreeChunk(chunk, from, to),
-  );
+
+  const results: Array<string | undefined> = new Array(requests.length).fill(undefined);
+  const htmlItems: Array<{ index: number; request: ExternalTranslationRequest; plan: GoogleFreeHtmlPlan }> = [];
+  const fallbackIndices: number[] = [];
+
+  for (let index = 0; index < requests.length; index += 1) {
+    const request = requests[index]!;
+    const plan = packMicrosoftFreeHtml(request.html);
+    if (plan) htmlItems.push({ index, request, plan });
+    else fallbackIndices.push(index);
+  }
+
+  if (htmlItems.length > 0) {
+    const chunks: typeof htmlItems[] = [];
+    let current: typeof htmlItems = [];
+    let currentChars = 0;
+    for (const item of htmlItems) {
+      const len = item.plan.wireHtml.length;
+      if (
+        current.length > 0
+        && (current.length >= MICROSOFT_FREE_MAX_ITEMS_PER_CALL || currentChars + len > MICROSOFT_FREE_MAX_CHARS_PER_CALL)
+      ) {
+        chunks.push(current);
+        current = [];
+        currentChars = 0;
+      }
+      current.push(item);
+      currentChars += len;
+    }
+    if (current.length > 0) chunks.push(current);
+
+    for (const chunk of chunks) {
+      const translatedChunk = await translateMicrosoftFreeChunk(
+        chunk.map((item) => item.plan.wireHtml),
+        from,
+        to,
+      );
+      for (let i = 0; i < chunk.length; i += 1) {
+        const item = chunk[i]!;
+        const wireOut = translatedChunk[i];
+        let restored: string | undefined;
+        if (typeof wireOut === "string") {
+          const unpacked = unpackMicrosoftFreeHtml(item.plan, wireOut);
+          if (typeof unpacked === "string") {
+            try {
+              restored = /<span\b[^>]*\bdata-flt-text-id\s*=/iu.test(item.request.html)
+                ? restoreFixedHtmlTransport(item.request.html, unpacked)
+                : unpacked;
+            } catch {
+              restored = undefined;
+            }
+          }
+        }
+        if (typeof restored === "string") results[item.index] = restored;
+        else fallbackIndices.push(item.index);
+      }
+    }
+  }
+
+  if (fallbackIndices.length > 0) {
+    fallbackIndices.sort((a, b) => a - b);
+    const fallbackOutputs = await translatePlainTextTemplates(
+      fallbackIndices.map((index) => requests[index]!),
+      MICROSOFT_FREE_MAX_ITEMS_PER_CALL,
+      MICROSOFT_FREE_MAX_CHARS_PER_CALL,
+      (chunk) => translateMicrosoftFreeChunk(chunk, from, to),
+    );
+    for (let i = 0; i < fallbackIndices.length; i += 1) {
+      results[fallbackIndices[i]!] = fallbackOutputs[i];
+    }
+  }
+
+  return results;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -76,7 +76,7 @@ describe("built-in free Microsoft (Edge) and Google Translate engines", () => {
     expect((await loadTranslationEngineState()).activeEngineId).toBe(BUILTIN_GOOGLE_ENGINE_ID);
   });
 
-  it("translates via Edge translatetext with string-array body, template/brand preservation, and 429 retry", async () => {
+  it("translates via Edge translatetext as whole-sentence compact markup with 429 retry and per-paragraph fallback", async () => {
     let calls = 0;
     const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       calls += 1;
@@ -92,11 +92,13 @@ describe("built-in free Microsoft (Edge) and Google Translate engines", () => {
       }
       const items = JSON.parse(String(init?.body)) as string[];
       expect(Array.isArray(items)).toBe(true);
-      // Whole sentence containing protected terms is sent intact (not fragmented into "and" + "models").
+      // Whole sentence containing inline formatting, code atoms, and protected terms is sent intact
+      // using attribute-free <bN>/<tN>/PLATOMN markers so Edge cannot corrupt attribute quotes.
       const map: Record<string, string> = {
         Hello: "你好",
         World: "世界",
-        "Claude and GPT models": "Claude 和 GPT 模型",
+        "<t0>Claude</t0> and <t1>GPT</t1> models": "<t0>Claude</t0> 和 <t1>GPT</t1> 模型",
+        "Onboarding offers <b0>Quick start</b0> and runs PLATOM0.": "新手入门提供 <b0>快速启动</b0> 并运行 PLATOM0。",
       };
       return Response.json(items.map((text) => ({
         detectedLanguage: { language: "en", score: 1 },
@@ -112,10 +114,12 @@ describe("built-in free Microsoft (Edge) and Google Translate engines", () => {
     const batch = await translateExternalBatch(msFree, [
       { html: '<span data-flt-text-id="0">Hello</span>', sourceLanguage: "auto", targetLanguage: "zh-Hans" },
       { html: '<span data-flt-text-id="0"><span data-flt-term-id="0">Claude</span> and <span data-flt-term-id="1">GPT</span> models</span>', sourceLanguage: "auto", targetLanguage: "zh-Hans" },
+      { html: '<span data-flt-text-id="0">Onboarding offers </span><strong><span data-flt-text-id="1">Quick start</span></strong><span data-flt-text-id="2"> and runs </span><code>openclaw onboard</code><span data-flt-text-id="3">.</span>', sourceLanguage: "auto", targetLanguage: "zh-Hans" },
     ]);
     expect(batch).toEqual([
       '<span data-flt-text-id="0">你好</span>',
       '<span data-flt-text-id="0"><span data-flt-term-id="0">Claude</span> 和 <span data-flt-term-id="1">GPT</span> 模型</span>',
+      '<span data-flt-text-id="0">新手入门提供 </span><strong><span data-flt-text-id="1">快速启动</span></strong><span data-flt-text-id="2"> 并运行 </span><code>openclaw onboard</code><span data-flt-text-id="3">。</span>',
     ]);
     expect(restoreTerminologyHtml(document, batch[1]!, ["Claude", "GPT"])).toBe('<span data-flt-text-id="0">Claude 和 GPT 模型</span>');
     expect(calls).toBe(2);
@@ -126,6 +130,42 @@ describe("built-in free Microsoft (Edge) and Google Translate engines", () => {
       targetLanguage: "zh-Hans",
     });
     expect(single).toBe('<span data-flt-text-id="0">世界</span>');
+  });
+
+  it("falls back per paragraph to plain-text slots when Edge reorders or drops compact markers", async () => {
+    let callCount = 0;
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      callCount += 1;
+      const items = JSON.parse(String(init?.body)) as string[];
+      if (callCount === 1) {
+        // Simulate Edge reordering <b1> before <b0>.
+        return Response.json(items.map(() => ({
+          detectedLanguage: { language: "en", score: 1 },
+          translations: [{ text: "在 <b1>自定义</b1> 之前使用 <b0>快速启动</b0>。", to: "zh-Hans" }],
+        })));
+      }
+      const map: Record<string, string> = {
+        Use: "使用",
+        "Quick start": "快速启动",
+        before: "之前",
+        "Custom setup": "自定义设置",
+      };
+      return Response.json(items.map((text) => ({
+        detectedLanguage: { language: "en", score: 1 },
+        translations: [{ text: map[text] ?? text, to: "zh-Hans" }],
+      })));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const msFree = builtinFreeEngineConfig(BUILTIN_MICROSOFT_ENGINE_ID)!;
+    const html = await translateWithExternalEngine(msFree, {
+      html: '<span data-flt-text-id="0">Use </span><strong><span data-flt-text-id="1">Quick start</span></strong><span data-flt-text-id="2"> before </span><em><span data-flt-text-id="3">Custom setup</span></em>',
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+    expect(callCount).toBe(2);
+    expect(html).toContain('<strong><span data-flt-text-id="1">快速启动</span></strong>');
+    expect(html).toContain('<em><span data-flt-text-id="3">自定义设置</span></em>');
   });
 
   it("supports native Anthropic Messages API, model discovery, and OpenAI / DashScope defaults", async () => {

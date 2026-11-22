@@ -1,4 +1,5 @@
 import {restoreFixedHtmlTransport} from "../../core/fixed-html-transport";
+import {isOptionalEnglishArticle} from "../../core/translation-quality";
 import {escapeHtml, protectTerminologyInFragment, restoreTerminology, termOccurrenceCount} from "../../core/rich-segment";
 
 const slotSelector = "span[data-flt-text-id]";
@@ -471,6 +472,7 @@ export function prepareBergamotSlotFallback(
 
   const slotPlans: Array<{
     id: string;
+    hasTerms: boolean;
     sourceSlotHtml: string;
     preparedSlotHtml: string;
     usedOpaque: boolean;
@@ -503,6 +505,7 @@ export function prepareBergamotSlotFallback(
     const preparedSlotHtml = prepareOpaque(sourceSlotHtml);
     slotPlans.push({
       id,
+      hasTerms,
       sourceSlotHtml,
       preparedSlotHtml,
       usedOpaque: preparedSlotHtml !== sourceSlotHtml,
@@ -537,13 +540,39 @@ export function prepareBergamotSlotFallback(
           return;
         }
         const parsed = parser.parseFromString(repaired, "text/html");
-        const parsedSlot = parsed.body.firstElementChild;
-        if (parsed.head.childNodes.length || parsed.body.childNodes.length !== 1
-          || !parsedSlot?.matches('span[data-flt-text-id="0"]')) {
+        if (parsed.head.childNodes.length) return;
+
+        if (!plan.hasTerms) {
+          // For plain text slots, Bergamot can move trailing newlines or punctuation
+          // outside <span data-flt-text-id="0">. Accept the complete body text as long
+          // as no foreign elements were injected.
+          const unexpectedElement = [...parsed.body.querySelectorAll("*")].some(
+            (el) => !el.matches('span[data-flt-text-id="0"]'),
+          );
+          if (unexpectedElement) return;
+          const slotText = (parsed.body.textContent ?? "").replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/gu, "");
+          if (/\uFFFD/u.test(slotText)) return;
+          if (!slotText && !isOptionalEnglishArticle(plan.originalText)) return;
+          if (plan.innerBalanced && !bracketsBalanced(slotText)) return;
+
+          const combined = !slotText && /^\s+$/u.test(plan.prefix) && /^\s+$/u.test(plan.suffix)
+            ? plan.prefix
+            : `${plan.prefix}${slotText}${plan.suffix}`;
+          targetSlot.textContent = combined;
+          if (combined.trim() !== plan.originalText.trim()) anyChanged = true;
+          continue;
+        }
+
+        const meaningfulChildren = [...parsed.body.childNodes].filter(
+          (node) => node.nodeType !== Node.TEXT_NODE || (node.textContent ?? "").trim() !== "",
+        );
+        const parsedSlot = meaningfulChildren.length === 1 ? meaningfulChildren[0] as Element : null;
+        if (!parsedSlot || parsedSlot.nodeType !== Node.ELEMENT_NODE || !parsedSlot.matches('span[data-flt-text-id="0"]')) {
           return;
         }
         const slotText = parsedSlot.textContent ?? "";
-        if (!slotText.trim() || /\uFFFD/u.test(slotText)) return;
+        if (/\uFFFD/u.test(slotText)) return;
+        if (!slotText.trim() && !isOptionalEnglishArticle(plan.originalText)) return;
         if (plan.innerBalanced && !bracketsBalanced(slotText)) return;
 
         const fragment = resultBody.ownerDocument.createDocumentFragment();

@@ -697,14 +697,33 @@ function copySourceLayout(root, node) {
     ];
     for (const property of properties) {
         const value = computed.getPropertyValue(property);
-        if (value)
+        if (!value) continue;
+        if (property === "color") {
+            node.style.setProperty("color", `var(--pagelingo-bilingual-color, ${value})`, "important");
+        } else if (property === "font-size" && /^[\d.]/.test(value)) {
+            node.style.setProperty("font-size", `calc(${value} * var(--pagelingo-bilingual-scale, 1))`, "important");
+        } else if (property === "padding-inline-start" && /^[\d.-]/.test(value)) {
+            node.style.setProperty("padding-inline-start", `calc(${value} + var(--pagelingo-bilingual-pad-start, 0px))`, "important");
+        } else if (property === "padding-inline-end" && /^[\d.-]/.test(value)) {
+            node.style.setProperty("padding-inline-end", `calc(${value} + var(--pagelingo-bilingual-pad-end, 0px))`, "important");
+        } else if (property === "text-decoration-line") {
+            node.style.setProperty("text-decoration-line", `var(--pagelingo-bilingual-deco-line, ${value})`, "important");
+        } else if (property === "text-decoration-style") {
+            node.style.setProperty("text-decoration-style", `var(--pagelingo-bilingual-deco-style, ${value})`, "important");
+        } else if (property === "text-decoration-color") {
+            node.style.setProperty("text-decoration-color", `var(--pagelingo-bilingual-deco-color, ${value})`, "important");
+        } else if (property === "text-underline-offset") {
+            node.style.setProperty("text-underline-offset", `var(--pagelingo-bilingual-underline-offset, ${value})`, "important");
+        } else {
             node.style.setProperty(property, value, "important");
+        }
     }
 }
-export function mountTranslation(root, fragment, targetLanguage, insideSourceContainer = false) {
+export function mountTranslation(root, fragment, targetLanguage, insideSourceContainer = false, bilingualOrder = "source-top") {
     const node = root.ownerDocument.createElement("span");
     node.className = "flt-translation";
     node.dataset.fltGenerated = "translation";
+    if (bilingualOrder === "translation-top") node.dataset.fltOrder = "translation-top";
     node.lang = targetLanguage;
     node.append(fragment);
     copySourceLayout(root, node);
@@ -733,10 +752,11 @@ export function mountTranslation(root, fragment, targetLanguage, insideSourceCon
         && ["P", "BLOCKQUOTE", "FIGCAPTION", "DT", "DD", "H1", "H2", "H3", "H4", "H5", "H6"].includes(root.tagName)
         && !root.querySelector("p,li,blockquote,table,ul,ol,dl,h1,h2,h3,h4,h5,h6,button,input,select,textarea");
     if (insideProse || ["LI", "TD", "TH"].includes(root.tagName)) {
-        root.append(node);
+        if (bilingualOrder === "translation-top") root.prepend(node);
+        else root.append(node);
     }
     else {
-        root.insertAdjacentElement("afterend", node);
+        root.insertAdjacentElement(bilingualOrder === "translation-top" ? "beforebegin" : "afterend", node);
     }
     return node;
 }
