@@ -53,63 +53,90 @@ export function freezeNavigationLayout(resetExisting = true): symbol {
     const hold = Symbol("navigation-layout-hold");
     navigationLayoutHolds.add(hold);
 
-    const candidates = Array.from(document.querySelectorAll("nav a, [role='navigation'] a"));
+    const styleCache = new Map<Element, CSSStyleDeclaration>();
+    const cachedStyle = (el: Element): CSSStyleDeclaration => {
+        let style = styleCache.get(el);
+        if (!style) {
+            style = getComputedStyle(el);
+            styleCache.set(el, style);
+        }
+        return style;
+    };
+
+    const isHorizontalContainer = (style: CSSStyleDeclaration): boolean =>
+        ((style.display === "flex" || style.display === "inline-flex") && style.flexDirection.startsWith("row")) ||
+        style.display === "grid" ||
+        style.display === "inline-grid";
+
+    // Phase 1: Pure READ pass (zero inline style writes so browser never forces repeated reflows).
+    const planned: Array<{ item: HTMLElement; width: number; isFlexParent: boolean }> = [];
+    const seenItems = new Set<HTMLElement>();
+    const candidates = document.querySelectorAll("nav a, [role='navigation'] a");
     for (const anchor of candidates) {
         if (!(anchor instanceof HTMLElement) || !anchor.isConnected) continue;
-        const anchorStyle = getComputedStyle(anchor);
-        const anchorRect = anchor.getBoundingClientRect();
+
+        // First locate a horizontal flex-row/grid parent BEFORE touching getBoundingClientRect().
+        // Vertical doc sidebars (e.g. 1,300+ links on Mintlify/OpenClaw) exit here with zero reflows.
+        let item: HTMLElement = anchor;
+        let horizontalParent: HTMLElement | null = null;
+        let horizontalParentStyle: CSSStyleDeclaration | null = null;
+        let insideClosedDetails = false;
+        for (let depth = 0; item.parentElement && depth < 4; depth += 1) {
+            const parentEl = item.parentElement;
+            if (parentEl.tagName === "DETAILS" && !parentEl.hasAttribute("open") && item.tagName !== "SUMMARY") {
+                insideClosedDetails = true;
+                break;
+            }
+            const pStyle = cachedStyle(parentEl);
+            if (isHorizontalContainer(pStyle)) {
+                horizontalParent = parentEl;
+                horizontalParentStyle = pStyle;
+                break;
+            }
+            item = parentEl;
+            if (item.tagName === "NAV") break;
+        }
+        if (insideClosedDetails || !horizontalParent || !horizontalParentStyle) continue;
+        if (seenItems.has(item) || navigationLayoutSnapshots.has(item)) continue;
+
+        const anchorStyle = cachedStyle(anchor);
         if (
             anchorStyle.display === "none" ||
             anchorStyle.visibility === "hidden" ||
-            Number.parseFloat(anchorStyle.opacity || "1") === 0 ||
-            anchorRect.width <= 1 ||
-            anchorRect.height <= 1
+            Number.parseFloat(anchorStyle.opacity || "1") === 0
         ) continue;
 
-        let item: HTMLElement = anchor;
-        for (let depth = 0; item.parentElement && depth < 4; depth += 1) {
-            const parentStyle = getComputedStyle(item.parentElement);
-            if ((parentStyle.display === "flex" || parentStyle.display === "inline-flex") && parentStyle.flexDirection.startsWith("row")) break;
-            if (parentStyle.display === "grid" || parentStyle.display === "inline-grid") break;
-            item = item.parentElement;
-            if (item.tagName === "NAV") break;
-        }
-
-        const parent = item.parentElement;
-        if (!parent) continue;
-        const itemStyle = getComputedStyle(item);
-        const itemRect = item.getBoundingClientRect();
+        const itemStyle = item === anchor ? anchorStyle : cachedStyle(item);
         if (
             itemStyle.display === "none" ||
             itemStyle.visibility === "hidden" ||
-            Number.parseFloat(itemStyle.opacity || "1") === 0 ||
-            itemRect.width <= 1 ||
-            itemRect.height <= 1
+            Number.parseFloat(itemStyle.opacity || "1") === 0
         ) continue;
 
-        const parentStyle = getComputedStyle(parent);
-        const horizontalLayout =
-            ((parentStyle.display === "flex" || parentStyle.display === "inline-flex") && parentStyle.flexDirection.startsWith("row")) ||
-            parentStyle.display === "grid" ||
-            parentStyle.display === "inline-grid";
-        if (!horizontalLayout) continue;
-        if (navigationLayoutSnapshots.has(item)) continue;
+        const anchorRect = anchor.getBoundingClientRect();
+        if (anchorRect.width <= 1 || anchorRect.height <= 1) continue;
+        const itemRect = item === anchor ? anchorRect : item.getBoundingClientRect();
+        if (itemRect.width <= 1 || itemRect.height <= 1) continue;
 
-        const width = itemRect.width;
-        if (!(width > 1)) continue;
+        seenItems.add(item);
+        planned.push({
+            item,
+            width: itemRect.width,
+            isFlexParent: horizontalParentStyle.display === "flex" || horizontalParentStyle.display === "inline-flex",
+        });
+    }
+
+    // Phase 2: Pure WRITE pass (single batched layout invalidation).
+    for (const { item, width, isFlexParent } of planned) {
         navigationLayoutSnapshots.set(item, {
             boxSizing: captureProperty(item, "box-sizing"),
             minInlineSize: captureProperty(item, "min-inline-size"),
             flexShrink: captureProperty(item, "flex-shrink"),
         });
-
         const guardedWidth = `${Math.ceil(width * 100) / 100}px`;
         item.style.setProperty("box-sizing", "border-box", "important");
-        // This is only a temporary anti-jank guard while asynchronous translation is
-        // in flight. Once translated DOM is mounted, release the source-language width
-        // so the target language can use its natural layout.
         item.style.setProperty("min-inline-size", guardedWidth, "important");
-        if (parentStyle.display === "flex" || parentStyle.display === "inline-flex") {
+        if (isFlexParent) {
             item.style.setProperty("flex-shrink", "0", "important");
         }
     }

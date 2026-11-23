@@ -32,15 +32,33 @@ export class TranslationProgress {
     if (!view || this.#frame) return;
     this.#frame = view.requestAnimationFrame(() => {
       this.#frame = 0;
+      const vw = view.innerWidth;
+      const vh = view.innerHeight;
+      const range = this.#document.createRange();
+      const visibleEntries: Array<{ root: Element; entry: { anchor: Text; icon: HTMLElement | null }; rect: DOMRect }> = [];
+      const hiddenIcons: Array<{ entry: { anchor: Text; icon: HTMLElement | null } }> = [];
+
+      // Phase 1: Pure READ pass (zero DOM mutations between getClientRects calls).
       for (const [root, entry] of this.#pending) {
-        const range = this.#document.createRange();
-        if (entry.anchor.isConnected && root.contains(entry.anchor)) range.selectNodeContents(entry.anchor);
-        const rects = range.getClientRects();
-        const rect = rects[rects.length - 1];
-        if (!rect || rect.bottom <= 0 || rect.top >= view.innerHeight || rect.right <= 0 || rect.left >= view.innerWidth) {
-          entry.icon?.remove(); entry.icon = null;
+        let rect: DOMRect | undefined;
+        if (visibleEntries.length < 16 && entry.anchor.isConnected && root.contains(entry.anchor)) {
+          range.selectNodeContents(entry.anchor);
+          const rects = range.getClientRects();
+          rect = rects[rects.length - 1];
+        }
+        if (!rect || rect.bottom <= 0 || rect.top >= vh || rect.right <= 0 || rect.left >= vw) {
+          if (entry.icon) hiddenIcons.push({ entry });
           continue;
         }
+        visibleEntries.push({ root, entry, rect });
+      }
+
+      // Phase 2: Pure WRITE pass.
+      for (const { entry } of hiddenIcons) {
+        entry.icon?.remove();
+        entry.icon = null;
+      }
+      for (const { root, entry, rect } of visibleEntries) {
         if (!entry.icon) {
           const icon = this.#document.createElement("span");
           icon.dataset.fltGenerated = "progress";
@@ -48,7 +66,7 @@ export class TranslationProgress {
           (root.closest("dialog[open]") ?? this.#document.body).append(icon);
           entry.icon = icon;
         }
-        entry.icon.style.setProperty("left", `${Math.max(2, Math.min(rect.right + 4, view.innerWidth - 14))}px`, "important");
+        entry.icon.style.setProperty("left", `${Math.max(2, Math.min(rect.right + 4, vw - 14))}px`, "important");
         entry.icon.style.setProperty("top", `${Math.max(2, (rect.top + rect.bottom - 11) / 2)}px`, "important");
       }
     });

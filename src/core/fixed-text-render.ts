@@ -1,10 +1,11 @@
-import { mountTranslation } from "./render";
+import { captureSourceLayout, mountTranslation } from "./render";
 import { isOptionalEnglishArticle } from "./translation-quality";
-import { isElementEffectivelyHidden, isTranslationControl, isNestedOwnerBoundary, isTranslationDisabled } from "./dom-policy";
+import { isElementEffectivelyHidden, isHiddenInsideClosedDetails, isTranslationControl, isNestedOwnerBoundary, isTranslationDisabled } from "./dom-policy";
 import {canCollapseProseWhitespace, canWriteFrozenProseGap, isAsciiWhitespace, isAsciiWhitespaceOrEmpty} from "./collapsible-whitespace";
 import {cjkSpacingBoundaryUnchanged, cjkSpacingContextUnchanged, normalizeCjkSpacing} from "./cjk-spacing";
 import { parseHtmlBody } from "../shared/html-parser";
 
+export type CapturedSourceLayout = ReturnType<typeof captureSourceLayout>;
 export interface SourceTextSlot { id: number; node: Text; parent: Node; source: string; writePolicy?: "collapsible-whitespace" | "frozen-prose-gap" }
 interface TextEdit extends SourceTextSlot { translated: string }
 export interface FixedTextRecord {
@@ -13,6 +14,7 @@ export interface FixedTextRecord {
   snapshot: Array<{node: Node; text: string | null}>;
   mode: "translation" | "bilingual";
   translationNode: HTMLElement | null;
+  hiddenElements?: ReadonlySet<Element>;
 }
 export interface FrozenProseWitness {target: string; readProjected: (edits: ReadonlyMap<Text, string>) => string}
 const frozenSourceAuthority = new WeakSet<SourceTextSlot>();
@@ -31,7 +33,13 @@ function sourceNodes(root: HTMLElement): Node[] {
   return nodes;
 }
 
-export function prepareFixedTextRecord(root: HTMLElement, slots: SourceTextSlot[], html: string, language = ""): FixedTextRecord {
+export function prepareFixedTextRecord(
+  root: HTMLElement,
+  slots: SourceTextSlot[],
+  html: string,
+  language = "",
+  hiddenElements?: ReadonlySet<Element>,
+): FixedTextRecord {
   const body = parseHtmlBody(html);
   const targets = Array.from(body.querySelectorAll("[data-flt-text-id]"));
   if (targets.length !== slots.length) throw new Error("Translation text-node mapping count mismatch");
@@ -58,7 +66,14 @@ export function prepareFixedTextRecord(root: HTMLElement, slots: SourceTextSlot[
   const snapshot = sourceNodes(root).map(node => ({node, text: node.nodeType === Node.TEXT_NODE ? node.textContent : null}));
   const originalTranslations = edits.map(edit => edit.translated);
   const boundaries = normalizeCjkSpacing(root, edits, language);
-  const record: FixedTextRecord = {root, edits, snapshot, mode: "bilingual", translationNode: null};
+  const record: FixedTextRecord = {
+    root,
+    edits,
+    snapshot,
+    mode: "bilingual",
+    translationNode: null,
+    ...(hiddenElements ? { hiddenElements } : {}),
+  };
   const spacingNodes = edits.filter((edit, i) => edit.translated !== originalTranslations[i]).map(edit => edit.node);
   if (spacingNodes.length) spacingAuthority.set(record, {nodes: spacingNodes, boundaries});
   return record;
@@ -98,16 +113,45 @@ export function clearFixedTextRecord(record: FixedTextRecord): void {
   record.mode = "bilingual";
 }
 
+const BILINGUAL_STRIP_TAGS = new Set([
+  "UL", "OL", "DL", "TABLE", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE",
+  "BUTTON", "INPUT", "SELECT", "TEXTAREA", "IFRAME", "OBJECT", "EMBED",
+  "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO", "RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME",
+]);
+
+function isExcludedBilingualChild(
+  source: Element,
+  root: HTMLElement,
+  hiddenElements: ReadonlySet<Element> | undefined,
+  visibilityCache: WeakMap<Element, boolean> | undefined,
+): boolean {
+  if (BILINGUAL_STRIP_TAGS.has(source.tagName)) return true;
+  if (
+    source.hasAttribute("data-flt-generated") ||
+    source.hasAttribute("hidden") ||
+    source.getAttribute("aria-hidden") === "true" ||
+    isHiddenInsideClosedDetails(source) ||
+    isNestedOwnerBoundary(source, root)
+  ) {
+    return true;
+  }
+  if (source.hasAttribute("contenteditable") && source.getAttribute("contenteditable") !== "false") {
+    return true;
+  }
+  if (hiddenElements) return hiddenElements.has(source);
+  return isElementEffectivelyHidden(source, visibilityCache, root);
+}
+
 function bilingualFragment(root: HTMLElement, record: FixedTextRecord): DocumentFragment {
   const clone = root.cloneNode(true) as HTMLElement;
   const translated = new Map(record.edits.map(edit => [edit.node, edit.translated]));
+  const visibilityCache = record.hiddenElements ? undefined : new WeakMap<Element, boolean>([[root, false]]);
   const removed: Element[] = [];
   const walk = (source: Node, target: Node) => {
     if (source.nodeType === Node.TEXT_NODE && translated.has(source as Text)) target.textContent = translated.get(source as Text)!;
     if (target.nodeType === Node.ELEMENT_NODE) {
       const element = target as HTMLElement;
-      if (source !== root && (isNestedOwnerBoundary(source, root) || (source as Element).matches("ul,ol,dl,table,script,style,noscript,template,button,input,select,textarea,iframe,object,embed,svg,math,canvas,video,audio,[data-flt-generated],[contenteditable]:not([contenteditable='false']),relative-time,time-ago,local-time")
-          || isElementEffectivelyHidden(source))) {
+      if (source !== root && isExcludedBilingualChild(source as Element, root, record.hiddenElements, visibilityCache)) {
         removed.push(element); return;
       }
       // Clone application-owned markup, never model markup. Avoid duplicate IDs and handlers.
@@ -132,25 +176,43 @@ function bilingualFragment(root: HTMLElement, record: FixedTextRecord): Document
   return fragment;
 }
 
+export function needsCapturedSourceLayout(
+  root: HTMLElement,
+  record: FixedTextRecord,
+  mode: "translation" | "bilingual",
+): boolean {
+  if (mode !== "bilingual") return false;
+  if (record.edits.every(edit => edit.translated.trim() === edit.source.trim())) return false;
+  return !isTranslationControl(root);
+}
+
+export function validateFixedTextRecord(root: HTMLElement, record: FixedTextRecord): boolean {
+  if (!fixedTextRecordUnchanged(record)) return false;
+  if (record.edits.some(edit => isTranslationDisabled(edit.node.parentElement))) return false;
+  const spacing = spacingAuthority.get(record);
+  if (spacing && (spacing.nodes.some(node => !cjkSpacingContextUnchanged(node))
+    || spacing.boundaries.some(([left, right]) => !cjkSpacingBoundaryUnchanged(left, right, root)))) return false;
+  if (record.edits.some(edit => edit.writePolicy === "collapsible-whitespace"
+    && !canCollapseProseWhitespace(edit.node) || edit.writePolicy === "frozen-prose-gap"
+    && !canWriteFrozenProseGap(edit.node, edit.source))) return false;
+  const witness = frozenRecordAuthority.get(record);
+  if (record.edits.some(edit => edit.writePolicy === "frozen-prose-gap") && !witness) return false;
+  if (witness && witness.readProjected(new Map(record.edits.map(edit => [edit.node, edit.translated]))) !== witness.target) return false;
+  return true;
+}
+
 export function applyFixedTextRecord(
   root: HTMLElement,
   record: FixedTextRecord,
   mode: "translation" | "bilingual",
   language: string,
   bilingualOrder: "source-top" | "translation-top" = "source-top",
+  capturedLayout?: CapturedSourceLayout,
+  prevalidated?: boolean,
 ): boolean {
-  const unchanged = fixedTextRecordUnchanged(record);
+  const valid = prevalidated !== undefined ? prevalidated : validateFixedTextRecord(root, record);
   clearFixedTextRecord(record);
-  if (record.edits.some(edit => isTranslationDisabled(edit.node.parentElement))) return false;
-  const spacing = spacingAuthority.get(record);
-  if (spacing && (spacing.nodes.some(node => !cjkSpacingContextUnchanged(node))
-    || spacing.boundaries.some(([left, right]) => !cjkSpacingBoundaryUnchanged(left, right, root)))) return false;
-  if (!unchanged || record.edits.some(edit => edit.writePolicy === "collapsible-whitespace"
-    && !canCollapseProseWhitespace(edit.node) || edit.writePolicy === "frozen-prose-gap"
-    && !canWriteFrozenProseGap(edit.node, edit.source))) return false;
-  const witness = frozenRecordAuthority.get(record);
-  if (record.edits.some(edit => edit.writePolicy === "frozen-prose-gap") && !witness) return false;
-  if (witness && witness.readProjected(new Map(record.edits.map(edit => [edit.node, edit.translated]))) !== witness.target) return false;
+  if (!valid) return false;
   if (mode === "translation") {
     // Validate the entire paragraph before the first write; only existing Text.data changes.
     for (const edit of record.edits) edit.node.data = edit.translated;
@@ -190,7 +252,7 @@ export function applyFixedTextRecord(
     }
     record.translationNode = node;
   } else {
-    record.translationNode = mountTranslation(root, bilingualFragment(root, record), language, true, bilingualOrder);
+    record.translationNode = mountTranslation(root, bilingualFragment(root, record), language, true, bilingualOrder, capturedLayout);
   }
   record.mode = mode;
   return true;

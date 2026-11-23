@@ -54,10 +54,24 @@ export async function sendAllVisibleFramesMessage<T>(
     if (typeof executeScript === "function") {
       const results = await executeScript({
         target: { tabId, allFrames: true },
-        func: (() => ({
-          visible: window.innerWidth >= 80 && window.innerHeight >= 40,
-          hasText: Boolean((document.body?.innerText || "").trim().length > 0),
-        })) as unknown as () => void,
+        func: (() => {
+          if (window === window.top) return { visible: true, hasText: true };
+          const visible = window.innerWidth >= 80 && window.innerHeight >= 40;
+          if (!visible || !document.body) return { visible, hasText: false };
+          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+              if (node.nodeType === Node.ELEMENT_NODE) {
+                const tag = (node as Element).tagName;
+                if (tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT" || tag === "TEMPLATE") {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_SKIP;
+              }
+              return /\S/.test((node as Text).data) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+            },
+          });
+          return { visible, hasText: Boolean(walker.nextNode()) };
+        }) as unknown as () => void,
       });
       const discovered = new Set<number>([0]);
       for (const entry of results ?? []) {

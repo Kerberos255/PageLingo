@@ -41,7 +41,7 @@ function ensureStyle(bilingualStyle = undefined) {
         style.dataset.fltGenerated = "style";
     }
     const normalized = normalizeBilingualStyle(bilingualStyle);
-    style.textContent = `
+    const nextCss = `
     .flt-translation { display: block !important; margin-block-start: 0.28em !important; font: inherit !important; line-height: inherit !important; letter-spacing: inherit !important; text-transform: none !important; }
     .flt-translation a { display: inline !important; }
     .flt-source-hidden { display: none !important; }
@@ -60,13 +60,11 @@ function ensureStyle(bilingualStyle = undefined) {
     @media (prefers-reduced-motion: reduce) { [data-flt-generated="progress"] { animation: none !important; } }
     ${buildBilingualRulesCss(normalized, ":root")}
   `;
+    if (style.textContent !== nextCss) style.textContent = nextCss;
     if (isNew) (document.head ?? document.documentElement).append(style);
 }
 function pageTextSample() {
-    const root = document.querySelector("article, main, [role='main']") ?? document.body;
-    if (!root)
-        return "";
-    return (root.innerText || root.textContent || "").replace(/\s+/g, " ").trim().slice(0, 4096);
+    return sourceTextSample(document, 4096);
 }
 async function detectPageLanguage(sampleOverride = null) {
     const declaredLanguage = normalizeDetectedLanguage(document.documentElement.lang);
@@ -188,7 +186,7 @@ async function detectRootLanguage(root) {
         : null;
     if (declared)
         return declared;
-    const sample = (root.innerText || root.textContent || "").replace(/\s+/g, " ").trim().slice(0, 1200);
+    const sample = sourceFingerprint(root, { excludeNestedRoots: true }).replace(/\s+/g, " ").trim().slice(0, 1200);
     if (sample.length < 24)
         return null;
     try {

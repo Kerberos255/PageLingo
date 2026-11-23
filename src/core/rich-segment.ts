@@ -14,7 +14,7 @@ export type SerializedSourcePart =
     | {kind:"element"; node:HTMLElement; tagName:string; inline:boolean; children:SerializedSourcePart[]; fallbackText?:string}
     | {kind:"boundary"; node:HTMLElement; reason:"generated"|"time"|"hidden"|"nested-root"|"br"|"wbr"|"protected"};
 export interface SerializedSourceTrace { parts:SerializedSourcePart[]; trimStart:number; trimEnd:number }
-export interface RichSegment { html:string; links:LinkSnapshot[]; opaque:OpaqueSnapshot[]; linkGaps:string[]; fingerprint:string; textSlots?:SourceTextSlot[]; sourceTrace?:SerializedSourceTrace }
+export interface RichSegment { html:string; links:LinkSnapshot[]; opaque:OpaqueSnapshot[]; linkGaps:string[]; fingerprint:string; textSlots?:SourceTextSlot[]; sourceTrace?:SerializedSourceTrace; hiddenElements?:Set<Element> }
 
 const LINK_TRANSPORT_PREFIX = "https://pagelingo.invalid/__link/";
 var INLINE_TAGS = new Set([
@@ -36,8 +36,8 @@ function parseHtmlFragment(doc, html) {
     for (const child of Array.from(parsed.body.childNodes)) fragment.append(doc.importNode(child, true));
     return fragment;
 }
-function snapshotLink(element) {
-    const computed = element.ownerDocument.defaultView?.getComputedStyle(element);
+function snapshotLink(element, captureStyle = true) {
+    const computed = captureStyle ? element.ownerDocument.defaultView?.getComputedStyle(element) : null;
     return {
         href: element.getAttribute("href"),
         target: element.getAttribute("target"),
@@ -57,7 +57,7 @@ function snapshotLink(element) {
     };
 }
 const MID_SENTENCE_NEWLINE_RE = /(?<=\S)[ \t]*\r?\n[ \t]*(?=\S)/gu;
-function serializeChildren(parent, root, links, opaque, textSlots, trace, collapseNewlines = false) {
+function serializeChildren(parent, root, links, opaque, textSlots, trace, collapseNewlines = false, visibilityCache = undefined, hiddenElements = undefined) {
     let html = "";
     for (const node of parent.childNodes) {
         if (node.nodeType === Node.TEXT_NODE) {
@@ -73,14 +73,14 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
             const text = escapeHtml(transportText);
             let slotId = null;
             if (textSlots && rawText.trim()) {
-                if (isEligibleTextNode(node)) {
+                if (isEligibleTextNode(node, visibilityCache, root)) {
                     const id = textSlots.length;
                     slotId = id;
                     textSlots.push({id, node, parent: node.parentNode, source: node.data});
                     html += `<span data-flt-text-id="${id}">${text}</span>`;
                 } else html += `<span data-flt-fixed="true">${text}</span>`;
             } else html += text;
-            trace?.push({kind: "text", node, source: node.data, slotId, editableContext: isEligibleTextContext(node)});
+            if (trace) trace.push({kind: "text", node, source: node.data, slotId, editableContext: isEligibleTextContext(node, visibilityCache, root)});
             continue;
         }
         if (node.nodeType !== Node.ELEMENT_NODE)
@@ -94,7 +94,8 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
             trace?.push({kind: "boundary", node: element, reason: "time"});
             continue;
         }
-        if (element !== root && isElementEffectivelyHidden(element)) {
+        if (element !== root && isElementEffectivelyHidden(element, visibilityCache, root)) {
+            hiddenElements?.add(element);
             trace?.push({kind: "boundary", node: element, reason: "hidden"});
             continue;
         }
@@ -120,7 +121,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
         }
         if (!INLINE_TAGS.has(tag)) {
             const children = trace ? [] : undefined;
-            html += serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines);
+            html += serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements);
             trace?.push({kind: "element", node: element, tagName: tag, inline: false, children});
             continue;
         }
@@ -132,11 +133,11 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
         }
         if (tag === "A") {
             const linkIndex = links.length;
-            links.push(snapshotLink(element));
+            links.push(snapshotLink(element, !textSlots));
             // Legacy providers use link sentinels for recovery. Original-node mode additionally maps
             // each original text node to a fixed slot; link topology is application-owned.
             const children = trace ? [] : undefined;
-            const serializedLabel = serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines);
+            const serializedLabel = serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements);
             if (textSlots && !serializedLabel.replace(/<[^>]*>/gu, "").trim()) {
                 links.pop();
                 trace?.push({kind: "boundary", node: element, reason: "protected"});
@@ -156,7 +157,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
             continue;
         }
         const children = trace ? [] : undefined;
-        html += `<${lower}>${serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines)}</${lower}>`;
+        html += `<${lower}>${serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements)}</${lower}>`;
         trace?.push({kind: "element", node: element, tagName: tag, inline: true, children});
     }
     return html;
@@ -178,7 +179,7 @@ export function sourceFingerprint(root, {excludeNestedRoots = false} = {}) {
     }
     return text;
 }
-function snapshotLinkGaps(root) {
+function snapshotLinkGaps(root, visibilityCache = undefined) {
     const gaps = [""];
     let linkIndex = 0;
     function walk(parent) {
@@ -191,7 +192,7 @@ function snapshotLinkGaps(root) {
             const element = node;
             if (element.hasAttribute("data-flt-generated")) continue;
             if (element !== root && DYNAMIC_TIME_TAGS.has(element.tagName)) continue;
-            if (element !== root && isElementEffectivelyHidden(element)) continue;
+            if (element !== root && isElementEffectivelyHidden(element, visibilityCache, root)) continue;
             if (element !== root && isNestedOwnerBoundary(element, root)) continue;
             if (element.tagName === "A") {
                 linkIndex += 1;
@@ -210,10 +211,13 @@ export function serializeRichSegment(root, {fixedTextSlots = false, captureOwner
     const opaque = [];
     const textSlots = fixedTextSlots ? [] : undefined;
     const parts = captureOwnership ? [] : undefined;
-    const untrimmed = serializeChildren(root, root, links, opaque, textSlots, parts, collapseNewlines);
+    const visibilityCache = new WeakMap();
+    visibilityCache.set(root, false);
+    const hiddenElements = fixedTextSlots ? new Set<Element>() : undefined;
+    const untrimmed = serializeChildren(root, root, links, opaque, textSlots, parts, collapseNewlines, visibilityCache, hiddenElements);
     let html = untrimmed.trim();
     if (root.tagName === "A") {
-        links.unshift(snapshotLink(root));
+        links.unshift(snapshotLink(root, !fixedTextSlots));
         const labelHtml = html || escapeHtml(root.textContent ?? "");
         html = `<a data-flt-link-id="0" href="${LINK_TRANSPORT_PREFIX}0"><code>__FLT_LINK_START_0__</code>${labelHtml}<code>__FLT_LINK_END_0__</code></a>`;
     }
@@ -221,9 +225,10 @@ export function serializeRichSegment(root, {fixedTextSlots = false, captureOwner
         html,
         links,
         opaque,
-        linkGaps: links.length > 0 && root.tagName !== "A" ? snapshotLinkGaps(root) : [],
+        linkGaps: !fixedTextSlots && links.length > 0 && root.tagName !== "A" ? snapshotLinkGaps(root, visibilityCache) : [],
         fingerprint: sourceFingerprint(root, {excludeNestedRoots: fixedTextSlots}),
         textSlots,
+        ...(hiddenElements ? {hiddenElements} : {}),
         ...(parts ? {sourceTrace: {parts, trimStart: untrimmed.length - untrimmed.trimStart().length,
             trimEnd: untrimmed.length - untrimmed.trimEnd().length}} : {}),
     };

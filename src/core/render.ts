@@ -683,22 +683,37 @@ export function createSafeTranslatedFragment(doc, translatedHtml, links, opaque,
         fragment.append(holder.firstChild);
     return fragment;
 }
-function copySourceLayout(root, node) {
+const COPIED_SOURCE_LAYOUT_PROPERTIES = [
+    "color", "font-family", "font-size", "font-weight", "font-style", "font-variant",
+    "line-height", "letter-spacing", "word-spacing", "text-transform",
+    "white-space", "vertical-align",
+    "text-align", "text-align-last", "text-indent", "direction", "writing-mode",
+    "text-decoration-line", "text-decoration-style", "text-decoration-color", "text-decoration-thickness",
+    "text-underline-offset",
+    "margin-inline-start", "margin-inline-end", "padding-inline-start", "padding-inline-end",
+];
+export function captureSourceLayout(root) {
     const computed = root.ownerDocument.defaultView?.getComputedStyle(root);
     if (!computed)
-        return;
-    const properties = [
-        "color", "font-family", "font-size", "font-weight", "font-style", "font-variant",
-        "line-height", "letter-spacing", "word-spacing", "text-transform",
-        "white-space", "vertical-align",
-        "text-align", "text-align-last", "text-indent", "direction", "writing-mode",
-        "text-decoration-line", "text-decoration-style", "text-decoration-color", "text-decoration-thickness",
-        "text-underline-offset",
-        "margin-inline-start", "margin-inline-end", "padding-inline-start", "padding-inline-end",
-    ];
-    for (const property of properties) {
+        return null;
+    const props = [];
+    for (let i = 0; i < COPIED_SOURCE_LAYOUT_PROPERTIES.length; i += 1) {
+        const property = COPIED_SOURCE_LAYOUT_PROPERTIES[i];
         const value = computed.getPropertyValue(property);
-        if (!value) continue;
+        if (value) props.push([property, value]);
+    }
+    return {
+        display: computed.display ?? "",
+        fontSize: computed.fontSize ?? "",
+        lineHeight: computed.lineHeight ?? "",
+        props,
+    };
+}
+function applyCapturedSourceLayout(layout, node) {
+    if (!layout)
+        return;
+    for (let i = 0; i < layout.props.length; i += 1) {
+        const [property, value] = layout.props[i];
         if (property === "color") {
             node.style.setProperty("color", `var(--pagelingo-bilingual-color, ${value})`, "important");
         } else if (property === "font-size" && /^[\d.]/.test(value)) {
@@ -720,15 +735,23 @@ function copySourceLayout(root, node) {
         }
     }
 }
-export function mountTranslation(root, fragment, targetLanguage, insideSourceContainer = false, bilingualOrder = "source-top") {
+export function mountTranslation(
+    root,
+    fragment,
+    targetLanguage,
+    insideSourceContainer = false,
+    bilingualOrder = "source-top",
+    capturedLayout: ReturnType<typeof captureSourceLayout> | undefined = undefined,
+) {
     const node = root.ownerDocument.createElement("span");
     node.className = "flt-translation";
     node.dataset.fltGenerated = "translation";
     if (bilingualOrder === "translation-top") node.dataset.fltOrder = "translation-top";
     node.lang = targetLanguage;
     node.append(fragment);
-    copySourceLayout(root, node);
-    const sourceDisplay = root.ownerDocument.defaultView?.getComputedStyle(root).display ?? "";
+    const layout = capturedLayout !== undefined ? capturedLayout : captureSourceLayout(root);
+    applyCapturedSourceLayout(layout, node);
+    const sourceDisplay = layout?.display ?? "";
     const inlineTag = ["SPAN", "LABEL", "STRONG", "EM", "B", "I", "U", "S", "SMALL", "SUB", "SUP", "MARK", "ABBR", "CITE", "Q", "DEL", "INS"].includes(root.tagName);
     const inlineDisplays = ["inline", "inline-block", "inline-flex", "inline-grid"];
     const inlineSource = inlineDisplays.includes(sourceDisplay) || (!sourceDisplay && inlineTag);
@@ -751,7 +774,7 @@ export function mountTranslation(root, fragment, targetLanguage, insideSourceCon
     }
     const insideProse = insideSourceContainer
         && ["P", "BLOCKQUOTE", "FIGCAPTION", "DT", "DD", "H1", "H2", "H3", "H4", "H5", "H6"].includes(root.tagName)
-        && !root.querySelector("p,li,blockquote,table,ul,ol,dl,h1,h2,h3,h4,h5,h6,button,input,select,textarea");
+        && (root.childElementCount === 0 || !root.querySelector("p,li,blockquote,table,ul,ol,dl,h1,h2,h3,h4,h5,h6,button,input,select,textarea"));
     if (insideProse || ["LI", "TD", "TH"].includes(root.tagName)) {
         if (bilingualOrder === "translation-top") root.prepend(node);
         else root.append(node);

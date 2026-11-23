@@ -333,7 +333,7 @@ async function translationEngineStateForUi() {
       : batchSize,
     batchHtmlLimit,
     firstVisibleSingles: activeExternal?.type === "opencode-go" && batchSize > 1 ? 2 : 0,
-    lazyOffscreen: Boolean(activeExternal && !isLoopback),
+    lazyOffscreen: true,
     structuralSplittingSafe: state.activeEngineId === LOCAL_TRANSLATION_ENGINE_ID || isLoopback,
     // Every backend returns text for an application-owned template. Provider
     // markup never replaces source nodes or supplies event handlers/styles.

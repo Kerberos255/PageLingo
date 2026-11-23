@@ -1,11 +1,11 @@
 // @ts-nocheck
-import { collectTranslationRoots, findTranslationRoot, hasNestedOwnerBoundaryBetween, isElementEffectivelyHidden, isGeneratedNode, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
+import { collectTranslationRoots, collectTranslationRootsAsync, findTranslationRoot, hasNestedOwnerBoundaryBetween, inspectElementHidden, isElementEffectivelyHidden, isGeneratedNode, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
 import { TranslationProgress } from "./translation-progress";
-import { createSafeTranslatedFragment, mountTranslation } from "./render";
+import { captureSourceLayout, createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
 import { TooltipController } from "./tooltip-controller";
 import { contextualTerminology, translationContextForUrl } from "./translation-context";
-import {prepareFixedTextRecord, fixedTextRecordUnchanged, clearFixedTextRecord, applyFixedTextRecord} from "./fixed-text-render";
+import {prepareFixedTextRecord, fixedTextRecordUnchanged, clearFixedTextRecord, applyFixedTextRecord, needsCapturedSourceLayout, validateFixedTextRecord} from "./fixed-text-render";
 import {restoreFixedHtmlTransport} from "./fixed-html-transport";
 import {isPreformattedNewlineContext, planPreformattedParagraphRuns} from "./fixed-html-paragraphs";
 import {
@@ -233,6 +233,9 @@ export class PageTranslator {
     #records = new Map();
     #failures = new Map();
     #pending = new Map();
+    #pendingOrder = [];
+    #pendingDirty = false;
+    #flushBurstStart = 0;
     #activeJobs = 0;
     #hiddenScopes = new WeakSet();
     #pendingProgress = new Map();
@@ -258,6 +261,17 @@ export class PageTranslator {
     #shadowRoots = new Set();
     #shadowObservers = new Map();
     #watchedFadeScopes = new WeakSet();
+    #inFlightLazyScopes = new WeakSet();
+    #commitQueue = [];
+    #commitFlushScheduled = false;
+    #commitRafId = 0;
+    #commitCoalesceTimer = null;
+    #commitFallbackTimer = null;
+    #commitFirstQueuedAt = 0;
+    #hasRealViewport = false;
+    #awaitingPaintPromise = null;
+    #awaitingPaintResolve = null;
+    #postPaintTimer = null;
     #bilingualStyle = { ...DEFAULT_BILINGUAL_STYLE };
     #learningClickBound = false;
     async #loadContextMode() {
@@ -275,20 +289,33 @@ export class PageTranslator {
     #hasRealViewportGeometry(roots) {
         const view = this.#doc.defaultView;
         if (!view || !(view.innerHeight > 0)) return false;
-        for (const root of roots) {
-            const rect = root.getBoundingClientRect();
-            if (rect.width > 0 || rect.height > 0 || rect.top !== 0 || rect.bottom !== 0) return true;
+        const limit = Math.min(roots.length, 64);
+        for (let i = 0; i < limit; i += 1) {
+            const rect = roots[i].getBoundingClientRect();
+            if (rect.width > 0 || rect.height > 0 || rect.top !== 0 || rect.bottom !== 0) {
+                this.#hasRealViewport = true;
+                return true;
+            }
+        }
+        for (let i = limit; i < roots.length; i += 1) {
+            const rect = roots[i].getBoundingClientRect();
+            if (rect.width > 0 || rect.height > 0 || rect.top !== 0 || rect.bottom !== 0) {
+                this.#hasRealViewport = true;
+                return true;
+            }
         }
         return false;
     }
-    #classifyRootPriority(root) {
+    #classifyRootPriority(root, mainScopes = null) {
         const view = this.#doc.defaultView;
         const rect = root.getBoundingClientRect();
         const vh = view?.innerHeight ?? 0;
         const vw = view?.innerWidth ?? 0;
         const visible = rect.bottom > 0 && rect.top < vh && rect.right > 0 && rect.left < vw;
-        const nearViewport = !visible && rect.bottom > -200 && rect.top < vh + 500 && rect.right > -100 && rect.left < vw + 100;
-        const inMain = Boolean(root.closest("main, article, [role='main']"));
+        const nearViewport = !visible && rect.bottom > -200 && rect.top < vh + 600 && rect.right > -100 && rect.left < vw + 100;
+        const inMain = mainScopes
+            ? mainScopes.some((scopeEl) => scopeEl.contains(root))
+            : Boolean(root.closest("main, article, [role='main']"));
         const tier = visible
             ? (inMain ? 0 : 1)
             : nearViewport
@@ -308,16 +335,25 @@ export class PageTranslator {
                 const root = entry.target;
                 this.#visibilityObserver?.unobserve(root);
                 this.#deferredRoots.delete(root);
-                if (root.isConnected) revealed.push(root);
+                if (root.isConnected) {
+                    revealed.push({ root, rect: entry.boundingClientRect ?? root.getBoundingClientRect() });
+                }
             }
             if (!revealed.length) return;
-            revealed.sort((a, b) => {
-                const pa = this.#classifyRootPriority(a);
-                const pb = this.#classifyRootPriority(b);
-                return pa.tier - pb.tier || pa.top - pb.top;
+            const view = this.#doc.defaultView;
+            const vh = view?.innerHeight ?? 0;
+            const vw = view?.innerWidth ?? 0;
+            const mainScopes = Array.from(this.#doc.querySelectorAll("main, article, [role='main']"));
+            const scoped = mainScopes.length <= 6 ? mainScopes : null;
+            const prioritized = revealed.map(({ root, rect }) => {
+                const visible = rect.bottom > 0 && rect.top < vh && rect.right > 0 && rect.left < vw;
+                const inMain = scoped ? scoped.some((s) => s.contains(root)) : Boolean(root.closest("main, article, [role='main']"));
+                const tier = visible ? (inMain ? 0 : 1) : (inMain ? 2 : 3);
+                return { root, tier, top: rect.top };
             });
-            for (const root of revealed) void this.#queue(root);
-        }, { rootMargin: "600px 0px" });
+            prioritized.sort((a, b) => a.tier - b.tier || a.top - b.top);
+            for (const item of prioritized) void this.#queue(item.root, item);
+        }, { rootMargin: "900px 0px" });
     }
     #deferRoot(root) {
         if (this.#disposed || !root.isConnected || this.#deferredRoots.has(root)) return;
@@ -448,13 +484,23 @@ export class PageTranslator {
             return;
         this.#displayMode = displayMode;
         this.#syncLearningClickListener();
+        // Phase 1: Pure READ pass across all fixed records (zero DOM writes between getComputedStyle calls).
+        const fixedPlan = [];
+        for (const [root, record] of this.#fixedRecords) {
+            const valid = validateFixedTextRecord(root, record);
+            const layout = valid && displayMode === "bilingual" && root.isConnected && needsCapturedSourceLayout(root, record, displayMode)
+                ? captureSourceLayout(root)
+                : undefined;
+            fixedPlan.push({ root, record, valid, layout });
+        }
+        // Phase 2: Pure WRITE pass (zero getComputedStyle / layout reads while mutating DOM).
         for (const [root, record] of this.#records) {
             this.#applyDisplayMode(root, record.translationNode);
             if (displayMode === "bilingual") this.#syncRecordOrder(root, record.translationNode);
         }
-        for (const [root, record] of this.#fixedRecords) {
+        for (const { root, record, valid, layout } of fixedPlan) {
             if (displayMode === "bilingual") this.#ensureShadowStyle(root);
-            if (!applyFixedTextRecord(root, record, displayMode, this.#targetLanguage, this.#bilingualStyle.order)) {
+            if (!applyFixedTextRecord(root, record, displayMode, this.#targetLanguage, this.#bilingualStyle.order, layout, valid)) {
                 this.#clearFixedRecord(root, record); this.#queue(root);
             }
         }
@@ -477,11 +523,24 @@ export class PageTranslator {
             if (style) style.textContent = this.#shadowStyleText();
         }
         if (this.#displayMode === "bilingual" && prev.order !== normalized.order) {
+            const fallbackPlan = new Map();
+            for (const [root, record] of this.#fixedRecords) {
+                if (!(record.translationNode?.isConnected && record.translationNode.dataset.fltControl !== "true")) {
+                    const valid = validateFixedTextRecord(root, record);
+                    const layout = valid && root.isConnected && needsCapturedSourceLayout(root, record, "bilingual")
+                        ? captureSourceLayout(root)
+                        : undefined;
+                    fallbackPlan.set(root, { valid, layout });
+                }
+            }
             for (const [root, record] of this.#fixedRecords) {
                 if (record.translationNode?.isConnected && record.translationNode.dataset.fltControl !== "true") {
                     this.#syncRecordOrder(root, record.translationNode);
-                } else if (!applyFixedTextRecord(root, record, "bilingual", this.#targetLanguage, normalized.order)) {
-                    this.#clearFixedRecord(root, record); this.#queue(root);
+                } else {
+                    const plan = fallbackPlan.get(root);
+                    if (!applyFixedTextRecord(root, record, "bilingual", this.#targetLanguage, normalized.order, plan?.layout, plan?.valid)) {
+                        this.#clearFixedRecord(root, record); this.#queue(root);
+                    }
                 }
             }
             for (const [root, record] of this.#records) {
@@ -493,8 +552,10 @@ export class PageTranslator {
         if (this.#disposed)
             return this.translatedCount;
         await this.#loadContextMode();
+        if (this.#disposed) return this.translatedCount;
+        const collected = await this.#collectAsync(scope);
+        if (this.#disposed) return this.translatedCount;
         if (watchDuringPass) this.observe();
-        const collected = this.#collect(scope);
         if (this.#bypassCache) {
             for (const root of collected) this.#forceBypassRoots.add(root);
             this.#bypassCache = false;
@@ -502,10 +563,22 @@ export class PageTranslator {
         const hasGeometry = this.#hasRealViewportGeometry(collected);
         const ObserverCtor = this.#doc.defaultView?.IntersectionObserver ?? globalThis.IntersectionObserver;
         const useLazy = this.#lazyOffscreen && hasGeometry && typeof ObserverCtor === "function";
-        const ranked = collected.map((root, index) => {
-            const priority = hasGeometry ? this.#classifyRootPriority(root) : { tier: 0, top: index, visible: true };
-            return { root, index, ...priority };
-        });
+
+        const mainScopesRaw = hasGeometry ? Array.from(this.#doc.querySelectorAll("main, article, [role='main']")) : [];
+        const mainScopes = mainScopesRaw.length <= 6 ? mainScopesRaw : null;
+        const ranked = new Array(collected.length);
+        const yieldNow = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+        let sliceStart = performance.now();
+        for (let index = 0; index < collected.length; index += 1) {
+            if (hasGeometry && (index & 127) === 127 && performance.now() - sliceStart >= 12) {
+                await yieldNow();
+                if (this.#disposed) return this.translatedCount;
+                sliceStart = performance.now();
+            }
+            const root = collected[index];
+            const priority = hasGeometry ? this.#classifyRootPriority(root, mainScopes) : { tier: 0, top: index, visible: true };
+            ranked[index] = { root, index, tier: priority.tier, top: priority.top };
+        }
         if (hasGeometry) {
             ranked.sort((a, b) => a.tier - b.tier || a.top - b.top || a.index - b.index);
         }
@@ -513,22 +586,32 @@ export class PageTranslator {
             const immediate = [];
             const deferred = [];
             for (const item of ranked) {
-                if (item.tier <= 3) immediate.push(item.root);
+                if (item.tier <= 3) immediate.push(item);
                 else deferred.push(item.root);
             }
             if (immediate.length === 0 && deferred.length > 0) {
-                immediate.push(...deferred.splice(0, 8));
+                for (const root of deferred.splice(0, 8)) immediate.push({ root, tier: 4, top: 0 });
             }
-            for (const root of deferred) this.#deferRoot(root);
-            await Promise.all(immediate.map((root) => this.#queue(root)));
+            // Start translating visible viewport items immediately before registering thousands of deferred roots.
+            const immediateDone = Promise.all(immediate.map((item) => this.#queue(item.root, item)));
+            sliceStart = performance.now();
+            for (let i = 0; i < deferred.length; i += 1) {
+                if ((i & 255) === 255 && performance.now() - sliceStart >= 12) {
+                    await yieldNow();
+                    if (this.#disposed) return this.translatedCount;
+                    sliceStart = performance.now();
+                }
+                this.#deferRoot(deferred[i]);
+            }
+            await immediateDone;
             return this.translatedCount;
         }
-        await Promise.all(ranked.map(({ root }) => this.#queue(root)));
+        await Promise.all(ranked.map((item) => this.#queue(item.root, item)));
         return this.translatedCount;
     }
-    #watchHiddenFade(element) {
+    #watchHiddenFade(element, mayHaveFadeAnimation = true) {
         this.#hiddenScopes.add(element);
-        if (this.#watchedFadeScopes.has(element) || typeof element.getAnimations !== "function") return;
+        if (!mayHaveFadeAnimation || this.#watchedFadeScopes.has(element) || typeof element.getAnimations !== "function") return;
         const animations = element.getAnimations().filter(animation => animation && animation.playState !== "finished");
         if (!animations.length) return;
         this.#watchedFadeScopes.add(element);
@@ -564,8 +647,18 @@ export class PageTranslator {
     #collect(scope) {
         return collectTranslationRoots(scope, {
             preserveInlineContext: this.#wholeSentenceContext,
-            onHidden: element => this.#watchHiddenFade(element),
+            onHidden: (element, mayFade) => this.#watchHiddenFade(element, mayFade),
             onShadowRoot: shadowRoot => this.#registerShadowRoot(shadowRoot),
+        });
+    }
+    #collectAsync(scope, extraOptions = {}) {
+        return collectTranslationRootsAsync(scope, {
+            preserveInlineContext: this.#wholeSentenceContext,
+            onHidden: (element, mayFade) => this.#watchHiddenFade(element, mayFade),
+            onShadowRoot: shadowRoot => this.#registerShadowRoot(shadowRoot),
+            isCancelled: () => this.#disposed,
+            beforeResume: () => this.#awaitingPaintPromise,
+            ...extraOptions,
         });
     }
     async translateRoot(root) {
@@ -638,7 +731,7 @@ export class PageTranslator {
             !this.#wholeSentenceContext && (complexRoot || nestingRiskRoot) &&
             await providerAllowsStructuralSplitting(this.#provider);
         const bypassCache = this.#forceBypassRoots.has(root);
-        const paragraphPlan = this.#wholeSentenceContext && isPreformattedNewlineContext(root)
+        const paragraphPlan = this.#wholeSentenceContext && preformattedRoot
             ? planPreformattedParagraphRuns(segment.html)
             : null;
         let terminologyAppliedPerRun = false;
@@ -733,17 +826,19 @@ export class PageTranslator {
         // the source sentence before translation.
         const dynamicAliases = new Map();
         const userTerms = this.#wholeSentenceContext ? [] : this.#terminology.filter((entry) => entry.mode === "replace" && entry.origin === "user" && termOccurrenceCount(segment.fingerprint, entry.source, entry.caseSensitive === true) > 0);
-        await Promise.all(userTerms.map(async (entry) => {
-            try {
-                const aliasHtml = await this.#provider.translateHtml({
-                    html: escapeHtml(entry.source),
-                    sourceLanguage: this.#sourceLanguage,
-                    targetLanguage: this.#targetLanguage,
-                });
-                const alias = translatedPlainText(this.#doc, aliasHtml);
-                if (alias) dynamicAliases.set(entry.source.toLocaleLowerCase(), alias);
-            } catch {}
-        }));
+        if (userTerms.length) {
+            await Promise.all(userTerms.map(async (entry) => {
+                try {
+                    const aliasHtml = await this.#provider.translateHtml({
+                        html: escapeHtml(entry.source),
+                        sourceLanguage: this.#sourceLanguage,
+                        targetLanguage: this.#targetLanguage,
+                    });
+                    const alias = translatedPlainText(this.#doc, aliasHtml);
+                    if (alias) dynamicAliases.set(entry.source.toLocaleLowerCase(), alias);
+                } catch {}
+            }));
+        }
         if (!terminologyAppliedPerRun) {
             translatedHtml = applyTerminologyCorrectionsHtml(this.#doc, translatedHtml, segment.fingerprint, this.#terminology, dynamicAliases);
             if (hasBrokenTranslationHtml(translatedHtml)) {
@@ -809,18 +904,26 @@ export class PageTranslator {
         if (this.#disposed || !root.isConnected || sourceFingerprint(root, {excludeNestedRoots: this.#wholeSentenceContext}) !== segment.fingerprint)
             return;
         if (this.#wholeSentenceContext) {
-            if (this.#displayMode === "bilingual") this.#ensureShadowStyle(root);
-            const record = prepareFixedTextRecord(root, segment.textSlots, translatedHtml, this.#targetLanguage);
-            if (!applyFixedTextRecord(root, record, this.#displayMode, this.#targetLanguage, this.#bilingualStyle.order)) return;
-            this.#fixedRecords.set(root, record);
-            for (const edit of record.edits) this.#fixedOwners.set(edit.node, record);
+            const record = prepareFixedTextRecord(root, segment.textSlots, translatedHtml, this.#targetLanguage, segment.hiddenElements);
+            await this.#enqueueCommit({
+                isFixed: true,
+                root,
+                fingerprint: segment.fingerprint,
+                record,
+                capturedLayout: undefined,
+                skip: false,
+            });
             return;
         }
-        this.#ensureShadowStyle(root);
         const fragment = createSafeTranslatedFragment(this.#doc, translatedHtml, segment.links, segment.opaque, translatedLinkTexts, translatedGapTexts, []);
-        const translationNode = mountTranslation(root, fragment, this.#targetLanguage, false, this.#bilingualStyle.order);
-        this.#records.set(root, { translationNode, fingerprint: segment.fingerprint });
-        this.#applyDisplayMode(root, translationNode);
+        await this.#enqueueCommit({
+            isFixed: false,
+            root,
+            fingerprint: segment.fingerprint,
+            fragment,
+            capturedLayout: undefined,
+            skip: false,
+        });
         } catch (error) {
             this.#failures.set(root, error instanceof Error ? error.message : String(error));
             throw error;
@@ -831,6 +934,150 @@ export class PageTranslator {
             this.#inFlight.delete(root);
             if (this.#rerun.delete(root) && !this.#disposed && root.isConnected) this.#queue(root);
             this.#scheduleFlush();
+        }
+    }
+    #cancelCommitTimers() {
+        const view = this.#doc.defaultView;
+        if (this.#commitRafId && view?.cancelAnimationFrame) {
+            view.cancelAnimationFrame(this.#commitRafId);
+        }
+        this.#commitRafId = 0;
+        if (this.#commitCoalesceTimer !== null) {
+            clearTimeout(this.#commitCoalesceTimer);
+            this.#commitCoalesceTimer = null;
+        }
+        if (this.#commitFallbackTimer !== null) {
+            clearTimeout(this.#commitFallbackTimer);
+            this.#commitFallbackTimer = null;
+        }
+    }
+    #markDomDirtyForPaint() {
+        if (!this.#hasRealViewport || this.#disposed || this.#awaitingPaintPromise) return;
+        this.#awaitingPaintPromise = new Promise((resolve) => {
+            this.#awaitingPaintResolve = resolve;
+        });
+        this.#postPaintTimer = setTimeout(() => {
+            this.#clearAwaitingPaint();
+            this.#scheduleFlush();
+        }, 0);
+    }
+    #clearAwaitingPaint() {
+        if (this.#postPaintTimer !== null) {
+            clearTimeout(this.#postPaintTimer);
+            this.#postPaintTimer = null;
+        }
+        const resolve = this.#awaitingPaintResolve;
+        this.#awaitingPaintPromise = null;
+        this.#awaitingPaintResolve = null;
+        resolve?.();
+    }
+    #scheduleCommitOnFrame() {
+        if (this.#commitRafId) return;
+        const view = this.#doc.defaultView;
+        if (typeof view?.requestAnimationFrame === "function") {
+            this.#commitRafId = view.requestAnimationFrame(() => {
+                this.#commitRafId = 0;
+                this.#flushCommits();
+            });
+            // Safety fallback for backgrounded tabs where rAF may be throttled.
+            if (this.#commitFallbackTimer === null) {
+                this.#commitFallbackTimer = setTimeout(() => {
+                    this.#commitFallbackTimer = null;
+                    this.#flushCommits();
+                }, 60);
+            }
+        } else {
+            queueMicrotask(() => this.#flushCommits());
+        }
+    }
+    #enqueueCommit(task) {
+        return new Promise((resolve) => {
+            task.resolve = resolve;
+            this.#commitQueue.push(task);
+            const coalesceBilingual = this.#hasRealViewport && this.#displayMode === "bilingual";
+            if (!coalesceBilingual) {
+                if (!this.#commitFlushScheduled) {
+                    this.#commitFlushScheduled = true;
+                    queueMicrotask(() => this.#flushCommits());
+                }
+                return;
+            }
+            const now = performance.now();
+            if (!this.#commitFirstQueuedAt) this.#commitFirstQueuedAt = now;
+            const moreInFlight = this.#activeJobs > this.#commitQueue.length;
+            const elapsed = now - this.#commitFirstQueuedAt;
+            if (!moreInFlight || elapsed >= 45) {
+                if (this.#commitCoalesceTimer !== null) {
+                    clearTimeout(this.#commitCoalesceTimer);
+                    this.#commitCoalesceTimer = null;
+                }
+                this.#commitFlushScheduled = true;
+                this.#scheduleCommitOnFrame();
+            } else if (!this.#commitFlushScheduled) {
+                this.#commitFlushScheduled = true;
+                this.#commitCoalesceTimer = setTimeout(() => {
+                    this.#commitCoalesceTimer = null;
+                    this.#scheduleCommitOnFrame();
+                }, 28);
+            }
+        });
+    }
+    #flushCommits() {
+        this.#cancelCommitTimers();
+        this.#commitFlushScheduled = false;
+        this.#commitFirstQueuedAt = 0;
+        const batch = this.#commitQueue.splice(0);
+        if (!batch.length) return;
+        if (this.#disposed) {
+            for (const task of batch) task.resolve();
+            return;
+        }
+        // Phase 1: Pure READ pass across the entire resolving batch (at most 1 browser style recalc
+        // for all queued roots combined instead of N interleaved read->write forced recalcs).
+        for (let i = 0; i < batch.length; i += 1) {
+            const task = batch[i];
+            if (!task.root.isConnected || sourceFingerprint(task.root, { excludeNestedRoots: task.isFixed }) !== task.fingerprint) {
+                task.skip = true;
+                continue;
+            }
+            if (task.isFixed) {
+                const valid = validateFixedTextRecord(task.root, task.record);
+                task.valid = valid;
+                if (valid && needsCapturedSourceLayout(task.root, task.record, this.#displayMode)) {
+                    task.capturedLayout = captureSourceLayout(task.root);
+                }
+            } else {
+                task.capturedLayout = captureSourceLayout(task.root);
+            }
+        }
+        // Phase 2: Pure WRITE pass (zero getComputedStyle / layout reads while mutating DOM).
+        let insertedElements = false;
+        for (let i = 0; i < batch.length; i += 1) {
+            const task = batch[i];
+            if (task.skip || this.#disposed || !task.root.isConnected) continue;
+            if (task.isFixed) {
+                if (this.#displayMode === "bilingual") this.#ensureShadowStyle(task.root);
+                if (!applyFixedTextRecord(task.root, task.record, this.#displayMode, this.#targetLanguage, this.#bilingualStyle.order, task.capturedLayout, task.valid)) {
+                    continue;
+                }
+                if (task.record.translationNode) insertedElements = true;
+                this.#fixedRecords.set(task.root, task.record);
+                for (const edit of task.record.edits) this.#fixedOwners.set(edit.node, task.record);
+            } else {
+                this.#ensureShadowStyle(task.root);
+                const translationNode = mountTranslation(task.root, task.fragment, this.#targetLanguage, false, this.#bilingualStyle.order, task.capturedLayout);
+                insertedElements = true;
+                this.#records.set(task.root, { translationNode, fingerprint: task.fingerprint });
+                this.#applyDisplayMode(task.root, translationNode, task.capturedLayout);
+            }
+        }
+        // Let the browser paint element insertions before the next batch reads computed styles.
+        if (insertedElements && this.#hasRealViewport) {
+            this.#markDomDirtyForPaint();
+        }
+        // Phase 3: Notify awaiting translateRoot calls.
+        for (let i = 0; i < batch.length; i += 1) {
+            batch[i].resolve();
         }
     }
     #handleToggle = (event) => {
@@ -845,8 +1092,9 @@ export class PageTranslator {
                 continue;
             if (mutation.type === "attributes") {
                 const region = mutation.target;
-                if (["aria-expanded", "aria-selected"].includes(mutation.attributeName)) {
-                    if (region.getAttribute(mutation.attributeName) !== "true") continue;
+                const attr = mutation.attributeName;
+                if (attr === "aria-expanded" || attr === "aria-selected") {
+                    if (region.getAttribute(attr) !== "true") continue;
                     const scopeRoot = region.getRootNode?.();
                     for (const id of (region.getAttribute("aria-controls") ?? "").split(/\s+/)) {
                         const panel = scopeRoot?.getElementById?.(id) ?? this.#doc.getElementById(id);
@@ -854,10 +1102,17 @@ export class PageTranslator {
                     }
                     continue;
                 }
-                if (["class", "style"].includes(mutation.attributeName)
-                    && !this.#hiddenScopes.has(region)
-                    && !region.matches("dialog,[popover],[role='dialog'],[role='tabpanel'],[role='menu'],[role='listbox']")) continue;
-                if ((mutation.attributeName !== "open" || region.hasAttribute("open"))
+                if (attr === "class" || attr === "style") {
+                    if (!this.#hiddenScopes.has(region)) {
+                        const role = region.getAttribute("role");
+                        if (
+                            region.tagName !== "DIALOG" &&
+                            !region.hasAttribute("popover") &&
+                            role !== "dialog" && role !== "tabpanel" && role !== "menu" && role !== "listbox"
+                        ) continue;
+                    }
+                }
+                if ((attr !== "open" || region.hasAttribute("open"))
                     && !region.closest("[hidden],[inert],[aria-hidden='true']")) revealed.add(region);
                 continue;
             }
@@ -883,21 +1138,26 @@ export class PageTranslator {
                     }
                 }
                 else if (added.nodeType === Node.ELEMENT_NODE) {
-                    if (added.matches?.("[data-flt-source-text-wrapper]"))
+                    if (added.hasAttribute?.("data-flt-source-text-wrapper"))
                         continue;
-                    for (const root of this.#collect(added))
-                        this.#queue(root);
+                    if (this.#wholeSentenceContext && this.#lazyOffscreen && added.childElementCount >= 16) {
+                        void this.#queueScopeLazy(added);
+                    } else {
+                        for (const root of this.#collect(added))
+                            this.#queue(root);
+                    }
                 }
             }
         }
         for (const region of revealed) {
             if ([...revealed].some(parent => parent !== region && parent.contains(region))) continue;
-            if (!isElementEffectivelyHidden(region)) {
+            const hiddenState = inspectElementHidden(region);
+            if (hiddenState === 0) {
                 this.#queueVisibleScope(region);
                 continue;
             }
             // Accessibility state or added nodes can appear before a CSS fade completes.
-            this.#watchHiddenFade(region);
+            this.#watchHiddenFade(region, hiddenState === 2);
         }
     };
     #observeShadowRoot(shadowRoot) {
@@ -924,8 +1184,84 @@ export class PageTranslator {
     }
     #queueVisibleScope(region) {
         if (this.#disposed || !region.isConnected || isElementEffectivelyHidden(region)) return;
+        // Large newly revealed panels (such as a 500-item <details> accordion) must use the
+        // same time-sliced scan + viewport-first lazy deferral as translateAll so a single
+        // click never stalls the main thread or floods off-screen work.
+        if (this.#wholeSentenceContext && this.#lazyOffscreen && region.childElementCount > 0) {
+            void this.#queueScopeLazy(region);
+            return;
+        }
         for (const root of this.#collect(region)) {
             this.#queue(root);
+        }
+    }
+    async #queueScopeLazy(region) {
+        if (this.#disposed || !region.isConnected || this.#inFlightLazyScopes.has(region)) return;
+        this.#inFlightLazyScopes.add(region);
+        try {
+            if (this.#awaitingPaintPromise) {
+                await this.#awaitingPaintPromise;
+                if (this.#disposed || !region.isConnected) return;
+            }
+            const ObserverCtor = this.#doc.defaultView?.IntersectionObserver ?? globalThis.IntersectionObserver;
+            const mainScopesRaw = Array.from(this.#doc.querySelectorAll("main, article, [role='main']"));
+            const mainScopes = mainScopesRaw.length <= 6 ? mainScopesRaw : null;
+            const earlyHandled = new Set();
+            const scheduleBatch = (roots) => {
+                if (this.#disposed || !roots.length) return;
+                const hasGeo = this.#hasRealViewportGeometry(roots);
+                const useLazyHere = this.#lazyOffscreen && hasGeo && typeof ObserverCtor === "function";
+                const immediate = [];
+                for (let i = 0; i < roots.length; i += 1) {
+                    const root = roots[i];
+                    if (!root.isConnected || earlyHandled.has(root)) continue;
+                    earlyHandled.add(root);
+                    const priority = hasGeo ? this.#classifyRootPriority(root, mainScopes) : { tier: 0, top: i, visible: true };
+                    if (useLazyHere && priority.tier > 3) this.#deferRoot(root);
+                    else immediate.push({ root, tier: priority.tier, top: priority.top });
+                }
+                immediate.sort((a, b) => a.tier - b.tier || a.top - b.top);
+                for (const item of immediate) void this.#queue(item.root, item);
+            };
+            const collected = await this.#collectAsync(region, { onEarlyRoots: scheduleBatch });
+            if (this.#disposed || !collected.length) return;
+            const remaining = earlyHandled.size ? collected.filter((root) => !earlyHandled.has(root)) : collected;
+            if (!remaining.length) return;
+            const hasGeometry = this.#hasRealViewportGeometry(remaining);
+            const useLazy = this.#lazyOffscreen && hasGeometry && typeof ObserverCtor === "function";
+            const yieldNow = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+            let sliceStart = performance.now();
+            const immediate = [];
+            const deferred = [];
+            for (let i = 0; i < remaining.length; i += 1) {
+                if (hasGeometry && (i & 127) === 127 && performance.now() - sliceStart >= 12) {
+                    await yieldNow();
+                    if (this.#disposed) return;
+                    if (this.#awaitingPaintPromise) {
+                        await this.#awaitingPaintPromise;
+                        if (this.#disposed) return;
+                    }
+                    sliceStart = performance.now();
+                }
+                const root = remaining[i];
+                if (!root.isConnected) continue;
+                const priority = hasGeometry ? this.#classifyRootPriority(root, mainScopes) : { tier: 0, top: i, visible: true };
+                if (useLazy && priority.tier > 3) deferred.push(root);
+                else immediate.push({ root, tier: priority.tier, top: priority.top });
+            }
+            immediate.sort((a, b) => a.tier - b.tier || a.top - b.top);
+            for (const item of immediate) void this.#queue(item.root, item);
+            sliceStart = performance.now();
+            for (let i = 0; i < deferred.length; i += 1) {
+                if ((i & 255) === 255 && performance.now() - sliceStart >= 12) {
+                    await yieldNow();
+                    if (this.#disposed) return;
+                    sliceStart = performance.now();
+                }
+                this.#deferRoot(deferred[i]);
+            }
+        } finally {
+            this.#inFlightLazyScopes.delete(region);
         }
     }
     observeTooltips() {
@@ -989,6 +1325,14 @@ export class PageTranslator {
         this.#tooltipController = null;
         for (const job of this.#pending.values()) job.resolve();
         this.#pending.clear();
+        this.#pendingOrder = [];
+        this.#pendingDirty = false;
+        this.#cancelCommitTimers();
+        this.#clearAwaitingPaint();
+        this.#commitFirstQueuedAt = 0;
+        for (const task of this.#commitQueue) task.resolve();
+        this.#commitQueue = [];
+        this.#commitFlushScheduled = false;
         this.#rerun.clear();
         this.#inFlight.clear();
         for (const [root, record] of this.#fixedRecords) this.#clearFixedRecord(root, record);
@@ -1030,7 +1374,7 @@ export class PageTranslator {
         }
         this.#sourceLinkStyleSnapshots.clear();
     }
-    #applyDisplayMode(root, translationNode) {
+    #applyDisplayMode(root, translationNode, capturedLayout = null) {
         if (!this.#sourceHadClassAttribute.has(root)) {
             this.#sourceHadClassAttribute.set(root, root.hasAttribute("class"));
         }
@@ -1039,22 +1383,20 @@ export class PageTranslator {
         if (this.#displayMode !== "translation")
             return;
         if (root.tagName === "LI") {
-            const computed = this.#doc.defaultView?.getComputedStyle(root);
-            if (computed) {
-                root.style.setProperty("--pagelingo-source-font-size", computed.fontSize);
-                root.style.setProperty("--pagelingo-source-line-height", computed.lineHeight);
-            }
+            const fontSize = capturedLayout?.fontSize ?? this.#doc.defaultView?.getComputedStyle(root)?.fontSize;
+            const lineHeight = capturedLayout?.lineHeight ?? this.#doc.defaultView?.getComputedStyle(root)?.lineHeight;
+            if (fontSize) root.style.setProperty("--pagelingo-source-font-size", fontSize);
+            if (lineHeight) root.style.setProperty("--pagelingo-source-line-height", lineHeight);
             wrapListDirectText(root, translationNode);
             root.classList.add("flt-source-list-hidden");
             translationNode.dataset.fltDisplayMode = "translation";
             return;
         }
         if (["TD", "TH"].includes(root.tagName)) {
-            const computed = this.#doc.defaultView?.getComputedStyle(root);
-            if (computed) {
-                root.style.setProperty("--pagelingo-source-font-size", computed.fontSize);
-                root.style.setProperty("--pagelingo-source-line-height", computed.lineHeight);
-            }
+            const fontSize = capturedLayout?.fontSize ?? this.#doc.defaultView?.getComputedStyle(root)?.fontSize;
+            const lineHeight = capturedLayout?.lineHeight ?? this.#doc.defaultView?.getComputedStyle(root)?.lineHeight;
+            if (fontSize) root.style.setProperty("--pagelingo-source-font-size", fontSize);
+            if (lineHeight) root.style.setProperty("--pagelingo-source-line-height", lineHeight);
             root.classList.add("flt-source-content-hidden");
             translationNode.dataset.fltDisplayMode = "translation";
             return;
@@ -1086,37 +1428,67 @@ export class PageTranslator {
         }
         root.removeAttribute("data-flt-source-link-hidden");
     }
-    #queue(root) {
+    #queue(root, precomputedPriority = null) {
         if (this.#disposed || !root.isConnected) return Promise.resolve();
         if (this.#deferredRoots.delete(root)) this.#visibilityObserver?.unobserve(root);
         const existing = this.#pending.get(root);
         if (existing) return existing.done;
         let resolve;
         const done = new Promise(finish => { resolve = finish; });
-        const { tier, top } = this.#classifyRootPriority(root);
-        this.#pending.set(root, { done, resolve, tier, top });
+        const { tier, top } = precomputedPriority ?? this.#classifyRootPriority(root);
+        const job = { root, done, resolve, tier, top };
+        this.#pending.set(root, job);
+        this.#pendingOrder.push(job);
+        this.#pendingDirty = true;
         this.#scheduleFlush();
         return done;
     }
     #scheduleFlush() {
-        if (this.#disposed || this.#flushQueued || !this.#pending.size || this.#activeJobs >= this.#concurrency) return;
+        if (this.#disposed || this.#flushQueued || this.#awaitingPaintPromise || !this.#pending.size || this.#activeJobs >= this.#concurrency) return;
         this.#flushQueued = true;
-        queueMicrotask(() => this.#flush());
+        const now = performance.now();
+        if (!this.#flushBurstStart) this.#flushBurstStart = now;
+        if (now - this.#flushBurstStart >= 12) {
+            // Yield back to the browser macrotask queue so user clicks, scrolling, and paints never stall.
+            this.#flushBurstStart = 0;
+            setTimeout(() => this.#flush(), 0);
+        } else {
+            queueMicrotask(() => this.#flush());
+        }
     }
     #flush() {
         this.#flushQueued = false;
-        // Dispatch visible <main>/<article> roots first, then other visible roots, then near/off-screen.
-        const ready = Array.from(this.#pending.entries()).filter(([root]) => !this.#inFlight.has(root));
-        ready.sort(([, a], [, b]) => a.tier - b.tier || a.top - b.top);
-        for (const [root, job] of ready) {
-            if (this.#activeJobs >= this.#concurrency) return;
-            this.#pending.delete(root);
+        if (this.#disposed || !this.#pending.size || this.#activeJobs >= this.#concurrency) {
+            if (!this.#pending.size) this.#flushBurstStart = 0;
+            return;
+        }
+        if (this.#pendingDirty) {
+            // Sort descending so popping from the tail is O(1) with zero array shifting.
+            this.#pendingOrder.sort((a, b) => (b.tier - a.tier) || (b.top - a.top));
+            this.#pendingDirty = false;
+        }
+        const deferredInFlight = [];
+        while (this.#pendingOrder.length > 0 && this.#activeJobs < this.#concurrency) {
+            const job = this.#pendingOrder.pop();
+            if (!job || this.#pending.get(job.root) !== job) continue;
+            if (this.#inFlight.has(job.root)) {
+                deferredInFlight.push(job);
+                continue;
+            }
+            this.#pending.delete(job.root);
             this.#activeJobs += 1;
-            void this.translateRoot(root).catch(error => console.warn("[PageLingo] Translation root failed", error)).finally(() => {
+            void this.translateRoot(job.root).catch(error => console.warn("[PageLingo] Translation root failed", error)).finally(() => {
                 this.#activeJobs -= 1;
                 job.resolve();
                 this.#scheduleFlush();
             });
+        }
+        for (let i = deferredInFlight.length - 1; i >= 0; i -= 1) {
+            this.#pendingOrder.push(deferredInFlight[i]);
+        }
+        if (!this.#pending.size) {
+            this.#pendingOrder.length = 0;
+            this.#flushBurstStart = 0;
         }
     }
 }

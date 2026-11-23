@@ -222,41 +222,96 @@ function isScreenReaderOnlyStyle(style) {
     (style.clipPath && style.clipPath !== "none")
   );
 }
-export function isElementEffectivelyHidden(element, cache = undefined) {
+const SKIP_TAG_SET = new Set([
+  "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT", "OPTION",
+  "PRE", "CODE", "KBD", "SAMP", "VAR", "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO",
+  "TOOL-TIP", "RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME",
+]);
+
+export function isHiddenInsideClosedDetails(element: Element): boolean {
+  const parent = element.parentElement;
+  if (!parent || parent.tagName !== "DETAILS" || parent.hasAttribute("open")) return false;
+  return element.tagName !== "SUMMARY";
+}
+
+function isFastSkippedElement(element: Element): boolean {
+  const tag = element.tagName;
+  if (SKIP_TAG_SET.has(tag)) return true;
+  if (
+    element.hasAttribute("data-flt-generated") ||
+    element.hasAttribute("hidden") ||
+    element.hasAttribute("inert") ||
+    element.getAttribute("aria-hidden") === "true" ||
+    element.getAttribute("role") === "tooltip" ||
+    isHiddenInsideClosedDetails(element)
+  ) {
+    return true;
+  }
+  if (element.hasAttribute("contenteditable")) {
+    const val = element.getAttribute("contenteditable");
+    if (val !== "false") return true;
+  }
+  if (tag === "DT" && (element.classList.contains("sig") || element.classList.contains("sig-object"))) {
+    return true;
+  }
+  return false;
+}
+
+// Return codes: 0 = visible, 1 = hidden (display:none/attr/sr-only, cannot fade), 2 = hidden via opacity/visibility (fade candidate).
+export function inspectElementHidden(
+  element: Element,
+  cache: WeakMap<Element, boolean> | undefined = undefined,
+  stopAtAncestor: Element | undefined = undefined,
+): 0 | 1 | 2 {
   const view = element.ownerDocument.defaultView;
-  if (!view) return false;
-  let current = element;
+  if (!view) return 0;
+  let current: Element | null = element;
   const checked = cache ? [] : null;
-  let hidden = false;
+  let status: 0 | 1 | 2 = 0;
   while (current) {
-    if (cache?.has(current)) { hidden = cache.get(current); break; }
+    if (cache?.has(current)) { status = cache.get(current) ? 1 : 0; break; }
     checked?.push(current);
     if (
       current.hasAttribute("hidden") ||
       current.getAttribute("aria-hidden") === "true" ||
-      current.matches("tool-tip,[role='tooltip'],[inert]")
-    ) { hidden = true; break; }
+      current.hasAttribute("inert") ||
+      current.tagName === "TOOL-TIP" ||
+      current.getAttribute("role") === "tooltip" ||
+      isHiddenInsideClosedDetails(current)
+    ) { status = 1; break; }
     const style = view.getComputedStyle(current);
     if (
       style.display === "none" ||
+      style.contentVisibility === "hidden" ||
+      isScreenReaderOnlyStyle(style)
+    ) { status = 1; break; }
+    const opacity = style.opacity;
+    if (
       style.visibility === "hidden" ||
       style.visibility === "collapse" ||
-      style.contentVisibility === "hidden" ||
-      Number.parseFloat(style.opacity || "1") === 0 ||
-      isScreenReaderOnlyStyle(style)
-    ) { hidden = true; break; }
-    if (current === current.ownerDocument.documentElement) break;
+      opacity === "0" ||
+      (opacity && opacity !== "1" && Number.parseFloat(opacity) === 0)
+    ) { status = 2; break; }
+    if (current === stopAtAncestor || current === current.ownerDocument.documentElement) break;
     current = parentAcrossShadow(current);
   }
+  const hidden = status !== 0;
   for (const visited of checked ?? []) cache.set(visited, hidden);
-  return hidden;
+  return status;
 }
-export function isEligibleTextContext(node, visibilityCache = undefined) {
+export function isElementEffectivelyHidden(
+  element: Element,
+  cache: WeakMap<Element, boolean> | undefined = undefined,
+  stopAtAncestor: Element | undefined = undefined,
+) {
+  return inspectElementHidden(element, cache, stopAtAncestor) !== 0;
+}
+export function isEligibleTextContext(node, visibilityCache = undefined, stopAtAncestor = undefined) {
   if (isProtectedLinkIdentifierText(node) || isProtectedCodeLabelText(node)) return false;
   const parent = node.parentElement;
   const control = parent?.closest(TRANSLATION_CONTROLS);
   return Boolean(parent && (!control || isTranslationControl(control)) && !isTranslationDisabled(parent)
-    && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent, visibilityCache));
+    && !parent.closest(SKIP_SELECTOR) && !isElementEffectivelyHidden(parent, visibilityCache, stopAtAncestor));
 }
 const KEY_MODIFIER_PREFIX = /^(?:(?:(?:ctrl|control|alt|opt|option|shift|cmd|command|meta|win|super)\s*[+-]\s*)+|(?:[⌘⌃⌥⇧⇑↑↓←→]\s*)+)/iu;
 const UNAMBIGUOUS_KEYCAP_TOKEN = /^(?:F(?:[1-9]|1\d|2[0-4])|Esc|Ctrl|Alt|Cmd|Fn|PgUp|PgDn|PrtSc|SysRq|CapsLock|NumLock|ScrollLock)$/iu;
@@ -280,9 +335,9 @@ export function isStandaloneShortcutLabel(value) {
   return isUnambiguousKeycapText(text);
 }
 
-export function isEligibleTextNode(node, visibilityCache = undefined) {
+export function isEligibleTextNode(node, visibilityCache = undefined, stopAtAncestor = undefined) {
   const text = node.data.trim();
-  if (!text || !isEligibleTextContext(node, visibilityCache)) return false;
+  if (!text || !isEligibleTextContext(node, visibilityCache, stopAtAncestor)) return false;
   // Pure counters/dates/version badges and explicit keycaps (Esc, F1, Ctrl+S, ⇑Q)
   // do not need translation and translating them turns shortcuts into nonsense.
   return /\p{L}/u.test(text)
@@ -367,24 +422,29 @@ function isSimpleInlineContainer(element) {
   }
   return true;
 }
+const CODE_WIDGET_INLINE_TAGS = new Set(["PRE", "CODE", "KBD", "SAMP", "VAR"]);
+const CODE_WIDGET_PROSE_CHILD_TAGS = new Set([
+  "P", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "UL", "OL",
+]);
 function isDirectCodeWidgetContainer(element) {
   if (!element || element === element.ownerDocument.body) return false;
-  if (element.matches("pre,code,kbd,samp,var")) return true;
+  if (CODE_WIDGET_INLINE_TAGS.has(element.tagName)) return true;
   if (isTranslationRootElement(element)) return false;
-  const directPre = element.querySelector(":scope > pre");
-  if (!directPre || element.children.length > 8) return false;
-  // A prose container (such as a rendered Markdown message) holding semantic paragraphs
-  // or headings alongside a <pre> block is prose with code examples, not a code widget.
-  if (element.querySelector(":scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6, :scope > blockquote, :scope > ul, :scope > ol")) {
-    return false;
+  const children = element.children;
+  if (!children || children.length === 0 || children.length > 8) return false;
+  let hasDirectPre = false;
+  for (let i = 0; i < children.length; i += 1) {
+    const childTag = children[i].tagName;
+    if (childTag === "PRE") hasDirectPre = true;
+    else if (CODE_WIDGET_PROSE_CHILD_TAGS.has(childTag)) return false;
   }
-  return true;
+  return hasDirectPre;
 }
 function isInsideCodeWidgetFallback(element) {
     if (isDirectCodeWidgetContainer(element)) return true;
     let current = element.parentElement;
     for (let depth = 0; current && current !== current.ownerDocument.body && depth < 4; depth += 1) {
-        if (current.matches("pre,code,kbd,samp,var")) return true;
+        if (CODE_WIDGET_INLINE_TAGS.has(current.tagName)) return true;
         // A list item or blockquote can contain both prose and a code example.
         // Its structural boundary owns the prose before code-widget heuristics.
         if (isTranslationRootElement(current)) return false;
@@ -553,11 +613,13 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false, 
     const roots = new Set();
     const visibility = new WeakMap();
     if (scope instanceof Element) {
-      if (isElementEffectivelyHidden(scope, visibility)) {
-        onHidden?.(scope);
+      if (isFastSkippedElement(scope)) return [];
+      const scopeHidden = inspectElementHidden(scope, visibility);
+      if (scopeHidden !== 0) {
+        onHidden?.(scope, scopeHidden === 2);
         return [];
       }
-      if (scope.matches(SKIP_SELECTOR)) return [];
+      if (scope.parentElement?.closest(SKIP_SELECTOR)) return [];
     }
     const scopes = [scope];
     const seenShadows = new Set();
@@ -570,8 +632,14 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false, 
       const currentScope = scopes.shift();
       const walker = doc.createTreeWalker(currentScope, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, node => {
         if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
-        if (isElementEffectivelyHidden(node, visibility)) { onHidden?.(node); return NodeFilter.FILTER_REJECT; }
-        if (node.matches(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+        // Fast O(1) tag/attribute/closed-<details> reject BEFORE invoking getComputedStyle!
+        // Attribute/toggle changes on [hidden], [aria-hidden], and <details> are already
+        // observed directly by MutationObserver and toggle listeners.
+        if (isFastSkippedElement(node)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        const hiddenState = inspectElementHidden(node, visibility);
+        if (hiddenState !== 0) { onHidden?.(node, hiddenState === 2); return NodeFilter.FILTER_REJECT; }
         if (node.shadowRoot && !seenShadows.has(node.shadowRoot)) {
           seenShadows.add(node.shadowRoot);
           onShadowRoot?.(node.shadowRoot);
@@ -623,7 +691,7 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false, 
   const visibility = new WeakMap();
   const seenShadows = new Set();
   const scopes = [scope];
-  if (scope instanceof Element && !scope.matches(SKIP_SELECTOR) && !isElementEffectivelyHidden(scope, visibility) && scope.shadowRoot) {
+  if (scope instanceof Element && !isFastSkippedElement(scope) && !isElementEffectivelyHidden(scope, visibility) && scope.shadowRoot) {
     seenShadows.add(scope.shadowRoot);
     onShadowRoot?.(scope.shadowRoot);
     scopes.push(scope.shadowRoot);
@@ -634,7 +702,7 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false, 
     wrapDecoratedStructuralTextNodes(currentScope);
     const walker = doc.createTreeWalker(currentScope, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, node => {
       if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
-      if (node.matches(SKIP_SELECTOR) || isElementEffectivelyHidden(node, visibility)) return NodeFilter.FILTER_REJECT;
+      if (isFastSkippedElement(node) || isElementEffectivelyHidden(node, visibility)) return NodeFilter.FILTER_REJECT;
       if (node.shadowRoot && !seenShadows.has(node.shadowRoot)) {
         seenShadows.add(node.shadowRoot);
         onShadowRoot?.(node.shadowRoot);
@@ -654,6 +722,145 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false, 
   }
   for (const root of roots) {
     if (isStandaloneShortcutLabel(ownedTextSummary(root, false))) {
+      roots.delete(root);
+    }
+  }
+  return Array.from(roots);
+}
+
+/**
+ * Time-sliced variant of collectTranslationRoots for full-page scans on huge DOMs
+ * (e.g. 50,000-element release notes). Yields back to the browser event loop every
+ * ~12ms so clicks, scrolling, and paints stay responsive while scanning.
+ */
+export async function collectTranslationRootsAsync(
+  scope,
+  {
+    preserveInlineContext = false,
+    onHidden = undefined,
+    onShadowRoot = undefined,
+    sliceMs = 12,
+    isCancelled = undefined,
+    onEarlyRoots = undefined,
+    beforeResume = undefined,
+  } = {},
+) {
+  if (!preserveInlineContext) {
+    return collectTranslationRoots(scope, { preserveInlineContext, onHidden, onShadowRoot });
+  }
+  const doc = scope instanceof Document ? scope : scope.ownerDocument;
+  if (!doc) return [];
+  const roots = new Set();
+  const visibility = new WeakMap();
+  if (scope instanceof Element) {
+    if (isFastSkippedElement(scope)) return [];
+    const scopeHidden = inspectElementHidden(scope, visibility);
+    if (scopeHidden !== 0) {
+      onHidden?.(scope, scopeHidden === 2);
+      return [];
+    }
+    if (scope.parentElement?.closest(SKIP_SELECTOR)) return [];
+  }
+  const scopes = [scope];
+  const seenShadows = new Set();
+  if (scope instanceof Element && scope.shadowRoot && !seenShadows.has(scope.shadowRoot)) {
+    seenShadows.add(scope.shadowRoot);
+    onShadowRoot?.(scope.shadowRoot);
+    scopes.push(scope.shadowRoot);
+  }
+  const yieldNow = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  const earlyStreamed = onEarlyRoots ? new Set() : null;
+  let earlyPending = onEarlyRoots ? [] : null;
+  const flushEarly = () => {
+    if (!onEarlyRoots || !earlyPending || earlyPending.length === 0) return;
+    const batch = earlyPending;
+    earlyPending = [];
+    onEarlyRoots(batch);
+  };
+  let sliceStart = performance.now();
+  let steps = 0;
+
+  while (scopes.length) {
+    if (isCancelled?.()) return [];
+    const currentScope = scopes.shift();
+    const walker = doc.createTreeWalker(currentScope, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, node => {
+      if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+      if (isFastSkippedElement(node)) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      const hiddenState = inspectElementHidden(node, visibility);
+      if (hiddenState !== 0) { onHidden?.(node, hiddenState === 2); return NodeFilter.FILTER_REJECT; }
+      if (node.shadowRoot && !seenShadows.has(node.shadowRoot)) {
+        seenShadows.add(node.shadowRoot);
+        onShadowRoot?.(node.shadowRoot);
+        scopes.push(node.shadowRoot);
+      }
+      return NodeFilter.FILTER_SKIP;
+    });
+    let node;
+    while ((node = walker.nextNode())) {
+      steps += 1;
+      if ((steps & 63) === 0 && performance.now() - sliceStart >= sliceMs) {
+        flushEarly();
+        await yieldNow();
+        if (isCancelled?.()) return [];
+        if (beforeResume) {
+          await beforeResume();
+          if (isCancelled?.()) return [];
+        }
+        sliceStart = performance.now();
+      }
+      if (!isEligibleTextNode(node, visibility)) continue;
+      const structural = node.parentElement?.closest(FIXED_ROOT_SELECTOR);
+      let root = null;
+      if (structural) {
+        root = !isInsideCodeWidgetFallback(structural) ? structural : null;
+      } else {
+        root = findTranslationRoot(node)
+          ?? node.parentElement?.closest("a,label")
+          ?? findMixedContainerRoot(node, doc);
+        if (root) root = promoteInlineOwner(root, doc, visibility);
+      }
+      if (root && !roots.has(root)) {
+        roots.add(root);
+        if (earlyStreamed && earlyPending && isTranslationRootElement(root) && !earlyStreamed.has(root)) {
+          if (!isStandaloneShortcutLabel(ownedTextSummary(root, true))) {
+            earlyStreamed.add(root);
+            earlyPending.push(root);
+            if (earlyPending.length >= 24 && earlyStreamed.size <= 48) {
+              flushEarly();
+            }
+          }
+        }
+      }
+    }
+  }
+  flushEarly();
+  let postSteps = 0;
+  for (const root of roots) {
+    postSteps += 1;
+    if ((postSteps & 255) === 0 && performance.now() - sliceStart >= sliceMs) {
+      await yieldNow();
+      if (isCancelled?.()) return [];
+      sliceStart = performance.now();
+    }
+    if (isTranslationRootElement(root)) continue;
+    for (let ancestor = root.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      if (roots.has(ancestor) && !hasNestedOwnerBoundaryBetween(root, ancestor)) {
+        roots.delete(root);
+        break;
+      }
+    }
+  }
+  for (const root of roots) {
+    postSteps += 1;
+    if ((postSteps & 255) === 0 && performance.now() - sliceStart >= sliceMs) {
+      await yieldNow();
+      if (isCancelled?.()) return [];
+      sliceStart = performance.now();
+    }
+    if (earlyStreamed?.has(root)) continue;
+    if (isStandaloneShortcutLabel(ownedTextSummary(root, true))) {
       roots.delete(root);
     }
   }
