@@ -7,6 +7,7 @@ import { TooltipController } from "./tooltip-controller";
 import { contextualTerminology, translationContextForUrl } from "./translation-context";
 import {prepareFixedTextRecord, fixedTextRecordUnchanged, clearFixedTextRecord, applyFixedTextRecord, needsCapturedSourceLayout, validateFixedTextRecord} from "./fixed-text-render";
 import {restoreFixedHtmlTransport} from "./fixed-html-transport";
+import {protectListMarkersHtml, restoreListMarkersHtml} from "./list-marker-preserve";
 import {isPreformattedNewlineContext, planPreformattedParagraphRuns} from "./fixed-html-paragraphs";
 import {
     richHtmlStructureCompatible,
@@ -735,13 +736,15 @@ export class PageTranslator {
             ? planPreformattedParagraphRuns(segment.html)
             : null;
         let terminologyAppliedPerRun = false;
+        let protectedListMarkers = [];
         if (paragraphPlan) {
             const settledRuns = await Promise.allSettled(paragraphPlan.runs.map(async (run) => {
                 const runTerms = terminologyForText(this.#terminology, run.plainText);
                 for (const entry of terminologyForText(contextualTerminology(context), run.plainText)) {
                     if (!runTerms.some(existing => existing.source.toLowerCase() === entry.source.toLowerCase())) runTerms.push(entry);
                 }
-                const protectedRun = protectTerminologyHtml(this.#doc, run.html, this.#terminology);
+                const protectedRunMarkers = protectListMarkersHtml(run.html);
+                const protectedRun = protectTerminologyHtml(this.#doc, protectedRunMarkers.html, this.#terminology);
                 let runHtml = await this.#provider.translateHtml({
                     html: protectedRun.html,
                     sourceLanguage: this.#sourceLanguage,
@@ -758,6 +761,7 @@ export class PageTranslator {
                 if (hasBrokenTranslationHtml(runHtml)) {
                     throw new Error("译文包含损坏字符，已保留原文");
                 }
+                runHtml = restoreListMarkersHtml(run.html, runHtml, protectedRunMarkers.markers);
                 return restoreFixedHtmlTransport(run.html, runHtml);
             }));
             const fatalRe = /数据权限|请填写 API Key|请填写模型名称|必须使用 HTTPS|HTTP (?:401|402|403|429)\b/u;
@@ -803,8 +807,12 @@ export class PageTranslator {
             );
         }
         else {
-            // Keep the complete root and its protected terminology in one provider request.
-            const protectedSegment = protectTerminologyHtml(this.#doc, segment.html, this.#terminology);
+            // Keep the complete root and its protected terminology in one provider request,
+            // while stripping leading numeric list ordinals ("1. ", "1.2. ") so models do not
+            // convert ordinal dots into "。" or swallow the separator space.
+            const protectedMarkers = protectListMarkersHtml(segment.html);
+            protectedListMarkers = protectedMarkers.markers;
+            const protectedSegment = protectTerminologyHtml(this.#doc, protectedMarkers.html, this.#terminology);
             translatedHtml = await this.#provider.translateHtml({
                 html: protectedSegment.html,
                 sourceLanguage: this.#sourceLanguage,
@@ -844,6 +852,7 @@ export class PageTranslator {
             if (hasBrokenTranslationHtml(translatedHtml)) {
                 throw new Error("译文包含损坏字符，已保留原文");
             }
+            translatedHtml = restoreListMarkersHtml(segment.html, translatedHtml, protectedListMarkers);
         }
 
         // The main HTML translation is authoritative when every source link keeps a

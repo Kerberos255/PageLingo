@@ -8,6 +8,7 @@ import {
   terminologyForText,
 } from "./rich-segment";
 import { parseHtmlBody } from "../shared/html-parser";
+import { protectLeadingListMarkerText, restoreLeadingListMarkerText } from "./list-marker-preserve";
 import { guessLanguageFromScript, isChineseTarget } from "../shared/mixed-language";
 import { languageLabel, loadSettings, normalizeDetectedLanguage } from "../shared/settings";
 
@@ -622,17 +623,19 @@ export class SelectionTranslatorController {
         const lines = anchor.text.replace(/\r\n?/g, "\n").split("\n");
         const translatedLines = await Promise.all(lines.map(async (line) => {
           if (!line.trim()) return "";
-          const protectedLine = protectTerminologyHtml(this.doc, escapeHtml(line), terminology);
+          const { text: bodyText, prefix } = protectLeadingListMarkerText(line);
+          const protectedLine = protectTerminologyHtml(this.doc, escapeHtml(bodyText), terminology);
           let html = await this.provider.translateHtml({
             html: protectedLine.html,
             sourceLanguage,
             targetLanguage,
-            terminology: terminologyForText(terminology, line),
+            terminology: terminologyForText(terminology, bodyText),
             ...(bypassCache ? { bypassCache: true } : {}),
           });
           html = restoreTerminologyHtml(this.doc, html, protectedLine.replacements);
-          html = applyTerminologyCorrectionsHtml(this.doc, html, line, terminology);
-          return parseHtmlBody(html).textContent ?? line;
+          html = applyTerminologyCorrectionsHtml(this.doc, html, bodyText, terminology);
+          const translatedBody = parseHtmlBody(html).textContent ?? bodyText;
+          return restoreLeadingListMarkerText(line, translatedBody, prefix);
         }));
         if (seq !== this.activeSeq) return;
         latestTranslation = translatedLines.join("\n").trim();

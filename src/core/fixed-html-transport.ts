@@ -47,7 +47,7 @@ function checkFixedTextHtml(sourceHtml: string, translatedHtml: string, restoreA
         .replace(/】/gu, "]")
         .replace(/[“”「」『』]/gu, '"')
         .replace(/[‘’]/gu, "'");
-      if (from.hasAttribute("data-flt-fixed") && /^[.,:;!?()\[\]"'-]+$/u.test(punctuation(original))
+      if (from.hasAttribute("data-flt-fixed") && /^[\d.,:;!?()\[\]"'\/+-]+$/u.test(punctuation(original))
         && punctuation(original) === punctuation(received)) to.textContent = original;
     }
     const id = from.getAttribute("data-flt-text-id");

@@ -28,6 +28,7 @@ import {
 } from "./core/rich-segment";
 import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { parseHtmlBody } from "./shared/html-parser";
+import { protectLeadingListMarkerText, restoreLeadingListMarkerText } from "./core/list-marker-preserve";
 
 const statusEl = document.querySelector<HTMLElement>("#status");
 const translate = document.querySelector<HTMLButtonElement>("#translate");
@@ -457,17 +458,19 @@ async function translateInputText(): Promise<void> {
     const lines = raw.replace(/\r\n?/g, "\n").split("\n");
     const translatedLines = await Promise.all(lines.map(async (line) => {
       if (!line.trim()) return "";
-      const protectedLine = protectTerminologyHtml(document, escapeHtml(line), terminology);
+      const { text: bodyText, prefix } = protectLeadingListMarkerText(line);
+      const protectedLine = protectTerminologyHtml(document, escapeHtml(bodyText), terminology);
       let html = await provider.translateHtml({
         html: protectedLine.html,
         sourceLanguage,
         targetLanguage,
-        terminology: terminologyForText(terminology, line),
+        terminology: terminologyForText(terminology, bodyText),
         ...(bypassCache ? { bypassCache: true } : {}),
       });
       html = restoreTerminologyHtml(document, html, protectedLine.replacements);
-      html = applyTerminologyCorrectionsHtml(document, html, line, terminology);
-      return parseHtmlBody(html).textContent ?? line;
+      html = applyTerminologyCorrectionsHtml(document, html, bodyText, terminology);
+      const translatedBody = parseHtmlBody(html).textContent ?? bodyText;
+      return restoreLeadingListMarkerText(line, translatedBody, prefix);
     }));
     if (seq !== textTranslateSeq) return;
 
