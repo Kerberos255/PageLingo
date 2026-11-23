@@ -4,6 +4,8 @@ var ROOT_TAGS = /* @__PURE__ */ new Set([
   "LI",
   "BLOCKQUOTE",
   "FIGCAPTION",
+  "CAPTION",
+  "LEGEND",
   "TD",
   "TH",
   "DT",
@@ -338,25 +340,29 @@ export function isStandaloneShortcutLabel(value) {
 export function isEligibleTextNode(node, visibilityCache = undefined, stopAtAncestor = undefined) {
   const text = node.data.trim();
   if (!text || !isEligibleTextContext(node, visibilityCache, stopAtAncestor)) return false;
-  // Pure counters/dates/version badges and explicit keycaps (Esc, F1, Ctrl+S, ⇑Q)
-  // do not need translation and translating them turns shortcuts into nonsense.
+  // Pure counters/dates/version badges, standalone URLs, and explicit keycaps (Esc, F1, Ctrl+S, ⇑Q)
+  // do not need translation and translating them turns technical identifiers/shortcuts into nonsense.
   return /\p{L}/u.test(text)
     && !/^v\d+(?:\.\d+)+(?:[-+][\w.-]+)?$/i.test(text)
+    && !/^https?:\/\/\S+$/iu.test(text)
     && !isUnambiguousKeycapText(text);
 }
 var FALLBACK_CONTAINER_TAGS = new Set([
-  "DIV", "SPAN", "LABEL", "STRONG", "B", "EM", "I", "U", "S", "SMALL", "MARK", "Q", "CITE", "ABBR", "DEL", "INS"
+  "DIV", "SPAN", "LABEL", "STRONG", "B", "EM", "I", "U", "S", "SMALL", "MARK", "Q", "CITE", "ABBR", "DEL", "INS",
+  "DFN", "TIME", "BDI", "BDO", "DATA", "OUTPUT"
 ]);
 var MIXED_CONTAINER_TAGS = new Set([
-  "DIV", "SPAN", "SECTION", "ARTICLE", "MAIN", "ASIDE", "HEADER", "FOOTER", "NAV", "FIGURE", "FORM", "FIELDSET"
+  "DIV", "SPAN", "SECTION", "ARTICLE", "MAIN", "ASIDE", "HEADER", "FOOTER", "NAV", "FIGURE", "FORM", "FIELDSET",
+  "DETAILS", "DIALOG", "ADDRESS", "HGROUP", "SEARCH", "OUTPUT"
 ]);
 var INLINE_PROSE_TAGS = new Set([
-  "SPAN", "STRONG", "EM", "B", "I", "U", "S", "SMALL", "SUB", "SUP", "MARK", "ABBR", "CITE", "Q", "DEL", "INS", "A", "LABEL"
+  "SPAN", "STRONG", "EM", "B", "I", "U", "S", "SMALL", "SUB", "SUP", "MARK", "ABBR", "CITE", "Q", "DEL", "INS",
+  "DFN", "TIME", "BDI", "BDO", "DATA", "OUTPUT", "A", "LABEL"
 ]);
 var NON_STRUCTURAL_BLOCK_BOUNDARY_TAGS = new Set([
   "DIV", "SECTION", "ARTICLE", "MAIN", "HEADER", "FOOTER", "NAV", "ASIDE",
   "FIGURE", "UL", "OL", "DL", "TABLE", "FORM", "FIELDSET", "DETAILS",
-  "DIALOG", "HR", "IMG", "PICTURE"
+  "DIALOG", "ADDRESS", "HGROUP", "SEARCH", "HR", "IMG", "PICTURE"
 ]);
 
 export function isNestedOwnerBoundary(element, root) {
@@ -467,7 +473,7 @@ function findMixedContainerRoot(node, doc) {
   while (current && current !== doc.body && current !== doc.documentElement) {
     if (isProtectedTranslationSubtree(current) || isTranslationRootElement(current)) return null;
     if (isInsideCodeWidgetFallback(current)) return null;
-    if (MIXED_CONTAINER_TAGS.has(current.tagName) || isCustomProseContainer(current)) return current;
+    if (current.matches("a,label") || MIXED_CONTAINER_TAGS.has(current.tagName) || isCustomProseContainer(current)) return current;
     if (!INLINE_PROSE_TAGS.has(current.tagName)) return null;
     current = current.parentElement;
   }
@@ -658,7 +664,6 @@ export function collectTranslationRoots(scope, { preserveInlineContext = false, 
           root = !isInsideCodeWidgetFallback(structural) ? structural : null;
         } else {
           root = findTranslationRoot(node)
-            ?? node.parentElement?.closest("a,label")
             ?? findMixedContainerRoot(node, doc);
           if (root) root = promoteInlineOwner(root, doc, visibility);
         }
@@ -817,7 +822,6 @@ export async function collectTranslationRootsAsync(
         root = !isInsideCodeWidgetFallback(structural) ? structural : null;
       } else {
         root = findTranslationRoot(node)
-          ?? node.parentElement?.closest("a,label")
           ?? findMixedContainerRoot(node, doc);
         if (root) root = promoteInlineOwner(root, doc, visibility);
       }

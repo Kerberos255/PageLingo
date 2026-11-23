@@ -146,7 +146,6 @@ class RouteSession {
           if (pending) {
             this.#pending.delete(message.id);
             pending.reject(error);
-            return;
           }
           const batch = this.#pendingBatches.get(message.id);
           if (batch) {
@@ -156,12 +155,30 @@ class RouteSession {
         } else {
           readyReject(error);
         }
+        // Emscripten WASM sets ABORT=true permanently after any runtime abort;
+        // reset the dead worker so subsequent requests spawn a fresh instance.
+        if (this.#worker === worker) {
+          worker.terminate();
+          this.#worker = null;
+          this.#ready = null;
+          this.#initialized = false;
+        }
+        for (const pending of this.#pending.values()) pending.reject(error);
+        this.#pending.clear();
+        for (const pending of this.#pendingBatches.values()) pending.reject(error);
+        this.#pendingBatches.clear();
       }
     });
 
     worker.addEventListener("error", (event) => {
       const error = new Error(event.message || "Bergamot worker failed");
       readyReject(error);
+      if (this.#worker === worker) {
+        worker.terminate();
+        this.#worker = null;
+        this.#ready = null;
+        this.#initialized = false;
+      }
       for (const pending of this.#pending.values()) pending.reject(error);
       this.#pending.clear();
       for (const pending of this.#pendingBatches.values()) pending.reject(error);
@@ -206,9 +223,25 @@ export class BergamotClient {
   async #translateGroup(sources: string[], route: TranslationRoute, workerIndex = 0): Promise<string[]> {
     const session = this.#session(route, workerIndex);
     const prepared = sources.map(prepareBergamotFixedHtml);
-    const translated = await session.translateHtmlBatch(prepared);
-    if (translated.length !== sources.length) {
-      throw new Error(`Bergamot batch result length mismatch: expected ${sources.length}, got ${translated.length}`);
+    let translated: string[];
+    try {
+      translated = await session.translateHtmlBatch(prepared);
+      if (translated.length !== sources.length) {
+        throw new Error(`Bergamot batch result length mismatch: expected ${sources.length}, got ${translated.length}`);
+      }
+    } catch (batchError) {
+      if (sources.length <= 1) throw batchError;
+      // Isolate any single malformed input that caused Bergamot's C++ HTML parser
+      // or WASM worker to fail so it cannot take down the rest of the batch.
+      translated = [];
+      for (let i = 0; i < prepared.length; i += 1) {
+        try {
+          const [single] = await session.translateHtmlBatch([prepared[i]!]);
+          translated.push(single ?? sources[i]!);
+        } catch {
+          translated.push(sources[i]!);
+        }
+      }
     }
     return this.#repairTranslations(sources, prepared, translated, route, session);
   }

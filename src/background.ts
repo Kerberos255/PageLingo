@@ -302,7 +302,9 @@ async function translateExternalBatchCached(
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
       for (const deferred of deferredResolvers.values()) deferred.reject(failure);
-      throw error;
+      if (isFatalExternalError(error) || results.every((item) => item === null)) {
+        throw error;
+      }
     }
   }
 

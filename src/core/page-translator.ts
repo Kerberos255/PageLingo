@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { collectTranslationRoots, collectTranslationRootsAsync, findTranslationRoot, hasNestedOwnerBoundaryBetween, inspectElementHidden, isElementEffectivelyHidden, isGeneratedNode, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
+import { collectTranslationRoots, collectTranslationRootsAsync, findTranslationRoot, hasNestedOwnerBoundaryBetween, inspectElementHidden, isElementEffectivelyHidden, isGeneratedNode, isStandaloneShortcutLabel, isTranslationDisabled, isTranslationRootElement, isProtectedApiSignature } from "./dom-policy";
 import { TranslationProgress } from "./translation-progress";
 import { captureSourceLayout, createSafeTranslatedFragment, mountTranslation } from "./render";
 import { escapeHtml, serializeRichSegment, sourceFingerprint, protectTerminologyHtml, applyTerminologyCorrectionsHtml, termOccurrenceCount, terminologyForText, restoreTerminologyHtml } from "./rich-segment";
@@ -246,6 +246,7 @@ export class PageTranslator {
     #observer = null;
     #tooltipController = null;
     #tooltipSnapshots = new Map();
+    #placeholderSnapshots = new Map();
     #flushQueued = false;
     #disposed = false;
     #sourceLinkStyleSnapshots = new Map();
@@ -388,6 +389,15 @@ export class PageTranslator {
     }
     get firstFailure() {
         return Array.from(this.#failures).find(([root]) => root.isConnected)?.[1] ?? null;
+    }
+    originalTextForNode(node) {
+        if (!node || node.nodeType !== Node.TEXT_NODE) return node?.textContent ?? "";
+        const owner = this.#fixedOwners.get(node);
+        if (owner && this.#fixedRecords.get(owner.root) === owner) {
+            const edit = owner.edits.find((item) => item.node === node);
+            if (edit) return edit.source;
+        }
+        return node.data ?? "";
     }
     findTranslatedRootForNode(target) {
         if (!target || this.#disposed) return null;
@@ -595,6 +605,7 @@ export class PageTranslator {
             }
             // Start translating visible viewport items immediately before registering thousands of deferred roots.
             const immediateDone = Promise.all(immediate.map((item) => this.#queue(item.root, item)));
+            const placeholdersDone = this.#translatePlaceholdersInScope(scope);
             sliceStart = performance.now();
             for (let i = 0; i < deferred.length; i += 1) {
                 if ((i & 255) === 255 && performance.now() - sliceStart >= 12) {
@@ -604,10 +615,13 @@ export class PageTranslator {
                 }
                 this.#deferRoot(deferred[i]);
             }
-            await immediateDone;
+            await Promise.all([immediateDone, placeholdersDone]);
             return this.translatedCount;
         }
-        await Promise.all(ranked.map((item) => this.#queue(item.root, item)));
+        await Promise.all([
+            Promise.all(ranked.map((item) => this.#queue(item.root, item))),
+            this.#translatePlaceholdersInScope(scope),
+        ]);
         return this.translatedCount;
     }
     #watchHiddenFade(element, mayHaveFadeAnimation = true) {
@@ -1154,6 +1168,7 @@ export class PageTranslator {
                     } else {
                         for (const root of this.#collect(added))
                             this.#queue(root);
+                        void this.#translatePlaceholdersInScope(added);
                     }
                 }
             }
@@ -1203,6 +1218,7 @@ export class PageTranslator {
         for (const root of this.#collect(region)) {
             this.#queue(root);
         }
+        void this.#translatePlaceholdersInScope(region);
     }
     async #queueScopeLazy(region) {
         if (this.#disposed || !region.isConnected || this.#inFlightLazyScopes.has(region)) return;
@@ -1260,6 +1276,7 @@ export class PageTranslator {
             }
             immediate.sort((a, b) => a.tier - b.tier || a.top - b.top);
             for (const item of immediate) void this.#queue(item.root, item);
+            void this.#translatePlaceholdersInScope(region);
             sliceStart = performance.now();
             for (let i = 0; i < deferred.length; i += 1) {
                 if ((i & 255) === 255 && performance.now() - sliceStart >= 12) {
@@ -1272,6 +1289,92 @@ export class PageTranslator {
         } finally {
             this.#inFlightLazyScopes.delete(region);
         }
+    }
+    #collectPlaceholders(scope) {
+        if (!scope || this.#disposed) return [];
+        const elements = [];
+        if (scope instanceof Element && scope.matches("input[placeholder],textarea[placeholder]")) {
+            elements.push(scope);
+        }
+        if ("querySelectorAll" in scope) {
+            elements.push(...Array.from(scope.querySelectorAll("input[placeholder],textarea[placeholder]")));
+        }
+        for (const shadowRoot of this.#shadowRoots) {
+            if (scope === this.#doc.body || scope === this.#doc || (scope instanceof Node && scope.contains(shadowRoot.host))) {
+                elements.push(...Array.from(shadowRoot.querySelectorAll("input[placeholder],textarea[placeholder]")));
+            }
+        }
+        if (!elements.length) return [];
+        const visibility = new WeakMap();
+        return elements.filter((el) => {
+            if (!el.isConnected || isGeneratedNode(el) || isTranslationDisabled(el)) return false;
+            if (inspectElementHidden(el, visibility) !== 0) return false;
+            const raw = el.getAttribute("placeholder") ?? "";
+            const previous = this.#placeholderSnapshots.get(el);
+            if (previous && raw === previous.translatedText) return false;
+            const text = raw.replace(/\s+/g, " ").trim();
+            if (!text || !/\p{L}/u.test(text)) return false;
+            if (/^v\d+(?:\.\d+)+(?:[-+][\w.-]+)?$/iu.test(text)) return false;
+            if (/https?:\/\/|www\.|\S+@\S+\.\S+/iu.test(text)) return false;
+            if (isStandaloneShortcutLabel(text)) return false;
+            if (this.#targetLanguage.toLowerCase().startsWith("zh") && /\p{Script=Han}/u.test(text)) {
+                const chars = Array.from(text.replace(/\s+/g, ""));
+                const han = chars.filter((ch) => /\p{Script=Han}/u.test(ch)).length;
+                const letters = chars.filter((ch) => /\p{L}/u.test(ch)).length;
+                if (han >= 2 && han / Math.max(letters, 1) >= 0.42) return false;
+            }
+            return true;
+        });
+    }
+    async #translatePlaceholderElement(element) {
+        if (this.#disposed || !element.isConnected) return false;
+        const originalText = element.getAttribute("placeholder") ?? "";
+        const previous = this.#placeholderSnapshots.get(element);
+        if (previous && originalText === previous.translatedText) return true;
+        const sourceText = originalText.replace(/\s+/g, " ").trim();
+        if (!sourceText || !/\p{L}/u.test(sourceText)) return false;
+        const bypassCache = this.#forceBypassRoots.has(element);
+        const exactTerm = exactTerminologyTarget(sourceText, this.#terminology);
+        let translated = exactTerm;
+        if (!translated) {
+            const baseHtml = this.#wholeSentenceContext
+                ? `<span data-flt-text-id="0">${escapeHtml(sourceText)}</span>`
+                : escapeHtml(sourceText);
+            const protectedMarkers = protectListMarkersHtml(baseHtml);
+            const protectedInput = protectTerminologyHtml(this.#doc, protectedMarkers.html, this.#terminology);
+            const context = this.#wholeSentenceContext ? translationContextForUrl(this.#doc.URL) : undefined;
+            const requestTerminology = terminologyForText(this.#terminology, sourceText);
+            for (const entry of terminologyForText(contextualTerminology(context), sourceText)) {
+                if (!requestTerminology.some((existing) => existing.source.toLowerCase() === entry.source.toLowerCase())) {
+                    requestTerminology.push(entry);
+                }
+            }
+            let translatedHtml = await this.#provider.translateHtml({
+                html: protectedInput.html,
+                sourceLanguage: this.#sourceLanguage,
+                targetLanguage: this.#targetLanguage,
+                terminology: requestTerminology,
+                ...(context ? { context } : {}),
+                ...(bypassCache ? { bypassCache: true } : {}),
+            });
+            translatedHtml = restoreTerminologyHtml(this.#doc, translatedHtml, protectedInput.replacements);
+            translatedHtml = applyTerminologyCorrectionsHtml(this.#doc, translatedHtml, sourceText, this.#terminology);
+            translatedHtml = restoreListMarkersHtml(baseHtml, translatedHtml, protectedMarkers.markers);
+            translated = translatedPlainText(this.#doc, translatedHtml);
+        }
+        if (!translated || hasBrokenTranslationText(translated)) return false;
+        if (this.#disposed || !element.isConnected || element.getAttribute("placeholder") !== originalText) return false;
+        const leading = originalText.match(/^\s*/)?.[0] ?? "";
+        const trailing = originalText.match(/\s*$/)?.[0] ?? "";
+        const translatedText = leading + translated + trailing;
+        this.#placeholderSnapshots.set(element, { originalText, translatedText });
+        element.setAttribute("placeholder", translatedText);
+        return true;
+    }
+    async #translatePlaceholdersInScope(scope) {
+        const placeholders = this.#collectPlaceholders(scope);
+        if (!placeholders.length) return;
+        await Promise.all(placeholders.map((el) => this.#translatePlaceholderElement(el).catch(() => false)));
     }
     observeTooltips() {
         if (this.#disposed || this.#tooltipController)
@@ -1357,6 +1460,12 @@ export class PageTranslator {
             }
         }
         this.#tooltipSnapshots.clear();
+        for (const [element, snapshot] of this.#placeholderSnapshots.entries()) {
+            if (element?.isConnected && element.getAttribute("placeholder") === snapshot.translatedText) {
+                element.setAttribute("placeholder", snapshot.originalText);
+            }
+        }
+        this.#placeholderSnapshots.clear();
         this.#records.clear();
         const cleanupScopes = [this.#doc, ...Array.from(this.#shadowRoots)];
         for (const scope of cleanupScopes) {

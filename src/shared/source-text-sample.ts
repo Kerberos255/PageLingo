@@ -5,6 +5,7 @@ const SAMPLE_SKIP_TAGS = new Set([
 export function sourceTextSample(
   root: Document | Element,
   maxChars = 4096,
+  resolveTextNode?: (node: Text) => string,
 ): string {
   const scope = root instanceof Document
     ? (root.querySelector("article, main, [role='main']") ?? root.body)
@@ -40,7 +41,10 @@ export function sourceTextSample(
 
   let current = walker.nextNode();
   while (current && length < maxChars) {
-    const value = (current.textContent ?? "").replace(/\s+/g, " ").trim();
+    const raw = resolveTextNode && current.nodeType === Node.TEXT_NODE
+      ? resolveTextNode(current as Text)
+      : (current.textContent ?? "");
+    const value = raw.replace(/\s+/g, " ").trim();
     if (value) {
       pieces.push(value);
       length += value.length + 1;

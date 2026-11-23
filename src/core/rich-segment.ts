@@ -20,6 +20,7 @@ const LINK_TRANSPORT_PREFIX = "https://pagelingo.invalid/__link/";
 var INLINE_TAGS = new Set([
     "A", "SPAN", "STRONG", "EM", "B", "I", "U", "S", "SMALL",
     "SUB", "SUP", "MARK", "ABBR", "CITE", "Q", "DEL", "INS",
+    "DFN", "TIME", "BDI", "BDO", "DATA", "OUTPUT",
     "CODE", "KBD", "SAMP", "VAR", "BR", "WBR",
 ]);
 var OPAQUE_TAGS = new Set(["CODE", "KBD", "SAMP", "VAR"]);
@@ -157,7 +158,13 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
             continue;
         }
         const children = trace ? [] : undefined;
-        html += `<${lower}>${serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements)}</${lower}>`;
+        const innerHtml = serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements);
+        if (textSlots && !innerHtml.replace(/<[^>]*>/gu, "").trim() && !innerHtml.includes("data-flt-") && !innerHtml.includes("__FLT_")) {
+            html += innerHtml;
+            trace?.push({kind: "boundary", node: element, reason: "protected"});
+            continue;
+        }
+        html += `<${lower}>${innerHtml}</${lower}>`;
         trace?.push({kind: "element", node: element, tagName: tag, inline: true, children});
     }
     return html;

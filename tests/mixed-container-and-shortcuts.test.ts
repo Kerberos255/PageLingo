@@ -12,6 +12,7 @@ import {
   BUILTIN_MICROSOFT_ENGINE_ID,
   builtinFreeEngineConfig,
 } from "../src/shared/translation-engine-settings";
+import { sourceTextSample } from "../src/shared/source-text-sample";
 import type { TranslationRequest } from "../src/core/provider";
 
 afterEach(() => {
@@ -362,5 +363,124 @@ describe("plain-text multi-paragraph and oversized slot splitting (Microsoft & G
       "译:Third paragraph also translates cleanly.",
     );
   });
+
+  it("translates nested <label><div class='label'>...<div class='sub'>...</div></div></label>, Selectize dropdowns, icon buttons, <legend>, <caption>, and prose placeholders on itch.io/game/new without dropping fields or corrupting URLs", async () => {
+    document.body.innerHTML = `
+      <form class="game_search">
+        <input type="text" class="search_input" placeholder="Search for games, jams, tags or creators">
+      </form>
+      <div class="edit_game_page form">
+        <h2>Create a new <span class="user_classification_noun">project</span></h2>
+        <div class="input_row">
+          <label>
+            <div class="label">Project URL</div>
+            <div class="domain_wrapper">
+              <span class="domain">https://kerberos255.itch.io/</span>
+              <input type="text" class="slug_input">
+            </div>
+          </label>
+        </div>
+        <div class="input_row">
+          <label>
+            <div class="label">
+              Short description or tagline
+              <div class="sub">Shown when we link to your <span class="user_classification_noun">project</span>. Avoid duplicating your <span class="user_classification_noun">project</span>'s title</div>
+            </div>
+            <input type="text" class="tagline_input" placeholder="Optional">
+          </label>
+        </div>
+        <div class="input_row">
+          <label>
+            <div class="label">
+              Classification
+              <div class="sub">What are you uploading?</div>
+            </div>
+            <div class="selectize-control single">
+              <div class="selectize-input items full has-options has-items">
+                <div class="option" data-value="game">Games <span class="sub">— A piece of software you can play</span></div>
+                <input type="text" autocomplete="off">
+              </div>
+            </div>
+          </label>
+        </div>
+        <div class="input_row">
+          <label>
+            <div class="label">
+              Gameplay video or trailer
+              <div class="sub">Provide a link to a YouTube or Vimeo video</div>
+            </div>
+            <input type="text" class="video_input" placeholder="eg. https://www.youtube.com/watch?v=-51PdA47sP">
+          </label>
+        </div>
+        <fieldset>
+          <legend>Pricing</legend>
+          <div class="payment_modes">
+            <button type="button" role="checkbox" class="payment_mode_free active">
+              <span class="icon icon-checkbox-checked"></span>
+              <span class="label">$0 or donate</span>
+            </button>
+          </div>
+          <input type="text" class="money_input" placeholder="$2.00">
+        </fieldset>
+        <table>
+          <caption>Uploads</caption>
+        </table>
+      </div>
+    `;
+
+    const beforeHtml = document.body.innerHTML;
+    const provider = whitespaceCollapsingProvider();
+    const translator = new PageTranslator(document, provider, {
+      displayMode: "translation",
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans",
+    });
+
+    await translator.translateAll();
+    expect(translator.failedCount).toBe(0);
+
+    // Empty decorative <span class="icon"></span> must never emit empty <span></span> into provider HTML
+    for (const req of provider.requests) {
+      expect(req.html).not.toContain("<span></span>");
+      expect(req.html).not.toContain("https://kerberos255.itch.io/");
+    }
+
+    // Nested <div class="label"> titles inside <label> must not be jumped over or dropped
+    const labels = Array.from(document.querySelectorAll(".input_row .label"));
+    expect(labels[0]!.textContent).toBe("译:Project URL");
+    expect(labels[1]!.childNodes[0]!.textContent?.trim()).toBe("译:Short description or tagline");
+    expect(labels[1]!.querySelector(".sub")!.textContent).toContain("译:Shown when we link to your");
+    expect(labels[2]!.childNodes[0]!.textContent?.trim()).toBe("译:Classification");
+    expect(labels[2]!.querySelector(".sub")!.textContent).toBe("译:What are you uploading?");
+    expect(labels[3]!.childNodes[0]!.textContent?.trim()).toBe("译:Gameplay video or trailer");
+    expect(labels[3]!.querySelector(".sub")!.textContent).toBe("译:Provide a link to a YouTube or Vimeo video");
+
+    // Selectize selected item inside <label> translates cleanly
+    expect(document.querySelector(".selectize-input .option")!.textContent).toContain("译:Games");
+    expect(document.querySelector(".selectize-input .option .sub")!.textContent).toContain("译:— A piece of software you can play");
+
+    // Standalone URL prefix in .domain_wrapper must stay untouched
+    expect(document.querySelector(".domain")!.textContent).toBe("https://kerberos255.itch.io/");
+
+    // <legend>, <caption>, and icon button label translate cleanly
+    expect(document.querySelector("legend")!.textContent).toBe("译:Pricing");
+    expect(document.querySelector("caption")!.textContent).toBe("译:Uploads");
+    expect(document.querySelector(".payment_mode_free .label")!.textContent).toBe("译:$0 or donate");
+
+    // Human-prose placeholders translate while URL/currency placeholders stay untouched
+    expect(document.querySelector(".search_input")!.getAttribute("placeholder")).toBe("译:Search for games, jams, tags or creators");
+    expect(document.querySelector(".tagline_input")!.getAttribute("placeholder")).toBe("译:Optional");
+    expect(document.querySelector(".video_input")!.getAttribute("placeholder")).toBe("eg. https://www.youtube.com/watch?v=-51PdA47sP");
+    expect(document.querySelector(".money_input")!.getAttribute("placeholder")).toBe("$2.00");
+
+    // sourceTextSample with translator.originalTextForNode reads original English even after in-place mutation
+    const sample = sourceTextSample(document, 4096, (node) => translator.originalTextForNode(node));
+    expect(sample).toContain("Short description or tagline");
+    expect(sample).not.toContain("译:");
+
+    translator.restore();
+    expect(document.body.innerHTML).toBe(beforeHtml);
+  });
 });
+
 

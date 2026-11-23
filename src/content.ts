@@ -64,7 +64,11 @@ function ensureStyle(bilingualStyle = undefined) {
     if (isNew) (document.head ?? document.documentElement).append(style);
 }
 function pageTextSample() {
-    return sourceTextSample(document, 4096);
+    return sourceTextSample(
+        document,
+        4096,
+        translator ? (node) => translator.originalTextForNode(node) : undefined,
+    );
 }
 async function detectPageLanguage(sampleOverride = null) {
     const declaredLanguage = normalizeDetectedLanguage(document.documentElement.lang);
@@ -1088,9 +1092,9 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     void maybeAutoTranslate(autoTranslateGeneration);
 });
 async function resolveAutomaticSourceLanguage(targetLanguage) {
-    // Translation-only mode hides original roots visually; source detection must ignore
-    // PageLingo's generated target-language nodes and read the underlying source DOM.
-    const sample = sourceTextSample(document);
+    // Translation-only mode mutates text nodes in place; source detection must ignore
+    // PageLingo's generated/mutated target-language nodes and read the underlying source text.
+    const sample = pageTextSample();
     const routeLanguage = routeLocaleHint();
     // Never let a target-language shell/sidebar veto an explicit source-locale route.
     // /en/ pages can legitimately contain Chinese navigation while the article remains English.
