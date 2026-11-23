@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1 — 2026-11-23
+
+### Performance
+
+- **Eliminate main-thread freezes on very large DOM pages** (e.g. 5+ MB / 50,000+ element documentation and release-note pages with thousands of collapsed `<details>` panels):
+  - Skip collapsed `<details>` bodies, `<svg>`, code blocks, and `[hidden]`/`[aria-hidden]` subtrees in O(1) before calling `getComputedStyle()`, and stream newly revealed accordions with time-sliced async root collection (`collectTranslationRootsAsync`) and early viewport-first dispatch.
+  - Enable viewport-driven lazy off-screen translation (`IntersectionObserver`) for the local Bergamot engine as well as external engines.
+  - Stop invoking `element.getAnimations()` on non-fading elements (`display: none`, `sr-only`, `<svg>`, collapsed `<details>`) and replace `:scope > pre` `querySelector` calls with direct child iteration.
+  - Split bilingual DOM mounting, CJK-spacing validation, and display-mode switching (`translation` ↔ `bilingual`) into batched pure-READ then pure-WRITE passes with frame-coalesced bilingual commits and post-paint read gating, preventing cascading forced style/layout recalculations.
+  - Batch `freezeNavigationLayout()` and `TranslationProgress` reads before writes, skip vertical sidebars and collapsed `<details>`, and remove full-document `innerText` serialization from page language sampling and subframe discovery.
+
 ## 1.1.0 — 2026-11-22
 
 ### Added
