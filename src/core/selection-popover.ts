@@ -14,6 +14,95 @@ import { languageLabel, loadSettings, normalizeDetectedLanguage } from "../share
 const HOST_ATTR = "data-pagelingo-selection-ui";
 const TRIGGER_ATTR = "data-pagelingo-selection-trigger";
 const INLINE_INSERT_ATTR = "data-pagelingo-selection-inline";
+const INLINE_TEXT_ATTR = "data-pagelingo-selection-inline-text";
+const INLINE_CLOSE_ATTR = "data-pagelingo-selection-inline-close";
+const INLINE_STYLE_ID = "pagelingo-selection-inline-style";
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+const INLINE_BLOCK_CSS = `
+[${INLINE_INSERT_ATTR}="true"] {
+  position: relative !important;
+  box-sizing: border-box !important;
+  margin: 6px 0 10px !important;
+  padding: 8px 34px 8px 12px !important;
+  border-left: 3px solid #c64d32 !important;
+  background: rgba(198, 77, 50, 0.065) !important;
+  border-radius: 0 8px 8px 0 !important;
+  font-size: 0.95em !important;
+  line-height: 1.62 !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  transition: background-color 160ms ease !important;
+}
+[${INLINE_INSERT_ATTR}="true"]:hover {
+  background: rgba(198, 77, 50, 0.095) !important;
+}
+[${INLINE_TEXT_ATTR}="true"] {
+  display: inline !important;
+}
+[${INLINE_CLOSE_ATTR}="true"] {
+  all: initial !important;
+  box-sizing: border-box !important;
+  position: absolute !important;
+  top: 6px !important;
+  right: 6px !important;
+  width: 22px !important;
+  height: 22px !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #b64b33 !important;
+  opacity: 0.36 !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  transition: opacity 150ms ease, background-color 150ms ease, transform 150ms ease !important;
+}
+[${INLINE_INSERT_ATTR}="true"]:hover [${INLINE_CLOSE_ATTR}="true"],
+[${INLINE_INSERT_ATTR}="true"]:focus-within [${INLINE_CLOSE_ATTR}="true"] {
+  opacity: 0.78 !important;
+}
+[${INLINE_CLOSE_ATTR}="true"]:hover,
+[${INLINE_CLOSE_ATTR}="true"]:focus-visible {
+  opacity: 1 !important;
+  background: rgba(198, 77, 50, 0.16) !important;
+  transform: scale(1.06) !important;
+}
+[${INLINE_CLOSE_ATTR}="true"]:focus-visible {
+  outline: 1.5px solid rgba(198, 77, 50, 0.55) !important;
+  outline-offset: 1px !important;
+}
+[${INLINE_CLOSE_ATTR}="true"]:active {
+  transform: scale(0.94) !important;
+}
+[${INLINE_CLOSE_ATTR}="true"] svg {
+  display: block !important;
+  width: 11px !important;
+  height: 11px !important;
+  pointer-events: none !important;
+}
+@media (prefers-color-scheme: dark) {
+  [${INLINE_INSERT_ATTR}="true"] {
+    border-left-color: #e38b71 !important;
+    background: rgba(227, 139, 113, 0.11) !important;
+  }
+  [${INLINE_INSERT_ATTR}="true"]:hover {
+    background: rgba(227, 139, 113, 0.15) !important;
+  }
+  [${INLINE_CLOSE_ATTR}="true"] {
+    color: #e38b71 !important;
+  }
+  [${INLINE_CLOSE_ATTR}="true"]:hover,
+  [${INLINE_CLOSE_ATTR}="true"]:focus-visible {
+    background: rgba(227, 139, 113, 0.22) !important;
+  }
+}
+`;
 
 interface SelectionAnchor {
   text: string;
@@ -489,6 +578,28 @@ export class SelectionTranslatorController {
     this.popoverHost = host;
 
     let latestTranslation = "";
+    let activeInsertedEl: HTMLElement | null = null;
+    let insertedTranslation = "";
+
+    const syncInsertButton = (): void => {
+      if (activeInsertedEl && !activeInsertedEl.isConnected) {
+        activeInsertedEl = null;
+        insertedTranslation = "";
+      }
+      if (!anchor.containerElement) {
+        insertBtn.hidden = true;
+        return;
+      }
+      if (activeInsertedEl) {
+        insertBtn.textContent = insertedTranslation === latestTranslation || !latestTranslation
+          ? "移除插入"
+          : "更新插入";
+        insertBtn.disabled = false;
+      } else {
+        insertBtn.textContent = "就地插入";
+        insertBtn.disabled = !latestTranslation;
+      }
+    };
 
     const run = async (bypassCache: boolean): Promise<void> => {
       resultEl.className = "pl-result is-loading";
@@ -529,12 +640,13 @@ export class SelectionTranslatorController {
         resultEl.textContent = latestTranslation || anchor.text;
         copyBtn.disabled = !latestTranslation;
         retranslateBtn.disabled = false;
-        insertBtn.disabled = !latestTranslation || !anchor.containerElement;
+        syncInsertButton();
       } catch (error) {
         if (seq !== this.activeSeq) return;
         resultEl.className = "pl-result is-error";
         resultEl.textContent = error instanceof Error ? error.message : String(error);
         retranslateBtn.disabled = false;
+        syncInsertButton();
       }
     };
 
@@ -551,21 +663,46 @@ export class SelectionTranslatorController {
     });
 
     insertBtn.addEventListener("click", () => {
+      if (activeInsertedEl && !activeInsertedEl.isConnected) {
+        activeInsertedEl = null;
+        insertedTranslation = "";
+      }
+      if (activeInsertedEl && (insertedTranslation === latestTranslation || !latestTranslation)) {
+        activeInsertedEl.remove();
+        activeInsertedEl = null;
+        insertedTranslation = "";
+        syncInsertButton();
+        return;
+      }
       if (!latestTranslation || !anchor.containerElement?.parentElement) return;
+      this.ensureInlineBlockStyle(anchor.containerElement);
       const existing = anchor.containerElement.nextElementSibling;
       let insertedEl: HTMLElement;
       if (existing instanceof HTMLElement && existing.getAttribute(INLINE_INSERT_ATTR) === "true") {
-        existing.textContent = latestTranslation;
+        this.populateInlineBlock(existing, latestTranslation, () => {
+          if (activeInsertedEl === existing) {
+            activeInsertedEl = null;
+            insertedTranslation = "";
+            syncInsertButton();
+          }
+        });
         insertedEl = existing;
       } else {
         const block = this.doc.createElement("div");
         block.setAttribute(INLINE_INSERT_ATTR, "true");
         block.dataset.fltGenerated = "translation";
-        block.style.cssText = "margin:6px 0 10px!important;padding:7px 11px!important;border-left:3px solid #c64d32!important;background:rgba(198,77,50,0.07)!important;border-radius:0 7px 7px 0!important;font-size:0.95em!important;line-height:1.6!important;white-space:pre-wrap!important;";
-        block.textContent = latestTranslation;
+        this.populateInlineBlock(block, latestTranslation, () => {
+          if (activeInsertedEl === block) {
+            activeInsertedEl = null;
+            insertedTranslation = "";
+            syncInsertButton();
+          }
+        });
         anchor.containerElement.insertAdjacentElement("afterend", block);
         insertedEl = block;
       }
+      activeInsertedEl = insertedEl;
+      insertedTranslation = latestTranslation;
       // Shift popover cleanly below the newly inserted translation so it never covers it
       if (this.popoverHost) {
         const insertedRect = insertedEl.getBoundingClientRect();
@@ -574,10 +711,65 @@ export class SelectionTranslatorController {
           this.popoverHost.style.setProperty("top", `${Math.round(nextTop)}px`, "important");
         }
       }
-      insertBtn.textContent = "已插入";
-      setTimeout(() => { insertBtn.textContent = "就地插入"; }, 1400);
+      syncInsertButton();
     });
 
     await run(false);
+  }
+
+  private ensureInlineBlockStyle(target: Element): void {
+    const rootNode = target.getRootNode?.();
+    if (rootNode && rootNode !== this.doc && rootNode.nodeType === Node.DOCUMENT_FRAGMENT_NODE && "host" in rootNode) {
+      const shadowRoot = rootNode as ShadowRoot;
+      if (shadowRoot.querySelector(`style[data-pagelingo-inline-style="true"]`)) return;
+      const style = this.doc.createElement("style");
+      style.dataset.fltGenerated = "style";
+      style.dataset.pagelingoInlineStyle = "true";
+      style.textContent = INLINE_BLOCK_CSS;
+      shadowRoot.append(style);
+      return;
+    }
+    if (this.doc.getElementById(INLINE_STYLE_ID)) return;
+    const style = this.doc.createElement("style");
+    style.id = INLINE_STYLE_ID;
+    style.dataset.fltGenerated = "style";
+    style.textContent = INLINE_BLOCK_CSS;
+    (this.doc.head ?? this.doc.documentElement).append(style);
+  }
+
+  private populateInlineBlock(block: HTMLElement, text: string, onRemoved: () => void): void {
+    let textSpan = block.querySelector<HTMLElement>(`:scope > [${INLINE_TEXT_ATTR}="true"]`);
+    let closeBtn = block.querySelector<HTMLButtonElement>(`:scope > [${INLINE_CLOSE_ATTR}="true"]`);
+    if (!textSpan || !closeBtn) {
+      block.replaceChildren();
+      textSpan = this.doc.createElement("span");
+      textSpan.setAttribute(INLINE_TEXT_ATTR, "true");
+      closeBtn = this.doc.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.setAttribute(INLINE_CLOSE_ATTR, "true");
+      closeBtn.setAttribute("aria-label", "移除插入译文");
+      closeBtn.title = "移除译文";
+      const svg = this.doc.createElementNS(SVG_NS, "svg");
+      svg.setAttribute("viewBox", "0 0 12 12");
+      svg.setAttribute("width", "11");
+      svg.setAttribute("height", "11");
+      svg.setAttribute("fill", "none");
+      svg.setAttribute("aria-hidden", "true");
+      const path = this.doc.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", "M3 3L9 9M9 3L3 9");
+      path.setAttribute("stroke", "currentColor");
+      path.setAttribute("stroke-width", "1.6");
+      path.setAttribute("stroke-linecap", "round");
+      svg.append(path);
+      closeBtn.append(svg);
+      block.append(textSpan, closeBtn);
+    }
+    textSpan.textContent = text;
+    closeBtn.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      block.remove();
+      onRemoved();
+    };
   }
 }

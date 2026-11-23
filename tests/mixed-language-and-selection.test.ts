@@ -151,19 +151,47 @@ describe("selection translation popover", () => {
     const shadow = host!.shadowRoot!;
     expect(shadow.querySelector(".pl-result")!.textContent).toBe("请注意：您的附加组件随时可能接受人工审核。");
 
-    // Click inline insert
+    // Click inline insert -> mounts closable block with SVG × (no dirty text chars) and flips button to 移除插入
     const buttons = Array.from(shadow.querySelectorAll<HTMLButtonElement>(".pl-btn"));
     const insertBtn = buttons.find((b) => b.textContent === "就地插入")!;
     insertBtn.click();
     const inserted = p1.nextElementSibling as HTMLElement;
     expect(inserted?.getAttribute("data-pagelingo-selection-inline")).toBe("true");
     expect(inserted.textContent).toBe("请注意：您的附加组件随时可能接受人工审核。");
+    const inlineCloseBtn = inserted.querySelector<HTMLButtonElement>('[data-pagelingo-selection-inline-close="true"]');
+    expect(inlineCloseBtn).toBeTruthy();
+    expect(inlineCloseBtn?.querySelector("svg")).toBeTruthy();
+    expect(document.getElementById("pagelingo-selection-inline-style")).toBeTruthy();
+    expect(insertBtn.textContent).toBe("移除插入");
 
-    // Click retranslate (bypassCache)
+    // Click retranslate (bypassCache) -> button offers 更新插入, clicking updates text in place
     const retryBtn = buttons.find((b) => b.textContent === "重译")!;
     retryBtn.click();
     await vi.waitFor(() => expect(shadow.querySelector(".pl-result")!.textContent).toContain("（重译）"));
     expect(sentRequests.at(-1)?.bypassCache).toBe(true);
+    expect(insertBtn.textContent).toBe("更新插入");
+
+    insertBtn.click();
+    expect(inserted.textContent).toBe("请注意（重译）：您的附加组件随时可能接受人工审核。");
+    expect(inserted.querySelector('[data-pagelingo-selection-inline-close="true"]')).toBe(inlineCloseBtn);
+    expect(insertBtn.textContent).toBe("移除插入");
+
+    // Clicking 移除插入 in popover removes the inserted block and resets button
+    insertBtn.click();
+    expect(document.querySelector('[data-pagelingo-selection-inline="true"]')).toBeNull();
+    expect(insertBtn.textContent).toBe("就地插入");
+
+    // Re-insert, then click the top-right × button on the inserted block itself (must not bubble)
+    insertBtn.click();
+    const reinserted = p1.nextElementSibling as HTMLElement;
+    expect(reinserted?.getAttribute("data-pagelingo-selection-inline")).toBe("true");
+    const outerClickSpy = vi.fn();
+    document.body.addEventListener("click", outerClickSpy);
+    reinserted.querySelector<HTMLButtonElement>('[data-pagelingo-selection-inline-close="true"]')!.click();
+    document.body.removeEventListener("click", outerClickSpy);
+    expect(document.querySelector('[data-pagelingo-selection-inline="true"]')).toBeNull();
+    expect(outerClickSpy).not.toHaveBeenCalled();
+    expect(insertBtn.textContent).toBe("就地插入");
 
     // Press Escape to close
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
