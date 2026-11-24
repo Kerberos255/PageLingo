@@ -20,6 +20,10 @@ import {
   type VideoSubtitleSettings,
 } from "../shared/settings";
 import {
+  getAiSubtitleProvider,
+  type AiSubtitleProvider,
+} from "./ai-subtitle-provider";
+import {
   detectVideoPlatform,
   discoverVideoSubtitlesDetailed,
   extractYouTubeVideoId,
@@ -58,6 +62,7 @@ export interface VideoSubtitleControllerOptions {
   discoverDetailedFn?: (video: VideoMediaElement, options: DiscoverTrackOptions) => Promise<SubtitleDiscoveryResult>;
   detectLanguageFn?: (text: string) => Promise<string | null>;
   platformFn?: () => VideoPlatform;
+  aiSubtitleProvider?: AiSubtitleProvider | null;
 }
 
 interface AttachedVideoSession {
@@ -77,6 +82,8 @@ interface AttachedVideoSession {
   overrideMode: EffectiveSubtitleMode | null;
   track: DiscoveredSubtitleTrack | null;
   discoveryStatus: SubtitleDiscoveryStatus | "idle";
+  aiReady: boolean;
+  generatingAi: boolean;
   cues: SubtitleCue[];
   sourceLanguage: string | null;
   liveDomMode: boolean;
@@ -244,21 +251,21 @@ function ensureDocumentSubtitleStyle(doc: Document): void {
     }
     .pagelingo-sub-toggle-floating {
       position: absolute !important;
-      top: 12px !important;
-      right: 12px !important;
+      top: var(--pl-float-top, 12px) !important;
+      right: var(--pl-float-right, 12px) !important;
       z-index: 2147483641 !important;
       display: inline-flex !important;
       align-items: center !important;
-      gap: 5px !important;
-      padding: 5px 10px !important;
+      gap: 4px !important;
+      padding: 3px !important;
       border: 1px solid rgba(255, 255, 255, 0.22) !important;
       border-radius: 999px !important;
-      background: rgba(15, 18, 24, 0.72) !important;
+      background: rgba(15, 18, 24, 0.76) !important;
       color: #f4f6fa !important;
       font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
       white-space: nowrap !important;
       cursor: pointer !important;
-      opacity: 0.68 !important;
+      opacity: 0.78 !important;
       transition: opacity 160ms ease, background-color 160ms ease, border-color 160ms ease !important;
       backdrop-filter: blur(4px) !important;
       pointer-events: auto !important;
@@ -266,7 +273,7 @@ function ensureDocumentSubtitleStyle(doc: Document): void {
     .pagelingo-sub-toggle-floating:hover,
     .pagelingo-sub-toggle-floating:focus-visible {
       opacity: 1 !important;
-      background: rgba(15, 18, 24, 0.9) !important;
+      background: rgba(15, 18, 24, 0.92) !important;
       border-color: rgba(255, 255, 255, 0.45) !important;
     }
     .pagelingo-sub-toggle-inline {
@@ -280,7 +287,7 @@ function ensureDocumentSubtitleStyle(doc: Document): void {
       overflow: visible !important;
       visibility: visible !important;
       box-sizing: border-box !important;
-      padding: 0 7px !important;
+      padding: 0 6px !important;
       height: 100% !important;
       background: transparent !important;
       border: 0 !important;
@@ -289,7 +296,7 @@ function ensureDocumentSubtitleStyle(doc: Document): void {
       white-space: nowrap !important;
       cursor: pointer !important;
       vertical-align: top !important;
-      opacity: 0.92 !important;
+      opacity: 0.94 !important;
       pointer-events: auto !important;
     }
     .pagelingo-sub-toggle-bilibili {
@@ -311,19 +318,64 @@ function ensureDocumentSubtitleStyle(doc: Document): void {
     .pagelingo-sub-toggle-badge {
       display: inline-flex !important;
       align-items: center !important;
+      justify-content: center !important;
       gap: 4px !important;
-      padding: 3px 7px !important;
+      padding: 3px 7px 3px 4px !important;
       border-radius: 999px !important;
       background: rgba(255, 255, 255, 0.16) !important;
       color: #ffffff !important;
       font-size: 11px !important;
       line-height: 1.1 !important;
       white-space: nowrap !important;
+      transition: background-color 160ms ease, opacity 160ms ease !important;
     }
-    [data-pagelingo-sub-mode="off"] .pagelingo-sub-toggle-badge,
-    [data-pagelingo-sub-mode="unavailable"] .pagelingo-sub-toggle-badge,
+    .pagelingo-sub-toggle-floating .pagelingo-sub-toggle-badge {
+      background: transparent !important;
+      padding: 1px 6px 1px 2px !important;
+    }
+    .pagelingo-sub-toggle-badge[data-icon-only="true"] {
+      padding: 3px !important;
+      border-radius: 6px !important;
+      background: rgba(255, 255, 255, 0.1) !important;
+    }
+    .pagelingo-sub-toggle-floating .pagelingo-sub-toggle-badge[data-icon-only="true"] {
+      padding: 2px !important;
+      background: transparent !important;
+    }
+    .pagelingo-sub-toggle-icon {
+      width: 18px !important;
+      height: 18px !important;
+      min-width: 18px !important;
+      max-width: 18px !important;
+      min-height: 18px !important;
+      max-height: 18px !important;
+      border-radius: 4px !important;
+      display: block !important;
+      flex: 0 0 auto !important;
+      object-fit: cover !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      transition: filter 160ms ease, opacity 160ms ease !important;
+    }
+    .pagelingo-sub-toggle-text {
+      display: inline !important;
+      line-height: 1.1 !important;
+    }
+    .pagelingo-sub-toggle-text[hidden] {
+      display: none !important;
+    }
+    [data-pagelingo-sub-mode="off"] .pagelingo-sub-toggle-icon,
+    [data-pagelingo-sub-mode="idle"] .pagelingo-sub-toggle-icon {
+      filter: grayscale(45%) !important;
+      opacity: 0.62 !important;
+    }
+    [data-pagelingo-sub-mode="off"]:hover .pagelingo-sub-toggle-icon,
+    [data-pagelingo-sub-mode="idle"]:hover .pagelingo-sub-toggle-icon {
+      filter: none !important;
+      opacity: 1 !important;
+    }
     [data-pagelingo-sub-mode="loading"] .pagelingo-sub-toggle-badge {
-      opacity: 0.68 !important;
+      opacity: 0.76 !important;
     }
     [data-pagelingo-sub-mode="need-login"] .pagelingo-sub-toggle-badge {
       background: rgba(245, 158, 11, 0.28) !important;
@@ -333,16 +385,23 @@ function ensureDocumentSubtitleStyle(doc: Document): void {
       background: rgba(56, 189, 248, 0.28) !important;
       color: #e0f2fe !important;
     }
+    [data-pagelingo-sub-mode="ai-ready"] .pagelingo-sub-toggle-badge {
+      background: rgba(200, 55, 55, 0.34) !important;
+      color: #fff1f0 !important;
+    }
   `;
   (doc.head ?? doc.documentElement).append(style);
 }
 
 function buildShadowStyles(platform: VideoPlatform): string {
-  const bottomOffset = platform === "youtube" ? "12%" : platform === "bilibili" ? "11%" : "9%";
+  const bottomOffset = platform === "youtube" ? "12%" : platform === "bilibili" ? "11%" : "max(10%, 48px)";
   return `
     :host {
       position: absolute !important;
-      inset: 0 !important;
+      top: var(--pl-host-top, 0px) !important;
+      left: var(--pl-host-left, 0px) !important;
+      width: var(--pl-host-width, 100%) !important;
+      height: var(--pl-host-height, 100%) !important;
       pointer-events: none !important;
       z-index: 2147483640 !important;
       overflow: hidden !important;
@@ -417,51 +476,104 @@ function buildShadowStyles(platform: VideoPlatform): string {
   `;
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function resolveBrandIconUrl(): string | null {
+  try {
+    const getURL = (globalThis as { browser?: typeof browser }).browser?.runtime?.getURL;
+    if (typeof getURL === "function") {
+      return getURL("icons/pagelingo-32.png");
+    }
+  } catch {}
+  return null;
+}
+
+function createBrandIconElement(doc: Document): HTMLElement | SVGSVGElement {
+  const iconUrl = resolveBrandIconUrl();
+  if (iconUrl) {
+    const img = doc.createElement("img");
+    img.className = "pagelingo-sub-toggle-icon";
+    img.src = iconUrl;
+    img.alt = "";
+    img.setAttribute("aria-hidden", "true");
+    img.draggable = false;
+    return img;
+  }
+
+  // Fallback inline vector matching PageLingo's crimson ribbon "P" icon when runtime.getURL is unavailable.
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", "pagelingo-sub-toggle-icon");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+
+  const bg = doc.createElementNS(SVG_NS, "rect");
+  bg.setAttribute("x", "1");
+  bg.setAttribute("y", "1");
+  bg.setAttribute("width", "22");
+  bg.setAttribute("height", "22");
+  bg.setAttribute("rx", "5");
+  bg.setAttribute("fill", "#c83737");
+
+  const glyph = doc.createElementNS(SVG_NS, "path");
+  glyph.setAttribute("d", "M7 5.5h6.1c2.8 0 4.6 1.6 4.6 4.1 0 2.5-1.8 4.2-4.6 4.2h-3.1v4.7H7V5.5zm3 2.5v3.3h2.8c1.2 0 1.9-.6 1.9-1.65S14 8 12.8 8H10z");
+  glyph.setAttribute("fill", "#fff7ed");
+
+  svg.append(bg, glyph);
+  return svg;
+}
+
 function toggleLabelForMode(mode: EffectiveSubtitleMode): { shortText: string; ariaLabel: string; modeAttr: string } {
   if (mode === "bilingual") {
-    return { shortText: "PL 双语", ariaLabel: "PageLingo 字幕：双语对照（点击切换为仅译文）", modeAttr: "bilingual" };
+    return { shortText: "双语", ariaLabel: "PageLingo 字幕：双语对照（点击切换为仅译文）", modeAttr: "bilingual" };
   }
   if (mode === "translation") {
-    return { shortText: "PL 译文", ariaLabel: "PageLingo 字幕：仅译文（点击关闭）", modeAttr: "translation" };
+    return { shortText: "译文", ariaLabel: "PageLingo 字幕：仅译文（点击关闭）", modeAttr: "translation" };
   }
-  return { shortText: "PL 关", ariaLabel: "PageLingo 字幕：已关闭（点击开启双语）", modeAttr: "off" };
+  return { shortText: "", ariaLabel: "PageLingo 字幕：已关闭（点击开启双语）", modeAttr: "off" };
 }
 
 function toggleLabelForUnavailable(
   session: AttachedVideoSession,
 ): { shortText: string; ariaLabel: string; modeAttr: string } {
+  if (session.generatingAi) {
+    return {
+      shortText: "生成中…",
+      ariaLabel: "PageLingo 正在生成 AI 字幕…",
+      modeAttr: "loading",
+    };
+  }
   if (session.discovering) {
     return {
-      shortText: "PL 字幕…",
-      ariaLabel: "PageLingo 正在检测当前视频的软字幕…",
+      shortText: "",
+      ariaLabel: "PageLingo 正在检测视频字幕…",
       modeAttr: "loading",
     };
   }
   if (session.discoveryStatus === "need_login") {
     return {
-      shortText: "PL 需登录",
-      ariaLabel: "B 站软字幕 / AI 字幕接口需要登录账号；登录后点击重新检测",
+      shortText: "需登录",
+      ariaLabel: "登录 B 站后可读取 CC / AI 字幕（点击重新检测）",
       modeAttr: "need-login",
     };
   }
   if (session.discoveryStatus === "need_cc") {
     return {
-      shortText: "PL 开CC",
-      ariaLabel: "YouTube 需开启播放器原生 CC 字幕以授权字幕轨道；点击开启并翻译（或按 C 键）",
+      shortText: "开CC",
+      ariaLabel: "点击开启 YouTube 原生 CC 字幕并翻译（或按 C 键）",
       modeAttr: "need-cc",
     };
   }
-  if (session.discoveryStatus === "error") {
+  if (session.aiReady) {
     return {
-      shortText: "PL 重试",
-      ariaLabel: "PageLingo 获取视频字幕失败；点击重新检测",
-      modeAttr: "unavailable",
+      shortText: "AI字幕",
+      ariaLabel: "当前视频暂无软字幕；点击生成 AI 字幕并翻译",
+      modeAttr: "ai-ready",
     };
   }
   return {
-    shortText: "PL 无字幕",
-    ariaLabel: "当前视频未检测到 CC / AI 软字幕（不支持内嵌硬字幕）；点击重新检测",
-    modeAttr: "unavailable",
+    shortText: "",
+    ariaLabel: "PageLingo 字幕：当前视频暂无软字幕（点击重新检测）",
+    modeAttr: "idle",
   };
 }
 
@@ -478,6 +590,7 @@ export class VideoSubtitleManager {
   readonly #discoverDetailed: (video: VideoMediaElement, options: DiscoverTrackOptions) => Promise<SubtitleDiscoveryResult>;
   readonly #detectLanguage: (text: string) => Promise<string | null>;
   readonly #platformFn: () => VideoPlatform;
+  readonly #customAiSubtitleProvider: AiSubtitleProvider | null | undefined;
 
   #settings: PageLingoSettings = { ...DEFAULT_SETTINGS, videoSubtitle: { ...DEFAULT_SETTINGS.videoSubtitle } };
   #sessions = new Map<VideoMediaElement, AttachedVideoSession>();
@@ -507,6 +620,7 @@ export class VideoSubtitleManager {
     }
     this.#detectLanguage = options.detectLanguageFn ?? defaultDetectLanguage;
     this.#platformFn = options.platformFn ?? (() => detectVideoPlatform(this.#doc.defaultView?.location.hostname ?? location.hostname));
+    this.#customAiSubtitleProvider = options.aiSubtitleProvider;
   }
 
   async start(): Promise<void> {
@@ -861,6 +975,8 @@ export class VideoSubtitleManager {
       overrideMode: null,
       track: null,
       discoveryStatus: "idle",
+      aiReady: false,
+      generatingAi: false,
       cues: [],
       sourceLanguage: null,
       liveDomMode: false,
@@ -931,13 +1047,61 @@ export class VideoSubtitleManager {
 
     if (platform === "youtube") {
       this.#bindYouTubeFallbackObservers(session, view);
+    } else if (platform === "bilibili") {
+      this.#bindBilibiliSubtitleObserver(session, view);
+    } else if (!isKnownPlatformPlayerContainer(container, platform)) {
+      const ResizeObserverCtor = (view as Window & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver
+        ?? globalThis.ResizeObserver;
+      if (typeof ResizeObserverCtor === "function") {
+        try {
+          const ro = new ResizeObserverCtor(() => this.#syncOverlayBounds(session));
+          ro.observe(video);
+          ro.observe(container);
+          session.listeners.push(() => ro.disconnect());
+        } catch {}
+      }
+      const onResize = () => this.#syncOverlayBounds(session);
+      view.addEventListener("resize", onResize, { passive: true });
+      session.listeners.push(() => view.removeEventListener("resize", onResize));
     }
 
     this.#sessions.set(video, session);
     this.#applyOverlayStyles(session);
     this.#syncFullscreenMounts();
     this.#syncToggleButton(session);
+    this.#syncOverlayBounds(session);
     void this.#discoverSessionTrack(session, false);
+  }
+
+  #bindBilibiliSubtitleObserver(session: AttachedVideoSession, view: Window): void {
+    const PerfObserverCtor = (view as Window & { PerformanceObserver?: typeof PerformanceObserver }).PerformanceObserver
+      ?? globalThis.PerformanceObserver;
+    if (typeof PerfObserverCtor !== "function") return;
+
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const perfObserver = new PerfObserverCtor((list) => {
+        if (this.#disposed || session.track || !this.#sessions.has(session.video)) return;
+        const matched = list.getEntries().some((entry) => {
+          const name = entry.name;
+          return name.includes(".hdslb.com")
+            && (name.includes("/bfs/ai_subtitle/") || name.includes("/bfs/subtitle/"));
+        });
+        if (!matched) return;
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          if (!this.#disposed && !session.track && this.#sessions.has(session.video)) {
+            void this.#discoverSessionTrack(session, false);
+          }
+        }, 180);
+      });
+      perfObserver.observe({ entryTypes: ["resource"] });
+      session.listeners.push(() => {
+        if (retryTimer) clearTimeout(retryTimer);
+        try { perfObserver.disconnect(); } catch {}
+      });
+    } catch {}
   }
 
   #bindTextTrackListeners(session: AttachedVideoSession): void {
@@ -1050,6 +1214,7 @@ export class VideoSubtitleManager {
 
     if (!session.liveDomMode) {
       session.liveDomMode = true;
+      session.aiReady = false;
       this.#syncToggleButton(session);
       this.#syncNativeCaptionSuppression(session);
     }
@@ -1161,6 +1326,63 @@ export class VideoSubtitleManager {
     session.boxEl.dataset.order = vs.order;
   }
 
+  #syncOverlayBounds(session: AttachedVideoSession): void {
+    const hostParent = session.fullscreenHostParent ?? session.container;
+    const isTightPlayer = isKnownPlatformPlayerContainer(hostParent, session.platform);
+    if (isTightPlayer || session.fullscreenHostParent) {
+      session.host.style.removeProperty("--pl-host-top");
+      session.host.style.removeProperty("--pl-host-left");
+      session.host.style.removeProperty("--pl-host-width");
+      session.host.style.removeProperty("--pl-host-height");
+      if (session.toggleButton && session.toggleMountKind === "floating") {
+        session.toggleButton.style.removeProperty("--pl-float-top");
+        session.toggleButton.style.removeProperty("--pl-float-right");
+      }
+      return;
+    }
+
+    const videoRect = session.video.getBoundingClientRect();
+    const parentRect = hostParent.getBoundingClientRect();
+    if (videoRect.width <= 0 || videoRect.height <= 0 || parentRect.width <= 0 || parentRect.height <= 0) {
+      return;
+    }
+
+    const padTop = parentRect.top + hostParent.clientTop;
+    const padLeft = parentRect.left + hostParent.clientLeft;
+    const padRight = padLeft + (hostParent.clientWidth || parentRect.width);
+    const top = Math.max(0, Math.round(videoRect.top - padTop));
+    const left = Math.max(0, Math.round(videoRect.left - padLeft));
+    const width = Math.round(videoRect.width);
+    const height = Math.round(videoRect.height);
+
+    session.host.style.setProperty("--pl-host-top", `${top}px`);
+    session.host.style.setProperty("--pl-host-left", `${left}px`);
+    session.host.style.setProperty("--pl-host-width", `${width}px`);
+    session.host.style.setProperty("--pl-host-height", `${height}px`);
+
+    if (session.toggleButton && session.toggleMountKind === "floating") {
+      const rightOffset = Math.max(0, Math.round(padRight - videoRect.right));
+      session.toggleButton.style.setProperty("--pl-float-top", `${top + 10}px`);
+      session.toggleButton.style.setProperty("--pl-float-right", `${rightOffset + 10}px`);
+    }
+  }
+
+  #resolveAiSubtitleProvider(): AiSubtitleProvider | null {
+    return this.#customAiSubtitleProvider !== undefined
+      ? this.#customAiSubtitleProvider
+      : getAiSubtitleProvider();
+  }
+
+  async #isAiSubtitleAvailable(): Promise<boolean> {
+    const provider = this.#resolveAiSubtitleProvider();
+    if (!provider) return false;
+    try {
+      return Boolean(await provider.isAvailable());
+    } catch {
+      return false;
+    }
+  }
+
   #syncToggleButton(session: AttachedVideoSession): void {
     const controlsTarget = resolvePlatformControlsTarget(session.container, session.platform);
     const hasKnownPlayer = isKnownPlatformPlayerContainer(session.container, session.platform) || Boolean(controlsTarget);
@@ -1201,6 +1423,10 @@ export class VideoSubtitleManager {
 
       const badge = this.#doc.createElement("span");
       badge.className = "pagelingo-sub-toggle-badge";
+      const iconEl = createBrandIconElement(this.#doc);
+      const labelEl = this.#doc.createElement("span");
+      labelEl.className = "pagelingo-sub-toggle-text";
+      badge.append(iconEl, labelEl);
       button.append(badge);
 
       button.addEventListener("mousedown", (event) => {
@@ -1225,7 +1451,11 @@ export class VideoSubtitleManager {
             }, 350);
             return;
           }
-          if (!session.discovering) {
+          if (session.aiReady && !session.generatingAi) {
+            void this.#generateAiSubtitleTrack(session);
+            return;
+          }
+          if (!session.discovering && !session.generatingAi) {
             void this.#discoverSessionTrack(session, true);
           }
           return;
@@ -1253,6 +1483,7 @@ export class VideoSubtitleManager {
     }
 
     this.#updateToggleButtonState(session);
+    this.#syncOverlayBounds(session);
   }
 
   #updateToggleButtonState(session: AttachedVideoSession): void {
@@ -1264,8 +1495,15 @@ export class VideoSubtitleManager {
     button.dataset.pagelingoSubMode = modeAttr;
     button.setAttribute("aria-label", ariaLabel);
     button.title = ariaLabel;
-    const badge = button.firstElementChild;
-    if (badge) badge.textContent = shortText;
+    const badge = button.querySelector<HTMLElement>(".pagelingo-sub-toggle-badge");
+    const labelEl = button.querySelector<HTMLElement>(".pagelingo-sub-toggle-text");
+    if (badge) {
+      badge.dataset.iconOnly = shortText ? "false" : "true";
+    }
+    if (labelEl) {
+      labelEl.textContent = shortText;
+      labelEl.hidden = !shortText;
+    }
   }
 
   #syncNativeCaptionSuppression(session: AttachedVideoSession): void {
@@ -1311,6 +1549,84 @@ export class VideoSubtitleManager {
     }
   }
 
+  async #activateDiscoveredTrack(
+    session: AttachedVideoSession,
+    track: DiscoveredSubtitleTrack,
+    version: number,
+  ): Promise<void> {
+    session.track = track;
+    session.discoveryStatus = "ready";
+    session.aiReady = false;
+    session.generatingAi = false;
+    session.liveDomMode = false;
+    session.liveSourceText = "";
+    session.liveTranslations.clear();
+    session.liveInFlight.clear();
+    session.liveFailed.clear();
+    session.cues = track.cues.map((cue) => ({ ...cue }));
+    session.sourceLanguage = track.sourceLanguage;
+    session.inFlight.clear();
+    session.failed.clear();
+    session.lastCueIndex = -2;
+
+    if (!session.sourceLanguage && !track.hasManualTarget) {
+      const sample = session.cues.slice(0, MAX_LANGUAGE_SAMPLE_CUES).map((c) => c.text).join(" ");
+      session.sourceLanguage = (await this.#detectLanguage(sample)) ?? "en";
+      if (this.#disposed || version !== session.discoverVersion) return;
+    }
+
+    session.discovering = false;
+    this.#bindTextTrackListeners(session);
+    this.#syncToggleButton(session);
+    this.#syncNativeCaptionSuppression(session);
+    this.#renderCue(session, true);
+    this.#ensureWindowTranslated(session);
+  }
+
+  async #generateAiSubtitleTrack(session: AttachedVideoSession): Promise<void> {
+    const aiProvider = this.#resolveAiSubtitleProvider();
+    if (!aiProvider || session.generatingAi || session.track) return;
+
+    session.generatingAi = true;
+    session.discoverVersion += 1;
+    const version = session.discoverVersion;
+    this.#syncToggleButton(session);
+
+    try {
+      const generated = await aiProvider.generateTrack({
+        video: session.video,
+        platform: session.platform,
+        url: this.#doc.defaultView?.location.href ?? location.href,
+        targetLanguage: this.#settings.targetLanguage,
+        signal: session.abortController.signal,
+      });
+
+      if (this.#disposed || version !== session.discoverVersion || !this.#sessions.has(session.video)) {
+        generated?.restoreNativeTrack?.();
+        return;
+      }
+
+      if (generated && generated.cues.length > 0) {
+        await this.#activateDiscoveredTrack(session, generated, version);
+        return;
+      }
+      session.generatingAi = false;
+      this.#syncToggleButton(session);
+    } catch {
+      if (!this.#disposed && version === session.discoverVersion && this.#sessions.has(session.video)) {
+        session.generatingAi = false;
+        this.#syncToggleButton(session);
+      }
+    } finally {
+      if (version === session.discoverVersion) {
+        session.generatingAi = false;
+        if (!this.#disposed && this.#sessions.has(session.video)) {
+          this.#syncToggleButton(session);
+        }
+      }
+    }
+  }
+
   async #discoverSessionTrack(session: AttachedVideoSession, forceReset: boolean): Promise<void> {
     if (session.discovering && !forceReset) return;
     session.discovering = true;
@@ -1323,6 +1639,8 @@ export class VideoSubtitleManager {
       this.#restoreNativeCaptions(session);
       session.track = null;
       session.discoveryStatus = "idle";
+      session.aiReady = false;
+      session.generatingAi = false;
       session.liveDomMode = false;
       session.liveSourceText = "";
       session.liveTranslations.clear();
@@ -1359,6 +1677,11 @@ export class VideoSubtitleManager {
           this.#syncLiveYouTubeCaption(session);
         }
         if (!session.liveDomMode) {
+          session.aiReady =
+            session.discoveryStatus !== "need_login"
+            && session.discoveryStatus !== "need_cc"
+            && await this.#isAiSubtitleAvailable();
+          if (this.#disposed || version !== session.discoverVersion || !this.#sessions.has(session.video)) return;
           this.#syncToggleButton(session);
           this.#syncNativeCaptionSuppression(session);
           session.wrapEl.hidden = true;
@@ -1366,31 +1689,7 @@ export class VideoSubtitleManager {
         return;
       }
 
-      session.track = discovered.track;
-      session.discoveryStatus = "ready";
-      session.liveDomMode = false;
-      session.liveSourceText = "";
-      session.liveTranslations.clear();
-      session.liveInFlight.clear();
-      session.liveFailed.clear();
-      session.cues = discovered.track.cues.map((cue) => ({ ...cue }));
-      session.sourceLanguage = discovered.track.sourceLanguage;
-      session.inFlight.clear();
-      session.failed.clear();
-      session.lastCueIndex = -2;
-
-      if (!session.sourceLanguage && !discovered.track.hasManualTarget) {
-        const sample = session.cues.slice(0, MAX_LANGUAGE_SAMPLE_CUES).map((c) => c.text).join(" ");
-        session.sourceLanguage = (await this.#detectLanguage(sample)) ?? "en";
-        if (this.#disposed || version !== session.discoverVersion) return;
-      }
-
-      session.discovering = false;
-      this.#bindTextTrackListeners(session);
-      this.#syncToggleButton(session);
-      this.#syncNativeCaptionSuppression(session);
-      this.#renderCue(session, true);
-      this.#ensureWindowTranslated(session);
+      await this.#activateDiscoveredTrack(session, discovered.track, version);
     } catch {
       if (!this.#disposed && version === session.discoverVersion && this.#sessions.has(session.video)) {
         session.track = null;
@@ -1401,6 +1700,8 @@ export class VideoSubtitleManager {
           this.#syncLiveYouTubeCaption(session);
         }
         if (!session.liveDomMode) {
+          session.aiReady = await this.#isAiSubtitleAvailable();
+          if (this.#disposed || version !== session.discoverVersion || !this.#sessions.has(session.video)) return;
           this.#syncToggleButton(session);
           this.#syncNativeCaptionSuppression(session);
           session.wrapEl.hidden = true;

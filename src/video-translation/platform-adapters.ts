@@ -61,6 +61,19 @@ export function detectVideoPlatform(hostname = location.hostname): VideoPlatform
 async function fetchTrackText(url: string, options: FetchTrackTextOptions = {}): Promise<string> {
   const absolute = new URL(url, location.href).href;
   const credentials = options.credentials ?? "include";
+
+  // In Firefox content scripts, content.fetch executes with the page's exact Origin, Referer,
+  // and Container Tab cookie jar — matching the player's own XHR on Bilibili and YouTube.
+  const pageContent = (globalThis as { content?: { fetch?: typeof fetch } }).content;
+  if (pageContent && typeof pageContent.fetch === "function") {
+    try {
+      const pageRes = await pageContent.fetch(absolute, { credentials });
+      if (pageRes.ok) return await pageRes.text();
+    } catch {
+      // Fall through to extension-privileged content-script fetch.
+    }
+  }
+
   try {
     const direct = await fetch(absolute, { credentials });
     if (direct.ok) return await direct.text();
@@ -124,14 +137,45 @@ function extractBalancedJsonObject(source: string, marker: string): string | nul
 
 function extractYouTubeTracksFromPlayerResponse(response: unknown): { videoId: string; tracks: YouTubeCaptionTrack[] } | null {
   if (!response || typeof response !== "object") return null;
-  const record = response as {
-    videoDetails?: { videoId?: string };
-    captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: YouTubeCaptionTrack[] } };
-  };
-  const videoId = typeof record.videoDetails?.videoId === "string" ? record.videoDetails.videoId : "";
-  const tracks = record.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-  if (!Array.isArray(tracks) || tracks.length === 0) return null;
-  return { videoId, tracks };
+  try {
+    const record = response as {
+      videoDetails?: { videoId?: unknown };
+      captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: unknown } };
+    };
+    const rawVideoId = record.videoDetails?.videoId;
+    const videoId = typeof rawVideoId === "string" ? rawVideoId : "";
+    const rawTracks = record.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    if (!rawTracks || typeof rawTracks !== "object") return null;
+    const rawLen = (rawTracks as { length?: unknown }).length;
+    const len = typeof rawLen === "number" && Number.isFinite(rawLen) && rawLen > 0
+      ? Math.min(Math.trunc(rawLen), 200)
+      : 0;
+    if (len === 0) return null;
+
+    // Copy only primitive values via plain index access — never call page-compartment Array
+    // methods (.filter/.map/.find) with content-script closures (throws Firefox Xray Permission denied).
+    const tracks: YouTubeCaptionTrack[] = [];
+    const list = rawTracks as Record<number, unknown>;
+    for (let i = 0; i < len; i += 1) {
+      const item = list[i];
+      if (!item || typeof item !== "object") continue;
+      const entry = item as { baseUrl?: unknown; languageCode?: unknown; kind?: unknown; vssId?: unknown };
+      const baseUrl = typeof entry.baseUrl === "string" ? entry.baseUrl : undefined;
+      if (!baseUrl) continue;
+      const languageCode = typeof entry.languageCode === "string" ? entry.languageCode : undefined;
+      const kind = typeof entry.kind === "string" ? entry.kind : undefined;
+      const vssId = typeof entry.vssId === "string" ? entry.vssId : undefined;
+      tracks.push({
+        baseUrl,
+        ...(languageCode ? { languageCode } : {}),
+        ...(kind ? { kind } : {}),
+        ...(vssId ? { vssId } : {}),
+      });
+    }
+    return tracks.length > 0 ? { videoId, tracks } : null;
+  } catch {
+    return null;
+  }
 }
 
 export function extractYouTubeVideoId(href = location.href): string | null {
@@ -483,6 +527,7 @@ export interface BilibiliDiscoverDeps {
   href?: string;
   doc?: Document;
   fetchText?: (url: string, options?: FetchTrackTextOptions) => Promise<string>;
+  resourceUrls?: string[];
 }
 
 export function extractBilibiliRouteIds(href = location.href): BilibiliRouteIds | null {
@@ -538,68 +583,92 @@ function asBvidString(value: unknown): string | undefined {
 }
 
 function pickPageCid(pages: unknown, page: number): string | undefined {
-  if (!Array.isArray(pages) || pages.length === 0) return undefined;
-  const byNumber = pages.find((entry) => {
-    if (!entry || typeof entry !== "object") return false;
-    return Number((entry as { page?: unknown }).page) === page;
-  }) as { cid?: unknown } | undefined;
-  const fallback = pages[page - 1] as { cid?: unknown } | undefined;
-  return asPositiveIdString(byNumber?.cid ?? fallback?.cid);
+  if (!pages || typeof pages !== "object") return undefined;
+  try {
+    const rawLen = (pages as { length?: unknown }).length;
+    const len = typeof rawLen === "number" && Number.isFinite(rawLen) && rawLen > 0
+      ? Math.min(Math.trunc(rawLen), 5000)
+      : 0;
+    if (len === 0) return undefined;
+
+    // Plain index access only: calling page-compartment Array.prototype.find with a content-script
+    // closure on Firefox wrappedJSObject.__INITIAL_STATE__.videoData.pages throws Xray Permission denied.
+    const list = pages as Record<number, unknown>;
+    for (let i = 0; i < len; i += 1) {
+      const entry = list[i];
+      if (!entry || typeof entry !== "object") continue;
+      if (Number((entry as { page?: unknown }).page) === page) {
+        const matchedCid = asPositiveIdString((entry as { cid?: unknown }).cid);
+        if (matchedCid) return matchedCid;
+      }
+    }
+    const fallback = list[page - 1];
+    if (fallback && typeof fallback === "object") {
+      return asPositiveIdString((fallback as { cid?: unknown }).cid);
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 function resolveIdsFromInitialState(state: unknown, route: BilibiliRouteIds): ResolvedBilibiliIds | null {
   if (!state || typeof state !== "object") return null;
-  const record = state as {
-    bvid?: unknown;
-    aid?: unknown;
-    cid?: unknown;
-    videoData?: { bvid?: unknown; aid?: unknown; cid?: unknown; pages?: unknown };
-    epInfo?: { id?: unknown; ep_id?: unknown; aid?: unknown; bvid?: unknown; cid?: unknown };
-    mediaInfo?: { season_id?: unknown };
-  };
+  try {
+    const record = state as {
+      bvid?: unknown;
+      aid?: unknown;
+      cid?: unknown;
+      videoData?: { bvid?: unknown; aid?: unknown; cid?: unknown; pages?: unknown };
+      epInfo?: { id?: unknown; ep_id?: unknown; aid?: unknown; bvid?: unknown; cid?: unknown };
+      mediaInfo?: { season_id?: unknown };
+    };
 
-  if (route.epId || route.seasonId) {
-    const ep = record.epInfo;
-    if (ep && typeof ep === "object") {
-      const epMatchId = asPositiveIdString(ep.id ?? ep.ep_id);
-      const seasonMatchId = asPositiveIdString(record.mediaInfo?.season_id);
-      const matchesRoute =
-        (route.epId && epMatchId === route.epId)
-        || (!route.epId && route.seasonId && seasonMatchId === route.seasonId);
-      const epCid = asPositiveIdString(ep.cid);
-      const epAid = asPositiveIdString(ep.aid);
-      const epBvid = asBvidString(ep.bvid);
-      if (matchesRoute && epCid && (epBvid || epAid)) {
-        return {
-          ...(epBvid ? { bvid: epBvid } : {}),
-          ...(epAid ? { aid: epAid } : {}),
-          cid: epCid,
-        };
+    if (route.epId || route.seasonId) {
+      const ep = record.epInfo;
+      if (ep && typeof ep === "object") {
+        const epMatchId = asPositiveIdString(ep.id ?? ep.ep_id);
+        const seasonMatchId = asPositiveIdString(record.mediaInfo?.season_id);
+        const matchesRoute =
+          (route.epId && epMatchId === route.epId)
+          || (!route.epId && route.seasonId && seasonMatchId === route.seasonId);
+        const epCid = asPositiveIdString(ep.cid);
+        const epAid = asPositiveIdString(ep.aid);
+        const epBvid = asBvidString(ep.bvid);
+        if (matchesRoute && epCid && (epBvid || epAid)) {
+          return {
+            ...(epBvid ? { bvid: epBvid } : {}),
+            ...(epAid ? { aid: epAid } : {}),
+            cid: epCid,
+          };
+        }
       }
+      return null;
     }
+
+    const videoData = record.videoData;
+    const stateBvid = asBvidString(videoData?.bvid ?? record.bvid);
+    const stateAid = asPositiveIdString(videoData?.aid ?? record.aid);
+    const matchesRoute =
+      (route.bvid && stateBvid && stateBvid.toLowerCase() === route.bvid.toLowerCase())
+      || (route.aid && stateAid && stateAid === route.aid);
+    if (!matchesRoute) return null;
+
+    const pageCid = pickPageCid(videoData?.pages, route.page);
+    const cid = pageCid ?? (route.page === 1 ? asPositiveIdString(videoData?.cid ?? record.cid) : undefined);
+    if (!cid) return null;
+
+    return {
+      ...(stateBvid || route.bvid ? { bvid: stateBvid ?? route.bvid } : {}),
+      ...(stateAid || route.aid ? { aid: stateAid ?? route.aid } : {}),
+      cid,
+    };
+  } catch {
     return null;
   }
-
-  const videoData = record.videoData;
-  const stateBvid = asBvidString(videoData?.bvid ?? record.bvid);
-  const stateAid = asPositiveIdString(videoData?.aid ?? record.aid);
-  const matchesRoute =
-    (route.bvid && stateBvid && stateBvid.toLowerCase() === route.bvid.toLowerCase())
-    || (route.aid && stateAid && stateAid === route.aid);
-  if (!matchesRoute) return null;
-
-  const pageCid = pickPageCid(videoData?.pages, route.page);
-  const cid = pageCid ?? (route.page === 1 ? asPositiveIdString(videoData?.cid ?? record.cid) : undefined);
-  if (!cid) return null;
-
-  return {
-    ...(stateBvid || route.bvid ? { bvid: stateBvid ?? route.bvid } : {}),
-    ...(stateAid || route.aid ? { aid: stateAid ?? route.aid } : {}),
-    cid,
-  };
 }
 
-function readWindowInitialState(doc: Document): unknown {
+function readIdsFromWindowInitialState(doc: Document, route: BilibiliRouteIds): ResolvedBilibiliIds | null {
   const view = doc.defaultView as
     | (Window & {
       __INITIAL_STATE__?: unknown;
@@ -608,7 +677,8 @@ function readWindowInitialState(doc: Document): unknown {
     | null;
   if (!view) return null;
   try {
-    return view.wrappedJSObject?.__INITIAL_STATE__ ?? view.__INITIAL_STATE__ ?? null;
+    const raw = view.wrappedJSObject?.__INITIAL_STATE__ ?? view.__INITIAL_STATE__ ?? null;
+    return resolveIdsFromInitialState(raw, route);
   } catch {
     return null;
   }
@@ -663,7 +733,7 @@ async function resolveBilibiliVideoIds(
   }
 
   // 1. Live window.__INITIAL_STATE__ (only trusted when it matches current URL route).
-  const fromWindow = resolveIdsFromInitialState(readWindowInitialState(doc), route);
+  const fromWindow = readIdsFromWindowInitialState(doc, route);
   if (fromWindow) return fromWindow;
 
   // 2. Authoritative Bilibili metadata API (never stale across SPA navigation or ?p=N).
@@ -744,6 +814,31 @@ function normalizeBilibiliSubtitleUrl(url: string): string {
   return trimmed;
 }
 
+export function findBilibiliSubtitleResourceUrls(cid: string, doc: Document = document): string[] {
+  const perf = doc.defaultView?.performance ?? globalThis.performance;
+  if (!perf || typeof perf.getEntriesByType !== "function") return [];
+  try {
+    const entries = perf.getEntriesByType("resource");
+    const matched: string[] = [];
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      const name = entries[i]?.name;
+      if (!name || !name.includes(cid)) continue;
+      try {
+        const parsed = new URL(name);
+        if (
+          parsed.hostname.endsWith(".hdslb.com")
+          && (parsed.pathname.includes("/bfs/ai_subtitle/") || parsed.pathname.includes("/bfs/subtitle/"))
+        ) {
+          matched.push(name);
+        }
+      } catch {}
+    }
+    return matched;
+  } catch {
+    return [];
+  }
+}
+
 export async function discoverBilibiliSubtitleDetailed(
   options: DiscoverTrackOptions,
   deps: BilibiliDiscoverDeps = {},
@@ -795,15 +890,18 @@ export async function discoverBilibiliSubtitleDetailed(
         continue;
       }
       apiSucceeded = true;
-      const list = parsed.data?.subtitle?.subtitles;
-      if (Array.isArray(list) && list.length > 0) {
-        subtitles = list;
-        break;
-      }
       if (parsed.data?.need_login_subtitle === true || parsed.data?.login_mid === 0) {
         needLogin = true;
       }
-      // Endpoint succeeded cleanly with an empty subtitle list; no need to retry unsigned.
+      const list = parsed.data?.subtitle?.subtitles;
+      const usable = Array.isArray(list)
+        ? list.filter((item) => typeof item?.subtitle_url === "string" && item.subtitle_url.trim().length > 0)
+        : [];
+      if (usable.length > 0) {
+        subtitles = usable;
+        break;
+      }
+      // Endpoint succeeded cleanly with no usable subtitle URLs; no need to retry unsigned.
       break;
     } catch {
       // Try next endpoint variant.
@@ -811,6 +909,33 @@ export async function discoverBilibiliSubtitleDetailed(
   }
 
   if (!subtitles.length) {
+    // Fallback: if Bilibili's own player already loaded a subtitle JSON for this cid, reuse it directly.
+    const resourceUrls = deps.resourceUrls ?? findBilibiliSubtitleResourceUrls(ids.cid, doc);
+    for (const resourceUrl of resourceUrls) {
+      try {
+        const rawJson = JSON.parse(await fetchText(normalizeBilibiliSubtitleUrl(resourceUrl), { credentials: "omit" }));
+        const cues = prepareSubtitleCues(parseBilibiliSubtitleJson(rawJson), {
+          filterSoundEffects: options.filterSoundEffects,
+          mergeAsr: resourceUrl.includes("/ai_subtitle/") && options.mergeAsrSegments,
+        });
+        if (cues.length > 0) {
+          return {
+            status: "ready",
+            track: {
+              platform: "bilibili",
+              videoKey: `bili:${ids.bvid ?? ids.aid}:${ids.cid}:resource`,
+              sourceLanguage: null,
+              isAsr: resourceUrl.includes("/ai_subtitle/"),
+              hasManualTarget: false,
+              cues,
+            },
+          };
+        }
+      } catch {
+        // Try next captured subtitle resource URL.
+      }
+    }
+
     return {
       track: null,
       status: needLogin ? "need_login" : apiSucceeded ? "no_subtitles" : "error",
@@ -830,7 +955,7 @@ export async function discoverBilibiliSubtitleDetailed(
         isAsr,
       };
     });
-  if (!items.length) return { track: null, status: "no_subtitles" };
+  if (!items.length) return { track: null, status: needLogin ? "need_login" : "no_subtitles" };
 
   const manualTarget = options.preferManualCaptions
     ? items.find((entry) => !entry.isAsr && entry.lang === targetNorm)
@@ -977,19 +1102,39 @@ export async function discoverHtml5Subtitle(
     .filter((el) => !el.kind || el.kind === "subtitles" || el.kind === "captions");
   const nativeTextTracks = "textTracks" in video && video.textTracks ? Array.from(video.textTracks) : [];
 
+  const pageLang = normalizeDetectedLanguage(video.ownerDocument?.documentElement?.lang) ?? null;
+  const rankSourceTrack = (item: {
+    lang: string | null;
+    isShowing: boolean;
+    isDefault: boolean;
+    hasCues?: boolean;
+  }): number => {
+    let score = 0;
+    if (item.hasCues) score += 100;
+    const isTarget = item.lang !== null && item.lang === targetNorm;
+    if (!isTarget) score += 40;
+    if (item.isShowing && !isTarget) score += 30;
+    if (item.isDefault && !isTarget) score += 20;
+    if (pageLang && pageLang !== targetNorm && item.lang === pageLang) score += 12;
+    if (targetNorm !== "en" && item.lang === "en") score += 8;
+    return score;
+  };
+
   // 1. Prefer explicit <track src="..."> WebVTT files.
   const srcCandidates = trackElements
     .filter((el) => Boolean(el.src))
     .map((el) => ({
       el,
       lang: normalizeDetectedLanguage(el.srclang) ?? null,
+      isShowing: el.track?.mode === "showing",
+      isDefault: Boolean(el.default),
     }));
 
   if (srcCandidates.length > 0) {
     const manualTarget = options.preferManualCaptions
       ? srcCandidates.find((c) => c.lang === targetNorm)
       : undefined;
-    const chosen = srcCandidates.find((c) => c.lang !== targetNorm) ?? srcCandidates[0]!;
+    const chosen = [...srcCandidates].sort((a, b) => rankSourceTrack(b) - rankSourceTrack(a))[0]!;
     try {
       const rawVtt = await fetchText(chosen.el.src);
       const sourceCues = prepareSubtitleCues(parseWebVtt(rawVtt), {
@@ -1061,17 +1206,17 @@ export async function discoverHtml5Subtitle(
   );
   if (!textTracks.length) return null;
 
-  const normalized = textTracks.map((track) => ({
-    track,
-    lang: normalizeDetectedLanguage(track.language) ?? null,
-    hasCues: (track.cues?.length ?? 0) > 0,
-  }));
-  const ordered = [
-    ...normalized.filter((t) => t.hasCues && t.lang !== targetNorm),
-    ...normalized.filter((t) => t.hasCues && t.lang === targetNorm),
-    ...normalized.filter((t) => !t.hasCues && t.lang !== targetNorm),
-    ...normalized.filter((t) => !t.hasCues && t.lang === targetNorm),
-  ];
+  const normalized = textTracks.map((track) => {
+    const matchingEl = trackElements.find((el) => el.track === track);
+    return {
+      track,
+      lang: normalizeDetectedLanguage(track.language) ?? null,
+      hasCues: (track.cues?.length ?? 0) > 0,
+      isShowing: track.mode === "showing",
+      isDefault: Boolean(matchingEl?.default),
+    };
+  });
+  const ordered = [...normalized].sort((a, b) => rankSourceTrack(b) - rankSourceTrack(a));
 
   for (const candidate of ordered) {
     const track = candidate.track;
@@ -1153,6 +1298,8 @@ const YOUTUBE_PLAYER_CONTAINER_SELECTOR = "#movie_player, #shorts-player, .html5
 const HTML5_PLAYER_CONTAINER_SELECTOR = [
   ".video-js",
   ".plyr",
+  "media-controller",
+  "media-container",
   ".vp-player",
   ".player[data-player-id]",
   ".vp-video-wrapper",

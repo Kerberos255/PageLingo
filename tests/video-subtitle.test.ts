@@ -34,12 +34,17 @@ import {
   resetBilibiliWbiCacheForTests,
   signBilibiliWbiParams,
 } from "../src/video-translation/bilibili-wbi";
+import {
+  registerAiSubtitleProvider,
+  type AiSubtitleRequest,
+} from "../src/video-translation/ai-subtitle-provider";
 import { VideoSubtitleManager } from "../src/video-translation/video-subtitle-controller";
 
 afterEach(() => {
   document.body.replaceChildren();
   document.getElementById("pagelingo-video-subtitle-style")?.remove();
   resetBilibiliWbiCacheForTests();
+  registerAiSubtitleProvider(null);
 });
 
 function makeSettings(overrides: Partial<PageLingoSettings["videoSubtitle"]> = {}, displayMode: "translation" | "bilingual" = "translation"): PageLingoSettings {
@@ -447,8 +452,9 @@ describe("VideoSubtitleManager end-to-end overlay controller", () => {
     expect(toggleBtn).not.toBeNull();
     expect(toggleBtn.classList.contains("pagelingo-sub-toggle-bilibili")).toBe(true);
     expect(toggleBtn.classList.contains("bpx-player-ctrl-btn")).toBe(false);
+    expect(toggleBtn.querySelector(".pagelingo-sub-toggle-icon")).not.toBeNull();
     expect(toggleBtn.dataset.pagelingoSubMode).toBe("need-login");
-    expect(toggleBtn.textContent).toBe("PL 需登录");
+    expect(toggleBtn.textContent).toBe("需登录");
 
     // Clicking the button in need-login state retries subtitle discovery and renders translated cue.
     toggleBtn.click();
@@ -456,7 +462,7 @@ describe("VideoSubtitleManager end-to-end overlay controller", () => {
 
     expect(attempt).toBe(2);
     expect(toggleBtn.dataset.pagelingoSubMode).toBe("bilingual");
-    expect(toggleBtn.textContent).toBe("PL 双语");
+    expect(toggleBtn.textContent).toBe("双语");
     expect(videoArea.getAttribute("data-pagelingo-subtitle-active")).toBe("true");
 
     const host = videoArea.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
@@ -783,16 +789,17 @@ describe("YouTube PO-token recovery, live DOM caption bridge, and Shorts", () =>
 
     const toggleBtn = controls.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
     expect(toggleBtn).not.toBeNull();
+    expect(toggleBtn.querySelector(".pagelingo-sub-toggle-icon")).not.toBeNull();
     expect(toggleBtn.dataset.pagelingoSubMode).toBe("need-cc");
-    expect(toggleBtn.textContent).toBe("PL 开CC");
+    expect(toggleBtn.textContent).toBe("开CC");
 
-    // Clicking PL 开CC turns on YouTube native CC and activates live DOM caption translation.
+    // Clicking 开CC turns on YouTube native CC and activates live DOM caption translation.
     toggleBtn.click();
     await flushAsync();
 
     expect(ccClicked).toBe(1);
     expect(toggleBtn.dataset.pagelingoSubMode).toBe("bilingual");
-    expect(toggleBtn.textContent).toBe("PL 双语");
+    expect(toggleBtn.textContent).toBe("双语");
     expect(moviePlayer.getAttribute("data-pagelingo-subtitle-active")).toBe("true");
 
     const host = moviePlayer.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
@@ -1024,11 +1031,13 @@ describe("Universal HTML5 async TextTracks, major player frameworks, and fullscr
     await manager.start();
     await flushAsync();
 
-    // Plyr player gets inline button right before [data-plyr="fullscreen"] even with no subtitles yet.
+    // Plyr player gets inline icon-only calm button right before [data-plyr="fullscreen"] even with no subtitles yet.
     const plyrToggle = plyrControls.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
     expect(plyrToggle).not.toBeNull();
     expect(plyrToggle.nextElementSibling).toBe(plyrFs);
-    expect(plyrToggle.textContent).toBe("PL 无字幕");
+    expect(plyrToggle.dataset.pagelingoSubMode).toBe("idle");
+    expect(plyrToggle.textContent).toBe("");
+    expect(plyrToggle.querySelector(".pagelingo-sub-toggle-icon")).not.toBeNull();
 
     // Before fullscreen: overlay host and floating toggle live inside .vp-player.
     const host = vpPlayer.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
@@ -1049,5 +1058,390 @@ describe("Universal HTML5 async TextTracks, major player frameworks, and fullscr
     expect(vpPlayer.querySelector('[data-flt-generated="video-subtitle-control"]')?.parentElement).toBe(vpPlayer);
 
     manager.dispose();
+  });
+});
+
+describe("Firefox Xray compartment safety, brand P icon, calm no-subtitle UX, and AiSubtitleProvider hook", () => {
+  const XRAY_BLOCKED_ARRAY_METHODS = new Set([
+    "find",
+    "filter",
+    "map",
+    "forEach",
+    "some",
+    "every",
+    "reduce",
+    "reduceRight",
+    "flatMap",
+  ]);
+
+  /** Emulates Firefox SpiderMonkey Xray behavior: calling page-compartment Array methods with content-script closures throws. */
+  function makeFirefoxPageArrayProxy<T>(items: T[]): T[] {
+    return new Proxy(items, {
+      get(target, prop, receiver) {
+        if (typeof prop === "string" && XRAY_BLOCKED_ARRAY_METHODS.has(prop)) {
+          return () => {
+            throw new Error("Permission denied to access object");
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+  }
+
+  it("extracts Bilibili cid from Firefox wrappedJSObject.__INITIAL_STATE__.videoData.pages without invoking page Array.prototype.find", async () => {
+    const prevWrapped = (window as unknown as { wrappedJSObject?: unknown }).wrappedJSObject;
+    Object.defineProperty(window, "wrappedJSObject", {
+      value: {
+        __INITIAL_STATE__: {
+          videoData: {
+            bvid: "BV1XRAYTEST9",
+            aid: 987654,
+            cid: 98765401,
+            pages: makeFirefoxPageArrayProxy([
+              { page: 1, cid: 98765401 },
+              { page: 2, cid: 98765402 },
+            ]),
+          },
+        },
+      },
+      configurable: true,
+    });
+
+    try {
+      const requestedUrls: string[] = [];
+      const result = await discoverBilibiliSubtitleDetailed(
+        {
+          targetLanguage: "zh-Hans",
+          preferManualCaptions: true,
+          filterSoundEffects: true,
+          mergeAsrSegments: false,
+        },
+        {
+          href: "https://www.bilibili.com/video/BV1XRAYTEST9/?p=2",
+          doc: document,
+          fetchText: async (url: string) => {
+            requestedUrls.push(url);
+            if (url === "https://api.bilibili.com/x/web-interface/nav") {
+              return JSON.stringify({
+                code: 0,
+                data: {
+                  wbi_img: {
+                    img_url: "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
+                    sub_url: "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png",
+                  },
+                },
+              });
+            }
+            if (url.startsWith("https://api.bilibili.com/x/player/wbi/v2?")) {
+              const parsed = new URL(url);
+              expect(parsed.searchParams.get("bvid")).toBe("BV1XRAYTEST9");
+              expect(parsed.searchParams.get("cid")).toBe("98765402");
+              return JSON.stringify({
+                code: 0,
+                data: {
+                  login_mid: 888,
+                  subtitle: {
+                    subtitles: [
+                      { lan: "en-US", subtitle_url: "//aisubtitle.hdslb.com/bfs/ai_subtitle/prod/98765402.json" },
+                    ],
+                  },
+                },
+              });
+            }
+            if (url === "https://aisubtitle.hdslb.com/bfs/ai_subtitle/prod/98765402.json") {
+              return JSON.stringify({
+                body: [{ from: 0.5, to: 2.5, content: "Xray safe Bilibili subtitle." }],
+              });
+            }
+            throw new Error(`Unexpected URL: ${url}`);
+          },
+        },
+      );
+
+      expect(result.status).toBe("ready");
+      expect(result.track?.cues).toEqual([{ startTime: 0.5, endTime: 2.5, text: "Xray safe Bilibili subtitle." }]);
+      // Resolved cid straight from window.__INITIAL_STATE__ without needing /x/web-interface/view!
+      expect(requestedUrls.some((u) => u.includes("/x/web-interface/view"))).toBe(false);
+    } finally {
+      if (prevWrapped === undefined) {
+        delete (window as unknown as { wrappedJSObject?: unknown }).wrappedJSObject;
+      } else {
+        Object.defineProperty(window, "wrappedJSObject", { value: prevWrapped, configurable: true });
+      }
+    }
+  });
+
+  it("extracts YouTube captionTracks from Firefox wrappedJSObject.getPlayerResponse() without invoking page Array methods", async () => {
+    const moviePlayer = document.createElement("div");
+    moviePlayer.id = "movie_player";
+    Object.defineProperty(moviePlayer, "wrappedJSObject", {
+      value: {
+        getPlayerResponse: () => ({
+          videoDetails: { videoId: "XRAYYT12345" },
+          captions: {
+            playerCaptionsTracklistRenderer: {
+              captionTracks: makeFirefoxPageArrayProxy([
+                {
+                  languageCode: "en",
+                  vssId: ".en",
+                  baseUrl: "https://www.youtube.com/api/timedtext?v=XRAYYT12345&lang=en",
+                },
+              ]),
+            },
+          },
+        }),
+      },
+      configurable: true,
+    });
+    document.body.append(moviePlayer);
+
+    const result = await discoverYouTubeSubtitleDetailed(
+      { targetLanguage: "zh-Hans", preferManualCaptions: true, filterSoundEffects: true, mergeAsrSegments: false },
+      {
+        href: "https://www.youtube.com/watch?v=XRAYYT12345",
+        doc: document,
+        resourceUrls: [],
+        fetchText: async () => JSON.stringify({
+          events: [{ tStartMs: 1000, dDurationMs: 2000, segs: [{ utf8: "Xray safe YouTube caption." }] }],
+        }),
+      },
+    );
+
+    expect(result.status).toBe("ready");
+    expect(result.track?.cues).toEqual([{ startTime: 1, endTime: 3, text: "Xray safe YouTube caption." }]);
+  });
+
+  it("handles Bilibili empty subtitle_url entries cleanly and recovers from player-loaded hdslb resource URLs", async () => {
+    const needLoginResult = await discoverBilibiliSubtitleDetailed(
+      { targetLanguage: "zh-Hans", preferManualCaptions: true, filterSoundEffects: true, mergeAsrSegments: true },
+      {
+        href: "https://www.bilibili.com/video/BV1EMPTYURL1?cid=44401",
+        doc: document,
+        resourceUrls: [],
+        fetchText: async (url: string) => {
+          if (url === "https://api.bilibili.com/x/web-interface/nav") return "{}";
+          return JSON.stringify({
+            code: 0,
+            data: {
+              login_mid: 0,
+              need_login_subtitle: true,
+              subtitle: { subtitles: [{ lan: "ai-en", subtitle_url: "" }] },
+            },
+          });
+        },
+      },
+    );
+    expect(needLoginResult).toEqual({ track: null, status: "need_login" });
+
+    const recoveredResult = await discoverBilibiliSubtitleDetailed(
+      { targetLanguage: "zh-Hans", preferManualCaptions: true, filterSoundEffects: true, mergeAsrSegments: false },
+      {
+        href: "https://www.bilibili.com/video/BV1RESFALL1?cid=44402",
+        doc: document,
+        resourceUrls: ["https://aisubtitle.hdslb.com/bfs/ai_subtitle/prod/99944402.json?auth_key=abc"],
+        fetchText: async (url: string) => {
+          if (url.includes("aisubtitle.hdslb.com")) {
+            return JSON.stringify({ body: [{ from: 2.0, to: 4.0, content: "Recovered from player resource." }] });
+          }
+          throw new Error("API temporarily unavailable");
+        },
+      },
+    );
+    expect(recoveredResult.status).toBe("ready");
+    expect(recoveredResult.track?.cues).toEqual([
+      { startTime: 2.0, endTime: 4.0, text: "Recovered from player resource." },
+    ]);
+  });
+
+  it("renders PageLingo P icon image when browser.runtime.getURL exists and stays calm (no retry/error text) when uncaptioned or errored", async () => {
+    const prevBrowser = (globalThis as { browser?: unknown }).browser;
+    (globalThis as { browser?: unknown }).browser = {
+      runtime: {
+        getURL: (path: string) => `moz-extension://test-uuid/${path}`,
+      },
+    };
+
+    try {
+      const videoArea = document.createElement("div");
+      videoArea.className = "bpx-player-video-area";
+      const video = document.createElement("video");
+      const bottomRight = document.createElement("div");
+      bottomRight.className = "bpx-player-control-bottom-right";
+      videoArea.append(video, bottomRight);
+      document.body.append(videoArea);
+
+      const manager = new VideoSubtitleManager({
+        doc: document,
+        loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true }),
+        platformFn: () => "bilibili",
+        discoverDetailedFn: async () => ({ track: null, status: "error" }),
+      });
+
+      await manager.start();
+      await flushAsync();
+
+      const toggleBtn = bottomRight.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+      expect(toggleBtn).not.toBeNull();
+      const iconImg = toggleBtn.querySelector<HTMLImageElement>("img.pagelingo-sub-toggle-icon")!;
+      expect(iconImg).not.toBeNull();
+      expect(iconImg.src).toBe("moz-extension://test-uuid/icons/pagelingo-32.png");
+      expect(toggleBtn.dataset.pagelingoSubMode).toBe("idle");
+      expect(toggleBtn.textContent).toBe("");
+      expect(toggleBtn.title).not.toContain("失败");
+      expect(toggleBtn.title).not.toContain("重试");
+
+      manager.dispose();
+    } finally {
+      if (prevBrowser === undefined) {
+        delete (globalThis as { browser?: unknown }).browser;
+      } else {
+        (globalThis as { browser?: unknown }).browser = prevBrowser;
+      }
+    }
+  });
+
+  it("exposes AiSubtitleProvider hook when no soft subtitles exist and translates generated cues on click", async () => {
+    const videoArea = document.createElement("div");
+    videoArea.className = "bpx-player-video-area";
+    const video = document.createElement("video");
+    Object.defineProperty(video, "currentTime", { value: 1.5, writable: true, configurable: true });
+    const bottomRight = document.createElement("div");
+    bottomRight.className = "bpx-player-control-bottom-right";
+    videoArea.append(video, bottomRight);
+    document.body.append(videoArea);
+
+    const aiRequests: AiSubtitleRequest[] = [];
+    registerAiSubtitleProvider({
+      id: "mock-asr",
+      label: "Local Whisper ASR",
+      isAvailable: () => true,
+      generateTrack: async (request) => {
+        aiRequests.push(request);
+        return {
+          platform: request.platform,
+          videoKey: "ai:mock-asr:1",
+          sourceLanguage: "en",
+          isAsr: true,
+          hasManualTarget: false,
+          cues: [{ startTime: 1.0, endTime: 3.5, text: "Generated by AI speech recognition." }],
+        };
+      },
+    });
+
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      platformFn: () => "bilibili",
+      discoverDetailedFn: async () => ({ track: null, status: "no_subtitles" }),
+      provider: {
+        translateHtml: async (req) => req.html.replace("Generated by AI speech recognition.", "由 AI 语音识别生成的字幕。"),
+      },
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    const toggleBtn = bottomRight.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("ai-ready");
+    expect(toggleBtn.textContent).toBe("AI字幕");
+
+    // Clicking invokes the registered AiSubtitleProvider and feeds its cues straight into the overlay pipeline.
+    toggleBtn.click();
+    await flushAsync();
+
+    expect(aiRequests).toHaveLength(1);
+    expect(aiRequests[0]?.platform).toBe("bilibili");
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("bilingual");
+    expect(toggleBtn.textContent).toBe("双语");
+
+    const host = videoArea.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const srcEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-source")!;
+    const transEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-translation")!;
+    expect(srcEl.textContent).toBe("Generated by AI speech recognition.");
+    expect(transEl.textContent).toBe("由 AI 语音识别生成的字幕。");
+
+    manager.dispose();
+  });
+
+  it("aligns Shadow DOM overlay and floating toggle button tightly to the <video> rect inside an oversized HTML5 page wrapper", async () => {
+    const pageWrapper = document.createElement("div");
+    const video = document.createElement("video");
+    Object.defineProperty(video, "currentTime", { value: 2.0, writable: true, configurable: true });
+    pageWrapper.append(video);
+    document.body.append(pageWrapper);
+
+    // Oversized wrapper (e.g. simpl.info/track #container): 800x1600, while <video> sits at (40, 120) sized 640x360.
+    pageWrapper.getBoundingClientRect = () => ({
+      top: 0, left: 0, right: 800, bottom: 1600, width: 800, height: 1600, x: 0, y: 0, toJSON: () => ({}),
+    });
+    video.getBoundingClientRect = () => ({
+      top: 120, left: 40, right: 680, bottom: 480, width: 640, height: 360, x: 40, y: 120, toJSON: () => ({}),
+    });
+
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      platformFn: () => "html5",
+      discoverDetailedFn: async () => ({
+        status: "ready",
+        track: {
+          platform: "html5",
+          videoKey: "html5:bounds-test",
+          sourceLanguage: "en",
+          isAsr: false,
+          hasManualTarget: true,
+          cues: [{ startTime: 1, endTime: 4, text: "Aligned on video.", translatedText: "精准贴合视频画面。" }],
+        },
+      }),
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    const host = pageWrapper.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const toggleBtn = pageWrapper.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    expect(host.style.getPropertyValue("--pl-host-top")).toBe("120px");
+    expect(host.style.getPropertyValue("--pl-host-left")).toBe("40px");
+    expect(host.style.getPropertyValue("--pl-host-width")).toBe("640px");
+    expect(host.style.getPropertyValue("--pl-host-height")).toBe("360px");
+    expect(toggleBtn.style.getPropertyValue("--pl-float-top")).toBe("130px");
+    expect(toggleBtn.style.getPropertyValue("--pl-float-right")).toBe("130px");
+
+    manager.dispose();
+  });
+
+  it("prefers default and English tracks over alphabetically earlier tracks (e.g. af/ar) on multi-language HTML5 videos", async () => {
+    const video = document.createElement("video");
+    const tracks: Array<{ lang: string; src: string; isDefault?: boolean }> = [
+      { lang: "af", src: "https://cdn.example.com/af.vtt" },
+      { lang: "ar", src: "https://cdn.example.com/ar.vtt" },
+      { lang: "en", src: "https://cdn.example.com/en.vtt" },
+      { lang: "es", src: "https://cdn.example.com/es.vtt" },
+    ];
+    for (const spec of tracks) {
+      const el = document.createElement("track");
+      el.kind = "subtitles";
+      el.srclang = spec.lang;
+      el.src = spec.src;
+      if (spec.isDefault) el.default = true;
+      video.append(el);
+    }
+    document.body.append(video);
+
+    const pickedUrls: string[] = [];
+    const result = await discoverHtml5Subtitle(
+      video,
+      { targetLanguage: "zh-Hans", preferManualCaptions: false, filterSoundEffects: true, mergeAsrSegments: false },
+      {
+        fetchText: async (url) => {
+          pickedUrls.push(url);
+          return "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nEnglish source caption.\n";
+        },
+      },
+    );
+
+    expect(pickedUrls).toEqual(["https://cdn.example.com/en.vtt"]);
+    expect(result?.sourceLanguage).toBe("en");
+    expect(result?.cues).toEqual([{ startTime: 1, endTime: 3, text: "English source caption." }]);
   });
 });
