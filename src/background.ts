@@ -88,6 +88,7 @@ interface RuntimeMessage {
   id?: unknown;
   enabled?: unknown;
   url?: unknown;
+  credentials?: unknown;
 }
 
 function asLanguage(value: unknown): string | null {
@@ -690,10 +691,11 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
         throw new Error("仅支持 HTTP/HTTPS 字幕地址");
       }
+      const credentials: RequestCredentials = message.credentials === "omit" ? "omit" : "include";
       const signal = typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
         ? AbortSignal.timeout(15_000)
         : undefined;
-      const response = await fetch(parsedUrl.href, { credentials: "include", ...(signal ? { signal } : {}) });
+      const response = await fetch(parsedUrl.href, { credentials, ...(signal ? { signal } : {}) });
       if (!response.ok) throw new Error(`获取字幕失败（HTTP ${response.status}）`);
       const text = await response.text();
       if (text.length > 5_000_000) throw new Error("字幕文件过大");
