@@ -100,6 +100,59 @@ interface YouTubeCaptionTrack {
   languageCode?: string;
   kind?: string;
   vssId?: string;
+  nameText?: string;
+}
+
+interface YouTubePlayerTrackData {
+  videoId: string;
+  title?: string;
+  tracks: YouTubeCaptionTrack[];
+  audioOriginalLang?: string | null;
+  defaultCaptionLang?: string | null;
+}
+
+const LATIN_SCRIPT_LANGS = new Set([
+  "en", "es", "fr", "de", "pt", "it", "nl", "pl", "tr", "vi", "id", "ms", "sv", "nb", "da", "fi", "cs", "ro", "hu", "sk", "hr", "ca",
+]);
+
+function detectTitleScriptHint(title: string | null | undefined): string | null {
+  const cleaned = (title ?? "").replace(/\s*-\s*(?:YouTube|哔哩哔哩.*|bilibili.*)$/iu, "").trim();
+  if (!cleaned) return null;
+  if (/[\u3040-\u30ff]/u.test(cleaned)) return "ja";
+  if (/[\uac00-\ud7af]/u.test(cleaned)) return "ko";
+  if (/[\u0600-\u06ff]/u.test(cleaned)) return "ar";
+  if (/[\u0400-\u04ff]/u.test(cleaned)) return "ru";
+  if (/[\u0e00-\u0e7f]/u.test(cleaned)) return "th";
+  if (/[\u0900-\u097f]/u.test(cleaned)) return "hi";
+  if (/\p{Script=Han}/u.test(cleaned)) return "zh-Hans";
+  if (/[A-Za-z]{2,}/.test(cleaned)) return "latin";
+  return null;
+}
+
+function readYouTubeTextLabel(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  try {
+    const rec = raw as { simpleText?: unknown; runs?: unknown };
+    if (typeof rec.simpleText === "string" && rec.simpleText.trim()) return rec.simpleText.trim();
+    const runs = rec.runs;
+    if (runs && typeof runs === "object") {
+      const rawLen = (runs as { length?: unknown }).length;
+      const len = typeof rawLen === "number" && Number.isFinite(rawLen) && rawLen > 0
+        ? Math.min(Math.trunc(rawLen), 16)
+        : 0;
+      const parts: string[] = [];
+      const list = runs as Record<number, unknown>;
+      for (let i = 0; i < len; i += 1) {
+        const item = list[i];
+        if (item && typeof item === "object" && typeof (item as { text?: unknown }).text === "string") {
+          parts.push((item as { text: string }).text);
+        }
+      }
+      const joined = parts.join("").trim();
+      if (joined) return joined;
+    }
+  } catch {}
+  return undefined;
 }
 
 export interface YouTubeDiscoverDeps {
@@ -135,16 +188,25 @@ function extractBalancedJsonObject(source: string, marker: string): string | nul
   return null;
 }
 
-function extractYouTubeTracksFromPlayerResponse(response: unknown): { videoId: string; tracks: YouTubeCaptionTrack[] } | null {
+function extractYouTubeTracksFromPlayerResponse(response: unknown): YouTubePlayerTrackData | null {
   if (!response || typeof response !== "object") return null;
   try {
     const record = response as {
-      videoDetails?: { videoId?: unknown };
-      captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: unknown } };
+      videoDetails?: { videoId?: unknown; title?: unknown };
+      captions?: {
+        playerCaptionsTracklistRenderer?: {
+          captionTracks?: unknown;
+          audioTracks?: unknown;
+          defaultAudioTrackIndex?: unknown;
+        };
+      };
     };
     const rawVideoId = record.videoDetails?.videoId;
     const videoId = typeof rawVideoId === "string" ? rawVideoId : "";
-    const rawTracks = record.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    const rawTitle = record.videoDetails?.title;
+    const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle.trim() : undefined;
+    const renderer = record.captions?.playerCaptionsTracklistRenderer;
+    const rawTracks = renderer?.captionTracks;
     if (!rawTracks || typeof rawTracks !== "object") return null;
     const rawLen = (rawTracks as { length?: unknown }).length;
     const len = typeof rawLen === "number" && Number.isFinite(rawLen) && rawLen > 0
@@ -155,24 +217,72 @@ function extractYouTubeTracksFromPlayerResponse(response: unknown): { videoId: s
     // Copy only primitive values via plain index access — never call page-compartment Array
     // methods (.filter/.map/.find) with content-script closures (throws Firefox Xray Permission denied).
     const tracks: YouTubeCaptionTrack[] = [];
+    const indexToLang = new Map<number, string>();
     const list = rawTracks as Record<number, unknown>;
     for (let i = 0; i < len; i += 1) {
       const item = list[i];
       if (!item || typeof item !== "object") continue;
-      const entry = item as { baseUrl?: unknown; languageCode?: unknown; kind?: unknown; vssId?: unknown };
+      const entry = item as {
+        baseUrl?: unknown;
+        languageCode?: unknown;
+        kind?: unknown;
+        vssId?: unknown;
+        name?: unknown;
+      };
       const baseUrl = typeof entry.baseUrl === "string" ? entry.baseUrl : undefined;
       if (!baseUrl) continue;
       const languageCode = typeof entry.languageCode === "string" ? entry.languageCode : undefined;
       const kind = typeof entry.kind === "string" ? entry.kind : undefined;
       const vssId = typeof entry.vssId === "string" ? entry.vssId : undefined;
+      const nameText = readYouTubeTextLabel(entry.name);
+      if (languageCode) {
+        const norm = normalizeDetectedLanguage(languageCode);
+        if (norm) indexToLang.set(i, norm);
+      }
       tracks.push({
         baseUrl,
         ...(languageCode ? { languageCode } : {}),
         ...(kind ? { kind } : {}),
         ...(vssId ? { vssId } : {}),
+        ...(nameText ? { nameText } : {}),
       });
     }
-    return tracks.length > 0 ? { videoId, tracks } : null;
+    if (tracks.length === 0) return null;
+
+    // Extract original audio language and default caption hint from audioTracks (primitive index access only).
+    let audioOriginalLang: string | null = null;
+    let defaultCaptionLang: string | null = null;
+    const rawAudioTracks = renderer?.audioTracks;
+    if (rawAudioTracks && typeof rawAudioTracks === "object") {
+      const audioLenRaw = (rawAudioTracks as { length?: unknown }).length;
+      const audioLen = typeof audioLenRaw === "number" && Number.isFinite(audioLenRaw) && audioLenRaw > 0
+        ? Math.min(Math.trunc(audioLenRaw), 50)
+        : 0;
+      const defaultAudioIdxRaw = renderer?.defaultAudioTrackIndex;
+      const defaultAudioIdx =
+        typeof defaultAudioIdxRaw === "number" && Number.isFinite(defaultAudioIdxRaw) && defaultAudioIdxRaw >= 0 && defaultAudioIdxRaw < audioLen
+          ? Math.trunc(defaultAudioIdxRaw)
+          : 0;
+      const audioEntry = (rawAudioTracks as Record<number, unknown>)[defaultAudioIdx];
+      if (audioEntry && typeof audioEntry === "object") {
+        const audioRec = audioEntry as { audioTrackId?: unknown; defaultCaptionTrackIndex?: unknown };
+        if (typeof audioRec.audioTrackId === "string" && audioRec.audioTrackId.trim()) {
+          const langPrefix = audioRec.audioTrackId.trim().split(".")[0] ?? "";
+          audioOriginalLang = normalizeDetectedLanguage(langPrefix);
+        }
+        if (typeof audioRec.defaultCaptionTrackIndex === "number" && Number.isFinite(audioRec.defaultCaptionTrackIndex)) {
+          defaultCaptionLang = indexToLang.get(Math.trunc(audioRec.defaultCaptionTrackIndex)) ?? null;
+        }
+      }
+    }
+
+    return {
+      videoId,
+      ...(title ? { title } : {}),
+      tracks,
+      audioOriginalLang,
+      defaultCaptionLang,
+    };
   } catch {
     return null;
   }
@@ -195,7 +305,7 @@ export function extractYouTubeVideoId(href = location.href): string | null {
   return shorts?.[1] ?? null;
 }
 
-function readLiveYouTubePlayerTracks(videoId: string, doc: Document, href: string): YouTubeCaptionTrack[] | null {
+function readLiveYouTubePlayerData(videoId: string, doc: Document, href: string): YouTubePlayerTrackData | null {
   const isShorts = (() => {
     try {
       return new URL(href).pathname.startsWith("/shorts/");
@@ -218,7 +328,7 @@ function readLiveYouTubePlayerTracks(videoId: string, doc: Document, href: strin
       if (typeof target.getPlayerResponse === "function") {
         const parsed = extractYouTubeTracksFromPlayerResponse(target.getPlayerResponse());
         if (parsed && (!parsed.videoId || parsed.videoId === videoId)) {
-          return parsed.tracks;
+          return parsed;
         }
       }
     } catch {
@@ -237,11 +347,42 @@ function readLiveYouTubePlayerTracks(videoId: string, doc: Document, href: strin
       const raw = view.wrappedJSObject?.ytInitialPlayerResponse ?? view.ytInitialPlayerResponse;
       const parsed = extractYouTubeTracksFromPlayerResponse(raw);
       if (parsed && (!parsed.videoId || parsed.videoId === videoId)) {
-        return parsed.tracks;
+        return parsed;
       }
     } catch {}
   }
 
+  return null;
+}
+
+function readLiveYouTubeActiveTrackLang(doc: Document, href: string): string | null {
+  const isShorts = (() => {
+    try {
+      return new URL(href).pathname.startsWith("/shorts/");
+    } catch {
+      return false;
+    }
+  })();
+  const selectors = isShorts ? ["#shorts-player", "#movie_player"] : ["#movie_player", "#shorts-player"];
+  for (const selector of selectors) {
+    const player = doc.querySelector(selector) as
+      | (HTMLElement & {
+        getOption?: (module: string, option: string) => unknown;
+        wrappedJSObject?: { getOption?: (module: string, option: string) => unknown };
+      })
+      | null;
+    if (!player) continue;
+    try {
+      const target = player.wrappedJSObject ?? player;
+      if (typeof target.getOption === "function") {
+        const track = target.getOption("captions", "track") as { languageCode?: unknown } | null | undefined;
+        if (track && typeof track === "object" && typeof track.languageCode === "string") {
+          const norm = normalizeDetectedLanguage(track.languageCode);
+          if (norm) return norm;
+        }
+      }
+    } catch {}
+  }
   return null;
 }
 
@@ -267,15 +408,15 @@ export function findYouTubeTimedTextResourceUrls(videoId: string, doc: Document 
   }
 }
 
-async function fetchYouTubeCaptionTracks(
+async function fetchYouTubeCaptionData(
   videoId: string,
   href: string,
   doc: Document,
   fetchText: (url: string, options?: FetchTrackTextOptions) => Promise<string>,
-): Promise<YouTubeCaptionTrack[]> {
+): Promise<YouTubePlayerTrackData | null> {
   // 1. Live player API / window object (instant & always fresh after SPA navigation).
-  const live = readLiveYouTubePlayerTracks(videoId, doc, href);
-  if (live && live.length > 0) return live;
+  const live = readLiveYouTubePlayerData(videoId, doc, href);
+  if (live && live.tracks.length > 0) return live;
 
   // 2. Fast path: inspect inline scripts in the current document when videoId matches.
   for (const script of Array.from(doc.scripts)) {
@@ -285,7 +426,7 @@ async function fetchYouTubeCaptionTracks(
     if (!jsonText) continue;
     try {
       const parsed = extractYouTubeTracksFromPlayerResponse(JSON.parse(jsonText));
-      if (parsed && (!parsed.videoId || parsed.videoId === videoId)) return parsed.tracks;
+      if (parsed && (!parsed.videoId || parsed.videoId === videoId)) return parsed;
     } catch {
       // Fall through to fresh watch page fetch.
     }
@@ -295,11 +436,11 @@ async function fetchYouTubeCaptionTracks(
   const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
   const html = await fetchText(watchUrl, { credentials: "include" });
   const jsonText = extractBalancedJsonObject(html, "ytInitialPlayerResponse =");
-  if (!jsonText) return [];
+  if (!jsonText) return null;
   try {
-    return extractYouTubeTracksFromPlayerResponse(JSON.parse(jsonText))?.tracks ?? [];
+    return extractYouTubeTracksFromPlayerResponse(JSON.parse(jsonText));
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -403,34 +544,81 @@ export async function discoverYouTubeSubtitleDetailed(
   const videoId = extractYouTubeVideoId(href);
   if (!videoId) return { track: null, status: "no_subtitles" };
 
-  let tracks: YouTubeCaptionTrack[];
+  let playerData: YouTubePlayerTrackData | null;
   try {
-    tracks = await fetchYouTubeCaptionTracks(videoId, href, doc, fetchText);
+    playerData = await fetchYouTubeCaptionData(videoId, href, doc, fetchText);
   } catch {
     return { track: null, status: "error" };
   }
+  const tracks = playerData?.tracks ?? [];
   if (!tracks.length) return { track: null, status: "no_subtitles" };
 
   const targetNorm = normalizeDetectedLanguage(options.targetLanguage) ?? options.targetLanguage;
   const normalizedTracks = tracks
     .filter((t) => typeof t.baseUrl === "string" && t.baseUrl.length > 0)
-    .map((track) => ({
-      track,
-      lang: normalizeDetectedLanguage(track.languageCode) ?? null,
-      isAsr: track.kind === "asr",
-    }));
+    .map((track) => {
+      const rawCode = (track.languageCode ?? "").trim().toLowerCase().replaceAll("_", "-");
+      const nameText = track.nameText ?? "";
+      return {
+        track,
+        rawCode,
+        lang: normalizeDetectedLanguage(track.languageCode) ?? null,
+        isAsr: track.kind === "asr" || Boolean(track.vssId?.startsWith("a.")),
+        isOriginalLabel: /\((?:original|原声|原文)\)|\boriginal\b/i.test(nameText),
+        isAutoDubbed: /auto-?dubbed|自动配音/i.test(nameText),
+      };
+    });
   if (!normalizedTracks.length) return { track: null, status: "no_subtitles" };
 
   const resourceUrls = deps.resourceUrls ?? findYouTubeTimedTextResourceUrls(videoId, doc);
+  const resourceLangs = new Set<string>();
+  for (const resUrl of resourceUrls) {
+    try {
+      const parsed = new URL(resUrl);
+      if (parsed.searchParams.get("tlang")) continue;
+      const resLang = normalizeDetectedLanguage(parsed.searchParams.get("lang"));
+      if (resLang) resourceLangs.add(resLang);
+    } catch {}
+  }
+
+  // YouTube generates ASR captions in the video's spoken original language, making ASR language a
+  // strong signal to pick the true source language instead of alphabetically-first tracks like `ar`.
+  const asrLangs = new Set<string>();
+  for (const item of normalizedTracks) {
+    if (item.isAsr && item.lang) asrLangs.add(item.lang);
+  }
+  const audioOriginalLang = playerData?.audioOriginalLang ?? null;
+  const defaultCaptionLang = playerData?.defaultCaptionLang ?? null;
+  const activePlayerLang = readLiveYouTubeActiveTrackLang(doc, href);
+  const titleHint = detectTitleScriptHint(playerData?.title ?? doc.title);
+
+  const rankYouTubeSourceTrack = (item: (typeof normalizedTracks)[number]): number => {
+    let score = 0;
+    const isTarget = item.lang !== null && item.lang === targetNorm;
+    if (!isTarget) score += 1000;
+    if (item.isOriginalLabel) score += 400;
+    if (item.isAutoDubbed) score -= 150;
+    if (item.lang && audioOriginalLang && item.lang === audioOriginalLang) score += 320;
+    if (item.lang && asrLangs.has(item.lang)) score += 280;
+    if (item.lang && titleHint && titleHint !== "latin" && item.lang === titleHint) score += 220;
+    if (item.lang && activePlayerLang && activePlayerLang !== targetNorm && item.lang === activePlayerLang) score += 180;
+    if (item.lang && !isTarget && resourceLangs.has(item.lang)) score += 160;
+    if (item.lang && defaultCaptionLang && defaultCaptionLang !== targetNorm && item.lang === defaultCaptionLang) score += 140;
+    if (titleHint === "latin") {
+      if (item.lang === "en") score += 120;
+      else if (item.lang && LATIN_SCRIPT_LANGS.has(item.lang)) score += 30;
+    } else if (targetNorm !== "en" && item.lang === "en") {
+      score += 80;
+    }
+    if (!item.isAsr) score += 60;
+    if (item.rawCode === "en" || item.rawCode === "en-us") score += 8;
+    return score;
+  };
 
   const manualTarget = options.preferManualCaptions
     ? normalizedTracks.find((item) => !item.isAsr && item.lang === targetNorm)
     : undefined;
-  const sourceTrack =
-    normalizedTracks.find((item) => !item.isAsr && item.lang !== targetNorm)
-    ?? normalizedTracks.find((item) => item.isAsr && item.lang !== targetNorm)
-    ?? normalizedTracks.find((item) => !item.isAsr)
-    ?? normalizedTracks[0]!;
+  const sourceTrack = [...normalizedTracks].sort((a, b) => rankYouTubeSourceTrack(b) - rankYouTubeSourceTrack(a))[0]!;
 
   if (manualTarget && sourceTrack === manualTarget) {
     const rawTargetCues = await loadYouTubeTrackCues(manualTarget.track, resourceUrls, href, fetchText);
@@ -960,10 +1148,22 @@ export async function discoverBilibiliSubtitleDetailed(
   const manualTarget = options.preferManualCaptions
     ? items.find((entry) => !entry.isAsr && entry.lang === targetNorm)
     : undefined;
-  const sourceEntry =
-    items.find((entry) => !entry.isAsr && entry.lang !== targetNorm)
-    ?? items.find((entry) => entry.lang !== targetNorm)
-    ?? items[0]!;
+  const biliTitleHint = detectTitleScriptHint(doc.title);
+  const rankBilibiliSource = (entry: (typeof items)[number]): number => {
+    let score = 0;
+    const isTarget = entry.lang !== null && entry.lang === targetNorm;
+    if (!isTarget) score += 1000;
+    if (!entry.isAsr) score += 100;
+    if (entry.lang && biliTitleHint && biliTitleHint !== "latin" && entry.lang === biliTitleHint) score += 220;
+    if (biliTitleHint === "latin") {
+      if (entry.lang === "en") score += 120;
+      else if (entry.lang && LATIN_SCRIPT_LANGS.has(entry.lang)) score += 30;
+    } else if (targetNorm !== "en" && entry.lang === "en") {
+      score += 80;
+    }
+    return score;
+  };
+  const sourceEntry = [...items].sort((a, b) => rankBilibiliSource(b) - rankBilibiliSource(a))[0]!;
 
   try {
     const rawJson = JSON.parse(

@@ -2097,4 +2097,172 @@ describe("manual-start default, same-language fallback bilingual, and missing la
   });
 });
 
+describe("multi-language YouTube and Bilibili original source track ranking", () => {
+  it("picks English over alphabetically earlier Arabic on multi-language YouTube videos (e.g. trailers with ar/de/en/zh-Hans)", async () => {
+    const moviePlayer = document.createElement("div");
+    moviePlayer.id = "movie_player";
+    const ytResponse = {
+      videoDetails: { videoId: "CXsSTUHr8ww", title: "Grand Theft Auto VI Trailer 2" },
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          captionTracks: [
+            { baseUrl: "https://www.youtube.com/api/timedtext?v=CXsSTUHr8ww&lang=ar", languageCode: "ar", vssId: ".ar", name: { simpleText: "Arabic" } },
+            { baseUrl: "https://www.youtube.com/api/timedtext?v=CXsSTUHr8ww&lang=de", languageCode: "de", vssId: ".de", name: { simpleText: "German" } },
+            { baseUrl: "https://www.youtube.com/api/timedtext?v=CXsSTUHr8ww&lang=en", languageCode: "en", vssId: ".en", name: { simpleText: "English" } },
+            { baseUrl: "https://www.youtube.com/api/timedtext?v=CXsSTUHr8ww&lang=zh-Hans", languageCode: "zh-Hans", vssId: ".zh-Hans", name: { simpleText: "Chinese (Simplified)" } },
+          ],
+        },
+      },
+    };
+    Object.defineProperty(moviePlayer, "getPlayerResponse", { value: () => ytResponse, configurable: true });
+    document.body.append(moviePlayer);
+
+    const fetchedLangs: string[] = [];
+    const result = await discoverYouTubeSubtitleDetailed(
+      { targetLanguage: "zh-Hans", preferManualCaptions: true, filterSoundEffects: true, mergeAsrSegments: true },
+      {
+        href: "https://www.youtube.com/watch?v=CXsSTUHr8ww",
+        doc: document,
+        resourceUrls: [],
+        fetchText: async (url) => {
+          const lang = new URL(url).searchParams.get("lang") ?? "";
+          fetchedLangs.push(lang);
+          if (lang === "en") {
+            return JSON.stringify({ events: [{ tStartMs: 1000, dDurationMs: 3000, segs: [{ utf8: "We're gonna get to Cal, jump on that boat and disappear." }] }] });
+          }
+          if (lang === "zh-Hans") {
+            return JSON.stringify({ events: [{ tStartMs: 1000, dDurationMs: 3000, segs: [{ utf8: "好的。我们会上车，上船，然后消失。" }] }] });
+          }
+          return JSON.stringify({ events: [{ tStartMs: 1000, dDurationMs: 3000, segs: [{ utf8: "حسناً. سنصل للسيارة" }] }] });
+        },
+      },
+    );
+
+    expect(result.status).toBe("ready");
+    expect(result.track?.sourceLanguage).toBe("en");
+    expect(result.track?.hasManualTarget).toBe(true);
+    expect(fetchedLangs).not.toContain("ar");
+    expect(result.track?.cues[0]?.text).toBe("We're gonna get to Cal, jump on that boat and disappear.");
+    expect(result.track?.cues[0]?.translatedText).toBe("好的。我们会上车，上船，然后消失。");
+  });
+
+  it("prefers spoken ASR original language (a.en) over unrelated community manual captions (ar), and respects audioTracks/title for non-English videos (ja/es) safely under Xray proxies", async () => {
+    // Case 1: English video with a.en ASR + community manual ar -> picks a.en (en), not ar.
+    const moviePlayer = document.createElement("div");
+    moviePlayer.id = "movie_player";
+    const enAsrResponse = {
+      videoDetails: { videoId: "EN_ASR_123", title: "Deep Dive into Distributed Systems" },
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          captionTracks: [
+            { baseUrl: "https://www.youtube.com/api/timedtext?v=EN_ASR_123&lang=ar", languageCode: "ar", vssId: ".ar" },
+            { baseUrl: "https://www.youtube.com/api/timedtext?v=EN_ASR_123&lang=en&kind=asr", languageCode: "en", kind: "asr", vssId: "a.en" },
+          ],
+        },
+      },
+    };
+    Object.defineProperty(moviePlayer, "getPlayerResponse", { value: () => enAsrResponse, configurable: true });
+    document.body.append(moviePlayer);
+
+    const enResult = await discoverYouTubeSubtitleDetailed(
+      { targetLanguage: "zh-Hans", preferManualCaptions: true, filterSoundEffects: true, mergeAsrSegments: true },
+      {
+        href: "https://www.youtube.com/watch?v=EN_ASR_123",
+        doc: document,
+        resourceUrls: [],
+        fetchText: async (url) => {
+          const lang = new URL(url).searchParams.get("lang");
+          return JSON.stringify({ events: [{ tStartMs: 1000, dDurationMs: 2000, segs: [{ utf8: lang === "en" ? "Hello distributed world." : "مرحبا" }] }] });
+        },
+      },
+    );
+    expect(enResult.track?.sourceLanguage).toBe("en");
+    expect(enResult.track?.cues[0]?.text).toBe("Hello distributed world.");
+
+    // Case 2: Japanese video with [ar, en, ja, zh-Hans] and Xray-restricted audioTracks + name.runs arrays -> picks ja!
+    const xrayForbidden = <T extends object>(arr: T[]) => new Proxy(arr, {
+      get(target, prop, receiver) {
+        if (prop === "map" || prop === "filter" || prop === "find" || prop === "some" || prop === "forEach") {
+          return () => { throw new Error("Permission denied to access property"); };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const jaResponse = {
+      videoDetails: { videoId: "JA_VID_456", title: "【公式】新作アニメ予告" },
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          defaultAudioTrackIndex: 0,
+          audioTracks: xrayForbidden([{ audioTrackId: "ja.4", defaultCaptionTrackIndex: 2 }]),
+          captionTracks: xrayForbidden([
+            { baseUrl: "https://www.youtube.com/api/timedtext?v=JA_VID_456&lang=ar", languageCode: "ar", vssId: ".ar", name: { runs: xrayForbidden([{ text: "Arabic" }]) } },
+            { baseUrl: "https://www.youtube.com/api/timedtext?v=JA_VID_456&lang=en", languageCode: "en", vssId: ".en", name: { runs: xrayForbidden([{ text: "English" }]) } },
+            { baseUrl: "https://www.youtube.com/api/timedtext?v=JA_VID_456&lang=ja", languageCode: "ja", vssId: ".ja", name: { runs: xrayForbidden([{ text: "Japanese" }]) } },
+            { baseUrl: "https://www.youtube.com/api/timedtext?v=JA_VID_456&lang=zh-Hans", languageCode: "zh-Hans", vssId: ".zh-Hans" },
+          ]),
+        },
+      },
+    };
+    Object.defineProperty(moviePlayer, "getPlayerResponse", { value: () => jaResponse, configurable: true });
+
+    const jaResult = await discoverYouTubeSubtitleDetailed(
+      { targetLanguage: "zh-Hans", preferManualCaptions: true, filterSoundEffects: true, mergeAsrSegments: true },
+      {
+        href: "https://www.youtube.com/watch?v=JA_VID_456",
+        doc: document,
+        resourceUrls: [],
+        fetchText: async (url) => {
+          const lang = new URL(url).searchParams.get("lang");
+          const text = lang === "ja" ? "新しい物語が始まる。" : lang === "zh-Hans" ? "新的故事开始了。" : "Wrong track";
+          return JSON.stringify({ events: [{ tStartMs: 1000, dDurationMs: 2500, segs: [{ utf8: text }] }] });
+        },
+      },
+    );
+    expect(jaResult.track?.sourceLanguage).toBe("ja");
+    expect(jaResult.track?.cues[0]?.text).toBe("新しい物語が始まる。");
+    expect(jaResult.track?.cues[0]?.translatedText).toBe("新的故事开始了。");
+  });
+
+  it("picks English over alphabetically earlier Arabic on multi-language Bilibili videos with Chinese titles", async () => {
+    const prevTitle = document.title;
+    document.title = "【官方中字】GTA 6 第二支预告片 - 哔哩哔哩";
+    try {
+      const result = await discoverBilibiliSubtitleDetailed(
+        { targetLanguage: "zh-Hans", preferManualCaptions: true, filterSoundEffects: true, mergeAsrSegments: false },
+        {
+          href: "https://www.bilibili.com/video/BV1multilang/?cid=7788",
+          doc: document,
+          fetchText: async (url) => {
+            if (url.includes("/x/web-interface/nav")) return JSON.stringify({ code: 0, data: {} });
+            if (url.includes("/x/player/wbi/v2")) {
+              return JSON.stringify({
+                code: 0,
+                data: {
+                  subtitle: {
+                    subtitles: [
+                      { lan: "ar", subtitle_url: "//aisubtitle.hdslb.com/bfs/subtitle/ar.json", type: 0 },
+                      { lan: "en-US", subtitle_url: "//aisubtitle.hdslb.com/bfs/subtitle/en.json", type: 0 },
+                      { lan: "zh-CN", subtitle_url: "//aisubtitle.hdslb.com/bfs/subtitle/zh.json", type: 0 },
+                    ],
+                  },
+                },
+              });
+            }
+            if (url.includes("en.json")) return JSON.stringify({ body: [{ from: 1, to: 3, content: "Jump on that boat." }] });
+            if (url.includes("zh.json")) return JSON.stringify({ body: [{ from: 1, to: 3, content: "跳上那条船。" }] });
+            return JSON.stringify({ body: [{ from: 1, to: 3, content: "اركب القارب" }] });
+          },
+        },
+      );
+      expect(result.status).toBe("ready");
+      expect(result.track?.sourceLanguage).toBe("en");
+      expect(result.track?.cues[0]?.text).toBe("Jump on that boat.");
+      expect(result.track?.cues[0]?.translatedText).toBe("跳上那条船。");
+    } finally {
+      document.title = prevTitle;
+    }
+  });
+});
+
+
 
