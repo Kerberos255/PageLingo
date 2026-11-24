@@ -154,4 +154,55 @@ describe("Microsoft Free whole-paragraph compact markup", () => {
     expect(unpackMicrosoftFreeHtml(plan, "使用 <b0>快速启动。")).toBeUndefined();
     expect(unpackMicrosoftFreeHtml(plan, "使用 <b0>快速启动</b1>。")).toBeUndefined();
   });
+
+  it("preserves trailing prose period without PLATOM/notranslate atom and aligns cross-boundary 《》/“” wrappers across links", () => {
+    const openclawSource =
+      '<span data-flt-text-id="0">The full architecture case — a trusted gateway, untrusted execution, policy enforced by code, and how one product spans personal and team use — is in </span>' +
+      '<a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0"><code>__FLT_LINK_START_0__</code><span data-flt-text-id="1">Why <span data-flt-term-id="0">OpenClaw</span></span><code>__FLT_LINK_END_0__</code></a>' +
+      '<span data-flt-text-id="2">.</span>';
+
+    // Microsoft Free sends a real trailing period (not PLATOM0) and unpacks closed 《...》。
+    const msPlan = packMicrosoftFreeHtml(openclawSource)!;
+    expect(msPlan.wireHtml).toBe(
+      "The full architecture case — a trusted gateway, untrusted execution, policy enforced by code, and how one product spans personal and team use — is in <b0>Why <t0>OpenClaw</t0></b0>.",
+    );
+    const msOut = unpackMicrosoftFreeHtml(
+      msPlan,
+      "完整的架构案例——可信网关、不可信任执行、由代码强制执行的策略，以及一个产品如何跨越个人与团队使用——详见《<b0>Why <t0>OpenClaw</t0></b0>》。",
+    )!;
+    expect(msOut).toContain("详见《 </span><a");
+    expect(msOut).toContain('<span data-flt-text-id="2">》。</span>');
+
+    // Cross-boundary opening 《 or “ leaked inside <b0> is aligned outside the link cleanly.
+    const misalignedTitle = unpackMicrosoftFreeHtml(
+      msPlan,
+      "完整的架构案例——详见<b0>《Why <t0>OpenClaw</t0></b0>》。",
+    )!;
+    expect(misalignedTitle).toContain("详见《 </span><a");
+    expect(misalignedTitle).toContain('<span data-flt-text-id="1">Why <span data-flt-term-id="0">OpenClaw</span></span>');
+    expect(misalignedTitle).toContain('<span data-flt-text-id="2">》。</span>');
+
+    const gettingStartedSource =
+      '<span data-flt-text-id="0">Need the full install? See </span>' +
+      '<a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0"><code>__FLT_LINK_START_0__</code><span data-flt-text-id="1">Getting Started</span><code>__FLT_LINK_END_0__</code></a>' +
+      '<span data-flt-text-id="2">.</span>';
+    const gsPlan = packMicrosoftFreeHtml(gettingStartedSource)!;
+    const gsOut = unpackMicrosoftFreeHtml(gsPlan, "需要完整安装吗？参见 <b0>“入门</b0>指南”。")!;
+    expect(gsOut).toContain('参见“ </span><a');
+    expect(gsOut).toContain('<span data-flt-text-id="1">入门</span>');
+    expect(gsOut).toContain('<span data-flt-text-id="2">指南”。</span>');
+
+    // Google Free sends a real trailing period (not notranslate atom) and unpacks `在<a>...</a>中。`.
+    const gPlan = packGoogleFreeHtml(openclawSource)!;
+    expect(gPlan.wireHtml).toBe(
+      'The full architecture case — a trusted gateway, untrusted execution, policy enforced by code, and how one product spans personal and team use — is in <a data-pl-el="0">Why <span class="notranslate" data-pl-t="0">OpenClaw</span></a>.',
+    );
+    const gOut = unpackGoogleFreeHtml(
+      gPlan,
+      '完整的架构案例——受信任的网关、不受信任的执行、由代码强制执行的策略，以及一个产品如何跨越个人和团队使用——在<a data-pl-el="0">为什么<span class="notranslate" data-pl-t="0">OpenClaw</span></a>中。',
+    )!;
+    expect(gOut).toContain("——在 </span><a");
+    expect(gOut).toContain('<span data-flt-text-id="2">中。</span>');
+  });
 });
+

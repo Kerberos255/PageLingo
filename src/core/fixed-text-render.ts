@@ -6,8 +6,10 @@ import {cjkSpacingBoundaryUnchanged, cjkSpacingContextUnchanged, normalizeCjkSpa
 import { parseHtmlBody } from "../shared/html-parser";
 
 export type CapturedSourceLayout = ReturnType<typeof captureSourceLayout>;
-export interface SourceTextSlot { id: number; node: Text; parent: Node; source: string; writePolicy?: "collapsible-whitespace" | "frozen-prose-gap" }
+export interface SourceTextSlot { id: number; node: Text; parent: Node; source: string; writePolicy?: "collapsible-whitespace" | "frozen-prose-gap" | "prose-punctuation" }
 interface TextEdit extends SourceTextSlot { translated: string }
+const FULLWIDTH_TERMINAL_PUNCT: Record<string, string> = { ".": "。", "!": "！", "?": "？" };
+const STANDALONE_TERMINAL_PUNCT_RE = /^([ \t\r\n\f]*)([.!?])([ \t\r\n\f]*)$/u;
 export interface FixedTextRecord {
   root: HTMLElement;
   edits: TextEdit[];
@@ -60,11 +62,25 @@ export function prepareFixedTextRecord(
       if (!isAsciiWhitespace(slot.source) || !isAsciiWhitespaceOrEmpty(translated) || !canCollapseProseWhitespace(slot.node)) {
         throw new Error("Translation collapsible whitespace ownership changed");
       }
+    } else if (slot.writePolicy === "prose-punctuation") {
+      if (!STANDALONE_TERMINAL_PUNCT_RE.test(slot.source)) {
+        throw new Error("Translation prose punctuation slot mismatch");
+      }
     } else if (!translated.trim() && !isOptionalEnglishArticle(slot.source)) throw new Error("Translation empty text-node translation");
     edits.push({...slot, translated});
   }
   const snapshot = sourceNodes(root).map(node => ({node, text: node.nodeType === Node.TEXT_NODE ? node.textContent : null}));
   const originalTranslations = edits.map(edit => edit.translated);
+  if (/^zh(?:-|$)/iu.test(language) && edits.some(edit => /\p{Script=Han}/u.test(edit.translated))) {
+    for (const edit of edits) {
+      if (edit.writePolicy !== "prose-punctuation" || !canCollapseProseWhitespace(edit.node)) continue;
+      const match = STANDALONE_TERMINAL_PUNCT_RE.exec(edit.translated);
+      if (match) {
+        const fullwidth = FULLWIDTH_TERMINAL_PUNCT[match[2]!];
+        if (fullwidth) edit.translated = `${match[1]}${fullwidth}${match[3]}`;
+      }
+    }
+  }
   const boundaries = normalizeCjkSpacing(root, edits, language);
   const record: FixedTextRecord = {
     root,

@@ -1445,3 +1445,288 @@ describe("Firefox Xray compartment safety, brand P icon, calm no-subtitle UX, an
     expect(result?.cues).toEqual([{ startTime: 1, endTime: 3, text: "English source caption." }]);
   });
 });
+
+describe("video subtitle translating indicator and transient failure cooldown retries", () => {
+  it("shows a lightweight translating status only for pending active cues and clears it once translated", async () => {
+    const container = document.createElement("div");
+    const video = document.createElement("video");
+    Object.defineProperty(video, "currentTime", { value: 1.5, writable: true, configurable: true });
+    container.append(video);
+    document.body.append(container);
+
+    const pendingResolvers = new Map<string, (html: string) => void>();
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      platformFn: () => "html5",
+      discoverDetailedFn: async () => ({
+        status: "ready",
+        track: {
+          platform: "html5",
+          videoKey: "status:test",
+          sourceLanguage: "en",
+          isAsr: false,
+          hasManualTarget: false,
+          cues: [
+            { startTime: 1, endTime: 3, text: "First active cue." },
+            { startTime: 4, endTime: 6, text: "Second lookahead cue." },
+          ],
+        },
+      }),
+      provider: {
+        translateHtml: (req) => new Promise<string>((resolve) => {
+          pendingResolvers.set(req.html, resolve);
+        }),
+      },
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    const host = container.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const statusEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-status")!;
+    const srcEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-source")!;
+    const transEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-translation")!;
+    const toggleBtn = container.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+
+    // While active cue 0 is in flight: subtle status indicator is visible and toggle badge marks translating.
+    expect(srcEl.textContent).toBe("First active cue.");
+    expect(transEl.hidden).toBe(true);
+    expect(statusEl.hidden).toBe(false);
+    expect(statusEl.dataset.status).toBe("translating");
+    expect(statusEl.textContent).toBe("翻译中…");
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("bilingual");
+    expect(toggleBtn.dataset.pagelingoSubTranslating).toBe("true");
+    expect(toggleBtn.title).toContain("正在翻译字幕");
+
+    // Resolve ONLY cue 0 while cue 1 remains in flight in the background lookahead window:
+    // active cue 0 hides the overlay status immediately while the button still quietly indicates background work.
+    pendingResolvers.get("First active cue.")?.("第一条活跃字幕。");
+    await flushAsync();
+
+    expect(transEl.hidden).toBe(false);
+    expect(transEl.textContent).toBe("第一条活跃字幕。");
+    expect(statusEl.hidden).toBe(true);
+    expect(toggleBtn.dataset.pagelingoSubTranslating).toBe("true");
+
+    // Switching to translation-only on cue 1 (still in flight) keeps source fallback + translating hint.
+    video.currentTime = 4.5;
+    video.dispatchEvent(new Event("timeupdate"));
+    toggleBtn.click(); // bilingual -> translation
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("translation");
+    expect(transEl.textContent).toBe("Second lookahead cue.");
+    expect(statusEl.hidden).toBe(false);
+    expect(statusEl.textContent).toBe("翻译中…");
+
+    // Once cue 1 resolves, both status indicator and toggle translating flag clear.
+    pendingResolvers.get("Second lookahead cue.")?.("第二条预译字幕。");
+    await flushAsync();
+
+    expect(transEl.textContent).toBe("第二条预译字幕。");
+    expect(statusEl.hidden).toBe(true);
+    expect(toggleBtn.dataset.pagelingoSubTranslating).toBe("false");
+
+    manager.dispose();
+  });
+
+  it("retries transient cue translation failures after cooldown without needing timeupdate", async () => {
+    const container = document.createElement("div");
+    const video = document.createElement("video");
+    Object.defineProperty(video, "currentTime", { value: 1.5, writable: true, configurable: true });
+    container.append(video);
+    document.body.append(container);
+
+    let attempts = 0;
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      platformFn: () => "html5",
+      retryDelaysMs: [25, 35],
+      discoverDetailedFn: async () => ({
+        status: "ready",
+        track: {
+          platform: "html5",
+          videoKey: "retry:transient",
+          sourceLanguage: "en",
+          isAsr: false,
+          hasManualTarget: false,
+          cues: [{ startTime: 1, endTime: 4, text: "Transient flaky line." }],
+        },
+      }),
+      provider: {
+        translateHtml: async () => {
+          attempts += 1;
+          if (attempts <= 2) throw new Error("HTTP 429 rate limited");
+          return "冷却重试成功后的字幕。";
+        },
+      },
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    const host = container.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const statusEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-status")!;
+    const transEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-translation")!;
+
+    // Attempt 1 failed -> in cooldown window, timeupdate must NOT spam immediate retries.
+    expect(attempts).toBe(1);
+    expect(statusEl.hidden).toBe(false);
+    expect(statusEl.dataset.status).toBe("retrying");
+    expect(statusEl.textContent).toBe("重试翻译中…");
+    video.dispatchEvent(new Event("timeupdate"));
+    expect(attempts).toBe(1);
+
+    // Wait across both cooldowns without dispatching timeupdate (simulates paused video):
+    // attempt 2 fails -> attempt 3 succeeds automatically!
+    await new Promise((resolve) => setTimeout(resolve, 110));
+    expect(attempts).toBe(3);
+    expect(transEl.textContent).toBe("冷却重试成功后的字幕。");
+    expect(statusEl.hidden).toBe(true);
+    manager.dispose();
+  });
+
+  it("caps automatic retries on persistent failures and lets toggling off -> bilingual re-attempt", async () => {
+    const capContainer = document.createElement("div");
+    const capVideo = document.createElement("video");
+    Object.defineProperty(capVideo, "currentTime", { value: 1.5, writable: true, configurable: true });
+    capContainer.append(capVideo);
+    document.body.append(capContainer);
+
+    let capAttempts = 0;
+    let shouldSucceed = false;
+    const capManager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      platformFn: () => "html5",
+      retryDelaysMs: [15],
+      discoverDetailedFn: async () => ({
+        status: "ready",
+        track: {
+          platform: "html5",
+          videoKey: "retry:cap",
+          sourceLanguage: "en",
+          isAsr: false,
+          hasManualTarget: false,
+          cues: [{ startTime: 1, endTime: 4, text: "Always fails until toggled." }],
+        },
+      }),
+      provider: {
+        translateHtml: async () => {
+          capAttempts += 1;
+          if (!shouldSucceed) throw new Error("Network timeout");
+          return "手动重开后恢复的字幕。";
+        },
+      },
+    });
+
+    await capManager.start();
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    // Initial attempt + 1 configured retry = 2 total, then stops quietly.
+    expect(capAttempts).toBe(2);
+    const capHost = capContainer.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const capStatus = capHost.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-status")!;
+    const capTrans = capHost.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-translation")!;
+    expect(capStatus.hidden).toBe(true);
+
+    const capToggle = capContainer.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    shouldSucceed = true;
+    capToggle.click(); // bilingual -> translation
+    capToggle.click(); // translation -> off
+    capToggle.click(); // off -> bilingual (clears non-fatal failures and retries)
+    await flushAsync();
+    expect(capAttempts).toBe(3);
+    expect(capTrans.textContent).toBe("手动重开后恢复的字幕。");
+    capManager.dispose();
+  });
+
+  it("does not schedule automatic retries on fatal auth/config errors", async () => {
+    const fatalContainer = document.createElement("div");
+    const fatalVideo = document.createElement("video");
+    Object.defineProperty(fatalVideo, "currentTime", { value: 1.5, writable: true, configurable: true });
+    fatalContainer.append(fatalVideo);
+    document.body.append(fatalContainer);
+
+    let fatalAttempts = 0;
+    const fatalManager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      platformFn: () => "html5",
+      retryDelaysMs: [15],
+      discoverDetailedFn: async () => ({
+        status: "ready",
+        track: {
+          platform: "html5",
+          videoKey: "retry:fatal",
+          sourceLanguage: "en",
+          isAsr: false,
+          hasManualTarget: false,
+          cues: [{ startTime: 1, endTime: 4, text: "Needs valid API key." }],
+        },
+      }),
+      provider: {
+        translateHtml: async () => {
+          fatalAttempts += 1;
+          throw new Error("翻译服务请求失败：HTTP 401");
+        },
+      },
+    });
+
+    await fatalManager.start();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(fatalAttempts).toBe(1);
+    const fatalHost = fatalContainer.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    expect(fatalHost.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-status")!.hidden).toBe(true);
+    fatalManager.dispose();
+  });
+
+  it("retries transient failures for YouTube live DOM captions after cooldown", async () => {
+    const moviePlayer = document.createElement("div");
+    moviePlayer.id = "movie_player";
+    moviePlayer.className = "html5-video-player";
+    const video = document.createElement("video");
+    const captionContainer = document.createElement("div");
+    captionContainer.className = "ytp-caption-window-container";
+    const seg = document.createElement("span");
+    seg.className = "ytp-caption-segment";
+    seg.textContent = "Live caption after transient hiccup.";
+    captionContainer.append(seg);
+    moviePlayer.append(video, captionContainer);
+    document.body.append(moviePlayer);
+
+    let attempts = 0;
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      platformFn: () => "youtube",
+      detectLanguageFn: async () => "en",
+      retryDelaysMs: [20],
+      discoverDetailedFn: async () => ({ track: null, status: "need_cc" }),
+      provider: {
+        translateHtml: async () => {
+          attempts += 1;
+          if (attempts === 1) throw new Error("Temporary network glitch");
+          return "瞬时波动后重试成功的实时字幕。";
+        },
+      },
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    const host = moviePlayer.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const statusEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-status")!;
+    const transEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-translation")!;
+    expect(attempts).toBe(1);
+    expect(statusEl.hidden).toBe(false);
+    expect(statusEl.dataset.status).toBe("retrying");
+
+    await new Promise((resolve) => setTimeout(resolve, 65));
+    expect(attempts).toBe(2);
+    expect(transEl.textContent).toBe("瞬时波动后重试成功的实时字幕。");
+    expect(statusEl.hidden).toBe(true);
+
+    manager.dispose();
+  });
+});
+

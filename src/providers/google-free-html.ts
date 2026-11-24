@@ -355,6 +355,145 @@ function normalizeMicrosoftWireAtoms(translatedWireHtml: string, atomPrefix: str
   return translatedWireHtml.replace(atomRe, '<span data-pl-a="$1"></span>');
 }
 
+const CROSS_BOUNDARY_WRAPPER_PAIRS: ReadonlyArray<readonly [string, string]> = [
+  ["《", "》"],
+  ["〈", "〉"],
+  ["「", "」"],
+  ["『", "』"],
+  ["“", "”"],
+  ["（", "）"],
+];
+
+function isWireTermElement(node: Node): boolean {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  const el = node as Element;
+  return (el.tagName === "SPAN" && el.hasAttribute("data-pl-t")) || /^T\d+$/u.test(el.tagName);
+}
+
+function findEdgeTextNodeInElement(el: Element, fromEnd: boolean): Text | null {
+  const children = Array.from(el.childNodes);
+  const start = fromEnd ? children.length - 1 : 0;
+  const step = fromEnd ? -1 : 1;
+  for (let i = start; i >= 0 && i < children.length; i += step) {
+    const child = children[i]!;
+    if (child.nodeType === Node.TEXT_NODE) {
+      if ((child.textContent ?? "").trim()) return child as Text;
+      continue;
+    }
+    if (child.nodeType === Node.ELEMENT_NODE) {
+      if (isWireTermElement(child)) return null;
+      const nested = findEdgeTextNodeInElement(child as Element, fromEnd);
+      if (nested) return nested;
+      return null;
+    }
+  }
+  return null;
+}
+
+function findEdgeTextNodeInGap(nodes: Node[], fromEnd: boolean): Text | null {
+  const start = fromEnd ? nodes.length - 1 : 0;
+  const step = fromEnd ? -1 : 1;
+  for (let i = start; i >= 0 && i < nodes.length; i += step) {
+    const node = nodes[i]!;
+    if (node.nodeType === Node.TEXT_NODE) {
+      if ((node.textContent ?? "").trim()) return node as Text;
+      continue;
+    }
+    return null;
+  }
+  return null;
+}
+
+function countChar(text: string, ch: string): number {
+  let count = 0;
+  for (const c of text) if (c === ch) count += 1;
+  return count;
+}
+
+function alignCrossBoundaryWrappers(
+  doc: Document,
+  containerPlan: ContainerPlan,
+  wireStructural: ReadonlyArray<{ kind: "atom" | "el"; id: string; el: Element }>,
+  wireGaps: Node[][],
+): void {
+  for (let i = 0; i < containerPlan.structural.length; i += 1) {
+    const expected = containerPlan.structural[i]!;
+    if (expected.kind !== "el") continue;
+    const wireEl = wireStructural[i]!.el;
+    const sourceText = (expected.sourceEl.textContent ?? "").trim();
+    const elText = (wireEl.textContent ?? "").trim();
+    if (!elText) continue;
+
+    const leftGapSlot = containerPlan.gapSlots[i] ?? null;
+    const rightGapSlot = containerPlan.gapSlots[i + 1] ?? null;
+    const leftNodes = wireGaps[i]!;
+    const rightNodes = wireGaps[i + 1]!;
+
+    // Case 1: opening wrapper leaked inside element start while its matching closing wrapper sits
+    // in the immediately following gap (e.g. `架构在<b0>《Why OpenClaw</b0>》中。` or `参见 <b0>“入门</b0>指南”。`).
+    if (leftGapSlot) {
+      const firstText = findEdgeTextNodeInElement(wireEl, false);
+      const rightText = findEdgeTextNodeInGap(rightNodes, false);
+      if (firstText && rightText) {
+        const firstData = firstText.textContent ?? "";
+        const leadWs = firstData.match(/^\s*/u)?.[0] ?? "";
+        const firstCore = firstData.slice(leadWs.length);
+        const rightCore = (rightText.textContent ?? "").trimStart();
+        for (const [open, close] of CROSS_BOUNDARY_WRAPPER_PAIRS) {
+          if (
+            firstCore.startsWith(open)
+            && !sourceText.startsWith(open)
+            && countChar(elText, open) > countChar(elText, close)
+            && countChar(rightCore, close) > countChar(rightCore, open)
+            && elText.slice(open.length).trim().length > 0
+          ) {
+            firstText.textContent = leadWs + firstCore.slice(open.length);
+            const leftLast = leftNodes[leftNodes.length - 1];
+            if (leftLast && leftLast.nodeType === Node.TEXT_NODE) {
+              leftLast.textContent = (leftLast.textContent ?? "").replace(/\s+$/u, "") + open;
+            } else {
+              leftNodes.push(doc.createTextNode(open));
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    // Case 2: opening wrapper sits in the preceding gap while its matching closing wrapper leaked
+    // inside element end (e.g. `详见《<b0>Why OpenClaw》</b0>。` -> `详见《<b0>Why OpenClaw</b0>》。`).
+    if (rightGapSlot) {
+      const updatedElText = (wireEl.textContent ?? "").trim();
+      const lastText = findEdgeTextNodeInElement(wireEl, true);
+      const leftText = findEdgeTextNodeInGap(leftNodes, true);
+      if (lastText && leftText) {
+        const lastData = lastText.textContent ?? "";
+        const trailWs = lastData.match(/\s*$/u)?.[0] ?? "";
+        const lastCore = lastData.slice(0, lastData.length - trailWs.length);
+        const leftCore = (leftText.textContent ?? "").trimEnd();
+        for (const [open, close] of CROSS_BOUNDARY_WRAPPER_PAIRS) {
+          if (
+            lastCore.endsWith(close)
+            && !sourceText.endsWith(close)
+            && countChar(updatedElText, close) > countChar(updatedElText, open)
+            && countChar(leftCore, open) > countChar(leftCore, close)
+            && updatedElText.slice(0, updatedElText.length - close.length).trim().length > 0
+          ) {
+            lastText.textContent = lastCore.slice(0, lastCore.length - close.length) + trailWs;
+            const rightFirst = rightNodes[0];
+            if (rightFirst && rightFirst.nodeType === Node.TEXT_NODE) {
+              rightFirst.textContent = close + (rightFirst.textContent ?? "").replace(/^\s+/u, "");
+            } else {
+              rightNodes.unshift(doc.createTextNode(close));
+            }
+            break;
+          }
+        }
+      }
+    }
+  }
+}
+
 export function unpackGoogleFreeHtml(plan: GoogleFreeHtmlPlan, translatedWireHtml: string): string | undefined {
   if (typeof translatedWireHtml !== "string" || !translatedWireHtml.trim()) return undefined;
   const normalizedWire = plan.dialect === "microsoft"
@@ -424,6 +563,8 @@ export function unpackGoogleFreeHtml(plan: GoogleFreeHtmlPlan, translatedWireHtm
       const actual = wireStructural[i]!;
       if (expected.kind !== actual.kind || expected.id !== actual.id) return false;
     }
+
+    alignCrossBoundaryWrappers(wireDoc, containerPlan, wireStructural, wireGaps);
 
     for (let gapIndex = 0; gapIndex < containerPlan.gapSlots.length; gapIndex += 1) {
       const gapSlot = containerPlan.gapSlots[gapIndex] ?? null;

@@ -4,8 +4,8 @@ interface ProseEdit {node: Text; translated: string; writePolicy?: string}
 const han = /\p{Script=Han}/u;
 const leftTrim = (s: string) => s.replace(/^[ \t\r\n\f]+/u, "");
 const rightTrim = (s: string) => s.replace(/[ \t\r\n\f]+$/u, "");
-const closes = /^[，。；：！？、）》」』】]/u;
-const opens = /[（《「『【]$/u;
+const closes = /^[，。；：！？、）》」』】”]/u;
+const opens = /[（《「『【“]$/u;
 const latinEnd = /[A-Za-z][A-Za-z0-9._+-]*(?: +[0-9]+)?$/u;
 
 /** Empty atoms and line/block boundaries may carry layout without Text nodes. */
@@ -55,7 +55,7 @@ export function normalizeCjkSpacing(root: HTMLElement, edits: ProseEdit[], langu
   };
   const eligible = new Map<Text, ProseEdit>();
   for (const edit of edits) {
-    if (edit.writePolicy || !canCollapseProseWhitespace(edit.node) || !allowsSpacing(edit.node.parentElement)) continue;
+    if ((edit.writePolicy && edit.writePolicy !== "prose-punctuation") || !canCollapseProseWhitespace(edit.node) || !allowsSpacing(edit.node.parentElement)) continue;
     edit.translated = edit.translated
       .replace(/[ \t\r\n\f]+(?=[，。；：！？、）》」』】])/gu, "")
       .replace(/([（《「『【])[ \t\r\n\f]+/gu, "$1");

@@ -89,8 +89,28 @@ function checkFixedTextHtml(sourceHtml: string, translatedHtml: string, restoreA
           }
         }
       }
-      if (!(to.textContent ?? "").trim() && !isOptionalEnglishArticle(from.textContent ?? "")) fail();
-      if (restoreAtoms && to.childElementCount === 0) {
+      const isStandaloneTerminalPunct = /^[ \t\r\n\f]*[.!?][ \t\r\n\f]*$/u.test(from.textContent ?? "");
+      if (!(to.textContent ?? "").trim() && !isOptionalEnglishArticle(from.textContent ?? "")) {
+        if (isStandaloneTerminalPunct) {
+          const allTargetSlots = [...target.body.querySelectorAll("span[data-flt-text-id]")];
+          const myPos = allTargetSlots.indexOf(to);
+          let prevNonEmpty = "";
+          for (let i = myPos - 1; i >= 0; i -= 1) {
+            const txt = (allTargetSlots[i]?.textContent ?? "").trim();
+            if (txt) {
+              prevNonEmpty = txt;
+              break;
+            }
+          }
+          if (!/[.!?。！？][”’」』》〉）)\]]*$/u.test(prevNonEmpty)) {
+            if (restoreAtoms) to.textContent = from.textContent ?? "";
+            else fail();
+          }
+        } else {
+          fail();
+        }
+      }
+      if (restoreAtoms && to.childElementCount === 0 && (to.textContent ?? "").trim()) {
         const original = from.textContent ?? "";
         to.textContent = (original.match(/^\s*/u)?.[0] ?? "") + (to.textContent ?? "").trim() + (original.match(/\s*$/u)?.[0] ?? "");
       }
@@ -110,9 +130,12 @@ function checkFixedTextHtml(sourceHtml: string, translatedHtml: string, restoreA
     }
     return depth === 0;
   };
-  // Check across text slots, since a source parenthesis can span a link or
-  // emphasis node. Incomplete source excerpts do not authorize bracket repair.
-  for (const [opening, closing] of [["(", ")"], ["[", "]"], ["{", "}"], ["【", "】"], ["〔", "〕"], ["⟬", "⟭"]]) {
+  // Check across text slots, since a source parenthesis or CJK title bracket can span a link
+  // or emphasis node. Incomplete source excerpts do not authorize bracket repair.
+  for (const [opening, closing] of [
+    ["(", ")"], ["[", "]"], ["{", "}"], ["【", "】"], ["〔", "〕"], ["⟬", "⟭"],
+    ["《", "》"], ["〈", "〉"], ["「", "」"], ["『", "』"],
+  ]) {
     if (balanced(source.body.textContent ?? "", opening!, closing!) && !balanced(target.body.textContent ?? "", opening!, closing!)) {
       throw new Error("Translation introduced unbalanced brackets; original paragraph retained");
     }

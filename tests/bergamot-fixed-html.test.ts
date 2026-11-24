@@ -414,5 +414,86 @@ describe("Bergamot inline-phrase retry", () => {
     expect(midOpenRestored).toContain("容器镜像默认暴露绑定 (与认证配对——参见 ");
     expect(midOpenRestored).toContain("). ");
   });
+
+  it("recovers Bergamot dropped closing em-dash and trailing predicate (e.g. '— is in') via whole-sentence retry and dash-split slot fallback", () => {
+    const link = (value: string) =>
+      '<a data-flt-link-id="0" href="https://pagelingo.invalid/__link/0">' +
+      `<code>__FLT_LINK_START_0__</code>${slot(1, value)}<code>__FLT_LINK_END_0__</code></a>`;
+
+    const openclawSource =
+      slot(0, "The full architecture case — a trusted gateway, untrusted execution, policy enforced by code, and how one product spans personal and team use — is in ") +
+      link("Why OpenClaw") +
+      slot(2, ".");
+
+    // First pass drops the second '— is in' completely while still being structurally valid HTML.
+    const droppedTailOutput =
+      slot(0, "完整的架构案例——一个可信的网关,不受信任的执行,代码执行策略,以及一个产品如何跨越个人和团队使用") +
+      link("为什么选择OpenClaw") +
+      slot(2, "。");
+
+    const retry = prepareBergamotFixedRetry(openclawSource, droppedTailOutput)!;
+    expect(retry).toBeDefined();
+    expect(retry.html).toBe(
+      "The full architecture case — a trusted gateway, untrusted execution, policy enforced by code, and how one product spans personal and team use — is in «Why OpenClaw».",
+    );
+
+    // Reject a retry candidate that still dropped the closing dash.
+    expect(retry.restore("完整的架构案例——一个可信的网关、不受信任的执行“Why OpenClaw”。")).toBeUndefined();
+
+    // Accept full sentence recovery, reuse first-pass Chinese link label, and write "中。" into slot 2.
+    const recovered = retry.restore(
+      "完整的架构案例——一个可信的网关、不受信任的执行、代码执行的策略,以及一个产品在个人和团队使用中的使用方式——在“Why OpenClaw”中。",
+    )!;
+    expect(recovered).toBeDefined();
+    const restored = restoreFixedHtmlTransport(openclawSource, recovered);
+    expect(restored).toContain("使用方式——在 </span><a");
+    expect(restored).toContain(slot(1, "为什么选择OpenClaw"));
+    expect(restored).toContain(slot(2, "中。"));
+
+    // Do NOT trigger retry when the second dash or a parenthetical rewrite with trailing predicate already survived.
+    const intactDashOutput =
+      slot(0, "完整的架构案例——可信网关和策略——位于") +
+      link("为什么选择OpenClaw") +
+      slot(2, "。");
+    expect(prepareBergamotFixedRetry(openclawSource, intactDashOutput)).toBeUndefined();
+
+    const parenthesizedOutput =
+      slot(0, "完整的架构案例（可信网关和策略）位于") +
+      link("为什么选择OpenClaw") +
+      slot(2, "。");
+    expect(prepareBergamotFixedRetry(openclawSource, parenthesizedOutput)).toBeUndefined();
+
+    // When followed by <code> (outside whole-sentence quote retry), slot fallback splits at the closing dash.
+    const codeSource =
+      slot(0, "The full architecture case — a trusted gateway, untrusted execution, policy enforced by code, and how one product spans personal and team use — is in ") +
+      "<code>__FLT_OPAQUE_0__</code>" +
+      slot(1, ".");
+    const codeDropped =
+      slot(0, "完整的架构案例——一个可信的网关,不受信任的执行,代码执行策略,以及一个产品如何跨越个人和团队使用") +
+      "<code></code>" +
+      slot(1, "。");
+    const fallback = prepareBergamotSlotFallback(
+      codeSource,
+      codeDropped,
+      prepareBergamotFixedHtml,
+      repairBergamotFixedHtml,
+    )!;
+    expect(fallback).toBeDefined();
+    expect(fallback.slotPrepared).toEqual([
+      slot(0, "The full architecture case — a trusted gateway, untrusted execution, policy enforced by code, and how one product spans personal and team use"),
+      slot(0, "is in"),
+      slot(0, "."),
+    ]);
+    const fallbackRecovered = fallback.restore([
+      slot(0, "完整的架构案例——一个可信的网关、不受信任的执行、代码执行的策略以及一个产品在个人和团队使用中的覆盖方式"),
+      slot(0, "在"),
+      slot(0, "。"),
+    ])!;
+    expect(fallbackRecovered).toBeDefined();
+    const fallbackRestored = restoreFixedHtmlTransport(codeSource, fallbackRecovered);
+    expect(fallbackRestored).toContain("覆盖方式——在 </span><code>__FLT_OPAQUE_0__</code>");
+    expect(fallbackRestored).toContain(slot(1, "。"));
+  });
 });
+
 

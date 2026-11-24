@@ -44,14 +44,18 @@ describe("engine-independent original-node transport", () => {
     expect(()=>restoreFixedHtmlTransport(source,raw.replace('<code></code>','<code>额外文字</code>'))).toThrow();
     expect(()=>restoreFixedHtmlTransport(source,raw.replace('。</span>','没有。</span>'))).toThrow();
   });
-  it("rejects introduced or lost parentheses including fullwidth variants before any source write",()=>{
+  it("rejects introduced or lost parentheses and CJK title/corner brackets before any source write",()=>{
     expect(()=>restoreFixedHtmlTransport(wire,translated.replace('使用 ','）、使用 '))).toThrow(/brackets/);
+    expect(()=>restoreFixedHtmlTransport(wire,translated.replace('使用 ','详见《'))).toThrow(/brackets/);
+    expect(()=>restoreFixedHtmlTransport(wire,translated.replace('使用 ','详见「'))).toThrow(/brackets/);
     const source=wire.replace('Use ','Use (').replace(' with ',') with ');
     expect(()=>restoreFixedHtmlTransport(source,translated.replace('使用 ','使用（'))).toThrow(/brackets/);
   });
-  it("checks complete paragraph brackets across original link/text slots",()=>{
+  it("checks complete paragraph brackets including 《》 across original link/text slots",()=>{
     const source=wire.replace('Use ','Use (').replace(' with ',') with '),target=translated.replace('使用 ','使用（').replace(' 并使用 ','）并使用 ');
     expect(()=>restoreFixedHtmlTransport(source,target)).not.toThrow();
+    const titleTarget=translated.replace('使用 ','详见《').replace(' 并使用 ','》并使用 ');
+    expect(()=>restoreFixedHtmlTransport(wire,titleTarget)).not.toThrow();
   });
   it("preserves an incomplete source excerpt without manufacturing a closing bracket",()=>{
     expect(()=>restoreFixedHtmlTransport(wire.replace('Use ','Use ('),translated.replace('使用 ','使用（'))).not.toThrow();

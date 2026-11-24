@@ -723,8 +723,9 @@ export class PageTranslator {
         const segment = serializeRichSegment(root, {
             fixedTextSlots: this.#wholeSentenceContext,
             collapseNewlines: this.#wholeSentenceContext && !preformattedRoot,
+            prosePunctuationSlots: this.#wholeSentenceContext,
         });
-        if (this.#wholeSentenceContext && !segment.textSlots.length) return;
+        if (this.#wholeSentenceContext && !segment.textSlots.some((slot) => slot.writePolicy !== "prose-punctuation")) return;
         if (!segment.html.trim())
             return;
         const lastSlot = segment.textSlots?.at(-1);

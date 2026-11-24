@@ -210,12 +210,56 @@ function fillSlot(slot: Element, text: string): boolean {
   return true;
 }
 
+const SOURCE_DASH_RE = /(?:\u2014+|\u2013+|(?<=\s)--?(?=\s))/gu;
+const TARGET_DASH_RE = /(?:[\u2014\u2015]+|\u2013+|(?<=\s)--?(?=\s)|--)/gu;
+const PAIRED_DASH_HINT_RE = /(?:[\u2014\u2013]|(?<=\s)--?(?=\s))[\s\S]+(?:[\u2014\u2013]|(?<=\s)--?(?=\s))/u;
+const PARENTHETICAL_WITH_TAIL_RE = /[（(][^）)\n]+[）)][\s\p{P}]*\p{Script=Han}/u;
+
+interface DroppedDashSlotInfo {
+  dashStart: number;
+  dashEnd: number;
+}
+
+function inspectDroppedDashSlot(sourceText: string, translatedText: string): DroppedDashSlotInfo | undefined {
+  const sourceDashes = [...sourceText.matchAll(SOURCE_DASH_RE)];
+  if (sourceDashes.length < 2) return;
+  const first = sourceDashes[0]!;
+  const last = sourceDashes.at(-1)!;
+  const head = sourceText.slice(0, first.index!);
+  const tail = sourceText.slice(last.index! + last[0].length);
+  if (!/\p{L}/u.test(head) || !/\p{Script=Latin}/u.test(tail)) return;
+  if (!/\p{Script=Han}/u.test(translatedText)) return;
+  const targetDashes = [...translatedText.matchAll(TARGET_DASH_RE)];
+  if (targetDashes.length >= 2) return;
+  if (targetDashes.length === 0 && PARENTHETICAL_WITH_TAIL_RE.test(translatedText)) return;
+  return { dashStart: last.index!, dashEnd: last.index! + last[0].length };
+}
+
+function findDroppedDashSlots(sourceBody: HTMLElement, targetBody: HTMLElement): Map<string, DroppedDashSlotInfo> {
+  const dropped = new Map<string, DroppedDashSlotInfo>();
+  const targetById = new Map<string, Element>();
+  for (const el of targetBody.querySelectorAll(slotSelector)) {
+    const id = el.getAttribute("data-flt-text-id");
+    if (id !== null && !targetById.has(id)) targetById.set(id, el);
+  }
+  for (const srcEl of sourceBody.querySelectorAll(slotSelector)) {
+    const id = srcEl.getAttribute("data-flt-text-id");
+    if (id === null) continue;
+    const dstEl = targetById.get(id);
+    if (!dstEl) continue;
+    const match = inspectDroppedDashSlot(srcEl.textContent ?? "", dstEl.textContent ?? "");
+    if (match) dropped.set(id, match);
+  }
+  return dropped;
+}
+
 /** Retry bounded inline phrases as sentence text while retaining their original HTML template. */
 export function prepareBergamotFixedRetry(sourceHtml: string, outputHtml: string): FixedRetry | undefined {
   const termRetry = retryAbsorbedTerm(sourceHtml, outputHtml);
   if (termRetry) return termRetry;
+  const hasPairedDash = PAIRED_DASH_HINT_RE.test(sourceHtml);
   if (!sourceHtml.includes("data-flt-text-id=") || !/<(?:a |strong>|b>|em>|i>)/u.test(sourceHtml)
-    || (!sourceHtml.includes("\n") && !/<span data-flt-text-id="\d+">\s*<\/span>/u.test(outputHtml))) return;
+    || (!sourceHtml.includes("\n") && !hasPairedDash && !/<span data-flt-text-id="\d+">\s*<\/span>/u.test(outputHtml))) return;
 
   const parser = getHtmlParser();
   const source = parser.parseFromString(sourceHtml, "text/html");
@@ -233,11 +277,14 @@ export function prepareBergamotFixedRetry(sourceHtml: string, outputHtml: string
     return clone.innerHTML;
   };
   const template = withoutTerms(source.body);
-  try {
-    restoreFixedHtmlTransport(template, withoutTerms(previous.body));
-    return;
-  } catch {
-    // Only retry a paragraph that the original structure checks would reject.
+  const droppedDash = hasPairedDash && findDroppedDashSlots(source.body, previous.body).size > 0;
+  if (!droppedDash) {
+    try {
+      restoreFixedHtmlTransport(template, withoutTerms(previous.body));
+      return;
+    } catch {
+      // Only retry a paragraph that the original structure checks would reject.
+    }
   }
 
   const groups: Slot[][] = [[]];
@@ -311,6 +358,7 @@ export function prepareBergamotFixedRetry(sourceHtml: string, outputHtml: string
           if (!element || !fillSlot(element, text)) return;
         }
       }
+      if (droppedDash && findDroppedDashSlots(source.body, result).size > 0) return;
       const restored = result.innerHTML;
       try {
         restoreFixedHtmlTransport(template, withoutTerms(result));
@@ -557,7 +605,10 @@ export function prepareBergamotSlotFallback(
     return clone.innerHTML;
   };
   const sourceWithoutTerms = withoutTerms(source.body);
-  if (!previous.head.childNodes.length) {
+  const droppedDashSlots = !previous.head.childNodes.length && PAIRED_DASH_HINT_RE.test(sourceHtml)
+    ? findDroppedDashSlots(source.body, previous.body)
+    : new Map<string, DroppedDashSlotInfo>();
+  if (!previous.head.childNodes.length && droppedDashSlots.size === 0) {
     try {
       restoreFixedHtmlTransport(sourceWithoutTerms, withoutTerms(previous.body));
       return;
@@ -602,7 +653,14 @@ export function prepareBergamotSlotFallback(
     const originalText = slot.textContent ?? "";
 
     if (!hasTerms) {
-      const rawPieces = planBracketSafePieces(originalText);
+      const dashSplit = droppedDashSlots.get(id);
+      const rawPieces: SlotPiece[] = dashSplit
+        ? [
+            ...planBracketSafePieces(originalText.slice(0, dashSplit.dashStart).replace(/[ \t\r\n\f]+$/u, "")),
+            { kind: "literal", text: "——" },
+            ...planBracketSafePieces(originalText.slice(dashSplit.dashEnd).replace(/^[ \t\r\n\f]+/u, "")),
+          ]
+        : planBracketSafePieces(originalText);
       const mappedPieces: Array<{ kind: "literal"; text: string } | { kind: "unit"; unitIndex: number }> = [];
       for (const piece of rawPieces) {
         if (piece.kind === "literal") {
@@ -742,6 +800,7 @@ export function prepareBergamotSlotFallback(
       }
 
       if (!anyChanged) return;
+      if (droppedDashSlots.size > 0 && findDroppedDashSlots(source.body, resultBody).size > 0) return;
       try {
         restoreFixedHtmlTransport(sourceWithoutTerms, withoutTerms(resultBody));
         return resultBody.innerHTML;

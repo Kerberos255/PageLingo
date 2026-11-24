@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { isElementEffectivelyHidden, isNestedOwnerBoundary, isEligibleTextNode, isEligibleTextContext, isTranslationDisabled, isProtectedTranslationSubtree, isProtectedFilePathLink } from "./dom-policy";
 import type { SourceTextSlot } from "./fixed-text-render";
+import { classifyProsePunctuation } from "./prose-punctuation";
 import { normalizeGlossaryEntry } from "../shared/settings";
 import { parseHtmlDocument } from "../shared/html-parser";
 
@@ -25,6 +26,7 @@ var INLINE_TAGS = new Set([
 ]);
 var OPAQUE_TAGS = new Set(["CODE", "KBD", "SAMP", "VAR"]);
 var DYNAMIC_TIME_TAGS = new Set(["RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME"]);
+const STANDALONE_TERMINAL_PUNCT_RE = /^[ \t\r\n\f]*[.!?][ \t\r\n\f]*$/u;
 export function escapeHtml(value) {
     return value
         .replaceAll("&", "&amp;")
@@ -57,8 +59,39 @@ function snapshotLink(element, captureStyle = true) {
         } : null,
     };
 }
+function visibleTextAfterNode(node, root, visibilityCache) {
+    const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    walker.currentNode = node;
+    let out = "";
+    for (let next = walker.nextNode(); next; next = walker.nextNode()) {
+        const parent = next.parentElement;
+        if (!parent || parent.closest("[data-flt-generated]")) continue;
+        let skip = false;
+        for (let el = parent; el && el !== root; el = el.parentElement) {
+            if (DYNAMIC_TIME_TAGS.has(el.tagName) || isNestedOwnerBoundary(el, root) || isElementEffectivelyHidden(el, visibilityCache, root)) {
+                skip = true;
+                break;
+            }
+        }
+        if (skip) continue;
+        const data = next.textContent ?? "";
+        if (!data) continue;
+        out += data;
+        if (/\S/u.test(out)) break;
+    }
+    return /\S/u.test(out) ? out : "";
+}
+function isEligibleProsePunctuationSlot(node, rawText, root, textSlots, proseState, visibilityCache) {
+    if (!proseState || !STANDALONE_TERMINAL_PUNCT_RE.test(rawText)) return false;
+    if (!textSlots.some((slot) => slot.writePolicy !== "prose-punctuation")) return false;
+    if (!isEligibleTextContext(node, visibilityCache, root)) return false;
+    if (/(?:^|\n)[ \t]*\d+(?:\.\d+)*$/u.test(proseState.seenText)) return false;
+    const after = visibleTextAfterNode(node, root, visibilityCache);
+    const classified = classifyProsePunctuation(rawText, proseState.seenText, after, { collapsibleWhitespace: true });
+    return Boolean(classified && (classified.symbol === "." || classified.symbol === "!" || classified.symbol === "?"));
+}
 const MID_SENTENCE_NEWLINE_RE = /(?<=\S)[ \t]*\r?\n[ \t]*(?=\S)/gu;
-function serializeChildren(parent, root, links, opaque, textSlots, trace, collapseNewlines = false, visibilityCache = undefined, hiddenElements = undefined) {
+function serializeChildren(parent, root, links, opaque, textSlots, trace, collapseNewlines = false, visibilityCache = undefined, hiddenElements = undefined, proseState = undefined) {
     let html = "";
     for (const node of parent.childNodes) {
         if (node.nodeType === Node.TEXT_NODE) {
@@ -66,6 +99,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
                 const index = opaque.length;
                 opaque.push({tagName: "SPAN", text: node.data});
                 html += `<code>__FLT_OPAQUE_${index}__</code>`;
+                if (proseState) proseState.seenText += node.data;
                 trace?.push({kind: "text", node, source: node.data, slotId: null, editableContext: false});
                 continue;
             }
@@ -79,8 +113,14 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
                     slotId = id;
                     textSlots.push({id, node, parent: node.parentNode, source: node.data});
                     html += `<span data-flt-text-id="${id}">${text}</span>`;
+                } else if (isEligibleProsePunctuationSlot(node, rawText, root, textSlots, proseState, visibilityCache)) {
+                    const id = textSlots.length;
+                    slotId = id;
+                    textSlots.push({id, node, parent: node.parentNode, source: node.data, writePolicy: "prose-punctuation"});
+                    html += `<span data-flt-text-id="${id}">${text}</span>`;
                 } else html += `<span data-flt-fixed="true">${text}</span>`;
             } else html += text;
+            if (proseState) proseState.seenText += rawText;
             if (trace) trace.push({kind: "text", node, source: node.data, slotId, editableContext: isEligibleTextContext(node, visibilityCache, root)});
             continue;
         }
@@ -113,6 +153,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
             const source = element.textContent ?? "";
             opaque.push({tagName: upperTag, text: source});
             html += `<code>__FLT_OPAQUE_${index}__</code>`;
+            if (proseState) proseState.seenText += source;
             trace?.push({kind: "opaque", node: element, source, opaqueIndex: index});
             continue;
         }
@@ -124,13 +165,14 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
         }
         if (!INLINE_TAGS.has(tag)) {
             const children = trace ? [] : undefined;
-            html += serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements);
+            html += serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements, proseState);
             trace?.push({kind: "element", node: element, tagName: tag, inline: false, children});
             continue;
         }
         const lower = tag.toLowerCase();
         if (tag === "BR" || tag === "WBR") {
             html += `<${lower}>`;
+            if (proseState && tag === "BR") proseState.seenText += "\n";
             trace?.push({kind: "boundary", node: element, reason: tag === "BR" ? "br" : "wbr"});
             continue;
         }
@@ -140,7 +182,7 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
             // Legacy providers use link sentinels for recovery. Original-node mode additionally maps
             // each original text node to a fixed slot; link topology is application-owned.
             const children = trace ? [] : undefined;
-            const serializedLabel = serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements);
+            const serializedLabel = serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements, proseState);
             if (textSlots && !serializedLabel.replace(/<[^>]*>/gu, "").trim()) {
                 links.pop();
                 trace?.push({kind: "boundary", node: element, reason: "protected"});
@@ -154,13 +196,15 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
         }
         if (OPAQUE_TAGS.has(tag)) {
             const index = opaque.length;
-            opaque.push({ tagName: tag, text: element.textContent ?? "" });
+            const source = element.textContent ?? "";
+            opaque.push({ tagName: tag, text: source });
             html += `<${lower}>__FLT_OPAQUE_${index}__</${lower}>`;
-            trace?.push({kind: "opaque", node: element, source: element.textContent ?? "", opaqueIndex: index});
+            if (proseState) proseState.seenText += source;
+            trace?.push({kind: "opaque", node: element, source, opaqueIndex: index});
             continue;
         }
         const children = trace ? [] : undefined;
-        const innerHtml = serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements);
+        const innerHtml = serializeChildren(element, root, links, opaque, textSlots, children, collapseNewlines, visibilityCache, hiddenElements, proseState);
         if (textSlots && !innerHtml.replace(/<[^>]*>/gu, "").trim() && !innerHtml.includes("data-flt-") && !innerHtml.includes("__FLT_")) {
             html += innerHtml;
             trace?.push({kind: "boundary", node: element, reason: "protected"});
@@ -214,7 +258,7 @@ function snapshotLinkGaps(root, visibilityCache = undefined) {
     walk(root);
     return gaps;
 }
-export function serializeRichSegment(root, {fixedTextSlots = false, captureOwnership = false, collapseNewlines = false} = {}): RichSegment {
+export function serializeRichSegment(root, {fixedTextSlots = false, captureOwnership = false, collapseNewlines = false, prosePunctuationSlots = false} = {}): RichSegment {
     if (captureOwnership && !fixedTextSlots) throw new Error("Source ownership requires fixed text slots");
     const links = [];
     const opaque = [];
@@ -223,7 +267,8 @@ export function serializeRichSegment(root, {fixedTextSlots = false, captureOwner
     const visibilityCache = new WeakMap();
     visibilityCache.set(root, false);
     const hiddenElements = fixedTextSlots ? new Set<Element>() : undefined;
-    const untrimmed = serializeChildren(root, root, links, opaque, textSlots, parts, collapseNewlines, visibilityCache, hiddenElements);
+    const proseState = fixedTextSlots && prosePunctuationSlots ? { seenText: "" } : undefined;
+    const untrimmed = serializeChildren(root, root, links, opaque, textSlots, parts, collapseNewlines, visibilityCache, hiddenElements, proseState);
     let html = untrimmed.trim();
     if (root.tagName === "A") {
         links.unshift(snapshotLink(root, !fixedTextSlots));

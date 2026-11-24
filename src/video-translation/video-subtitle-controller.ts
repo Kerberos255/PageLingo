@@ -51,8 +51,23 @@ const SUBTITLE_BATCH_SIZE = 12;
 const SUBTITLE_LOOKAHEAD_CUES = 18;
 const MAX_LANGUAGE_SAMPLE_CUES = 10;
 const MAX_LIVE_TRANSLATION_CACHE = 400;
+const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000, 12_000];
+const FATAL_SUBTITLE_ERROR_RE = /数据权限|请填写 API Key|请填写模型名称|必须使用 HTTPS|HTTP (?:401|402|403)\b/u;
 
 export type EffectiveSubtitleMode = "bilingual" | "translation" | "off";
+
+type ActiveTranslationStatus = "none" | "translating" | "retrying";
+
+interface SubtitleTranslationFailure {
+  attempts: number;
+  retryAfter: number;
+  fatal: boolean;
+}
+
+function isFatalSubtitleTranslationError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return FATAL_SUBTITLE_ERROR_RE.test(message);
+}
 
 export interface VideoSubtitleControllerOptions {
   doc?: Document;
@@ -63,6 +78,8 @@ export interface VideoSubtitleControllerOptions {
   detectLanguageFn?: (text: string) => Promise<string | null>;
   platformFn?: () => VideoPlatform;
   aiSubtitleProvider?: AiSubtitleProvider | null;
+  retryDelaysMs?: readonly number[];
+  nowFn?: () => number;
 }
 
 interface AttachedVideoSession {
@@ -77,6 +94,7 @@ interface AttachedVideoSession {
   boxEl: HTMLDivElement;
   sourceEl: HTMLDivElement;
   translationEl: HTMLDivElement;
+  statusEl: HTMLDivElement;
   toggleButton: HTMLButtonElement | null;
   toggleMountKind: "youtube" | "bilibili" | "html5-inline" | "floating" | null;
   overrideMode: EffectiveSubtitleMode | null;
@@ -90,13 +108,15 @@ interface AttachedVideoSession {
   liveSourceText: string;
   liveTranslations: Map<string, string>;
   liveInFlight: Set<string>;
-  liveFailed: Set<string>;
+  liveFailed: Map<string, SubtitleTranslationFailure>;
   boundTextTracks: WeakSet<TextTrack>;
   lastUrl: string;
   lastSrc: string;
   lastCueIndex: number;
   inFlight: Set<number>;
-  failed: Set<number>;
+  failed: Map<number, SubtitleTranslationFailure>;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+  retryTimerAt: number;
   discovering: boolean;
   discoverVersion: number;
   abortController: AbortController;
@@ -389,6 +409,13 @@ function ensureDocumentSubtitleStyle(doc: Document): void {
       background: rgba(200, 55, 55, 0.34) !important;
       color: #fff1f0 !important;
     }
+    @keyframes pagelingo-sub-badge-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.68; }
+    }
+    [data-pagelingo-sub-translating="true"] .pagelingo-sub-toggle-badge {
+      animation: pagelingo-sub-badge-pulse 1.5s ease-in-out 220ms infinite !important;
+    }
   `;
   (doc.head ?? doc.documentElement).append(style);
 }
@@ -460,6 +487,38 @@ function buildShadowStyles(platform: VideoPlatform): string {
       color: var(--pl-sub-trans-color, #ffffff);
       transition: filter 160ms ease, opacity 160ms ease;
     }
+    @keyframes pl-sub-status-in {
+      from { opacity: 0; }
+      to { opacity: 0.78; }
+    }
+    @keyframes pl-sub-dot-pulse {
+      0%, 100% { opacity: 0.95; }
+      50% { opacity: 0.3; }
+    }
+    .pl-sub-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      line-height: 1.3;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      color: rgba(226, 232, 240, 0.85);
+      opacity: 0;
+      animation: pl-sub-status-in 180ms ease 220ms forwards;
+    }
+    .pl-sub-status::before {
+      content: "";
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #f87171;
+      flex: 0 0 auto;
+      animation: pl-sub-dot-pulse 1.3s ease-in-out infinite;
+    }
+    .pl-sub-status[data-status="retrying"]::before {
+      background: #fbbf24;
+    }
     .pl-sub-box[data-learning="true"] {
       pointer-events: auto;
       cursor: pointer;
@@ -522,12 +581,16 @@ function createBrandIconElement(doc: Document): HTMLElement | SVGSVGElement {
   return svg;
 }
 
-function toggleLabelForMode(mode: EffectiveSubtitleMode): { shortText: string; ariaLabel: string; modeAttr: string } {
+function toggleLabelForMode(
+  mode: EffectiveSubtitleMode,
+  translating = false,
+): { shortText: string; ariaLabel: string; modeAttr: string } {
+  const busyHint = translating ? " · 正在翻译字幕…" : "";
   if (mode === "bilingual") {
-    return { shortText: "双语", ariaLabel: "PageLingo 字幕：双语对照（点击切换为仅译文）", modeAttr: "bilingual" };
+    return { shortText: "双语", ariaLabel: `PageLingo 字幕：双语对照${busyHint}（点击切换为仅译文）`, modeAttr: "bilingual" };
   }
   if (mode === "translation") {
-    return { shortText: "译文", ariaLabel: "PageLingo 字幕：仅译文（点击关闭）", modeAttr: "translation" };
+    return { shortText: "译文", ariaLabel: `PageLingo 字幕：仅译文${busyHint}（点击关闭）`, modeAttr: "translation" };
   }
   return { shortText: "", ariaLabel: "PageLingo 字幕：已关闭（点击开启双语）", modeAttr: "off" };
 }
@@ -591,6 +654,8 @@ export class VideoSubtitleManager {
   readonly #detectLanguage: (text: string) => Promise<string | null>;
   readonly #platformFn: () => VideoPlatform;
   readonly #customAiSubtitleProvider: AiSubtitleProvider | null | undefined;
+  readonly #retryDelaysMs: readonly number[];
+  readonly #now: () => number;
 
   #settings: PageLingoSettings = { ...DEFAULT_SETTINGS, videoSubtitle: { ...DEFAULT_SETTINGS.videoSubtitle } };
   #sessions = new Map<VideoMediaElement, AttachedVideoSession>();
@@ -621,6 +686,8 @@ export class VideoSubtitleManager {
     this.#detectLanguage = options.detectLanguageFn ?? defaultDetectLanguage;
     this.#platformFn = options.platformFn ?? (() => detectVideoPlatform(this.#doc.defaultView?.location.hostname ?? location.hostname));
     this.#customAiSubtitleProvider = options.aiSubtitleProvider;
+    this.#retryDelaysMs = options.retryDelaysMs ? [...options.retryDelaysMs] : DEFAULT_RETRY_DELAYS_MS;
+    this.#now = options.nowFn ?? (() => Date.now());
   }
 
   async start(): Promise<void> {
@@ -953,7 +1020,12 @@ export class VideoSubtitleManager {
     translationEl.className = "pl-sub-line pl-sub-translation";
     translationEl.hidden = true;
 
-    boxEl.append(sourceEl, translationEl);
+    const statusEl = this.#doc.createElement("div");
+    statusEl.className = "pl-sub-line pl-sub-status";
+    statusEl.setAttribute("aria-live", "polite");
+    statusEl.hidden = true;
+
+    boxEl.append(sourceEl, translationEl, statusEl);
     wrapEl.append(boxEl);
     shadow.append(styleEl, wrapEl);
     container.append(host);
@@ -970,6 +1042,7 @@ export class VideoSubtitleManager {
       boxEl,
       sourceEl,
       translationEl,
+      statusEl,
       toggleButton: null,
       toggleMountKind: null,
       overrideMode: null,
@@ -983,13 +1056,15 @@ export class VideoSubtitleManager {
       liveSourceText: "",
       liveTranslations: new Map(),
       liveInFlight: new Set(),
-      liveFailed: new Set(),
+      liveFailed: new Map(),
       boundTextTracks: new WeakSet(),
       lastUrl: view.location?.href ?? "",
       lastSrc: readMediaSrc(video),
       lastCueIndex: -2,
       inFlight: new Set(),
-      failed: new Set(),
+      failed: new Map(),
+      retryTimer: null,
+      retryTimerAt: 0,
       discovering: false,
       discoverVersion: 0,
       abortController: new AbortController(),
@@ -1233,13 +1308,26 @@ export class VideoSubtitleManager {
       return;
     }
     const translated = session.liveTranslations.get(session.liveSourceText) ?? "";
-    this.#renderCaptionTexts(session, session.liveSourceText, translated, mode);
+    const status = translated
+      ? "none"
+      : this.#activeTranslationStatusForLive(session, session.liveSourceText);
+    this.#renderCaptionTexts(session, session.liveSourceText, translated, mode, status);
   }
 
   async #translateLiveDomCaption(session: AttachedVideoSession, text: string): Promise<void> {
     const mode = this.#effectiveMode(session);
     if (mode === "off" || !session.liveDomMode || session.track || !text) return;
-    if (session.liveTranslations.has(text) || session.liveInFlight.has(text) || session.liveFailed.has(text)) return;
+    if (session.liveTranslations.has(text) || session.liveInFlight.has(text)) return;
+
+    const existingFailure = session.liveFailed.get(text);
+    const now = this.#now();
+    if (existingFailure && !this.#canAttemptFailedEntry(existingFailure, now)) {
+      if (this.#isRetryPending(existingFailure, now)) {
+        this.#scheduleRetry(session, existingFailure.retryAfter);
+      }
+      if (session.liveSourceText === text) this.#renderLiveDomCaption(session);
+      return;
+    }
 
     const signal = session.abortController.signal;
     if (!session.sourceLanguage) {
@@ -1250,6 +1338,7 @@ export class VideoSubtitleManager {
     const targetLanguage = normalizeDetectedLanguage(this.#settings.targetLanguage) ?? this.#settings.targetLanguage;
     const sourceLanguage = normalizeDetectedLanguage(session.sourceLanguage) ?? session.sourceLanguage ?? "en";
     if (sourceLanguage === targetLanguage) {
+      session.liveFailed.delete(text);
       session.liveTranslations.set(text, text);
       if (session.liveSourceText === text) this.#renderLiveDomCaption(session);
       return;
@@ -1266,6 +1355,8 @@ export class VideoSubtitleManager {
       : undefined;
 
     session.liveInFlight.add(text);
+    this.#updateToggleButtonState(session);
+    if (session.liveSourceText === text) this.#renderLiveDomCaption(session);
     const escaped = escapeHtml(text);
     const protectedResult = protectTerminologyHtml(this.#doc, escaped, terminology) as { html: string; replacements: string[] };
     const termHints = terminologyForText(terminology, text);
@@ -1280,21 +1371,38 @@ export class VideoSubtitleManager {
         signal,
       });
       session.liveInFlight.delete(text);
-      if (signal.aborted || this.#disposed || session.track) return;
+      if (signal.aborted || this.#disposed || session.track) {
+        this.#updateToggleButtonState(session);
+        return;
+      }
       let restored = restoreTerminologyHtml(this.#doc, translatedHtml, protectedResult.replacements) as string;
       restored = applyTerminologyCorrectionsHtml(this.#doc, restored, text, terminology) as string;
       const plain = htmlToPlainText(this.#doc, restored);
       if (plain) {
+        session.liveFailed.delete(text);
         if (session.liveTranslations.size >= MAX_LIVE_TRANSLATION_CACHE) {
           const oldest = session.liveTranslations.keys().next().value;
           if (typeof oldest === "string") session.liveTranslations.delete(oldest);
         }
         session.liveTranslations.set(text, plain);
+      } else {
+        const failure = this.#recordTranslationFailure(session.liveFailed, text, new Error("Empty subtitle translation"));
+        if (this.#isRetryPending(failure, this.#now())) {
+          this.#scheduleRetry(session, failure.retryAfter);
+        }
+      }
+      this.#updateToggleButtonState(session);
+      if (session.liveSourceText === text) this.#renderLiveDomCaption(session);
+    } catch (error) {
+      session.liveInFlight.delete(text);
+      if (!signal.aborted && !this.#disposed && !session.track) {
+        const failure = this.#recordTranslationFailure(session.liveFailed, text, error);
+        if (this.#isRetryPending(failure, this.#now())) {
+          this.#scheduleRetry(session, failure.retryAfter);
+        }
         if (session.liveSourceText === text) this.#renderLiveDomCaption(session);
       }
-    } catch {
-      session.liveInFlight.delete(text);
-      if (!signal.aborted) session.liveFailed.add(text);
+      this.#updateToggleButtonState(session);
     }
   }
 
@@ -1303,6 +1411,7 @@ export class VideoSubtitleManager {
     if (!session) return;
     this.#sessions.delete(video);
 
+    this.#clearRetryTimer(session);
     session.abortController.abort();
     for (const cleanup of session.listeners) cleanup();
     session.listeners = [];
@@ -1460,8 +1569,14 @@ export class VideoSubtitleManager {
           }
           return;
         }
-        const next = nextCycleMode(this.#effectiveMode(session));
+        const prevMode = this.#effectiveMode(session);
+        const next = nextCycleMode(prevMode);
         session.overrideMode = next;
+        if (next === "off") {
+          this.#clearRetryTimer(session);
+        } else if (prevMode === "off") {
+          this.#clearNonFatalFailures(session);
+        }
         this.#updateToggleButtonState(session);
         this.#syncNativeCaptionSuppression(session);
         if (session.track) {
@@ -1489,10 +1604,17 @@ export class VideoSubtitleManager {
   #updateToggleButtonState(session: AttachedVideoSession): void {
     const button = session.toggleButton;
     if (!button) return;
+    const mode = this.#effectiveMode(session);
+    const isTranslating = Boolean(
+      (session.track || session.liveDomMode)
+      && mode !== "off"
+      && (session.inFlight.size > 0 || session.liveInFlight.size > 0),
+    );
     const { shortText, ariaLabel, modeAttr } = (session.track || session.liveDomMode)
-      ? toggleLabelForMode(this.#effectiveMode(session))
+      ? toggleLabelForMode(mode, isTranslating)
       : toggleLabelForUnavailable(session);
     button.dataset.pagelingoSubMode = modeAttr;
+    button.dataset.pagelingoSubTranslating = isTranslating ? "true" : "false";
     button.setAttribute("aria-label", ariaLabel);
     button.title = ariaLabel;
     const badge = button.querySelector<HTMLElement>(".pagelingo-sub-toggle-badge");
@@ -1504,6 +1626,102 @@ export class VideoSubtitleManager {
       labelEl.textContent = shortText;
       labelEl.hidden = !shortText;
     }
+  }
+
+  #clearRetryTimer(session: AttachedVideoSession): void {
+    if (session.retryTimer !== null) {
+      clearTimeout(session.retryTimer);
+      session.retryTimer = null;
+    }
+    session.retryTimerAt = 0;
+  }
+
+  #clearNonFatalFailures(session: AttachedVideoSession): void {
+    for (const [index, fail] of session.failed.entries()) {
+      if (!fail.fatal) session.failed.delete(index);
+    }
+    for (const [text, fail] of session.liveFailed.entries()) {
+      if (!fail.fatal) session.liveFailed.delete(text);
+    }
+  }
+
+  #canAttemptFailedEntry(failure: SubtitleTranslationFailure, now: number): boolean {
+    return !failure.fatal && failure.attempts <= this.#retryDelaysMs.length && now >= failure.retryAfter;
+  }
+
+  #isRetryPending(failure: SubtitleTranslationFailure, now: number): boolean {
+    return !failure.fatal && failure.attempts <= this.#retryDelaysMs.length && now < failure.retryAfter;
+  }
+
+  #recordTranslationFailure<K>(
+    map: Map<K, SubtitleTranslationFailure>,
+    key: K,
+    error: unknown,
+  ): SubtitleTranslationFailure {
+    const fatal = isFatalSubtitleTranslationError(error);
+    const attempts = (map.get(key)?.attempts ?? 0) + 1;
+    const delayMs = !fatal && attempts <= this.#retryDelaysMs.length
+      ? this.#retryDelaysMs[attempts - 1]!
+      : Number.POSITIVE_INFINITY;
+    const failure: SubtitleTranslationFailure = {
+      attempts,
+      retryAfter: Number.isFinite(delayMs) ? this.#now() + delayMs : Number.POSITIVE_INFINITY,
+      fatal,
+    };
+    map.set(key, failure);
+    return failure;
+  }
+
+  #scheduleRetry(session: AttachedVideoSession, retryAfter: number): void {
+    if (
+      !Number.isFinite(retryAfter)
+      || this.#disposed
+      || !this.#sessions.has(session.video)
+      || this.#effectiveMode(session) === "off"
+    ) {
+      return;
+    }
+    if (session.retryTimer !== null && session.retryTimerAt <= retryAfter) return;
+    this.#clearRetryTimer(session);
+    const delayMs = Math.max(0, retryAfter - this.#now());
+    session.retryTimerAt = retryAfter;
+    session.retryTimer = setTimeout(() => {
+      session.retryTimer = null;
+      session.retryTimerAt = 0;
+      if (this.#disposed || !this.#sessions.has(session.video) || this.#effectiveMode(session) === "off") return;
+      if (session.track) {
+        this.#ensureWindowTranslated(session);
+        this.#renderCue(session, true);
+      } else if (session.liveDomMode && session.liveSourceText) {
+        void this.#translateLiveDomCaption(session, session.liveSourceText);
+      }
+    }, delayMs);
+  }
+
+  #activeTranslationStatusForCue(session: AttachedVideoSession, index: number): ActiveTranslationStatus {
+    if (session.inFlight.has(index)) return "translating";
+    const failure = session.failed.get(index);
+    if (failure && this.#isRetryPending(failure, this.#now())) return "retrying";
+    return "none";
+  }
+
+  #activeTranslationStatusForLive(session: AttachedVideoSession, text: string): ActiveTranslationStatus {
+    if (session.liveInFlight.has(text)) return "translating";
+    const failure = session.liveFailed.get(text);
+    if (failure && this.#isRetryPending(failure, this.#now())) return "retrying";
+    return "none";
+  }
+
+  #renderStatusIndicator(session: AttachedVideoSession, status: ActiveTranslationStatus): void {
+    if (status === "none") {
+      session.statusEl.hidden = true;
+      session.statusEl.textContent = "";
+      delete session.statusEl.dataset.status;
+      return;
+    }
+    session.statusEl.hidden = false;
+    session.statusEl.dataset.status = status;
+    session.statusEl.textContent = status === "retrying" ? "重试翻译中…" : "翻译中…";
   }
 
   #syncNativeCaptionSuppression(session: AttachedVideoSession): void {
@@ -1528,6 +1746,7 @@ export class VideoSubtitleManager {
   }
 
   #resetSessionTranslations(session: AttachedVideoSession): void {
+    this.#clearRetryTimer(session);
     session.abortController.abort();
     session.abortController = new AbortController();
     session.inFlight.clear();
@@ -1541,6 +1760,7 @@ export class VideoSubtitleManager {
       }
     }
     session.lastCueIndex = -2;
+    this.#updateToggleButtonState(session);
     if (session.track) {
       this.#renderCue(session, true);
     } else if (session.liveDomMode) {
@@ -1554,6 +1774,7 @@ export class VideoSubtitleManager {
     track: DiscoveredSubtitleTrack,
     version: number,
   ): Promise<void> {
+    this.#clearRetryTimer(session);
     session.track = track;
     session.discoveryStatus = "ready";
     session.aiReady = false;
@@ -1634,6 +1855,7 @@ export class VideoSubtitleManager {
     const version = session.discoverVersion;
 
     if (forceReset) {
+      this.#clearRetryTimer(session);
       session.abortController.abort();
       session.abortController = new AbortController();
       this.#restoreNativeCaptions(session);
@@ -1732,12 +1954,26 @@ export class VideoSubtitleManager {
       if (anchor < 0) anchor = 0;
     }
 
+    const now = this.#now();
     const windowEnd = Math.min(session.cues.length, anchor + SUBTITLE_LOOKAHEAD_CUES);
     const pendingIndices: number[] = [];
+    let earliestRetryAt = Number.POSITIVE_INFINITY;
     for (let i = anchor; i < windowEnd && pendingIndices.length < SUBTITLE_BATCH_SIZE; i += 1) {
       const cue = session.cues[i]!;
-      if (typeof cue.translatedText === "string" || session.inFlight.has(i) || session.failed.has(i)) continue;
+      if (typeof cue.translatedText === "string" || session.inFlight.has(i)) continue;
+      const failure = session.failed.get(i);
+      if (failure) {
+        if (!this.#canAttemptFailedEntry(failure, now)) {
+          if (this.#isRetryPending(failure, now) && failure.retryAfter < earliestRetryAt) {
+            earliestRetryAt = failure.retryAfter;
+          }
+          continue;
+        }
+      }
       pendingIndices.push(i);
+    }
+    if (Number.isFinite(earliestRetryAt)) {
+      this.#scheduleRetry(session, earliestRetryAt);
     }
     if (pendingIndices.length === 0) return;
 
@@ -1752,10 +1988,16 @@ export class VideoSubtitleManager {
       : undefined;
     const signal = session.abortController.signal;
 
+    // Mark all batch items in flight first so the status indicator & toggle badge update once cleanly.
+    for (const index of pendingIndices) {
+      session.inFlight.add(index);
+    }
+    this.#updateToggleButtonState(session);
+    this.#renderCue(session, true);
+
     // Dispatch synchronously in one tick so RuntimeMessageProvider batches them together.
     for (const index of pendingIndices) {
       const cue = session.cues[index]!;
-      session.inFlight.add(index);
       const escaped = escapeHtml(cue.text);
       const protectedResult = protectTerminologyHtml(this.#doc, escaped, terminology) as { html: string; replacements: string[] };
       const termHints = terminologyForText(terminology, cue.text);
@@ -1769,17 +2011,34 @@ export class VideoSubtitleManager {
         signal,
       }).then((translatedHtml) => {
         session.inFlight.delete(index);
-        if (signal.aborted || this.#disposed) return;
+        if (signal.aborted || this.#disposed) {
+          this.#updateToggleButtonState(session);
+          return;
+        }
         let restored = restoreTerminologyHtml(this.#doc, translatedHtml, protectedResult.replacements) as string;
         restored = applyTerminologyCorrectionsHtml(this.#doc, restored, cue.text, terminology) as string;
         const plain = htmlToPlainText(this.#doc, restored);
         if (plain) {
+          session.failed.delete(index);
           cue.translatedText = plain;
+        } else {
+          const failure = this.#recordTranslationFailure(session.failed, index, new Error("Empty subtitle translation"));
+          if (this.#isRetryPending(failure, this.#now())) {
+            this.#scheduleRetry(session, failure.retryAfter);
+          }
+        }
+        this.#updateToggleButtonState(session);
+        this.#renderCue(session, true);
+      }).catch((error) => {
+        session.inFlight.delete(index);
+        if (!signal.aborted && !this.#disposed) {
+          const failure = this.#recordTranslationFailure(session.failed, index, error);
+          if (this.#isRetryPending(failure, this.#now())) {
+            this.#scheduleRetry(session, failure.retryAfter);
+          }
           this.#renderCue(session, true);
         }
-      }).catch(() => {
-        session.inFlight.delete(index);
-        if (!signal.aborted) session.failed.add(index);
+        this.#updateToggleButtonState(session);
       });
     }
   }
@@ -1814,7 +2073,9 @@ export class VideoSubtitleManager {
     }
 
     const cue = session.cues[index]!;
-    this.#renderCaptionTexts(session, cue.text, cue.translatedText ?? "", mode);
+    const translated = cue.translatedText ?? "";
+    const status = translated ? "none" : this.#activeTranslationStatusForCue(session, index);
+    this.#renderCaptionTexts(session, cue.text, translated, mode, status);
   }
 
   #renderCaptionTexts(
@@ -1822,8 +2083,10 @@ export class VideoSubtitleManager {
     sourceText: string,
     translatedText: string,
     mode: Exclude<EffectiveSubtitleMode, "off">,
+    status: ActiveTranslationStatus = "none",
   ): void {
     const sameText = Boolean(translatedText && translatedText.trim() === sourceText.trim());
+    const activeStatus = translatedText ? "none" : status;
 
     if (mode === "translation") {
       session.sourceEl.hidden = true;
@@ -1832,6 +2095,7 @@ export class VideoSubtitleManager {
       // as an unobtrusive fallback instead of flashing blank.
       session.translationEl.hidden = false;
       session.translationEl.textContent = translatedText || sourceText;
+      this.#renderStatusIndicator(session, activeStatus);
       session.boxEl.dataset.learning = "false";
       session.boxEl.dataset.revealed = "false";
       session.wrapEl.hidden = false;
@@ -1844,6 +2108,7 @@ export class VideoSubtitleManager {
       session.sourceEl.textContent = "";
       session.translationEl.hidden = false;
       session.translationEl.textContent = translatedText;
+      this.#renderStatusIndicator(session, "none");
       session.boxEl.dataset.learning = "false";
       session.boxEl.dataset.revealed = "false";
       session.wrapEl.hidden = false;
@@ -1855,12 +2120,14 @@ export class VideoSubtitleManager {
     if (translatedText) {
       session.translationEl.hidden = false;
       session.translationEl.textContent = translatedText;
+      this.#renderStatusIndicator(session, "none");
       const learning = this.#settings.videoSubtitle.learningMode;
       session.boxEl.dataset.learning = learning ? "true" : "false";
       if (!learning) session.boxEl.dataset.revealed = "false";
     } else {
       session.translationEl.hidden = true;
       session.translationEl.textContent = "";
+      this.#renderStatusIndicator(session, activeStatus);
       session.boxEl.dataset.learning = "false";
       session.boxEl.dataset.revealed = "false";
     }
