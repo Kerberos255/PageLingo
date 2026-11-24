@@ -7,7 +7,7 @@ import { sendFrameMessage } from "../shared/main-frame-message";
 const IMAGE_MENU_ID = "pagelingo-translate-image";
 const PAGE_MENU_ID = "pagelingo-translate-page";
 const SELECTION_MENU_ID = "pagelingo-translate-selection";
-const RETRANSLATE_SEGMENT_MENU_ID = "pagelingo-retranslate-segment";
+const LEGACY_RETRANSLATE_SEGMENT_MENU_ID = "pagelingo-retranslate-segment";
 const OPEN_PDF_MENU_ID = "pagelingo-open-pdf-reader";
 
 interface ImageRuntimeMessage {
@@ -323,10 +323,13 @@ async function syncContextMenu(): Promise<void> {
     removeContextMenu(IMAGE_MENU_ID),
     removeContextMenu(PAGE_MENU_ID),
     removeContextMenu(SELECTION_MENU_ID),
-    removeContextMenu(RETRANSLATE_SEGMENT_MENU_ID),
+    removeContextMenu(LEGACY_RETRANSLATE_SEGMENT_MENU_ID),
     removeContextMenu(OPEN_PDF_MENU_ID),
   ]);
   const settings = await loadSettings();
+  // Firefox folds an extension's context menu into a submenu whenever >=2 items are
+  // simultaneously visible in the same context. Keep page, selection, and image actions
+  // disjoint so each stays directly clickable in the top-level menu before and after translation.
   browser.contextMenus.create({
     id: SELECTION_MENU_ID,
     title: "PageLingo · 翻译所选内容",
@@ -335,13 +338,7 @@ async function syncContextMenu(): Promise<void> {
   browser.contextMenus.create({
     id: PAGE_MENU_ID,
     title: "PageLingo · 翻译文字",
-    contexts: ["page", "selection", "link"],
-  });
-  browser.contextMenus.create({
-    id: RETRANSLATE_SEGMENT_MENU_ID,
-    title: "PageLingo · 重新翻译此段",
-    contexts: ["page", "selection", "link"],
-    visible: false,
+    contexts: ["page", "link"],
   });
   browser.contextMenus.create({
     id: OPEN_PDF_MENU_ID,
@@ -376,12 +373,9 @@ async function refreshContextMenuTitles(
     const state = await sendContextMessage(tab.id, info, {
       type: "get-context-menu-state",
       srcUrl: typeof info.srcUrl === "string" ? info.srcUrl : undefined,
-    }) as { pageTranslated?: boolean; imageTranslated?: boolean; canRetranslateSegment?: boolean } | undefined;
+    }) as { pageTranslated?: boolean; imageTranslated?: boolean } | undefined;
     await browser.contextMenus.update(PAGE_MENU_ID, {
       title: state?.pageTranslated ? "PageLingo · 显示原文" : "PageLingo · 翻译文字",
-    });
-    await browser.contextMenus.update(RETRANSLATE_SEGMENT_MENU_ID, {
-      visible: Boolean(state?.canRetranslateSegment),
     });
     if (typeof info.srcUrl === "string") {
       try {
@@ -395,7 +389,7 @@ async function refreshContextMenuTitles(
     if (typeof browser.contextMenus.refresh === "function") await browser.contextMenus.refresh();
   } catch {
     try {
-      await browser.contextMenus.update(RETRANSLATE_SEGMENT_MENU_ID, { visible: false });
+      await browser.contextMenus.update(PAGE_MENU_ID, { title: "PageLingo · 翻译文字" });
       if (typeof browser.contextMenus.refresh === "function") await browser.contextMenus.refresh();
     } catch {
       // Ignore if menu is not ready yet.
@@ -425,10 +419,6 @@ export function initializeImageTranslation(): void {
     }
     if (info.menuItemId === PAGE_MENU_ID) {
       void sendFrameMessage(tab.id, info.frameId ?? 0, { type: "toggle-page-translation" }).catch(() => undefined);
-      return;
-    }
-    if (info.menuItemId === RETRANSLATE_SEGMENT_MENU_ID) {
-      void sendFrameMessage(tab.id, info.frameId ?? 0, { type: "retranslate-segment" }).catch(() => undefined);
     }
   });
   browser.contextMenus.onShown?.addListener((info, tab) => {
