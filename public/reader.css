@@ -129,7 +129,45 @@ body {
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--text);
-  font-size: 13px;
+  font-size: 12.5px;
+  border-radius: 6px;
+}
+
+.mini-btn.accent {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+  padding: 0 10px;
+}
+
+.mini-btn.accent:hover:not(:disabled) { filter: brightness(0.93); }
+.mini-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.reader-view-switch {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  margin-right: 4px;
+}
+
+.reader-view-switch button {
+  min-height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.reader-view-switch button.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 660;
 }
 
 .reader-statusbar {
@@ -149,6 +187,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .reader-stage {
@@ -249,13 +288,26 @@ body {
   font-size: 12.5px;
 }
 
-/* PDF Side-by-side Synchronized Workspace */
+/* PDF Side-by-side & In-place Overlay Workspace */
 .pdf-workspace {
   flex: 1;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
   overflow: hidden;
+  position: relative;
+}
+
+.pdf-workspace.is-overlay-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pdf-workspace.is-overlay-mode .pdf-text-pane {
+  display: none;
+}
+
+.pdf-workspace.is-overlay-mode .pdf-canvas-pane {
+  border-right: 0;
 }
 
 .pdf-canvas-pane {
@@ -283,6 +335,19 @@ body {
   display: block;
 }
 
+.pdf-overlay-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  display: none;
+}
+
+.pdf-workspace.is-overlay-mode .pdf-overlay-canvas.has-overlay {
+  display: block;
+}
+
 .pdf-page-badge {
   position: absolute;
   top: 8px;
@@ -293,11 +358,13 @@ body {
   color: #ffffff;
   font-size: 11px;
   pointer-events: none;
+  z-index: 3;
 }
 
 .pdf-hit-layer {
   position: absolute;
   inset: 0;
+  z-index: 2;
 }
 
 .pdf-hit-box {
@@ -316,6 +383,51 @@ body {
 .pdf-hit-box.is-active {
   background: rgba(182, 75, 51, 0.14);
   border-color: rgba(182, 75, 51, 0.78);
+}
+
+.pdf-overlay-source-card {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 30;
+  width: min(460px, calc(100vw - 44px));
+  max-height: 44vh;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.22);
+  font-size: 13px;
+  line-height: 1.58;
+}
+
+.pdf-overlay-source-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.pdf-overlay-source-close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.pdf-overlay-source-close:hover {
+  background: var(--panel-soft);
+  color: var(--text);
 }
 
 .pdf-text-pane {
@@ -337,12 +449,59 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   margin-bottom: 12px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--line);
   font-size: 12px;
   font-weight: 650;
   color: var(--muted);
+}
+
+.pdf-page-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-page-ocr-btn {
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pdf-page-ocr-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pdf-page-ocr-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pdf-scanned-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--panel-soft) 65%, var(--bg));
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.pdf-scanned-card p {
+  margin: 0;
 }
 
 .pdf-block-wrap {
@@ -383,8 +542,10 @@ body {
   line-height: 1.65;
 }
 
-/* Protected Formula Blocks & Inline Math */
-.reader-formula {
+/* Protected Formula, Dense Table & Figure Snapshots */
+.reader-formula,
+.reader-table-snapshot,
+.reader-figure-snapshot {
   margin: 10px 0;
   padding: 11px 16px;
   border-radius: 9px;
@@ -398,13 +559,26 @@ body {
   user-select: text;
 }
 
-.reader-formula.is-snapshot {
-  padding: 8px 12px;
+.reader-formula.is-snapshot,
+.reader-table-snapshot,
+.reader-figure-snapshot {
+  padding: 8px 10px;
   background: #ffffff;
   border-color: var(--line);
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
+  gap: 4px;
+}
+
+.reader-snapshot-tag {
+  align-self: flex-start;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: #64748b;
+  letter-spacing: 0.02em;
 }
 
 .reader-formula-canvas {
@@ -414,12 +588,95 @@ body {
 }
 
 @media (prefers-color-scheme: dark) {
-  .reader-formula.is-snapshot {
+  .reader-formula.is-snapshot,
+  .reader-table-snapshot,
+  .reader-figure-snapshot {
     background: #1c1b19;
   }
-  .reader-formula-canvas {
+  .reader-formula-canvas.is-invertible {
     filter: invert(0.91) hue-rotate(180deg);
   }
+}
+
+/* Structured Translatable HTML Tables inside PDF Pane */
+.pdf-html-table-wrap {
+  overflow-x: auto;
+  margin: 6px 0;
+}
+
+.pdf-html-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  line-height: 1.52;
+}
+
+.pdf-html-table th,
+.pdf-html-table td {
+  border: 1px solid var(--line);
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.pdf-html-table th {
+  background: var(--panel-soft);
+  font-weight: 650;
+}
+
+.flt-translation {
+  display: block !important;
+  margin-block-start: 0.3em !important;
+  font: inherit !important;
+  line-height: inherit !important;
+}
+
+.flt-translation a {
+  display: inline !important;
+}
+
+.flt-source-hidden {
+  display: none !important;
+}
+
+.flt-source-content-hidden {
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+
+.flt-source-content-hidden > :not(.flt-translation) {
+  display: none !important;
+}
+
+.flt-source-content-hidden > .flt-translation {
+  margin-block-start: 0 !important;
+  font-size: var(--pagelingo-source-font-size) !important;
+  line-height: var(--pagelingo-source-line-height) !important;
+}
+
+.flt-source-list-hidden > :not(.flt-translation) {
+  display: none !important;
+}
+
+.flt-source-list-hidden > .flt-translation {
+  display: inline !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: var(--pagelingo-source-font-size) !important;
+  line-height: var(--pagelingo-source-line-height) !important;
+  vertical-align: baseline !important;
+}
+
+.pdf-html-table th > .flt-translation,
+.pdf-html-table td > .flt-translation {
+  display: block !important;
+  margin-block-start: 0.32em !important;
+}
+
+.pdf-html-table .pdf-table-cell {
+  margin: 0;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .reader-formula math {

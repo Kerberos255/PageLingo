@@ -1,6 +1,14 @@
-import { getImageOcrBundle, getImageOcrStatus, deleteImageOcrModels, type ImageOcrBundle } from "./ocr-cache";
+import {
+  getDocLayoutBundle,
+  getImageOcrBundle,
+  getImageOcrStatus,
+  deleteImageOcrModels,
+  type DocLayoutBundle,
+  type ImageOcrBundle,
+} from "./ocr-cache";
 import { mergeOcrRegions, type OcrRegion } from "./ocr-layout";
 import { MAX_OCR_IMAGE_SIDE } from "./ocr-models";
+import { buildPdfBlocksFromOcr, type LayoutMaskPlan } from "../reader/pdf-ocr-layout";
 import { loadSettings } from "../shared/settings";
 import { sendFrameMessage } from "../shared/main-frame-message";
 
@@ -15,6 +23,9 @@ interface ImageRuntimeMessage {
   url?: unknown;
   width?: unknown;
   height?: unknown;
+  pageWidth?: unknown;
+  pageHeight?: unknown;
+  pageNumber?: unknown;
   pixels?: unknown;
   requestId?: unknown;
   profileId?: unknown;
@@ -33,16 +44,27 @@ interface WorkerResultMessage {
   regions: OcrRegion[];
 }
 
+interface WorkerDocumentResultMessage {
+  type: "document-result";
+  id: number;
+  plan: LayoutMaskPlan;
+  regions: OcrRegion[];
+}
+
 interface WorkerErrorMessage {
   type: "error";
   id: number;
   error: string;
 }
 
-type WorkerMessage = WorkerProgressMessage | WorkerResultMessage | WorkerErrorMessage;
+type WorkerMessage =
+  | WorkerProgressMessage
+  | WorkerResultMessage
+  | WorkerDocumentResultMessage
+  | WorkerErrorMessage;
 
 interface PendingOcr {
-  resolve: (regions: OcrRegion[]) => void;
+  resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   progress: (status: string, progress?: number) => void;
   timeoutId: ReturnType<typeof setTimeout>;
@@ -57,6 +79,7 @@ class ImageOcrWorkerClient {
   private worker: Worker | null = null;
   private nextId = 1;
   private initializedProfileId = "";
+  private initializedLayoutPreset = "";
   private readonly pending = new Map<number, PendingOcr>();
 
   private ensureWorker(): Worker {
@@ -74,7 +97,12 @@ class ImageOcrWorkerClient {
       globalThis.clearTimeout(pending.timeoutId);
       if (message.type === "error") {
         this.initializedProfileId = "";
+        this.initializedLayoutPreset = "";
         pending.reject(new Error(message.error));
+        return;
+      }
+      if (message.type === "document-result") {
+        pending.resolve({ plan: message.plan, regions: message.regions });
         return;
       }
       pending.resolve(message.regions);
@@ -87,6 +115,7 @@ class ImageOcrWorkerClient {
       }
       this.pending.clear();
       this.initializedProfileId = "";
+      this.initializedLayoutPreset = "";
       this.worker?.terminate();
       this.worker = null;
     });
@@ -110,16 +139,23 @@ class ImageOcrWorkerClient {
         if (!pending) return;
         this.pending.delete(id);
         this.initializedProfileId = "";
+        this.initializedLayoutPreset = "";
         pending.reject(new Error("OCR 处理超时，请重新尝试"));
         this.worker?.terminate();
         this.worker = null;
       }, 120_000);
-      this.pending.set(id, { resolve, reject, progress, timeoutId });
+      this.pending.set(id, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        progress,
+        timeoutId,
+      });
       const message = {
         type: "recognize",
         id,
         profileId: bundle.profile.id,
         modelPreset: bundle.profile.modelPreset,
+        dictionaryFormat: bundle.profile.dictionaryFormat,
         width,
         height,
         pixels,
@@ -134,8 +170,64 @@ class ImageOcrWorkerClient {
     });
   }
 
+  recognizeDocumentPage(
+    width: number,
+    height: number,
+    pixels: ArrayBuffer,
+    ocrBundle: ImageOcrBundle,
+    layoutBundle: DocLayoutBundle,
+    progress: (status: string, progress?: number) => void,
+  ): Promise<{ plan: LayoutMaskPlan; regions: OcrRegion[] }> {
+    const worker = this.ensureWorker();
+    const id = this.nextId++;
+    const initOcr = this.initializedProfileId !== ocrBundle.profile.id;
+    const initLayout = this.initializedLayoutPreset !== layoutBundle.asset.preset;
+    return new Promise((resolve, reject) => {
+      const timeoutId = globalThis.setTimeout(() => {
+        const pending = this.pending.get(id);
+        if (!pending) return;
+        this.pending.delete(id);
+        this.initializedProfileId = "";
+        this.initializedLayoutPreset = "";
+        pending.reject(new Error("扫描页 OCR 处理超时，请重试"));
+        this.worker?.terminate();
+        this.worker = null;
+      }, 180_000);
+      this.pending.set(id, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        progress,
+        timeoutId,
+      });
+      const message = {
+        type: "recognize-document-page",
+        id,
+        profileId: ocrBundle.profile.id,
+        modelPreset: ocrBundle.profile.modelPreset,
+        dictionaryFormat: ocrBundle.profile.dictionaryFormat,
+        layoutPreset: layoutBundle.asset.preset,
+        width,
+        height,
+        pixels,
+        detectionModel: initOcr ? ocrBundle.detectionModel.slice(0) : undefined,
+        recognitionModel: initOcr ? ocrBundle.recognitionModel.slice(0) : undefined,
+        dictionary: initOcr ? ocrBundle.dictionary : undefined,
+        layoutModel: initLayout ? layoutBundle.model.slice(0) : undefined,
+      };
+      const transfer: Transferable[] = [pixels];
+      if (message.detectionModel && message.recognitionModel) {
+        transfer.push(message.detectionModel, message.recognitionModel);
+      }
+      if (message.layoutModel) transfer.push(message.layoutModel);
+      worker.postMessage(message, transfer);
+      if (initOcr) this.initializedProfileId = ocrBundle.profile.id;
+      if (initLayout) this.initializedLayoutPreset = layoutBundle.asset.preset;
+    });
+  }
+
   reset(): void {
     this.initializedProfileId = "";
+    this.initializedLayoutPreset = "";
     this.worker?.postMessage({ type: "reset" });
   }
 }
@@ -147,13 +239,14 @@ async function sendProgress(
   status: string,
   requestId?: string,
   progress?: number,
+  messageType = "image-translation-progress",
 ): Promise<void> {
   const tabId = sender.tab?.id;
   if (!tabId) return;
   try {
     await browser.tabs.sendMessage(
       tabId,
-      { type: "image-translation-progress", status, requestId, progress },
+      { type: messageType, status, requestId, progress },
       { frameId: sender.frameId ?? 0 },
     );
   } catch {
@@ -301,6 +394,52 @@ export async function handleImageRuntimeMessage(
           regions.filter((region) => region.confidence >= 0.25),
           { pixels: pixelSnapshot, width, height },
         ),
+      };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  if (message.type === "recognize-pdf-page") {
+    const width = typeof message.width === "number" ? Math.round(message.width) : 0;
+    const height = typeof message.height === "number" ? Math.round(message.height) : 0;
+    const pageWidth = typeof message.pageWidth === "number" && message.pageWidth > 0 ? message.pageWidth : width;
+    const pageHeight = typeof message.pageHeight === "number" && message.pageHeight > 0 ? message.pageHeight : height;
+    const pageNumber = typeof message.pageNumber === "number" && message.pageNumber >= 1 ? Math.round(message.pageNumber) : 1;
+    const requestId = typeof message.requestId === "string" ? message.requestId : undefined;
+    if (width <= 0 || height <= 0 || !(message.pixels instanceof ArrayBuffer)) {
+      return { ok: false, error: "无效的 PDF 页面像素数据" };
+    }
+    try {
+      const settings = await loadSettings();
+      const profileId = typeof message.profileId === "string" && message.profileId.trim()
+        ? message.profileId.trim()
+        : settings.imageOcrProfileId;
+      const [layoutBundle, ocrBundle] = await Promise.all([
+        getDocLayoutBundle((status) => {
+          void sendProgress(sender, status, requestId, 0.08, "pdf-ocr-progress");
+        }),
+        getImageOcrBundle(profileId, (status) => {
+          void sendProgress(sender, status, requestId, 0.16, "pdf-ocr-progress");
+        }),
+      ]);
+      await sendProgress(sender, "正在分析版面并保护公式/图表…", requestId, 0.24, "pdf-ocr-progress");
+      const { plan, regions } = await ocrWorker.recognizeDocumentPage(
+        width,
+        height,
+        message.pixels,
+        ocrBundle,
+        layoutBundle,
+        (status, progress) => {
+          void sendProgress(sender, status, requestId, progress, "pdf-ocr-progress");
+        },
+      );
+      const blocks = buildPdfBlocksFromOcr(plan, regions, width, height, pageWidth, pageHeight, pageNumber);
+      return {
+        ok: true,
+        blocks,
+        visualCount: plan.visualBlocks.length,
+        ocrLineCount: regions.length,
       };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };

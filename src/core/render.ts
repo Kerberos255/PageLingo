@@ -775,7 +775,16 @@ export function mountTranslation(
     const insideProse = insideSourceContainer
         && ["P", "BLOCKQUOTE", "FIGCAPTION", "DT", "DD", "H1", "H2", "H3", "H4", "H5", "H6"].includes(root.tagName)
         && (root.childElementCount === 0 || !root.querySelector("p,li,blockquote,table,ul,ol,dl,h1,h2,h3,h4,h5,h6,button,input,select,textarea"));
-    if (insideProse || ["LI", "TD", "TH"].includes(root.tagName)) {
+    const mountInside = insideProse || ["LI", "TD", "TH"].includes(root.tagName);
+    if (["TD", "TH"].includes(root.tagName)) {
+        node.style.setProperty("display", "block", "important");
+    }
+    if (mountInside) {
+        // Mounted inside root's own padding box, so copying host inline padding/margin would double-indent it.
+        node.style.removeProperty("margin-inline-start");
+        node.style.removeProperty("margin-inline-end");
+        node.style.removeProperty("padding-inline-start");
+        node.style.removeProperty("padding-inline-end");
         if (bilingualOrder === "translation-top") root.prepend(node);
         else root.append(node);
     }

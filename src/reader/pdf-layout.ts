@@ -41,7 +41,14 @@ export interface PdfInlineSegment {
   parts?: PdfMathPart[];
 }
 
-export type PdfBlockKind = "heading" | "paragraph" | "list-item" | "formula";
+export type PdfBlockKind = "heading" | "paragraph" | "list-item" | "formula" | "table" | "figure";
+
+export interface PdfTableCellBox {
+  rowIndex: number;
+  colIndex: number;
+  box: PdfPageBox;
+  fontSize: number;
+}
 
 export interface PdfLayoutBlock {
   id: string;
@@ -53,6 +60,16 @@ export interface PdfLayoutBlock {
   plainText: string;
   box: PdfPageBox;
   fontSize: number;
+  /** Per-line boxes inside this block for accurate in-place overlay erasure & sizing. */
+  lineBoxes?: PdfPageBox[];
+  /** For kind === "table": snapshot crops the HiDPI canvas; html renders a translatable <table>. */
+  tableMode?: "snapshot" | "html";
+  /** For kind === "table" && tableMode === "html": [row][col][inline segments]. */
+  tableRows?: PdfInlineSegment[][][];
+  tableHasHeader?: boolean;
+  /** Cell coordinates in PDF page space for in-place overlay translation of HTML tables. */
+  tableCellBoxes?: PdfTableCellBox[];
+  source?: "text-layer" | "ocr";
 }
 
 interface PositionedSpan {
@@ -67,6 +84,7 @@ interface PositionedSpan {
   realFontName: string;
   isMathFont: boolean;
   isBoldFont: boolean;
+  isRotatedVertical?: boolean;
   baselineY: number;
   scriptRole?: "normal" | "sup" | "sub";
 }
@@ -80,6 +98,7 @@ interface ReconstructedLine {
   baselineY: number;
   fontSize: number;
   isBold: boolean;
+  hasRotatedSpan?: boolean;
   column: "full" | "left" | "right";
   segments: PdfInlineSegment[];
   plainText: string;
@@ -87,6 +106,11 @@ interface ReconstructedLine {
   proseWordCount: number;
   isDisplayFormula: boolean;
   isMathFragment: boolean;
+  isTableBlock?: boolean;
+  tableMode?: "snapshot" | "html";
+  tableRows?: PdfInlineSegment[][][];
+  tableHasHeader?: boolean;
+  tableCellBoxes?: PdfTableCellBox[];
 }
 
 interface TwoColumnGutter {
@@ -551,6 +575,45 @@ function detectTwoColumnGutter(
   const cleanRatio = (leftCount + rightCount) / Math.max(1, leftCount + rightCount + crossingCount);
   if (cleanRatio < 0.72) return null;
 
+  // Validate against full-page baseline rows so a single-column document containing
+  // multi-column tables (whose cells leave a vertical gap near mid-page) is never
+  // misclassified as a two-column layout.
+  const allClusters = clusterSpansByBaseline(
+    spans.filter((s) => !s.isRotatedVertical && s.fontSize >= bodyFontSize * 0.78 && s.fontSize <= bodyFontSize * 1.25),
+  );
+  let trueTwoColRows = 0;
+  let fullWidthProseRows = 0;
+  for (const cluster of allClusters) {
+    const rowX0 = Math.min(...cluster.map((s) => s.x));
+    const rowX1 = Math.max(...cluster.map((s) => s.x + s.width));
+    const leftSide = cluster.filter((s) => s.x + s.width <= splitX + 4);
+    const rightSide = cluster.filter((s) => s.x >= splitX - 4);
+    const hasCrossingSpan = cluster.some((s) => s.x < bestGapStart - 2 && s.x + s.width > bestGapStart + bestGapLen + 2);
+    const cells = splitSpansIntoHorizontalCells(cluster, bodyFontSize);
+    const rowText = cells.map((c) => c.text).join(" ").trim();
+
+    if (hasCrossingSpan || (leftSide.length > 0 && rightSide.length > 0 && Math.min(...rightSide.map((s) => s.x)) - Math.max(...leftSide.map((s) => s.x + s.width)) < Math.max(bestGapLen * 0.65, bodyFontSize * 1.1))) {
+      if ((rowX1 - rowX0) >= pageWidth * 0.58 && countProseWords(rowText) >= 6 && !CAPTION_PREFIX_RE.test(rowText)) {
+        fullWidthProseRows += 1;
+      }
+      continue;
+    }
+
+    if (leftSide.length > 0 && rightSide.length > 0 && cells.length === 2) {
+      const leftText = cells[0]!.text;
+      const rightText = cells[1]!.text;
+      const leftW = cells[0]!.x1 - cells[0]!.x0;
+      const rightW = cells[1]!.x1 - cells[1]!.x0;
+      const looksLikeTwoProseCols = (countProseWords(leftText) >= 3 || leftW >= pageWidth * 0.22)
+        && (countProseWords(rightText) >= 3 || rightW >= pageWidth * 0.22);
+      if (looksLikeTwoProseCols) {
+        trueTwoColRows += 1;
+      }
+    }
+  }
+  if (trueTwoColRows < 3) return null;
+  if (fullWidthProseRows >= 4 && trueTwoColRows < fullWidthProseRows) return null;
+
   return {
     splitX,
     gutterLeft: bestGapStart,
@@ -649,6 +712,7 @@ function clusterSpansByBaseline(spans: readonly PositionedSpan[]): PositionedSpa
     let placed = false;
     for (let i = clusters.length - 1; i >= Math.max(0, clusters.length - 6); i -= 1) {
       const cluster = clusters[i]!;
+      if (Boolean(cluster[0]!.isRotatedVertical) !== Boolean(span.isRotatedVertical)) continue;
       const refBaseline = median(cluster.map((s) => s.baselineY), cluster[0]!.baselineY);
       const refSize = median(cluster.map((s) => s.fontSize), cluster[0]!.fontSize);
       if (Math.abs(span.baselineY - refBaseline) <= Math.max(2.6, refSize * 0.42)) {
@@ -785,13 +849,13 @@ function coalesce2DFormulaLines(lines: ReconstructedLine[], bodyFontSize: number
   const merged: ReconstructedLine[] = [];
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]!;
-    if (!isFormulaMember[i]) {
+    if (line.isTableBlock || !isFormulaMember[i]) {
       merged.push(line);
       continue;
     }
     const prev = merged.at(-1);
     const vGap = prev ? line.y0 - prev.y1 : Infinity;
-    if (prev && prev.isDisplayFormula && vGap <= Math.max(8, bodyFontSize * 0.85)) {
+    if (prev && prev.isDisplayFormula && !prev.isTableBlock && vGap <= Math.max(8, bodyFontSize * 0.85)) {
       prev.spans.push(...line.spans);
       prev.x0 = Math.min(prev.x0, line.x0);
       prev.y0 = Math.min(prev.y0, line.y0);
@@ -810,6 +874,641 @@ function coalesce2DFormulaLines(lines: ReconstructedLine[], bodyFontSize: number
     }
   }
   return merged;
+}
+
+interface HorizontalCell {
+  spans: PositionedSpan[];
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  baselineY: number;
+  fontSize: number;
+  text: string;
+}
+
+const CAPTION_PREFIX_RE = /^(?:Table|Tab\.|Figure|Fig\.|Algorithm|Listing|表|图)\s*\d+(?:\.\d+)?(?:\s*[:.：—–-]|\s|$)/i;
+const BULLET_CELL_RE = /^(?:[•●◦▪▫▸▹–—*-]|\(?\d{1,3}[.)]|\([a-zA-Z]\))$/;
+const EQUATION_NUM_CELL_RE = /^\(\d+(?:\.\d+)?\)$/;
+const AUTHOR_AFFILIATION_RE = /@|\b(?:university|institute|research|google|microsoft|facebook|meta|deepmind|openai|department|laboratory|corp\.?|inc\.?)\b|[∗†‡§]/i;
+const NUMERIC_OR_ARCH_CELL_RE = /^(?:[-+]?\d+(?:[.,]\d+)?%?(?:\s*[×xX·*±/]\s*\d+(?:[.,]\d+)?(?:\^\d+)?)*|[<>≤≥~≈±]\s*\d+(?:\.\d+)?|(?:\d+(?:\.\d+)?\s*(?:ms|s|k|K|M|B|GB|MB|KB|px|Hz|GHz|FLOPs?))|(?:conv\d[\w_]*|res\d[\w_]*|\d+-layer|O\([^)]+\)|[a-zA-Z]_[a-zA-Z0-9]+)|[-–—−]+|N\/A)$/i;
+
+function splitSpansIntoHorizontalCells(spans: readonly PositionedSpan[], bodyFontSize: number): HorizontalCell[] {
+  if (spans.length === 0) return [];
+  const sorted = [...spans].sort((a, b) => a.x - b.x || a.baselineY - b.baselineY);
+  const lineFs = median(spans.map((s) => s.fontSize), bodyFontSize);
+  const gapThreshold = Math.max(6, Math.min(bodyFontSize, lineFs) * 1.15);
+  const groups: PositionedSpan[][] = [];
+
+  for (const span of sorted) {
+    const prevGroup = groups.at(-1);
+    if (!prevGroup) {
+      groups.push([span]);
+      continue;
+    }
+    const prevMaxX = Math.max(...prevGroup.map((s) => s.x + s.width));
+    const gap = span.x - prevMaxX;
+    if (gap < gapThreshold) {
+      prevGroup.push(span);
+    } else {
+      groups.push([span]);
+    }
+  }
+
+  return groups.map((group) => {
+    const x0 = Math.min(...group.map((s) => s.x));
+    const y0 = Math.min(...group.map((s) => s.y));
+    const x1 = Math.max(...group.map((s) => s.x + s.width));
+    const y1 = Math.max(...group.map((s) => s.y + s.height));
+    const baselineY = median(group.map((s) => s.baselineY), group[0]!.baselineY);
+    const fontSize = median(group.map((s) => s.fontSize), bodyFontSize);
+    const { plainText } = buildLineSegments(group, baselineY, fontSize);
+    return { spans: group, x0, y0, x1, y1, baselineY, fontSize, text: plainText };
+  }).filter((cell) => cell.text.length > 0);
+}
+
+/**
+ * Before splitting a 2-column page along the center gutter, identify vertical Y-bands
+ * occupied by full-width multi-column tables (e.g. ResNet Table 1) so their rows are
+ * never torn apart into separate left/right column streams.
+ */
+function detectFullWidthTableYBands(
+  clusters: readonly PositionedSpan[][],
+  gutter: TwoColumnGutter,
+  pageWidth: number,
+  bodyFontSize: number,
+): Array<{ y0: number; y1: number }> {
+  const seeds: Array<{ y0: number; y1: number }> = [];
+  const halfColWidth = Math.max(80, gutter.gutterLeft - pageWidth * 0.08);
+
+  for (const cluster of clusters) {
+    const cells = splitSpansIntoHorizontalCells(cluster, bodyFontSize);
+    if (cells.length < 3) continue;
+    const joined = cells.map((c) => c.text).join(" ");
+    if (CAPTION_PREFIX_RE.test(joined)) continue;
+
+    const leftCells = cells.filter((c) => c.x1 <= gutter.splitX + 6);
+    const rightCells = cells.filter((c) => c.x0 >= gutter.splitX - 6);
+    const bridgingCell = cells.some((c) => c.x0 < gutter.gutterLeft - 2 && c.x1 > gutter.gutterRight + 2);
+    if (!bridgingCell && (leftCells.length === 0 || rightCells.length === 0)) continue;
+
+    // Exclude 2-column body prose lines (or a single-column table sitting beside prose in the other column).
+    const hasColumnWideProse = cells.some(
+      (c) => (c.x1 - c.x0) >= halfColWidth * 0.65 && countProseWords(c.text) >= 4,
+    );
+    if (hasColumnWideProse) continue;
+
+    // Require genuine multi-column tabular structure on both sides of the gutter unless a cell bridges the center.
+    if (!bridgingCell && (leftCells.length < 2 || rightCells.length < 2)) continue;
+
+    const compactCells = cells.filter((c) => (c.x1 - c.x0) < pageWidth * 0.30).length;
+    if (compactCells < 2) continue;
+
+    const y0 = Math.min(...cluster.map((s) => s.y));
+    const y1 = Math.max(...cluster.map((s) => s.y + s.height));
+    seeds.push({ y0, y1 });
+  }
+
+  if (seeds.length < 3) return [];
+  seeds.sort((a, b) => a.y0 - b.y0);
+
+  const bands: Array<{ y0: number; y1: number; count: number }> = [];
+  for (const seed of seeds) {
+    const prev = bands.at(-1);
+    if (prev && seed.y0 - prev.y1 <= Math.max(28, bodyFontSize * 3.0)) {
+      prev.y1 = Math.max(prev.y1, seed.y1);
+      prev.count += 1;
+    } else {
+      bands.push({ y0: seed.y0, y1: seed.y1, count: 1 });
+    }
+  }
+  return bands.filter((b) => b.count >= 3).map(({ y0, y1 }) => ({ y0, y1 }));
+}
+
+interface ColumnBand {
+  x0: number;
+  x1: number;
+  hits: number;
+}
+
+function clusterColumnBands(cells: readonly HorizontalCell[], bodyFontSize: number): ColumnBand[] {
+  if (cells.length === 0) return [];
+  // Ignore wide spanning cells (>55% of full table width) when discovering column centers.
+  const minX = Math.min(...cells.map((c) => c.x0));
+  const maxX = Math.max(...cells.map((c) => c.x1));
+  const spanW = Math.max(1, maxX - minX);
+  const normalCells = cells.filter((c) => (c.x1 - c.x0) <= spanW * 0.62);
+  const source = normalCells.length >= 4 ? normalCells : cells;
+
+  const sorted = [...source].sort((a, b) => a.x0 - b.x0);
+  const bands: ColumnBand[] = [];
+  const tol = Math.max(4, bodyFontSize * 0.45);
+
+  for (const cell of sorted) {
+    let matched: ColumnBand | null = null;
+    let bestOverlap = -Infinity;
+    for (const band of bands) {
+      const overlap = Math.min(cell.x1, band.x1) - Math.max(cell.x0, band.x0);
+      const centerDist = Math.abs((cell.x0 + cell.x1) / 2 - (band.x0 + band.x1) / 2);
+      if (overlap >= -tol || centerDist <= Math.max(10, bodyFontSize * 1.1)) {
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          matched = band;
+        }
+      }
+    }
+    if (matched) {
+      matched.x0 = Math.min(matched.x0, cell.x0);
+      matched.x1 = Math.max(matched.x1, cell.x1);
+      matched.hits += 1;
+    } else {
+      bands.push({ x0: cell.x0, x1: cell.x1, hits: 1 });
+    }
+  }
+
+  // Merge adjacent bands that now overlap substantially
+  bands.sort((a, b) => a.x0 - b.x0);
+  const merged: ColumnBand[] = [];
+  for (const band of bands) {
+    const prev = merged.at(-1);
+    if (prev && band.x0 <= prev.x1 + 2) {
+      prev.x1 = Math.max(prev.x1, band.x1);
+      prev.hits += band.hits;
+    } else {
+      merged.push({ ...band });
+    }
+  }
+  return merged;
+}
+
+function isNumericOrCodeCell(cell: HorizontalCell): boolean {
+  const text = cell.text.trim();
+  if (!text) return false;
+  if (NUMERIC_OR_ARCH_CELL_RE.test(text)) return true;
+  if (MATRIX_GLYPH_RE.test(text)) return true;
+  const nonSpace = text.replace(/\s+/g, "");
+  const digitSymCount = (nonSpace.match(/[0-9.%×xX·*±+\-–—=()[\]/^_<>≤≥]/g) ?? []).length;
+  if (nonSpace.length <= 18 && digitSymCount / Math.max(1, nonSpace.length) >= 0.55) return true;
+  return false;
+}
+
+function isMathBearingCell(cell: HorizontalCell): boolean {
+  if (MATRIX_GLYPH_RE.test(cell.text) || UNICODE_MATH_RE.test(cell.text)) return true;
+  const mathChars = cell.spans
+    .filter((s) => s.isMathFont || s.scriptRole === "sup" || s.scriptRole === "sub")
+    .reduce((sum, s) => sum + s.text.trim().length, 0);
+  const allChars = cell.spans.reduce((sum, s) => sum + s.text.trim().length, 0);
+  return allChars > 0 && mathChars / allChars >= 0.35;
+}
+
+/**
+ * Two-tier table detector on a column's pre-coalesced lines:
+ * - Dense numeric / architecture / formula / wide (>=5 col) tables -> `tableMode: "snapshot"` (HiDPI canvas crop)
+ * - Clean 2-4 column prose comparison tables -> `tableMode: "html"` (translatable HTML <table> + cell boxes)
+ */
+function detectAndCoalesceTableLines(
+  lines: ReconstructedLine[],
+  colWidth: number,
+  bodyFontSize: number,
+  pageHeight: number,
+  pageNumber: number,
+): ReconstructedLine[] {
+  if (lines.length < 3) return lines;
+
+  const lineCells = lines.map((line) => splitSpansIntoHorizontalCells(line.spans, bodyFontSize));
+
+  const isCaptionLine = (idx: number): boolean => CAPTION_PREFIX_RE.test(lines[idx]!.plainText.trim());
+
+  const isStrongTabularLine = (idx: number): boolean => {
+    const cells = lineCells[idx]!;
+    if (isCaptionLine(idx) || lines[idx]!.hasRotatedSpan) return false;
+    if (cells.length >= 3) return true;
+    if (cells.length === 2) {
+      const c0 = cells[0]!;
+      const c1 = cells[1]!;
+      if (BULLET_CELL_RE.test(c0.text.trim())) return false;
+      if (EQUATION_NUM_CELL_RE.test(c1.text.trim())) return false;
+      const gap = c1.x0 - c0.x1;
+      if (gap >= Math.max(12, bodyFontSize * 1.35) && (c0.x1 - c0.x0) < colWidth * 0.58) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const isWideProseLine = (idx: number): boolean => {
+    const line = lines[idx]!;
+    const cells = lineCells[idx]!;
+    if (cells.length !== 1) return false;
+    const width = line.x1 - line.x0;
+    return width >= colWidth * 0.68 && line.proseWordCount >= 7 && line.mathRatio < 0.25;
+  };
+
+  const isTableBridgeSubLine = (idx: number, tableX0: number, tableX1: number): boolean => {
+    if (isCaptionLine(idx) || isWideProseLine(idx) || lines[idx]!.hasRotatedSpan) return false;
+    const line = lines[idx]!;
+    const cells = lineCells[idx]!;
+    if (cells.length === 0) return false;
+    // Allow narrow sub-lines (wrapped cell text, stacked fraction parts, exponents, spanning headers)
+    // that fall horizontally inside the table footprint.
+    const withinX = line.x0 >= tableX0 - bodyFontSize * 2.5 && line.x1 <= tableX1 + bodyFontSize * 2.5;
+    if (!withinX) return false;
+    if (line.proseWordCount >= 9 && /[.?!。！？]$/.test(line.plainText.trim())) return false;
+    return true;
+  };
+
+  const out: ReconstructedLine[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    if (!isStrongTabularLine(i)) {
+      out.push(lines[i]!);
+      i += 1;
+      continue;
+    }
+
+    // Grow contiguous tabular run forward
+    let end = i;
+    let tableX0 = lines[i]!.x0;
+    let tableX1 = lines[i]!.x1;
+    let j = i + 1;
+
+    while (j < lines.length) {
+      const prevLine = lines[end]!;
+      const cand = lines[j]!;
+      const vGap = cand.y0 - prevLine.y1;
+      if (vGap > Math.max(24, bodyFontSize * 2.6)) break;
+      if (isCaptionLine(j) || isWideProseLine(j)) break;
+
+      if (isStrongTabularLine(j)) {
+        end = j;
+        tableX0 = Math.min(tableX0, cand.x0);
+        tableX1 = Math.max(tableX1, cand.x1);
+        j += 1;
+        continue;
+      }
+
+      // Bridge up to 2 short sub-lines (exponents, fraction denominators, wrapped cells)
+      // when followed closely by another tabular row, OR absorb a trailing wrapped cell line
+      // aligned tightly beneath the last tabular row.
+      if (isTableBridgeSubLine(j, tableX0, tableX1)) {
+        let nextStrong = -1;
+        for (let k = j + 1; k <= Math.min(lines.length - 1, j + 2); k += 1) {
+          if (lines[k]!.y0 - lines[k - 1]!.y1 > Math.max(20, bodyFontSize * 2.2)) break;
+          if (isCaptionLine(k) || isWideProseLine(k)) break;
+          if (isStrongTabularLine(k)) {
+            nextStrong = k;
+            break;
+          }
+        }
+        if (nextStrong !== -1) {
+          for (let k = j; k <= nextStrong; k += 1) {
+            tableX0 = Math.min(tableX0, lines[k]!.x0);
+            tableX1 = Math.max(tableX1, lines[k]!.x1);
+          }
+          end = nextStrong;
+          j = nextStrong + 1;
+          continue;
+        }
+        // Check tight trailing continuation line (e.g. last wrapped line of bottom row cell)
+        if (vGap <= Math.max(7, bodyFontSize * 0.78) && (cand.x1 - cand.x0) < (tableX1 - tableX0) * 0.65) {
+          end = j;
+          tableX0 = Math.min(tableX0, cand.x0);
+          tableX1 = Math.max(tableX1, cand.x1);
+          j += 1;
+          continue;
+        }
+      }
+      break;
+    }
+
+    // Absorb up to 3 spanning header rows immediately above the table (e.g. multi-level column headers)
+    let start = i;
+    for (let back = 0; back < 3 && out.length > 0; back += 1) {
+      const prevOut = out.at(-1)!;
+      const prevGap = lines[start]!.y0 - prevOut.y1;
+      const prevCells = splitSpansIntoHorizontalCells(prevOut.spans, bodyFontSize);
+      const isShortHeader = !prevOut.isTableBlock
+        && !prevOut.hasRotatedSpan
+        && !CAPTION_PREFIX_RE.test(prevOut.plainText.trim())
+        && prevGap >= -4
+        && prevGap <= Math.max(20, bodyFontSize * 2.2)
+        && prevOut.x0 >= tableX0 - bodyFontSize * 2.5
+        && prevOut.x1 <= tableX1 + bodyFontSize * 2.5
+        && (prevCells.length >= 2 || (prevOut.proseWordCount <= 5 && prevOut.x1 - prevOut.x0 <= (tableX1 - tableX0) * 0.85))
+        && !/[.?!。！？]$/.test(prevOut.plainText.trim());
+      if (!isShortHeader) break;
+      out.pop();
+      start -= 1;
+      tableX0 = Math.min(tableX0, prevOut.x0);
+      tableX1 = Math.max(tableX1, prevOut.x1);
+    }
+
+    const runLines = lines.slice(start, end + 1);
+    const runCellRows = runLines.map((l) => splitSpansIntoHorizontalCells(l.spans, bodyFontSize));
+    const strongRows = runCellRows.filter((cells) => cells.length >= 2).length;
+    const rowsWith3Plus = runCellRows.filter((cells) => cells.length >= 3).length;
+    const allCells = runCellRows.flat();
+    const colBands = clusterColumnBands(allCells, bodyFontSize);
+    const alignedBands = colBands.filter((b) => b.hits >= 2);
+    const TABLE_CAPTION_RE = /^(?:Table|Tab\.|Algorithm|Listing|表)\s*\d+(?:\.\d+)?(?:\s*[:.：—–-]|\s|$)/i;
+    const nearbyCaption = (start > 0 && TABLE_CAPTION_RE.test(lines[start - 1]!.plainText.trim())
+      && lines[start]!.y0 - lines[start - 1]!.y1 <= Math.max(36, bodyFontSize * 4))
+      || (end + 1 < lines.length && TABLE_CAPTION_RE.test(lines[end + 1]!.plainText.trim())
+        && lines[end + 1]!.y0 - lines[end]!.y1 <= Math.max(36, bodyFontSize * 4));
+
+    // Guard against side-by-side vector chart y-axis tick columns above a "Figure N." caption
+    let hasNearbyFigureCaptionBelow = false;
+    if (rowsWith3Plus === 0 && !nearbyCaption && runLines.every((l) => l.fontSize <= bodyFontSize * 0.94)) {
+      for (let k = end + 1; k < Math.min(lines.length, end + 10); k += 1) {
+        const nextLine = lines[k]!;
+        if (nextLine.y0 - runLines.at(-1)!.y1 > pageHeight * 0.22) break;
+        if (FIGURE_CAPTION_RE.test(nextLine.plainText.trim())) {
+          hasNearbyFigureCaptionBelow = true;
+          break;
+        }
+        if (nextLine.proseWordCount >= 4 && !nextLine.hasRotatedSpan) break;
+      }
+    }
+
+    const numericCells = allCells.filter(isNumericOrCodeCell).length;
+    const mathCells = allCells.filter(isMathBearingCell).length;
+    const numericCellRatio = numericCells / Math.max(1, allCells.length);
+    const mathCellRatio = mathCells / Math.max(1, allCells.length);
+    const combinedText = runLines.map((l) => l.plainText).join(" ");
+
+    // Anti-false-positive guards:
+    const isPage1AuthorBlock = pageNumber === 1
+      && runLines[0]!.y0 < pageHeight * 0.38
+      && !nearbyCaption
+      && AUTHOR_AFFILIATION_RE.test(combinedText)
+      && numericCellRatio < 0.15;
+
+    const isDisplayEquationStack = rowsWith3Plus === 0
+      && runLines.every((l) => l.isDisplayFormula || l.isMathFragment || l.mathRatio >= 0.55)
+      && /[=≈≤≥≠]/.test(combinedText)
+      && !nearbyCaption;
+
+    const hasEnoughRows = (strongRows >= 3 && alignedBands.length >= 2 && allCells.length >= 6)
+      || (rowsWith3Plus >= 2 && alignedBands.length >= 3 && (nearbyCaption || strongRows >= 3));
+
+    if (!hasEnoughRows || isPage1AuthorBlock || isDisplayEquationStack || hasNearbyFigureCaptionBelow) {
+      for (const l of runLines) out.push(l);
+      i = end + 1;
+      continue;
+    }
+
+    // Two-tier classification: snapshot vs translatable HTML table
+    const colCount = alignedBands.length;
+    const totalProseWords = allCells.reduce((sum, c) => sum + countProseWords(c.text), 0);
+
+    // Try mapping rows cleanly to aligned column bands for HTML reconstruction
+    let mappedCount = 0;
+    const mappedGrid: Array<{
+      cells: Array<{ spans: PositionedSpan[]; x0: number; y0: number; x1: number; y1: number; fontSize: number } | null>;
+      y0: number;
+      y1: number;
+      isBold: boolean;
+    }> = [];
+
+    for (let rIdx = 0; rIdx < runLines.length; rIdx += 1) {
+      const cells = runCellRows[rIdx]!;
+      const line = runLines[rIdx]!;
+      const rowSlots: Array<{ spans: PositionedSpan[]; x0: number; y0: number; x1: number; y1: number; fontSize: number } | null> =
+        new Array(colCount).fill(null);
+
+      for (const cell of cells) {
+        const cellMid = (cell.x0 + cell.x1) / 2;
+        let bestCol = -1;
+        let bestScore = -Infinity;
+        for (let ci = 0; ci < colCount; ci += 1) {
+          const band = alignedBands[ci]!;
+          const overlap = Math.min(cell.x1, band.x1) - Math.max(cell.x0, band.x0);
+          const dist = Math.abs(cellMid - (band.x0 + band.x1) / 2);
+          const score = overlap >= -4 ? overlap + 1000 : -dist;
+          if (score > bestScore && (overlap >= -8 || dist <= Math.max(24, bodyFontSize * 2.5))) {
+            bestScore = score;
+            bestCol = ci;
+          }
+        }
+        if (bestCol >= 0) {
+          mappedCount += 1;
+          const existing = rowSlots[bestCol];
+          if (existing) {
+            existing.spans.push(...cell.spans);
+            existing.x0 = Math.min(existing.x0, cell.x0);
+            existing.y0 = Math.min(existing.y0, cell.y0);
+            existing.x1 = Math.max(existing.x1, cell.x1);
+            existing.y1 = Math.max(existing.y1, cell.y1);
+          } else {
+            rowSlots[bestCol] = {
+              spans: [...cell.spans],
+              x0: cell.x0,
+              y0: cell.y0,
+              x1: cell.x1,
+              y1: cell.y1,
+              fontSize: cell.fontSize,
+            };
+          }
+        }
+      }
+
+      const filledCols = rowSlots.filter(Boolean).length;
+      if (filledCols === 0) continue;
+
+      const prevRow = mappedGrid.at(-1);
+      const vGap = prevRow ? line.y0 - prevRow.y1 : Infinity;
+      const tightWrapGap = Math.max(7, bodyFontSize * 0.78);
+
+      // Case A: vertically centered / sparse column label filling empty slot(s) of prevRow
+      // (e.g., single-line col-0 label centered vertically beside a 2-line col-1/col-2 row).
+      const fillsEmptySlots = Boolean(
+        prevRow
+        && vGap <= tightWrapGap
+        && prevRow.isBold === line.isBold
+        && rowSlots.every((slot, ci) => !slot || prevRow.cells[ci] === null),
+      );
+
+      // Case B: standard wrapped continuation where col 0 is empty and filled slots continue existing cells.
+      const isPartialContinuation = Boolean(
+        prevRow
+        && vGap <= tightWrapGap
+        && prevRow.isBold === line.isBold
+        && filledCols < colCount
+        && rowSlots[0] === null
+        && rowSlots.every((slot, ci) => !slot || prevRow.cells[ci] !== null),
+      );
+
+      // Case C: multi-line wrapped prose row where all (or col 0 + other) columns wrap onto a second line
+      // tightly beneath prevRow (e.g. "Side-by-side" / "reader" | "Clear ... for" / "careful study").
+      let isFullRowWrapContinuation = false;
+      if (
+        prevRow
+        && !fillsEmptySlots
+        && !isPartialContinuation
+        && vGap <= tightWrapGap
+        && prevRow.isBold === line.isBold
+        && !(mappedGrid.length === 1 && prevRow.isBold)
+      ) {
+        let overlapCount = 0;
+        let continuationSignals = 0;
+        for (let ci = 0; ci < colCount; ci += 1) {
+          const prevSlot = prevRow.cells[ci];
+          const curSlot = rowSlots[ci];
+          if (!prevSlot || !curSlot) continue;
+          overlapCount += 1;
+          const prevText = prevSlot.spans.map((s) => s.text).join(" ").replace(/\s+/g, " ").trim();
+          const curText = curSlot.spans.map((s) => s.text).join(" ").replace(/\s+/g, " ").trim();
+          const prevW = prevSlot.x1 - prevSlot.x0;
+          const curW = curSlot.x1 - curSlot.x0;
+          const startsLower = /^[a-z]/.test(curText);
+          const prevHyphen = /[A-Za-z]-$/.test(prevText);
+          const prevUnfinished = !/[.?!。！？:：]$/.test(prevText)
+            && (/\b(?:for|on|in|of|to|with|from|into|inside|per|the|a|an|and|or|as|by|at|that|which)$/i.test(prevText)
+              || (countProseWords(prevText) >= 4 && curW < prevW * 0.72));
+          if (startsLower || prevHyphen || prevUnfinished) {
+            continuationSignals += 1;
+          }
+        }
+        if (overlapCount >= 2 && continuationSignals >= 2) {
+          isFullRowWrapContinuation = true;
+        }
+      }
+
+      if ((fillsEmptySlots || isPartialContinuation || isFullRowWrapContinuation) && prevRow) {
+        for (let ci = 0; ci < colCount; ci += 1) {
+          const slot = rowSlots[ci];
+          if (!slot) continue;
+          const prevSlot = prevRow.cells[ci];
+          if (prevSlot) {
+            prevSlot.spans.push(...slot.spans);
+            prevSlot.x0 = Math.min(prevSlot.x0, slot.x0);
+            prevSlot.y0 = Math.min(prevSlot.y0, slot.y0);
+            prevSlot.x1 = Math.max(prevSlot.x1, slot.x1);
+            prevSlot.y1 = Math.max(prevSlot.y1, slot.y1);
+          } else {
+            prevRow.cells[ci] = slot;
+          }
+        }
+        prevRow.y0 = Math.min(prevRow.y0, line.y0);
+        prevRow.y1 = Math.max(prevRow.y1, line.y1);
+      } else {
+        mappedGrid.push({ cells: rowSlots, y0: line.y0, y1: line.y1, isBold: line.isBold });
+      }
+    }
+
+    const mappingCleanRatio = mappedCount / Math.max(1, allCells.length);
+    const shouldSnapshot = colCount >= 5
+      || numericCellRatio >= 0.42
+      || mathCellRatio >= 0.28
+      || mappingCleanRatio < 0.78
+      || mappedGrid.length < 2
+      || totalProseWords < 4;
+
+    const unionX0 = Math.min(...runLines.map((l) => l.x0));
+    const unionY0 = Math.min(...runLines.map((l) => l.y0));
+    const unionX1 = Math.max(...runLines.map((l) => l.x1));
+    const unionY1 = Math.max(...runLines.map((l) => l.y1));
+    const allSpans = runLines.flatMap((l) => l.spans);
+    const tableFontSize = median(runLines.map((l) => l.fontSize), bodyFontSize);
+
+    if (shouldSnapshot) {
+      out.push({
+        spans: allSpans,
+        x0: unionX0,
+        y0: unionY0,
+        x1: unionX1,
+        y1: unionY1,
+        baselineY: unionY1,
+        fontSize: tableFontSize,
+        isBold: false,
+        column: runLines[0]!.column,
+        segments: [{ kind: "text", text: combinedText }],
+        plainText: combinedText,
+        mathRatio: mathCellRatio,
+        proseWordCount: totalProseWords,
+        isDisplayFormula: false,
+        isMathFragment: false,
+        isTableBlock: true,
+        tableMode: "snapshot",
+      });
+    } else {
+      const tableRows: PdfInlineSegment[][][] = [];
+      const tableCellBoxes: PdfTableCellBox[] = [];
+      for (let ri = 0; ri < mappedGrid.length; ri += 1) {
+        const gridRow = mappedGrid[ri]!;
+        const rowSegments: PdfInlineSegment[][] = [];
+        for (let ci = 0; ci < colCount; ci += 1) {
+          const slot = gridRow.cells[ci];
+          if (!slot) {
+            rowSegments.push([]);
+            continue;
+          }
+          // Cluster wrapped sub-lines inside the cell top-to-bottom so multi-line prose joins cleanly
+          const subClusters = clusterSpansByBaseline(slot.spans);
+          const mergedSegs: PdfInlineSegment[] = [];
+          for (const sub of subClusters) {
+            const subBase = median(sub.map((s) => s.baselineY), sub[0]!.baselineY);
+            const subFs = median(sub.map((s) => s.fontSize), slot.fontSize);
+            const { segments: subSegs } = buildLineSegments(sub, subBase, subFs);
+            if (mergedSegs.length === 0) mergedSegs.push(...subSegs);
+            else joinSegmentsWithHyphenRepair(mergedSegs, subSegs);
+          }
+          rowSegments.push(mergedSegs);
+          tableCellBoxes.push({
+            rowIndex: ri,
+            colIndex: ci,
+            box: {
+              x: slot.x0,
+              y: slot.y0,
+              width: Math.max(4, slot.x1 - slot.x0),
+              height: Math.max(6, slot.y1 - slot.y0),
+            },
+            fontSize: slot.fontSize,
+          });
+        }
+        tableRows.push(rowSegments);
+      }
+
+      const firstRow = mappedGrid[0]!;
+      const firstRowMaxWords = Math.max(
+        0,
+        ...tableRows[0]!.map((segs) => countProseWords(segs.map((s) => s.text).join(""))),
+      );
+      const bodyMaxWords = Math.max(
+        0,
+        ...tableRows.slice(1).flat().map((segs) => countProseWords(segs.map((s) => s.text).join(""))),
+      );
+      const tableHasHeader = firstRow.isBold || (firstRowMaxWords <= 4 && bodyMaxWords >= 3);
+
+      out.push({
+        spans: allSpans,
+        x0: unionX0,
+        y0: unionY0,
+        x1: unionX1,
+        y1: unionY1,
+        baselineY: unionY1,
+        fontSize: tableFontSize,
+        isBold: false,
+        column: runLines[0]!.column,
+        segments: [{ kind: "text", text: combinedText }],
+        plainText: combinedText,
+        mathRatio: mathCellRatio,
+        proseWordCount: totalProseWords,
+        isDisplayFormula: false,
+        isMathFragment: false,
+        isTableBlock: true,
+        tableMode: "html",
+        tableRows,
+        tableHasHeader,
+        tableCellBoxes,
+      });
+    }
+
+    i = end + 1;
+  }
+
+  return out;
 }
 
 export function extractPdfPageBlocks(
@@ -861,6 +1560,7 @@ export function extractPdfPageBlocks(
       realFontName,
       isMathFont: MATH_FONT_RE.test(fontMeta),
       isBoldFont: BOLD_FONT_RE.test(fontMeta),
+      ...(isRotatedVertical ? { isRotatedVertical: true } : {}),
       baselineY,
     });
   }
@@ -869,6 +1569,12 @@ export function extractPdfPageBlocks(
 
   const bodyFontSize = computeBodyFontSize(spans);
   const gutter = detectTwoColumnGutter(spans, pageWidth, bodyFontSize);
+
+  // Detect full-width multi-column table Y-bands across ALL spans (including compact 7pt tables like ResNet Table 1)
+  // before splitting into left/right column streams.
+  const fullWidthTableBands = gutter
+    ? detectFullWidthTableYBands(clusterSpansByBaseline(spans), gutter, pageWidth, bodyFontSize)
+    : [];
 
   // Two-pass line reconstruction:
   // Pass 1: cluster normal-sized spans into horizontal Y-bands and split across any 2-column gutter.
@@ -890,9 +1596,22 @@ export function extractPdfPageBlocks(
   }
 
   const mainClusters = clusterSpansByBaseline(mainSpans);
+
+  const isInsideFullWidthTableBand = (cluster: readonly PositionedSpan[]): boolean => {
+    if (fullWidthTableBands.length === 0) return false;
+    const cy = median(cluster.map((s) => s.y + s.height / 2), cluster[0]!.y);
+    const joined = cluster.map((s) => s.text).join(" ").trim();
+    if (CAPTION_PREFIX_RE.test(joined)) return false;
+    return fullWidthTableBands.some((band) => cy >= band.y0 - 2 && cy <= band.y1 + 2);
+  };
+
   const lineBuckets: RawLineBucket[] = [];
   for (const cluster of mainClusters) {
-    lineBuckets.push(...splitClusterByGutter(cluster, gutter, bodyFontSize));
+    if (isInsideFullWidthTableBand(cluster)) {
+      lineBuckets.push(summarizeBucket("full", cluster, bodyFontSize));
+    } else {
+      lineBuckets.push(...splitClusterByGutter(cluster, gutter, bodyFontSize));
+    }
   }
 
   // Promote top header/abstract lines sitting above the first true two-column split band back to "full"
@@ -986,7 +1705,11 @@ export function extractPdfPageBlocks(
   if (orphanMicroSpans.length > 0) {
     const microClusters = clusterSpansByBaseline(orphanMicroSpans);
     for (const cluster of microClusters) {
-      lineBuckets.push(...splitClusterByGutter(cluster, gutter, bodyFontSize));
+      if (isInsideFullWidthTableBand(cluster)) {
+        lineBuckets.push(summarizeBucket("full", cluster, bodyFontSize));
+      } else {
+        lineBuckets.push(...splitClusterByGutter(cluster, gutter, bodyFontSize));
+      }
     }
   }
 
@@ -1023,6 +1746,7 @@ export function extractPdfPageBlocks(
         baselineY: bucket.baselineY,
         fontSize: bucket.fontSize,
         isBold,
+        hasRotatedSpan: bucket.spans.some((s) => s.isRotatedVertical),
         column: col,
         segments,
         plainText,
@@ -1033,13 +1757,17 @@ export function extractPdfPageBlocks(
 
     lines.sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
 
+    // Detect two-tier tables BEFORE 2D formula coalescing so stacked fractions/brackets
+    // inside numeric/architecture/derivative tables stay unified in the table block.
+    const withTables = detectAndCoalesceTableLines(lines, colWidth, bodyFontSize, pageHeight, pageNumber);
+
     // Demote a flush-left short trailing line (e.g. "d_ff = 2048.") that directly continues an
     // unfinished prose line immediately above it with normal line spacing.
-    for (let i = 1; i < lines.length; i += 1) {
-      const prev = lines[i - 1]!;
-      const cur = lines[i]!;
-      if (!cur.isDisplayFormula) continue;
-      if (prev.isDisplayFormula || prev.isMathFragment || prev.proseWordCount < 3) continue;
+    for (let i = 1; i < withTables.length; i += 1) {
+      const prev = withTables[i - 1]!;
+      const cur = withTables[i]!;
+      if (cur.isTableBlock || !cur.isDisplayFormula) continue;
+      if (prev.isTableBlock || prev.isDisplayFormula || prev.isMathFragment || prev.proseWordCount < 3) continue;
       const vGap = cur.y0 - prev.y1;
       const flushLeft = Math.abs(cur.x0 - colLeftRef) <= bodyFontSize * 0.7;
       const prevIncomplete = !/[.?!:]$/.test(prev.plainText.trim());
@@ -1056,7 +1784,7 @@ export function extractPdfPageBlocks(
       }
     }
 
-    return coalesce2DFormulaLines(lines, bodyFontSize);
+    return coalesce2DFormulaLines(withTables, bodyFontSize);
   };
 
   const fullLines = buildColumnLines("full");
@@ -1106,11 +1834,12 @@ export function extractPdfPageBlocks(
   }
 
   const blocks: PdfLayoutBlock[] = [];
+  const pageRotatedBlockIds = new Set<string>();
   let blockIndex = 0;
 
   for (const stream of orderedStreams) {
     if (stream.length === 0) continue;
-    const proseLinesInStream = stream.filter((l) => !l.isDisplayFormula && l.proseWordCount >= 2);
+    const proseLinesInStream = stream.filter((l) => !l.isDisplayFormula && !l.isTableBlock && l.proseWordCount >= 2);
     const colLeftRef = median(
       (proseLinesInStream.length >= 2 ? proseLinesInStream : stream).map((l) => l.x0),
       stream[0]!.x0,
@@ -1125,19 +1854,24 @@ export function extractPdfPageBlocks(
       y0: number;
       x1: number;
       y1: number;
+      lineBoxes: PdfPageBox[];
       lastBaselineY: number;
       fontSize: number;
       isBold: boolean;
+      hasRotatedSpan: boolean;
       lineCount: number;
       listIndentX?: number;
     } | null = null;
+    const rotatedBlockIds = new Set<string>();
 
     const flush = () => {
       if (!current) return;
       const plainText = current.segments.map((s) => s.text).join("").replace(/\s+/g, " ").trim();
       if (plainText) {
+        const id = `pdf-p${pageNumber}-b${++blockIndex}`;
+        if (current.hasRotatedSpan) rotatedBlockIds.add(id);
         blocks.push({
-          id: `pdf-p${pageNumber}-b${++blockIndex}`,
+          id,
           pageNumber,
           kind: current.kind,
           ...(current.headingLevel ? { headingLevel: current.headingLevel } : {}),
@@ -1150,13 +1884,40 @@ export function extractPdfPageBlocks(
             width: Math.max(4, current.x1 - current.x0),
             height: Math.max(6, current.y1 - current.y0),
           },
+          lineBoxes: current.lineBoxes,
           fontSize: current.fontSize,
+          source: "text-layer",
         });
       }
       current = null;
     };
 
     for (const line of stream) {
+      if (line.isTableBlock) {
+        flush();
+        blocks.push({
+          id: `pdf-p${pageNumber}-b${++blockIndex}`,
+          pageNumber,
+          kind: "table",
+          column: line.column,
+          segments: line.segments,
+          plainText: line.plainText,
+          box: {
+            x: line.x0,
+            y: line.y0,
+            width: Math.max(4, line.x1 - line.x0),
+            height: Math.max(6, line.y1 - line.y0),
+          },
+          fontSize: line.fontSize,
+          tableMode: line.tableMode ?? "snapshot",
+          ...(line.tableRows ? { tableRows: line.tableRows } : {}),
+          ...(line.tableHasHeader !== undefined ? { tableHasHeader: line.tableHasHeader } : {}),
+          ...(line.tableCellBoxes ? { tableCellBoxes: line.tableCellBoxes } : {}),
+          source: "text-layer",
+        });
+        continue;
+      }
+
       if (line.isDisplayFormula) {
         flush();
         blocks.push({
@@ -1173,9 +1934,17 @@ export function extractPdfPageBlocks(
             height: Math.max(6, line.y1 - line.y0),
           },
           fontSize: line.fontSize,
+          source: "text-layer",
         });
         continue;
       }
+
+      const lineBox: PdfPageBox = {
+        x: line.x0,
+        y: line.y0,
+        width: Math.max(4, line.x1 - line.x0),
+        height: Math.max(6, line.y1 - line.y0),
+      };
 
       const isNumberedHeading = /^\d+(?:\.\d+)*\.?\s+[A-Z\u4e00-\u9fff]/.test(line.plainText)
         && line.plainText.length <= 96
@@ -1183,11 +1952,13 @@ export function extractPdfPageBlocks(
         && (line.isBold || line.fontSize >= bodyFontSize * 1.03);
       const isNamedSectionHeading = /^(?:Abstract|Introduction|Background|Related Work|Methodology|Methods|Experiments?|Results|Discussion|Conclusion|Conclusions|References|Acknowledgments?|Appendix|Overview|Summary)$/i.test(line.plainText)
         && (line.isBold || line.fontSize >= bodyFontSize * 1.02);
-      const isHeading = (line.fontSize >= bodyFontSize * 1.18 && line.plainText.length <= 160 && line.mathRatio < 0.5)
+      const isHeading = !line.hasRotatedSpan && (
+        (line.fontSize >= bodyFontSize * 1.18 && line.plainText.length <= 160 && line.mathRatio < 0.5)
         || (line.isBold && line.fontSize >= bodyFontSize * 1.02 && line.plainText.length <= 96 && !/[.。!?]$/.test(line.plainText) && line.mathRatio < 0.4)
         || isNumberedHeading
-        || isNamedSectionHeading;
-      const isListStart = !isHeading && LIST_PREFIX_RE.test(line.plainText);
+        || isNamedSectionHeading
+      );
+      const isListStart = !isHeading && !line.hasRotatedSpan && LIST_PREFIX_RE.test(line.plainText);
       const lineKind: PdfBlockKind = isHeading ? "heading" : isListStart ? "list-item" : "paragraph";
       const headingLevel = isHeading
         ? (line.fontSize >= bodyFontSize * 1.55 ? 1 : line.fontSize >= bodyFontSize * 1.25 ? 2 : 3)
@@ -1195,6 +1966,8 @@ export function extractPdfPageBlocks(
 
       const verticalClose = Boolean(
         current
+        && !line.hasRotatedSpan
+        && !current.hasRotatedSpan
         && Math.abs(line.fontSize - current.fontSize) <= Math.max(1.5, current.fontSize * 0.15)
         && (line.y0 - current.y1) <= Math.max(8, current.fontSize * 0.95)
         && (line.baselineY - current.lastBaselineY) <= Math.max(15, current.fontSize * 1.85),
@@ -1232,6 +2005,7 @@ export function extractPdfPageBlocks(
         current.y0 = Math.min(current.y0, line.y0);
         current.x1 = Math.max(current.x1, line.x1);
         current.y1 = Math.max(current.y1, line.y1);
+        current.lineBoxes.push(lineBox);
         current.lastBaselineY = line.baselineY;
         current.lineCount += 1;
       } else {
@@ -1245,15 +2019,125 @@ export function extractPdfPageBlocks(
           y0: line.y0,
           x1: line.x1,
           y1: line.y1,
+          lineBoxes: [lineBox],
           lastBaselineY: line.baselineY,
           fontSize: line.fontSize,
           isBold: line.isBold,
+          hasRotatedSpan: Boolean(line.hasRotatedSpan),
           lineCount: 1,
         };
       }
     }
     flush();
+
+    // Transfer rotatedBlockIds onto a page-wide set across streams
+    for (const id of rotatedBlockIds) pageRotatedBlockIds.add(id);
   }
 
-  return blocks;
+  return coalesceDigitalFigureBlocks(blocks, pageRotatedBlockIds, bodyFontSize, pageWidth, pageHeight, pageNumber);
+}
+
+const FIGURE_CAPTION_RE = /^(?:Figure|Fig\.|图)\s*\d+(?:\.\d+)?(?:\s*[:.：—–-]|\s|$)/i;
+
+/**
+ * Collapses scattered vector-chart axis ticks, legends, and 90°-rotated axis titles
+ * sitting directly above a `Figure N.` caption into a single protected `figure` snapshot block
+ * so digital PDF charts stay crisp and untouched in both split and overlay modes.
+ */
+function coalesceDigitalFigureBlocks(
+  blocks: PdfLayoutBlock[],
+  rotatedBlockIds: ReadonlySet<string>,
+  bodyFontSize: number,
+  pageWidth: number,
+  pageHeight: number,
+  pageNumber: number,
+): PdfLayoutBlock[] {
+  if (blocks.length < 3) return blocks;
+
+  const isChartLabelCandidate = (b: PdfLayoutBlock): boolean => {
+    if (b.kind === "table" || b.kind === "heading" || b.kind === "list-item" || b.kind === "figure") return false;
+    const text = b.plainText.trim();
+    if (!text || CAPTION_PREFIX_RE.test(text)) return false;
+    if (rotatedBlockIds.has(b.id)) return true;
+    if (b.kind === "formula") {
+      return b.fontSize <= bodyFontSize * 0.94 && text.length <= 32 && !EQUATION_TAG_RE.test(text);
+    }
+    const proseWords = countProseWords(text);
+    const endsSentence = /[.?!。！？]$/.test(text);
+    if (endsSentence) return false;
+    if (text.length <= 44 && /^[\d.,\s+-]+$/.test(text)) return true;
+    if (b.fontSize <= bodyFontSize * 0.94 && text.length <= 72 && proseWords <= 4) return true;
+    return false;
+  };
+
+  const removedIds = new Set<string>();
+  const insertBeforeCaption = new Map<string, PdfLayoutBlock>();
+  let figIndex = 0;
+
+  for (const caption of blocks) {
+    if (caption.kind !== "paragraph" || !FIGURE_CAPTION_RE.test(caption.plainText.trim())) continue;
+    const maxLookbackY = Math.max(0, caption.box.y - pageHeight * 0.44);
+    const sameColumnScope = (b: PdfLayoutBlock): boolean =>
+      caption.column === "full" || b.column === caption.column || b.column === "full";
+
+    // Find the lowest non-chart barrier above this caption inside the lookback window
+    let aboveBarrierY = maxLookbackY;
+    for (const b of blocks) {
+      if (b.id === caption.id || removedIds.has(b.id) || !sameColumnScope(b)) continue;
+      const bBottom = b.box.y + b.box.height;
+      if (bBottom > caption.box.y + 4 || bBottom < maxLookbackY) continue;
+      if (!isChartLabelCandidate(b)) {
+        aboveBarrierY = Math.max(aboveBarrierY, bBottom);
+      }
+    }
+
+    const candidates: PdfLayoutBlock[] = [];
+    for (const b of blocks) {
+      if (b.id === caption.id || removedIds.has(b.id) || !sameColumnScope(b)) continue;
+      if (b.box.y < aboveBarrierY - 2 || b.box.y + b.box.height > caption.box.y + 4) continue;
+      if (isChartLabelCandidate(b)) candidates.push(b);
+    }
+
+    const hasRotated = candidates.some((b) => rotatedBlockIds.has(b.id));
+    if (candidates.length >= 4 || (hasRotated && candidates.length >= 2)) {
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      for (const c of candidates) {
+        removedIds.add(c.id);
+        minX = Math.min(minX, c.box.x);
+        minY = Math.min(minY, c.box.y);
+        maxX = Math.max(maxX, c.box.x + c.box.width);
+        maxY = Math.max(maxY, c.box.y + c.box.height);
+      }
+      const x0 = Math.max(0, minX - 14);
+      const x1 = Math.min(pageWidth, maxX + 14);
+      const y0 = Math.max(aboveBarrierY + 2, minY - 14);
+      const y1 = Math.min(caption.box.y - 2, maxY + 4);
+      if (x1 > x0 + 10 && y1 > y0 + 10) {
+        insertBeforeCaption.set(caption.id, {
+          id: `pdf-p${pageNumber}-fig${++figIndex}`,
+          pageNumber,
+          kind: "figure",
+          column: caption.column,
+          segments: [{ kind: "text", text: "[Figure]" }],
+          plainText: "[Figure]",
+          box: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 },
+          fontSize: bodyFontSize,
+          source: "text-layer",
+        });
+      }
+    }
+  }
+
+  if (removedIds.size === 0) return blocks;
+  const out: PdfLayoutBlock[] = [];
+  for (const b of blocks) {
+    if (removedIds.has(b.id)) continue;
+    const fig = insertBeforeCaption.get(b.id);
+    if (fig) out.push(fig);
+    out.push(b);
+  }
+  return out;
 }

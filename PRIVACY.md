@@ -26,7 +26,7 @@ On first use (or when the user downloads an optional multilingual OCR recognitio
 
 ## Local PDF & document reader
 
-When you open a local PDF, Markdown, HTML, EPUB, DOCX, or TXT file—or choose to open an online PDF/document URL inside PageLingo's built-in reader (`reader.html`)—parsing and rendering run entirely inside Firefox using bundled `pdfjs-dist` and native Web APIs. With the default Firefox local translation engine, document text stays on your device.
+When you open a local PDF, Markdown, HTML, EPUB, DOCX, or TXT file—or choose to open an online PDF/document URL inside PageLingo's built-in reader (`reader.html`)—parsing and rendering run entirely inside Firefox using bundled `pdfjs-dist` and native Web APIs. If you trigger on-demand OCR for scanned PDF pages, the layout and OCR model-data files are downloaded once, verified by pinned size and SHA-256, and run locally in a WebAssembly worker. With the default Firefox local translation engine, document text stays on your device.
 
 ## Video subtitle translation
 

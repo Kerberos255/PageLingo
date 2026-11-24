@@ -65,6 +65,7 @@ interface ImageOcrProfileStatus {
     label: string;
     languagesLabel: string;
     installed: boolean;
+    detectionInstalled?: boolean;
     recognitionBytes: number;
     totalBytes: number;
 }
@@ -76,6 +77,8 @@ interface ImageOcrStatus {
     activeProfileId?: string;
     detectionInstalled?: boolean;
     detectionBytes?: number;
+    docLayoutInstalled?: boolean;
+    docLayoutBytes?: number;
     profiles?: ImageOcrProfileStatus[];
 }
 
@@ -643,7 +646,7 @@ function renderImageOcrStatus(current: ImageOcrStatus): void {
     if (!imageStatus || !imageOcrAction) return;
     currentImageOcrStatus = current;
     const profiles = current.profiles ?? [];
-    const activeId = current.activeProfileId ?? "pp-ocrv5-mobile";
+    const activeId = current.activeProfileId ?? "pp-ocrv6-small";
     const activeProfile = profiles.find((item) => item.id === activeId);
 
     if (imageOcrProfileSelect && profiles.length > 0) {
@@ -657,11 +660,12 @@ function renderImageOcrStatus(current: ImageOcrStatus): void {
         imageOcrProfileSelect.value = activeId;
     }
 
-    const activeLabel = activeProfile?.label ?? "PP-OCRv5 Mobile";
-    const detNote = current.detectionInstalled ? " · 共享检测模型已缓存" : "";
+    const activeLabel = activeProfile?.label ?? "PP-OCRv6 Small";
+    const detNote = current.detectionInstalled ? " · 检测模型已缓存" : "";
+    const layoutNote = current.docLayoutInstalled ? " · PDF 版面模型已缓存" : "";
     imageStatus.textContent = !current.runtimeSupported
         ? "当前 Firefox 环境不支持本地文字识别"
-        : `${activeLabel} · ${current.installed ? "已下载" : "可下载"} ${formatBytes(current.totalBytes)}${detNote}`;
+        : `${activeLabel} · ${current.installed ? "已下载" : "可下载"} ${formatBytes(current.totalBytes)}${detNote}${layoutNote}`;
     imageOcrAction.textContent = current.installed ? "删除当前包" : "下载当前包";
     imageOcrAction.disabled = !current.installed && !current.runtimeSupported;
 
@@ -676,7 +680,7 @@ function renderImageOcrStatus(current: ImageOcrStatus): void {
             const title = document.createElement("strong");
             title.textContent = profile.id === activeId ? `${profile.label}（当前使用）` : profile.label;
             const detail = document.createElement("small");
-            const sizeText = current.detectionInstalled
+            const sizeText = profile.detectionInstalled
                 ? `识别包 ${formatBytes(profile.recognitionBytes)}`
                 : `含检测模型 ${formatBytes(profile.totalBytes)}`;
             detail.textContent = `${profile.languagesLabel} · ${sizeText}`;
@@ -723,7 +727,7 @@ async function changeImageOcrModels(
     triggerButton?: HTMLButtonElement,
 ): Promise<void> {
     if (!imageStatus || !imageOcrAction || !currentImageOcrStatus) return;
-    const targetProfileId = profileId ?? currentImageOcrStatus.activeProfileId ?? "pp-ocrv5-mobile";
+    const targetProfileId = profileId ?? currentImageOcrStatus.activeProfileId ?? "pp-ocrv6-small";
     const deleting = typeof forceDeleting === "boolean" ? forceDeleting : currentImageOcrStatus.installed;
     const type = deleting ? "delete-image-ocr-models" : "download-image-ocr-models";
     const btn = triggerButton ?? imageOcrAction;

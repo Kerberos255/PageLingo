@@ -1,3 +1,6 @@
+export type OcrModelPreset = "PP-OCRv6_small" | "PP-OCRv5_mobile" | "PP-OCRv6_tiny";
+export type OcrDictionaryFormat = "plain" | "paddle-yml";
+
 export interface OcrModelAsset {
   id: string;
   label: string;
@@ -6,11 +9,16 @@ export interface OcrModelAsset {
   sha256: string;
 }
 
+export interface DocLayoutModelAsset extends OcrModelAsset {
+  preset: "PP-DocLayout-M" | "PP-DocLayout-S";
+}
+
 export interface OcrProfile {
   id: string;
   label: string;
   languagesLabel: string;
-  modelPreset: "PP-OCRv5_mobile" | "PP-OCRv6_tiny";
+  modelPreset: OcrModelPreset;
+  dictionaryFormat?: OcrDictionaryFormat;
   detection: OcrModelAsset;
   recognition: OcrModelAsset;
   dictionary: OcrModelAsset;
@@ -19,58 +27,66 @@ export interface OcrProfile {
 export const MAX_OCR_IMAGE_SIDE = 2200;
 
 /**
- * Language-agnostic PP-OCRv5 text detector (~4.8 MB).
- * Downloaded once and shared across all installed OCR recognition language packs.
+ * Official PaddlePaddle PP-OCRv6_small text detector (~9.9 MB, Apache-2.0).
+ * Replaces PP-OCRv5_mobile det with +8.9 pp detection Hmean and unified 50-language coverage.
  */
-export const SHARED_OCR_DETECTION: OcrModelAsset = {
+export const SHARED_OCR_V6_DETECTION: OcrModelAsset = {
+  id: "pp-ocrv6-small-det",
+  label: "PP-OCRv6 文字检测模型",
+  url: "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/main/inference.onnx",
+  bytes: 9_880_512,
+  sha256: "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e",
+};
+
+/**
+ * Language-agnostic PP-OCRv5 text detector (~4.8 MB).
+ * Shared across the optional v5 extension packs (Korean, Cyrillic, Thai).
+ */
+export const SHARED_OCR_V5_DETECTION: OcrModelAsset = {
   id: "pp-ocrv5-mobile-det",
-  label: "通用文字检测模型",
+  label: "扩展语系文字检测模型（v5）",
   url: "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/main/inference.onnx",
   bytes: 4_826_518,
   sha256: "a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d",
 };
 
-export const DEFAULT_OCR_PROFILE: OcrProfile = {
-  id: "pp-ocrv5-mobile",
-  label: "中日英（默认）",
-  languagesLabel: "简体中文、繁體中文、English、日语",
-  modelPreset: "PP-OCRv5_mobile",
-  detection: SHARED_OCR_DETECTION,
-  recognition: {
-    id: "pp-ocrv5-mobile-rec",
-    label: "中日英文字识别模型",
-    url: "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx/resolve/main/inference.onnx",
-    bytes: 16_534_782,
-    sha256: "da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092",
-  },
-  dictionary: {
-    id: "pp-ocrv5-dict",
-    label: "中日英字符字典",
-    url: "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/paddle/PP-OCRv5/rec/ch_PP-OCRv5_rec_server/ppocrv5_dict.txt",
-    bytes: 74_012,
-    sha256: "d1979e9f794c464c0d2e0b70a7fe14dd978e9dc644c0e71f14158cdf8342af1b",
-  },
+/** Default detection model alias kept for backward compatibility. */
+export const SHARED_OCR_DETECTION: OcrModelAsset = SHARED_OCR_V6_DETECTION;
+
+/**
+ * Document layout detector (PP-DocLayout-M, 640x640, 23 classes, Apache-2.0).
+ * Downloaded on demand when running scanned-PDF OCR or visual layout analysis so
+ * formulas, dense tables, figures, charts, headers, and footers are detected before OCR.
+ */
+export const DOC_LAYOUT_MODEL: DocLayoutModelAsset = {
+  id: "pp-doclayout-m",
+  preset: "PP-DocLayout-M",
+  label: "文档版面检测模型（PP-DocLayout-M）",
+  url: "https://huggingface.co/X3ZvaWQ/paddleocr-js-onnx/resolve/main/pp_doclayout_m/PP-DocLayout-M_infer.onnx",
+  bytes: 23_496_395,
+  sha256: "c5032bdae772887e9de4d2e955c05c42ac7f38c8c8eb6bdc1b4560dc5cf1c786",
 };
 
-export const LATIN_OCR_PROFILE: OcrProfile = {
-  id: "pp-ocrv5-latin",
-  label: "拉丁语系（欧洲 / 东南亚）",
-  languagesLabel: "法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、越南语、印尼语、土耳其语等",
-  modelPreset: "PP-OCRv5_mobile",
-  detection: SHARED_OCR_DETECTION,
+export const DEFAULT_OCR_PROFILE: OcrProfile = {
+  id: "pp-ocrv6-small",
+  label: "多语种通用 · PP-OCRv6（默认）",
+  languagesLabel: "简体中文、繁體中文、English、日语及 46 种拉丁语系（法/德/西/葡/意/越/印尼/土耳其等）",
+  modelPreset: "PP-OCRv6_small",
+  dictionaryFormat: "paddle-yml",
+  detection: SHARED_OCR_V6_DETECTION,
   recognition: {
-    id: "pp-ocrv5-latin-rec",
-    label: "拉丁语系识别模型",
-    url: "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv5/rec/latin_PP-OCRv5_rec_mobile.onnx",
-    bytes: 7_904_513,
-    sha256: "b20bd37c168a570f583afbc8cd7925603890efbcdc000a59e22c269d160b5f5a",
+    id: "pp-ocrv6-small-rec",
+    label: "PP-OCRv6 多语种文字识别模型",
+    url: "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.onnx",
+    bytes: 21_159_378,
+    sha256: "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
   },
   dictionary: {
-    id: "pp-ocrv5-latin-dict",
-    label: "拉丁语系字符字典",
-    url: "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/paddle/PP-OCRv5/rec/latin_PP-OCRv5_rec_mobile/ppocrv5_latin_dict.txt",
-    bytes: 1_634,
-    sha256: "3c0a8a79b612653c25f765271714f71281e4e955962c153e272b7b8c1d2b13ff",
+    id: "pp-ocrv6-small-yml",
+    label: "PP-OCRv6 多语种字符字典",
+    url: "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.yml",
+    bytes: 150_579,
+    sha256: "ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1",
   },
 };
 
@@ -79,7 +95,8 @@ export const KOREAN_OCR_PROFILE: OcrProfile = {
   label: "韩语 + 英语",
   languagesLabel: "韩语、English",
   modelPreset: "PP-OCRv5_mobile",
-  detection: SHARED_OCR_DETECTION,
+  dictionaryFormat: "plain",
+  detection: SHARED_OCR_V5_DETECTION,
   recognition: {
     id: "pp-ocrv5-korean-rec",
     label: "韩语识别模型",
@@ -101,7 +118,8 @@ export const CYRILLIC_OCR_PROFILE: OcrProfile = {
   label: "西里尔语系（俄 / 乌等）",
   languagesLabel: "俄语、乌克兰语、白俄罗斯语、保加利亚语、塞尔维亚语、哈萨克语等",
   modelPreset: "PP-OCRv5_mobile",
-  detection: SHARED_OCR_DETECTION,
+  dictionaryFormat: "plain",
+  detection: SHARED_OCR_V5_DETECTION,
   recognition: {
     id: "pp-ocrv5-cyrillic-rec",
     label: "西里尔语系识别模型",
@@ -123,7 +141,8 @@ export const THAI_OCR_PROFILE: OcrProfile = {
   label: "泰语 + 英语",
   languagesLabel: "泰语、English",
   modelPreset: "PP-OCRv5_mobile",
-  detection: SHARED_OCR_DETECTION,
+  dictionaryFormat: "plain",
+  detection: SHARED_OCR_V5_DETECTION,
   recognition: {
     id: "pp-ocrv5-th-rec",
     label: "泰语识别模型",
@@ -142,15 +161,26 @@ export const THAI_OCR_PROFILE: OcrProfile = {
 
 export const OCR_PROFILES: readonly OcrProfile[] = [
   DEFAULT_OCR_PROFILE,
-  LATIN_OCR_PROFILE,
   KOREAN_OCR_PROFILE,
   CYRILLIC_OCR_PROFILE,
   THAI_OCR_PROFILE,
 ];
 
+const LEGACY_PROFILE_ALIASES: Record<string, string> = {
+  "pp-ocrv5-mobile": DEFAULT_OCR_PROFILE.id,
+  "pp-ocrv5-latin": DEFAULT_OCR_PROFILE.id,
+};
+
+export function normalizeOcrProfileId(id?: string | null): string {
+  const trimmed = id?.trim();
+  if (!trimmed) return DEFAULT_OCR_PROFILE.id;
+  const aliased = LEGACY_PROFILE_ALIASES[trimmed] ?? trimmed;
+  return OCR_PROFILES.some((profile) => profile.id === aliased) ? aliased : DEFAULT_OCR_PROFILE.id;
+}
+
 export function getOcrProfile(id?: string | null): OcrProfile {
-  if (!id) return DEFAULT_OCR_PROFILE;
-  return OCR_PROFILES.find((profile) => profile.id === id) ?? DEFAULT_OCR_PROFILE;
+  const normalized = normalizeOcrProfileId(id);
+  return OCR_PROFILES.find((profile) => profile.id === normalized) ?? DEFAULT_OCR_PROFILE;
 }
 
 export function ocrProfileRecognitionBytes(profile: OcrProfile = DEFAULT_OCR_PROFILE): number {
@@ -159,4 +189,51 @@ export function ocrProfileRecognitionBytes(profile: OcrProfile = DEFAULT_OCR_PRO
 
 export function ocrProfileTotalBytes(profile: OcrProfile = DEFAULT_OCR_PROFILE): number {
   return profile.detection.bytes + profile.recognition.bytes + profile.dictionary.bytes;
+}
+
+/**
+ * Parses either a newline-delimited PaddleOCR dictionary file or a PaddleX `inference.yml`
+ * containing `PostProcess.character_dict:` YAML list items, appending `" "` if absent.
+ */
+export function parseOcrDictionaryText(raw: string, format?: OcrDictionaryFormat): string[] {
+  const normalized = raw.replace(/\r/g, "");
+  const isYaml = format === "paddle-yml" || (!format && /^\s*character_dict:\s*$/m.test(normalized));
+  let dictionary: string[];
+
+  if (isYaml) {
+    const marker = normalized.match(/^[ \t]*character_dict:[ \t]*$/m);
+    if (!marker || marker.index === undefined) {
+      throw new Error("OCR 字典配置缺少 character_dict 字段");
+    }
+    const after = normalized.slice(marker.index + marker[0].length);
+    const lines = after.split("\n");
+    dictionary = [];
+    for (const line of lines) {
+      const itemMatch = line.match(/^[ \t]*- (.*)$/);
+      if (!itemMatch) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (/^[A-Za-z_][A-Za-z0-9_]*:/.test(trimmed)) break;
+        continue;
+      }
+      const value = itemMatch[1]!;
+      if (value.startsWith("'") && value.endsWith("'") && value.length >= 2) {
+        dictionary.push(value.slice(1, -1).replace(/''/g, "'"));
+      } else if (value.startsWith("\"") && value.endsWith("\"") && value.length >= 2) {
+        try {
+          const parsed = JSON.parse(value);
+          dictionary.push(typeof parsed === "string" ? parsed : value.slice(1, -1));
+        } catch {
+          dictionary.push(value.slice(1, -1));
+        }
+      } else {
+        dictionary.push(value);
+      }
+    }
+  } else {
+    dictionary = normalized.replace(/\n+$/, "").split("\n");
+  }
+
+  if (!dictionary.includes(" ")) dictionary.push(" ");
+  return dictionary;
 }

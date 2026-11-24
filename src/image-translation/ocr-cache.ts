@@ -1,10 +1,12 @@
 import {
   DEFAULT_OCR_PROFILE,
+  DOC_LAYOUT_MODEL,
   OCR_PROFILES,
   SHARED_OCR_DETECTION,
   getOcrProfile,
   ocrProfileRecognitionBytes,
   ocrProfileTotalBytes,
+  type DocLayoutModelAsset,
   type OcrModelAsset,
   type OcrProfile,
 } from "./ocr-models";
@@ -14,6 +16,7 @@ export interface ImageOcrProfileStatus {
   label: string;
   languagesLabel: string;
   installed: boolean;
+  detectionInstalled: boolean;
   recognitionBytes: number;
   totalBytes: number;
 }
@@ -25,6 +28,8 @@ export interface ImageOcrStatus {
   activeProfileId: string;
   detectionInstalled: boolean;
   detectionBytes: number;
+  docLayoutInstalled: boolean;
+  docLayoutBytes: number;
   profiles: ImageOcrProfileStatus[];
 }
 
@@ -35,14 +40,20 @@ export interface ImageOcrBundle {
   dictionary: string;
 }
 
+export interface DocLayoutBundle {
+  asset: DocLayoutModelAsset;
+  model: ArrayBuffer;
+}
+
 type OcrProgress = (status: string) => void;
 
 const OCR_CACHE = "pagelingo-image-ocr-v1";
 const OCR_DB_NAME = "pagelingo-image-ocr-models-v1";
 const OCR_DB_STORE = "assets";
-const OCR_DOWNLOAD_TIMEOUT_MS = 60_000;
+const OCR_DOWNLOAD_TIMEOUT_MS = 90_000;
 const ocrAssetMemoryCache = new Map<string, ArrayBuffer>();
 const ocrBundlePromises = new Map<string, Promise<ImageOcrBundle>>();
+let docLayoutPromise: Promise<DocLayoutBundle> | null = null;
 let ocrDeletion: Promise<void> | null = null;
 
 function cacheKey(asset: OcrModelAsset): string {
@@ -189,18 +200,25 @@ async function downloadAsset(asset: OcrModelAsset, progress?: OcrProgress): Prom
 export async function getImageOcrStatus(activeProfile: OcrProfile | string = DEFAULT_OCR_PROFILE): Promise<ImageOcrStatus> {
   if (ocrDeletion) await ocrDeletion;
   const resolved = typeof activeProfile === "string" ? getOcrProfile(activeProfile) : activeProfile;
-  const detectionInstalled = Boolean(await cachedAsset(SHARED_OCR_DETECTION));
+  const [defaultDetInstalled, docLayoutInstalled] = await Promise.all([
+    cachedAsset(SHARED_OCR_DETECTION).then(Boolean),
+    cachedAsset(DOC_LAYOUT_MODEL).then(Boolean),
+  ]);
+  const detCache = new Map<string, boolean>([[SHARED_OCR_DETECTION.id, defaultDetInstalled]]);
   const profiles: ImageOcrProfileStatus[] = await Promise.all(
     OCR_PROFILES.map(async (profile) => {
       const [rec, dict] = await Promise.all([cachedAsset(profile.recognition), cachedAsset(profile.dictionary)]);
-      const detOk = profile.detection.id === SHARED_OCR_DETECTION.id
-        ? detectionInstalled
-        : Boolean(await cachedAsset(profile.detection));
+      let detOk = detCache.get(profile.detection.id);
+      if (detOk === undefined) {
+        detOk = Boolean(await cachedAsset(profile.detection));
+        detCache.set(profile.detection.id, detOk);
+      }
       return {
         id: profile.id,
         label: profile.label,
         languagesLabel: profile.languagesLabel,
         installed: detOk && Boolean(rec) && Boolean(dict),
+        detectionInstalled: detOk,
         recognitionBytes: ocrProfileRecognitionBytes(profile),
         totalBytes: ocrProfileTotalBytes(profile),
       };
@@ -212,10 +230,47 @@ export async function getImageOcrStatus(activeProfile: OcrProfile | string = DEF
     totalBytes: activeEntry.totalBytes,
     runtimeSupported: typeof WebAssembly === "object" && typeof Worker === "function",
     activeProfileId: resolved.id,
-    detectionInstalled,
-    detectionBytes: SHARED_OCR_DETECTION.bytes,
+    detectionInstalled: activeEntry.detectionInstalled,
+    detectionBytes: resolved.detection.bytes,
+    docLayoutInstalled,
+    docLayoutBytes: DOC_LAYOUT_MODEL.bytes,
     profiles,
   };
+}
+
+export async function getDocLayoutBundle(progress?: OcrProgress): Promise<DocLayoutBundle> {
+  if (ocrDeletion) await ocrDeletion;
+  if (docLayoutPromise) {
+    progress?.("正在准备文档版面检测模型…");
+    return docLayoutPromise;
+  }
+  const task = (async (): Promise<DocLayoutBundle> => {
+    progress?.("正在检查文档版面检测模型缓存…");
+    const model = await downloadAsset(DOC_LAYOUT_MODEL, progress);
+    progress?.("文档版面检测模型已准备完成");
+    return { asset: DOC_LAYOUT_MODEL, model };
+  })();
+  docLayoutPromise = task;
+  try {
+    return await task;
+  } catch (error) {
+    if (docLayoutPromise === task) docLayoutPromise = null;
+    throw error;
+  }
+}
+
+export async function deleteDocLayoutModel(): Promise<void> {
+  if (ocrDeletion) return ocrDeletion;
+  ocrDeletion = (async () => {
+    await docLayoutPromise?.catch(() => {});
+    docLayoutPromise = null;
+    await deleteSingleAsset(DOC_LAYOUT_MODEL);
+  })();
+  try {
+    await ocrDeletion;
+  } finally {
+    ocrDeletion = null;
+  }
 }
 
 export async function getImageOcrBundle(
@@ -272,7 +327,7 @@ export async function deleteImageOcrModels(profileOrId: OcrProfile | string = DE
       deleteSingleAsset(profile.recognition),
       deleteSingleAsset(profile.dictionary),
     ]);
-    // Only remove the shared detector when no other OCR language pack remains installed.
+    // Only remove the detector when no other installed OCR language pack shares it.
     const othersInstalled = await Promise.all(
       OCR_PROFILES
         .filter((candidate) => candidate.id !== profile.id && candidate.detection.id === profile.detection.id)

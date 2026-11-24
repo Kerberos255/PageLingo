@@ -68,7 +68,7 @@ export const DEFAULT_SETTINGS: PageLingoSettings = {
     alwaysTranslateLanguages: [],
     modelUpdatePolicy: "auto",
     imageTranslationEnabled: false,
-    imageOcrProfileId: "pp-ocrv5-mobile",
+    imageOcrProfileId: "pp-ocrv6-small",
     selectionQuickTranslateButton: false,
     terminologyText: "",
     builtinGlossaryEnabled: true,
@@ -320,9 +320,7 @@ export async function loadSettings(): Promise<PageLingoSettings> {
         alwaysTranslateLanguages: normalizeLanguageList(stored.alwaysTranslateLanguages),
         modelUpdatePolicy: normalizeModelUpdatePolicy(stored.modelUpdatePolicy),
         imageTranslationEnabled: stored.imageTranslationEnabled === true,
-        imageOcrProfileId: typeof stored.imageOcrProfileId === "string" && stored.imageOcrProfileId.trim()
-            ? stored.imageOcrProfileId.trim()
-            : DEFAULT_SETTINGS.imageOcrProfileId,
+        imageOcrProfileId: normalizeStoredImageOcrProfileId(stored.imageOcrProfileId),
         selectionQuickTranslateButton: stored.selectionQuickTranslateButton === true,
         terminologyText: typeof stored.terminologyText === "string" ? stored.terminologyText : "",
         builtinGlossaryEnabled: stored.builtinGlossaryEnabled !== false,
@@ -330,6 +328,15 @@ export async function loadSettings(): Promise<PageLingoSettings> {
         videoSubtitle: normalizeVideoSubtitleSettings(stored.videoSubtitle),
         bilingualStyle: normalizeBilingualStyle(stored.bilingualStyle),
     };
+}
+
+function normalizeStoredImageOcrProfileId(value: unknown): string {
+    if (typeof value !== "string") return DEFAULT_SETTINGS.imageOcrProfileId;
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === "pp-ocrv5-mobile" || trimmed === "pp-ocrv5-latin") {
+        return DEFAULT_SETTINGS.imageOcrProfileId;
+    }
+    return trimmed;
 }
 
 export async function saveDisplayMode(displayMode: DisplayMode): Promise<void> {
@@ -367,7 +374,7 @@ export async function saveImageTranslationEnabled(imageTranslationEnabled: boole
 }
 
 export async function saveImageOcrProfileId(imageOcrProfileId: string): Promise<void> {
-    const normalized = imageOcrProfileId.trim() || DEFAULT_SETTINGS.imageOcrProfileId;
+    const normalized = normalizeStoredImageOcrProfileId(imageOcrProfileId);
     await browser.storage.local.set({ imageOcrProfileId: normalized });
 }
 

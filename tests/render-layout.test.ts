@@ -35,4 +35,19 @@ describe("translation display preservation", () => {
 
     expect(translated.style.getPropertyValue("display")).toBe("flex");
   });
+
+  it("forces block display on table header/data cells without double-copying cell padding", () => {
+    document.body.innerHTML = '<table><tr><th id="h" style="padding: 7px 10px">Workflow Mode</th><td id="d" style="padding: 7px 10px">Side-by-side</td></tr></table>';
+    const th = document.querySelector<HTMLElement>("#h")!;
+    const td = document.querySelector<HTMLElement>("#d")!;
+    const trTh = mountTranslation(th, fragment("工作流模式"), "zh-Hans");
+    const trTd = mountTranslation(td, fragment("双栏对照"), "zh-Hans");
+
+    expect(trTh.parentElement).toBe(th);
+    expect(trTh.style.getPropertyValue("display")).toBe("block");
+    expect(trTh.style.getPropertyValue("padding-inline-start")).toBe("");
+    expect(trTd.parentElement).toBe(td);
+    expect(trTd.style.getPropertyValue("display")).toBe("block");
+    expect(trTd.style.getPropertyValue("padding-inline-start")).toBe("");
+  });
 });

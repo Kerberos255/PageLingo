@@ -731,10 +731,11 @@ function wrapDecoratedStructuralTextNodes(scope) {
         (style.backgroundColor && style.backgroundColor !== "transparent" && style.backgroundColor !== "rgba(0, 0, 0, 0)")
       )
     );
+    const isTableCell = root.tagName === "TD" || root.tagName === "TH";
     const mustPreserveStructure =
       root.tagName === "SUMMARY" ||
       structuralChild ||
-      hasBoxDecoration ||
+      (!isTableCell && hasBoxDecoration) ||
       Boolean(root.querySelector("svg,img,picture,canvas,[role='img'],input,select,textarea,button,relative-time,time-ago,local-time"));
     if (!mustPreserveStructure) continue;
     wrapTextNodesInside(root, doc);

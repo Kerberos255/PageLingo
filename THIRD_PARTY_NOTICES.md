@@ -90,14 +90,18 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## PP-OCRv5 model data
+## PP-OCRv6, PP-DocLayout, and PP-OCRv5 model data
 
-Image OCR model payloads are not redistributed in this repository. When image translation is enabled and used, PageLingo downloads the shared PP-OCRv5 Mobile ONNX text detection model (`pp-ocrv5-mobile-det`) once and downloads the user-selected PP-OCRv5 Mobile recognition model and character dictionary as data files, verifies pinned byte sizes and SHA-256 hashes, and caches them locally. These files are model/data payloads only and are never executed as extension code.
+Image OCR and scanned-PDF layout model payloads are not redistributed in this repository. When image translation or scanned-PDF OCR is invoked, PageLingo downloads the required ONNX model and character dictionary files as static data payloads, verifies pinned byte sizes and SHA-256 hashes, and caches them locally in IndexedDB. These files are model/data payloads only and are never executed as extension code.
 
-- Shared detection & default CJK/EN/JA recognition (PaddlePaddle on Hugging Face, Apache-2.0):
-  - Detection: https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx
-  - Recognition: https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec_onnx
-- Multilingual PP-OCRv5 Mobile recognition packs (Latin, Korean, Cyrillic, Thai) and PP-OCRv5 character dictionaries (RapidOCR `v3.9.0` / `v3.10.0` on ModelScope, Apache-2.0):
+- Default 50-language OCR (Simplified/Traditional Chinese, English, Japanese, and 46 Latin-script languages; PaddlePaddle on Hugging Face, Apache-2.0):
+  - Detection (`PP-OCRv6_small_det_onnx`): https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx
+  - Recognition & dictionary (`PP-OCRv6_small_rec_onnx`): https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx
+- On-demand scanned-PDF document layout detection (`PP-DocLayout-M`, Apache-2.0, upstream `PaddlePaddle/PP-DocLayout-M` ONNX export):
+  - Upstream checkpoint: https://huggingface.co/PaddlePaddle/PP-DocLayout-M
+  - ONNX mirror: https://huggingface.co/X3ZvaWQ/paddleocr-js-onnx
+- Optional PP-OCRv5 Mobile extension packs (Korean, Cyrillic, Thai) and shared v5 detector (Apache-2.0):
+  - Shared v5 detection: https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx
   - RapidOCR source: https://github.com/RapidAI/RapidOCR
   - Model host: https://www.modelscope.cn/models/RapidAI/RapidOCR
   - RapidOCR's model licensing documentation states that its hosted/converted PaddleOCR model assets are distributed under Apache-2.0 and retain upstream PaddleOCR attribution.

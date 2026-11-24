@@ -39,6 +39,11 @@
     <div class="reader-statusbar">
       <span id="reader-status" role="status">拖入本地 PDF / EPUB / DOCX / Markdown / HTML 文件，或从弹窗一键打开当前 PDF</span>
       <div id="reader-pdf-tools" class="reader-pdf-tools" hidden>
+        <div class="reader-view-switch" role="group" aria-label="PDF 阅读视图">
+          <button type="button" data-pdf-view="split" class="active">双栏对照</button>
+          <button type="button" data-pdf-view="overlay">原位覆盖</button>
+        </div>
+        <button id="reader-ocr-all" type="button" class="mini-btn accent" hidden>识别扫描页</button>
         <button id="reader-zoom-out" type="button" class="mini-btn" title="缩小">−</button>
         <span id="reader-zoom-label">100%</span>
         <button id="reader-zoom-in" type="button" class="mini-btn" title="放大">+</button>
@@ -50,9 +55,9 @@
         <div id="reader-dropzone" class="reader-dropzone" tabindex="0" role="button" aria-label="点击或拖入文档打开">
           <div class="drop-icon" aria-hidden="true">PDF / DOC</div>
           <h1>本地文档与 PDF 保真翻译阅读器</h1>
-          <p>在浏览器本地解析文档结构与数学公式，不上传原文件。支持双语对照、专业术语保护与原页同步高亮。</p>
+          <p>在浏览器本地解析文档结构与数学公式，不上传原文件。支持双栏对照、原位覆盖、扫描件 OCR（自动保留公式与图表）及专业术语保护。</p>
           <div class="format-badges">
-            <span>PDF（双栏 + 公式保护）</span>
+            <span>PDF（双栏 / 原位覆盖 / 扫描 OCR）</span>
             <span>EPUB 电子书</span>
             <span>DOCX（含公式）</span>
             <span>Markdown / LaTeX</span>

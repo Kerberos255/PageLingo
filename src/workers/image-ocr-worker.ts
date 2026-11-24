@@ -1,12 +1,29 @@
-import { PaddleOcrService, type OrtModule } from "paddleocr";
+import {
+  ObjectDetectionService,
+  PaddleOcrService,
+  getObjectDetectionPresetOptions,
+  type OrtInferenceSession,
+  type OrtModule,
+} from "paddleocr";
 import * as ort from "onnxruntime-web/wasm";
 import type { OcrRegion } from "../image-translation/ocr-layout";
+import {
+  parseOcrDictionaryText,
+  type OcrDictionaryFormat,
+  type OcrModelPreset,
+} from "../image-translation/ocr-models";
+import {
+  maskImageRgbaForOcr,
+  prepareLayoutMaskPlan,
+  type DocLayoutBox,
+} from "../reader/pdf-ocr-layout";
 
 interface WorkerRecognizeRequest {
   type: "recognize";
   id: number;
   profileId: string;
-  modelPreset: "PP-OCRv5_mobile" | "PP-OCRv6_tiny";
+  modelPreset: OcrModelPreset;
+  dictionaryFormat?: OcrDictionaryFormat;
   width: number;
   height: number;
   pixels: ArrayBuffer;
@@ -15,11 +32,27 @@ interface WorkerRecognizeRequest {
   dictionary?: string;
 }
 
+interface WorkerDocumentPageRequest {
+  type: "recognize-document-page";
+  id: number;
+  profileId: string;
+  modelPreset: OcrModelPreset;
+  dictionaryFormat?: OcrDictionaryFormat;
+  layoutPreset: "PP-DocLayout-M" | "PP-DocLayout-S";
+  width: number;
+  height: number;
+  pixels: ArrayBuffer;
+  detectionModel?: ArrayBuffer;
+  recognitionModel?: ArrayBuffer;
+  dictionary?: string;
+  layoutModel?: ArrayBuffer;
+}
+
 interface WorkerResetRequest {
   type: "reset";
 }
 
-type WorkerRequest = WorkerRecognizeRequest | WorkerResetRequest;
+type WorkerRequest = WorkerRecognizeRequest | WorkerDocumentPageRequest | WorkerResetRequest;
 
 interface WorkerProgress {
   type?: string;
@@ -42,6 +75,9 @@ const paddleOrt = ort as unknown as OrtModule;
 let ortRuntimeReady: Promise<void> | null = null;
 let service: PaddleOcrService | null = null;
 let activeProfileId = "";
+let layoutSession: OrtInferenceSession | null = null;
+let layoutService: ObjectDetectionService | null = null;
+let activeLayoutPreset = "";
 
 function report(id: number, status: string, progress?: number): void {
   scope.postMessage({ type: "progress", id, status, progress });
@@ -88,17 +124,24 @@ async function reset(): Promise<void> {
   await service?.destroy();
   service = null;
   activeProfileId = "";
+  if (layoutSession) {
+    await (layoutSession as OrtInferenceSession & { release?: () => Promise<void> }).release?.().catch(() => {});
+  }
+  layoutSession = null;
+  layoutService = null;
+  activeLayoutPreset = "";
 }
 
-async function ensureService(request: WorkerRecognizeRequest): Promise<PaddleOcrService> {
+async function ensureService(request: WorkerRecognizeRequest | WorkerDocumentPageRequest): Promise<PaddleOcrService> {
   if (service && activeProfileId === request.profileId) return service;
   if (!request.detectionModel || !request.recognitionModel || request.dictionary === undefined) {
     throw new Error("OCR models are required to initialize the worker");
   }
-  await reset();
+  await service?.destroy();
+  service = null;
+  activeProfileId = "";
   await ensureOrtRuntime();
-  const dictionary = request.dictionary.replace(/\r/g, "").replace(/\n+$/, "").split("\n");
-  if (!dictionary.includes(" ")) dictionary.push(" ");
+  const dictionary = parseOcrDictionaryText(request.dictionary, request.dictionaryFormat);
   report(request.id, "正在初始化文字识别", 0.22);
   service = await PaddleOcrService.createInstance({
     ort: paddleOrt,
@@ -111,6 +154,32 @@ async function ensureService(request: WorkerRecognizeRequest): Promise<PaddleOcr
   });
   activeProfileId = request.profileId;
   return service;
+}
+
+async function ensureLayoutService(request: WorkerDocumentPageRequest): Promise<ObjectDetectionService> {
+  if (layoutService && activeLayoutPreset === request.layoutPreset) return layoutService;
+  if (!request.layoutModel) {
+    throw new Error("Document layout model is required to initialize layout detection");
+  }
+  if (layoutSession) {
+    await (layoutSession as OrtInferenceSession & { release?: () => Promise<void> }).release?.().catch(() => {});
+  }
+  layoutSession = null;
+  layoutService = null;
+  activeLayoutPreset = "";
+  await ensureOrtRuntime();
+  report(request.id, "正在初始化版面检测", 0.18);
+  const session = await ort.InferenceSession.create(new Uint8Array(request.layoutModel), {
+    executionProviders: ["wasm"],
+  }) as unknown as OrtInferenceSession;
+  layoutSession = session;
+  layoutService = new ObjectDetectionService(
+    paddleOrt,
+    session,
+    getObjectDetectionPresetOptions(request.layoutPreset),
+  );
+  activeLayoutPreset = request.layoutPreset;
+  return layoutService;
 }
 
 async function recognize(request: WorkerRecognizeRequest): Promise<void> {
@@ -142,10 +211,77 @@ async function recognize(request: WorkerRecognizeRequest): Promise<void> {
   }
 }
 
+async function recognizeDocumentPage(request: WorkerDocumentPageRequest): Promise<void> {
+  try {
+    const layout = await ensureLayoutService(request);
+    report(request.id, "正在分析页面版面（公式 / 表格 / 图表）…", 0.26);
+    const sourcePixels = new Uint8ClampedArray(request.pixels);
+    const dets = await layout.run(
+      {
+        width: request.width,
+        height: request.height,
+        data: new Uint8Array(sourcePixels.buffer, sourcePixels.byteOffset, sourcePixels.byteLength),
+      },
+      { threshold: 0.38 },
+    );
+    const rawBoxes: DocLayoutBox[] = dets.map((det) => ({
+      label: det.label,
+      score: det.score,
+      box: {
+        x: det.coordinate[0] ?? 0,
+        y: det.coordinate[1] ?? 0,
+        width: Math.max(1, (det.coordinate[2] ?? 0) - (det.coordinate[0] ?? 0)),
+        height: Math.max(1, (det.coordinate[3] ?? 0) - (det.coordinate[1] ?? 0)),
+      },
+    }));
+    const plan = prepareLayoutMaskPlan(rawBoxes, request.width, request.height);
+    const maskedPixels = maskImageRgbaForOcr(sourcePixels, request.width, request.height, plan.maskRects);
+
+    const ocr = await ensureService(request);
+    report(
+      request.id,
+      plan.visualBlocks.length > 0
+        ? `已保护 ${plan.visualBlocks.length} 处公式/图表，正在 OCR 识别正文…`
+        : "正在 OCR 识别页面文字…",
+      0.42,
+    );
+    const raw = await ocr.recognize(
+      {
+        width: request.width,
+        height: request.height,
+        data: new Uint8Array(maskedPixels.buffer, maskedPixels.byteOffset, maskedPixels.byteLength),
+      },
+      {
+        onProgress(progress: WorkerProgress) {
+          const info = progressInfo(progress);
+          if (info) report(request.id, info.label, 0.4 + info.ratio * 0.55);
+        },
+      },
+    );
+    const regions: OcrRegion[] = raw.map((item) => ({
+      text: item.text,
+      confidence: item.confidence,
+      box: {
+        x: item.box.x,
+        y: item.box.y,
+        width: item.box.width,
+        height: item.box.height,
+      },
+    }));
+    scope.postMessage({ type: "document-result", id: request.id, plan, regions });
+  } catch (error) {
+    scope.postMessage({ type: "error", id: request.id, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 scope.addEventListener("message", (event) => {
   const request = event.data;
   if (request.type === "reset") {
     void reset();
+    return;
+  }
+  if (request.type === "recognize-document-page") {
+    void recognizeDocumentPage(request);
     return;
   }
   void recognize(request);
