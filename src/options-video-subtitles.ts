@@ -40,7 +40,9 @@ const COLOR_LABELS: Record<string, string> = {
 };
 
 const enabledToggle = document.querySelector<HTMLInputElement>("#video-subtitle-enabled");
+const autoStartToggle = document.querySelector<HTMLInputElement>("#video-subtitle-auto-start");
 const playerButtonToggle = document.querySelector<HTMLInputElement>("#video-subtitle-player-button");
+const playerButtonHint = document.querySelector<HTMLElement>("#video-subtitle-player-button-hint");
 const engineSelect = document.querySelector<HTMLSelectElement>("#video-subtitle-engine");
 const displayModeRadios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="video-subtitle-display-mode"]'));
 const orderRadios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="video-subtitle-order"]'));
@@ -119,7 +121,17 @@ function renderPreview(): void {
 
 function syncControlsFromState(): void {
   if (enabledToggle) enabledToggle.checked = currentVideoSettings.enabled;
-  if (playerButtonToggle) playerButtonToggle.checked = currentVideoSettings.showPlayerButton;
+  if (autoStartToggle) autoStartToggle.checked = currentVideoSettings.autoStart;
+  if (playerButtonToggle) {
+    // When autoStart is off, the player button is the only entry point to activate subtitles.
+    playerButtonToggle.disabled = !currentVideoSettings.autoStart;
+    playerButtonToggle.checked = !currentVideoSettings.autoStart ? true : currentVideoSettings.showPlayerButton;
+  }
+  if (playerButtonHint) {
+    playerButtonHint.textContent = currentVideoSettings.autoStart
+      ? "在播放器控制栏或角落显示开关，仅对当前视频临时切换双语 / 译文 / 关闭（B 站软字幕需登录账号）"
+      : "当前为手动点击开启模式，需保留播放器快捷按钮作为开启入口（仅对当前视频临时切换双语 / 译文 / 关闭；B 站软字幕需登录账号）";
+  }
   if (learningModeToggle) learningModeToggle.checked = currentVideoSettings.learningMode;
   if (preferManualToggle) preferManualToggle.checked = currentVideoSettings.preferManualCaptions;
   if (filterSfxToggle) filterSfxToggle.checked = currentVideoSettings.filterSoundEffects;
@@ -242,6 +254,13 @@ export async function initializeVideoSubtitleSettings(): Promise<void> {
     void persistPatch(
       { enabled: enabledToggle.checked },
       enabledToggle.checked ? "视频字幕翻译已开启" : "视频字幕翻译已关闭",
+    );
+  });
+
+  autoStartToggle?.addEventListener("change", () => {
+    void persistPatch(
+      { autoStart: autoStartToggle.checked },
+      autoStartToggle.checked ? "已开启自动显示外语字幕" : "已设为手动点击播放器按钮开启",
     );
   });
 

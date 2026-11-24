@@ -575,6 +575,7 @@ function renderGlossaryCollections(): void {
         copy.append(title, handle);
         const toggleLabel = document.createElement("label"); toggleLabel.className = "switch";
         const toggle = document.createElement("input"); toggle.type = "checkbox"; toggle.checked = collection.enabled !== false;
+        toggle.setAttribute("aria-label", `启用术语库 ${collection.name}`);
         const knob = document.createElement("i"); toggleLabel.append(toggle, knob);
         toggle.addEventListener("change", () => { collection.enabled = toggle.checked; void persistGlossaryCollections(toggle.checked ? "术语库已启用" : "术语库已停用"); });
         top.append(copy, toggleLabel);

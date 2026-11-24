@@ -191,7 +191,6 @@ h1 { margin: 0; font-size: 16.5px; font-weight: 720; letter-spacing: -.025em; }
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
-  cursor: pointer;
 }
 
 .site-auto-row strong, .site-auto-row small { display: block; }

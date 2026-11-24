@@ -5,6 +5,7 @@ export type VideoSubtitleDisplayMode = "follow" | "bilingual" | "translation";
 export type VideoSubtitleOrder = "source-top" | "translation-top";
 export interface VideoSubtitleSettings {
     enabled: boolean;
+    autoStart: boolean;
     showPlayerButton: boolean;
     engineId: string;
     displayMode: VideoSubtitleDisplayMode;
@@ -44,6 +45,7 @@ export const DEFAULT_BILINGUAL_STYLE: BilingualStyleSettings = {
 
 export const DEFAULT_VIDEO_SUBTITLE_SETTINGS: VideoSubtitleSettings = {
     enabled: false,
+    autoStart: false,
     showPlayerButton: true,
     engineId: "follow",
     displayMode: "bilingual",
@@ -262,6 +264,7 @@ export function normalizeVideoSubtitleSettings(value: unknown): VideoSubtitleSet
         : "follow";
     return {
         enabled: record.enabled === true,
+        autoStart: record.autoStart === true,
         showPlayerButton: record.showPlayerButton !== false,
         engineId,
         displayMode,

@@ -70,16 +70,16 @@
           <button id="restore" class="secondary" type="button">显示原文</button>
         </div>
 
-        <label class="site-auto-row">
+        <div class="site-auto-row">
           <span>
-            <strong>在此网站自动翻译</strong>
+            <strong id="label-site-auto">在此网站自动翻译</strong>
             <small id="site-auto-hint"></small>
           </span>
-          <span class="switch">
-            <input id="site-auto" type="checkbox" disabled />
+          <label class="switch">
+            <input id="site-auto" type="checkbox" disabled aria-labelledby="label-site-auto" />
             <i aria-hidden="true"></i>
-          </span>
-        </label>
+          </label>
+        </div>
 
         <p id="status" role="status"></p>
       </section>

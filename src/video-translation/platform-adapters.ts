@@ -446,8 +446,8 @@ export async function discoverYouTubeSubtitleDetailed(
         videoKey: `yt:${videoId}:${manualTarget.track.vssId ?? manualTarget.lang ?? "target"}`,
         sourceLanguage: targetNorm,
         isAsr: false,
-        hasManualTarget: true,
-        cues: targetCues.map((c) => ({ ...c, translatedText: c.text })),
+        hasManualTarget: false,
+        cues: targetCues,
       },
     };
   }
@@ -983,8 +983,8 @@ export async function discoverBilibiliSubtitleDetailed(
           videoKey: `bili:${ids.bvid ?? ids.aid}:${ids.cid}:${manualTarget.item.lan ?? "target"}`,
           sourceLanguage: targetNorm,
           isAsr: false,
-          hasManualTarget: true,
-          cues: sourceCues.map((c) => ({ ...c, translatedText: c.text })),
+          hasManualTarget: false,
+          cues: sourceCues,
         },
       };
     }
@@ -1158,8 +1158,8 @@ export async function discoverHtml5Subtitle(
             videoKey: `html5:${chosen.el.src}:target`,
             sourceLanguage: targetNorm,
             isAsr: false,
-            hasManualTarget: true,
-            cues: sourceCues.map((c) => ({ ...c, translatedText: c.text })),
+            hasManualTarget: false,
+            cues: sourceCues,
             restoreNativeTrack,
           };
         }

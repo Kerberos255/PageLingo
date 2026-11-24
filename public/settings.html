@@ -24,10 +24,10 @@
         <section id="translation" class="section settings-page active">
           <div class="section-heading"><h2>网页翻译</h2></div>
           <div class="setting-card behavior-card">
-            <label class="setting-row">
-              <span><strong>自动翻译</strong><small>打开网页时自动翻译为目标语言</small></span>
-              <span class="switch"><input id="auto-translate-enabled" type="checkbox" /><i aria-hidden="true"></i></span>
-            </label>
+            <div class="setting-row">
+              <span><strong id="label-auto-translate">自动翻译</strong><small>打开网页时自动翻译为目标语言</small></span>
+              <label class="switch"><input id="auto-translate-enabled" type="checkbox" aria-labelledby="label-auto-translate" /><i aria-hidden="true"></i></label>
+            </div>
             <label class="setting-row" for="target-language"><strong>目标语言</strong><select id="target-language"></select></label>
             <div class="setting-row">
               <strong>显示模式</strong>
@@ -36,10 +36,10 @@
                 <label><input type="radio" name="display-mode" value="bilingual" /><span>双语对照</span></label>
               </fieldset>
             </div>
-            <label class="setting-row">
-              <span><strong>划词浮动翻译按钮</strong><small>选中文字后在光标旁显示轻量翻译图标（右键「翻译所选内容」始终可用）</small></span>
-              <span class="switch"><input id="selection-quick-translate-button" type="checkbox" /><i aria-hidden="true"></i></span>
-            </label>
+            <div class="setting-row">
+              <span><strong id="label-selection-quick-translate">划词浮动翻译按钮</strong><small>选中文字后在光标旁显示轻量翻译图标（右键「翻译所选内容」始终可用）</small></span>
+              <label class="switch"><input id="selection-quick-translate-button" type="checkbox" aria-labelledby="label-selection-quick-translate" /><i aria-hidden="true"></i></label>
+            </div>
             <div class="setting-row">
               <span><strong>翻译缓存</strong><small id="translation-cache-status">正在读取缓存状态…</small></span>
               <button id="clear-translation-cache" type="button" class="ghost-button">清空缓存</button>
@@ -74,10 +74,10 @@
                   <label><input type="radio" name="bilingual-order" value="translation-top" /><span>译文在上</span></label>
                 </fieldset>
               </div>
-              <label class="setting-row">
-                <span><strong>学习模式</strong><small>双语对照下默认模糊译文，鼠标悬停或点击段落时显示</small></span>
-                <span class="switch"><input id="bilingual-learning-mode" type="checkbox" /><i aria-hidden="true"></i></span>
-              </label>
+              <div class="setting-row">
+                <span><strong id="label-bilingual-learning">学习模式</strong><small>双语对照下默认模糊译文，鼠标悬停或点击段落时显示</small></span>
+                <label class="switch"><input id="bilingual-learning-mode" type="checkbox" aria-labelledby="label-bilingual-learning" /><i aria-hidden="true"></i></label>
+              </div>
               <div class="setting-row">
                 <span><strong>译文样式</strong><small>为双语译文提供视觉区分，不破坏网页原有排版</small></span>
                 <fieldset class="segmented bilingual-theme-segmented" aria-label="双语译文样式预设">
@@ -188,7 +188,7 @@
         <section id="image-translation" class="section settings-page">
           <div class="section-heading"><h2>图片翻译</h2><p>右键网页中的图片可翻译；翻译完成后再次右键可还原图片</p></div>
           <div class="setting-card stack-card">
-            <label class="setting-row"><strong>启用图片翻译</strong><span class="switch"><input id="image-translation-enabled" type="checkbox" /><i aria-hidden="true"></i></span></label>
+            <div class="setting-row"><strong id="label-image-translation">启用图片翻译</strong><label class="switch"><input id="image-translation-enabled" type="checkbox" aria-labelledby="label-image-translation" /><i aria-hidden="true"></i></label></div>
             <label class="setting-row" for="image-ocr-profile-select">
               <span><strong>当前识别语种包</strong><small>所有语种包共享同一套 4.8 MB 通用文字检测模型，按需下载对应识别包即可</small></span>
               <select id="image-ocr-profile-select"></select>
@@ -201,16 +201,20 @@
           </div>
         </section>
         <section id="video-translation" class="section settings-page">
-          <div class="section-heading"><h2>视频字幕</h2><p>自动翻译 YouTube、Bilibili 及 Coursera / Udemy / Vimeo / Video.js 等标准 HTML5 视频软字幕；可在播放器内随时切换双语、仅译文或关闭</p></div>
+          <div class="section-heading"><h2>视频字幕</h2><p>支持 YouTube、Bilibili 及 Coursera / Udemy / Vimeo / Video.js 等标准 HTML5 视频软字幕；默认通过播放器按钮按需开启，随时切换双语、仅译文或关闭</p></div>
           <div class="setting-card behavior-card">
-            <label class="setting-row">
-              <span><strong>启用视频字幕翻译</strong><small>在支持的视频页面自动加载软字幕并叠加翻译</small></span>
-              <span class="switch"><input id="video-subtitle-enabled" type="checkbox" /><i aria-hidden="true"></i></span>
-            </label>
-            <label class="setting-row">
-              <span><strong>在播放器显示快捷按钮</strong><small>启用视频字幕翻译后，在播放器控制栏或角落显示开关，一键切换双语 / 译文 / 关闭（B 站软字幕需登录账号）</small></span>
-              <span class="switch"><input id="video-subtitle-player-button" type="checkbox" checked /><i aria-hidden="true"></i></span>
-            </label>
+            <div class="setting-row">
+              <span><strong id="label-video-subtitle-enabled">启用视频字幕翻译</strong><small>在支持的视频页面启用字幕翻译与播放器快捷按钮</small></span>
+              <label class="switch"><input id="video-subtitle-enabled" type="checkbox" aria-labelledby="label-video-subtitle-enabled" /><i aria-hidden="true"></i></label>
+            </div>
+            <div class="setting-row">
+              <span><strong id="label-video-subtitle-auto-start">打开视频时自动显示外语字幕</strong><small>关闭时，进入视频仅显示关闭态快捷按钮，点击后再按默认模式开启；与目标语言相同的视频不会自动弹出，手动点击按钮可自动译为第二语言（如中英双语）</small></span>
+              <label class="switch"><input id="video-subtitle-auto-start" type="checkbox" aria-labelledby="label-video-subtitle-auto-start" /><i aria-hidden="true"></i></label>
+            </div>
+            <div class="setting-row">
+              <span><strong id="label-video-subtitle-player-button">在播放器显示快捷按钮</strong><small id="video-subtitle-player-button-hint">当前为手动点击开启模式，需保留播放器快捷按钮作为开启入口（仅对当前视频临时切换双语 / 译文 / 关闭；B 站软字幕需登录账号）</small></span>
+              <label class="switch"><input id="video-subtitle-player-button" type="checkbox" checked aria-labelledby="label-video-subtitle-player-button" /><i aria-hidden="true"></i></label>
+            </div>
             <label class="setting-row" for="video-subtitle-engine">
               <span><strong>字幕翻译引擎</strong><small>默认跟随当前网页翻译引擎，也可单独指定</small></span>
               <select id="video-subtitle-engine"><option value="follow">跟随当前网页引擎</option></select>
@@ -218,8 +222,8 @@
           </div>
           <div class="setting-card behavior-card">
             <div class="setting-row">
-              <span><strong>显示模式</strong><small>控制视频字幕以双语或仅译文显示</small></span>
-              <fieldset class="segmented" aria-label="视频字幕显示模式">
+              <span><strong>默认显示模式</strong><small>自动开启或点击播放器按钮时的初始形态；播放器内切换仅对当前视频临时生效，切视频后恢复此处默认</small></span>
+              <fieldset class="segmented" aria-label="视频字幕默认显示模式">
                 <label><input type="radio" name="video-subtitle-display-mode" value="follow" /><span>跟随网页</span></label>
                 <label><input type="radio" name="video-subtitle-display-mode" value="bilingual" checked /><span>双语字幕</span></label>
                 <label><input type="radio" name="video-subtitle-display-mode" value="translation" /><span>仅译文</span></label>
@@ -232,24 +236,24 @@
                 <label><input type="radio" name="video-subtitle-order" value="translation-top" /><span>译文在上</span></label>
               </fieldset>
             </div>
-            <label class="setting-row">
-              <span><strong>学习模式</strong><small>双语字幕下默认模糊译文，鼠标悬停或点击字幕时显示</small></span>
-              <span class="switch"><input id="video-subtitle-learning-mode" type="checkbox" /><i aria-hidden="true"></i></span>
-            </label>
+            <div class="setting-row">
+              <span><strong id="label-video-subtitle-learning">学习模式</strong><small>双语字幕下默认模糊译文，鼠标悬停或点击字幕时显示</small></span>
+              <label class="switch"><input id="video-subtitle-learning-mode" type="checkbox" aria-labelledby="label-video-subtitle-learning" /><i aria-hidden="true"></i></label>
+            </div>
           </div>
           <div class="setting-card behavior-card">
-            <label class="setting-row">
-              <span><strong>优先使用人工字幕</strong><small>视频自带目标语言人工字幕时直接对照显示，减少重复机翻</small></span>
-              <span class="switch"><input id="video-subtitle-prefer-manual" type="checkbox" checked /><i aria-hidden="true"></i></span>
-            </label>
-            <label class="setting-row">
-              <span><strong>过滤环境音字幕</strong><small>自动移除 [Music]、(Applause)、♪ 等非对话声音标注</small></span>
-              <span class="switch"><input id="video-subtitle-filter-sfx" type="checkbox" checked /><i aria-hidden="true"></i></span>
-            </label>
-            <label class="setting-row">
-              <span><strong>自动字幕智能断句合并</strong><small>将 YouTube / Bilibili 自动语音识别的零碎片段合并成完整语句后再翻译</small></span>
-              <span class="switch"><input id="video-subtitle-merge-asr" type="checkbox" checked /><i aria-hidden="true"></i></span>
-            </label>
+            <div class="setting-row">
+              <span><strong id="label-video-subtitle-prefer-manual">优先使用人工字幕</strong><small>视频自带目标语言人工字幕时直接对照显示，减少重复机翻</small></span>
+              <label class="switch"><input id="video-subtitle-prefer-manual" type="checkbox" checked aria-labelledby="label-video-subtitle-prefer-manual" /><i aria-hidden="true"></i></label>
+            </div>
+            <div class="setting-row">
+              <span><strong id="label-video-subtitle-filter-sfx">过滤环境音字幕</strong><small>自动移除 [Music]、(Applause)、♪ 等非对话声音标注</small></span>
+              <label class="switch"><input id="video-subtitle-filter-sfx" type="checkbox" checked aria-labelledby="label-video-subtitle-filter-sfx" /><i aria-hidden="true"></i></label>
+            </div>
+            <div class="setting-row">
+              <span><strong id="label-video-subtitle-merge-asr">自动字幕智能断句合并</strong><small>将 YouTube / Bilibili 自动语音识别的零碎片段合并成完整语句后再翻译</small></span>
+              <label class="switch"><input id="video-subtitle-merge-asr" type="checkbox" checked aria-labelledby="label-video-subtitle-merge-asr" /><i aria-hidden="true"></i></label>
+            </div>
           </div>
           <div class="setting-card stack-card subtitle-style-card">
             <div class="subtitle-style-head">
@@ -339,7 +343,7 @@
               <label><span>API Key</span><input id="engine-api-key" type="password" autocomplete="off" /></label>
               <div class="engine-field" data-engine-field="model"><span>模型</span><div class="engine-model-row"><input id="engine-model" type="text" spellcheck="false" placeholder="点击「获取模型」选择或手动输入模型 ID" /><button id="get-engine-models" type="button">获取模型</button></div></div>
               <label data-engine-field="region"><span>Azure Region（可选）</span><input id="engine-region" type="text" spellcheck="false" /></label>
-              <label class="engine-wide engine-checkbox" data-engine-field="llm"><input id="engine-disable-thinking" type="checkbox" checked /><span>关闭思考模式（推荐，显著降低支持思考/推理模式模型的翻译延迟）</span></label>
+              <div class="engine-wide engine-checkbox" data-engine-field="llm"><input id="engine-disable-thinking" type="checkbox" checked aria-labelledby="label-engine-disable-thinking" /><span id="label-engine-disable-thinking">关闭思考模式（推荐，显著降低支持思考/推理模式模型的翻译延迟）</span></div>
               <label class="engine-wide" data-engine-field="prompt"><span>LLM 提示词（可选）</span><textarea id="engine-prompt" rows="4" placeholder="留空使用 PageLingo 的 HTML 安全翻译提示词"></textarea></label>
               <label class="engine-wide" data-engine-field="custom"><span>请求头 JSON</span><textarea id="engine-headers-json" rows="3" spellcheck="false" placeholder='{"Authorization":"Bearer {{apiKey}}"}'></textarea></label>
               <label class="engine-wide" data-engine-field="custom"><span>请求体 JSON 模板</span><textarea id="engine-body-json" rows="5" spellcheck="false" placeholder='{"text":"{{html}}","source":"{{source}}","target":"{{target}}"}'></textarea></label>

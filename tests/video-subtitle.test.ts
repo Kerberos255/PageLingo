@@ -47,10 +47,15 @@ afterEach(() => {
   registerAiSubtitleProvider(null);
 });
 
-function makeSettings(overrides: Partial<PageLingoSettings["videoSubtitle"]> = {}, displayMode: "translation" | "bilingual" = "translation"): PageLingoSettings {
+function makeSettings(
+  overrides: Partial<PageLingoSettings["videoSubtitle"]> = {},
+  displayMode: "translation" | "bilingual" = "translation",
+  targetLanguage: string = DEFAULT_SETTINGS.targetLanguage,
+): PageLingoSettings {
   return {
     ...DEFAULT_SETTINGS,
     displayMode,
+    targetLanguage,
     videoSubtitle: {
       ...DEFAULT_VIDEO_SUBTITLE_SETTINGS,
       ...overrides,
@@ -167,6 +172,9 @@ describe("video subtitle cue parsing & processing", () => {
   });
 
   it("normalizes and clamps video subtitle settings safely", () => {
+    expect(DEFAULT_VIDEO_SUBTITLE_SETTINGS.autoStart).toBe(false);
+    expect(DEFAULT_VIDEO_SUBTITLE_SETTINGS.showPlayerButton).toBe(true);
+
     const normalized = normalizeVideoSubtitleSettings({
       enabled: true,
       showPlayerButton: false,
@@ -181,6 +189,7 @@ describe("video subtitle cue parsing & processing", () => {
     });
     expect(normalized).toEqual({
       enabled: true,
+      autoStart: false,
       showPlayerButton: false,
       engineId: "builtin-google-free",
       displayMode: "translation",
@@ -194,6 +203,7 @@ describe("video subtitle cue parsing & processing", () => {
       translationColor: "#ffffff",
       backgroundOpacity: 90,
     });
+    expect(normalizeVideoSubtitleSettings({ autoStart: true }).autoStart).toBe(true);
   });
 
   it("detects YouTube, Bilibili, and generic HTML5 platforms", () => {
@@ -249,6 +259,7 @@ describe("VideoSubtitleManager end-to-end overlay controller", () => {
     // Enable live with dedicated engineId and learning mode.
     await manager.applySettings(makeSettings({
       enabled: true,
+      autoStart: true,
       engineId: "builtin-microsoft-free",
       displayMode: "bilingual",
       order: "translation-top",
@@ -336,7 +347,7 @@ describe("VideoSubtitleManager end-to-end overlay controller", () => {
     let callCount = 0;
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, displayMode: "follow" }, "translation"),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, displayMode: "follow" }, "translation"),
       discoverFn: async () => ({
         platform: "youtube",
         videoKey: "yt:abc->manual",
@@ -366,7 +377,7 @@ describe("VideoSubtitleManager end-to-end overlay controller", () => {
     expect(transEl.textContent).toBe("官方人工中文字幕。");
 
     // Switching webpage displayMode to bilingual updates "follow" live.
-    await manager.applySettings(makeSettings({ enabled: true, displayMode: "follow" }, "bilingual"));
+    await manager.applySettings(makeSettings({ enabled: true, autoStart: true, displayMode: "follow" }, "bilingual"));
     expect(srcEl.hidden).toBe(false);
     expect(srcEl.textContent).toBe("Official English line.");
     expect(transEl.textContent).toBe("官方人工中文字幕。");
@@ -416,7 +427,7 @@ describe("VideoSubtitleManager end-to-end overlay controller", () => {
     let attempt = 0;
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "bilibili",
       discoverDetailedFn: async () => {
         attempt += 1;
@@ -488,7 +499,7 @@ describe("VideoSubtitleManager end-to-end overlay controller", () => {
 
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, displayMode: "bilingual" }),
       platformFn: () => "bilibili",
       discoverDetailedFn: async () => ({
         status: "ready",
@@ -773,7 +784,7 @@ describe("YouTube PO-token recovery, live DOM caption bridge, and Shorts", () =>
 
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "youtube",
       detectLanguageFn: async () => "en",
       discoverDetailedFn: async () => ({ track: null, status: "need_cc" }),
@@ -843,7 +854,7 @@ describe("YouTube PO-token recovery, live DOM caption bridge, and Shorts", () =>
 
       const manager = new VideoSubtitleManager({
         doc: document,
-        loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true }),
+        loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true }),
         platformFn: () => "youtube",
         discoverDetailedFn: async () => ({ track: null, status: "no_subtitles" }),
       });
@@ -944,7 +955,7 @@ describe("Universal HTML5 async TextTracks, major player frameworks, and fullscr
 
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "html5",
       discoverDetailedFn: async (v, opts) => {
         const track = await discoverHtml5Subtitle(v, opts, { waitTimeoutMs: 400 });
@@ -1011,7 +1022,7 @@ describe("Universal HTML5 async TextTracks, major player frameworks, and fullscr
 
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "html5",
       discoverDetailedFn: async (v) => v === video
         ? {
@@ -1272,7 +1283,7 @@ describe("Firefox Xray compartment safety, brand P icon, calm no-subtitle UX, an
 
       const manager = new VideoSubtitleManager({
         doc: document,
-        loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true }),
+        loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true }),
         platformFn: () => "bilibili",
         discoverDetailedFn: async () => ({ track: null, status: "error" }),
       });
@@ -1330,7 +1341,7 @@ describe("Firefox Xray compartment safety, brand P icon, calm no-subtitle UX, an
 
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "bilibili",
       discoverDetailedFn: async () => ({ track: null, status: "no_subtitles" }),
       provider: {
@@ -1380,7 +1391,7 @@ describe("Firefox Xray compartment safety, brand P icon, calm no-subtitle UX, an
 
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "html5",
       discoverDetailedFn: async () => ({
         status: "ready",
@@ -1457,7 +1468,7 @@ describe("video subtitle translating indicator and transient failure cooldown re
     const pendingResolvers = new Map<string, (html: string) => void>();
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "html5",
       discoverDetailedFn: async () => ({
         status: "ready",
@@ -1539,7 +1550,7 @@ describe("video subtitle translating indicator and transient failure cooldown re
     let attempts = 0;
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "html5",
       retryDelaysMs: [25, 35],
       discoverDetailedFn: async () => ({
@@ -1597,7 +1608,7 @@ describe("video subtitle translating indicator and transient failure cooldown re
     let shouldSucceed = false;
     const capManager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "html5",
       retryDelaysMs: [15],
       discoverDetailedFn: async () => ({
@@ -1650,7 +1661,7 @@ describe("video subtitle translating indicator and transient failure cooldown re
     let fatalAttempts = 0;
     const fatalManager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "html5",
       retryDelaysMs: [15],
       discoverDetailedFn: async () => ({
@@ -1697,7 +1708,7 @@ describe("video subtitle translating indicator and transient failure cooldown re
     let attempts = 0;
     const manager = new VideoSubtitleManager({
       doc: document,
-      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, showPlayerButton: true, displayMode: "bilingual" }),
       platformFn: () => "youtube",
       detectLanguageFn: async () => "en",
       retryDelaysMs: [20],
@@ -1729,4 +1740,361 @@ describe("video subtitle translating indicator and transient failure cooldown re
     manager.dispose();
   });
 });
+
+describe("manual-start default, same-language fallback bilingual, and missing language pack hints", () => {
+  it("stays calmly off by default (autoStart: false), respects configured default displayMode on first click, and never locks out the quick button", async () => {
+    const videoArea = document.createElement("div");
+    videoArea.className = "bpx-player-video-area";
+    const video = document.createElement("video");
+    Object.defineProperty(video, "currentTime", { value: 2.0, writable: true, configurable: true });
+    const bottomRight = document.createElement("div");
+    bottomRight.className = "bpx-player-control-bottom-right";
+    videoArea.append(video, bottomRight);
+    document.body.append(videoArea);
+
+    const calls: TranslationRequest[] = [];
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      // Default autoStart is false; even if showPlayerButton is false, manual mode keeps the quick button visible.
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: false, displayMode: "translation" }),
+      platformFn: () => "bilibili",
+      discoverDetailedFn: async () => ({
+        status: "ready",
+        track: {
+          platform: "bilibili",
+          videoKey: "bili:BV1manual:1001:en",
+          sourceLanguage: "en",
+          isAsr: false,
+          hasManualTarget: false,
+          cues: [{ startTime: 1, endTime: 4, text: "Click button to open." }],
+        },
+      }),
+      provider: {
+        translateHtml: async (req) => {
+          calls.push(req);
+          return req.html.replace("Click button to open.", "点击按钮后再开启。");
+        },
+      },
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    // Initially off: zero translation calls, overlay hidden, native captions untouched, calm grayscale button mounted.
+    expect(calls).toHaveLength(0);
+    expect(videoArea.hasAttribute("data-pagelingo-subtitle-active")).toBe(false);
+    const host = videoArea.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const wrap = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-wrap")!;
+    const srcEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-source")!;
+    const transEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-translation")!;
+    expect(wrap.hidden).toBe(true);
+
+    const toggleBtn = bottomRight.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    expect(toggleBtn).not.toBeNull();
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("off");
+    expect(toggleBtn.textContent).toBe("");
+    expect(toggleBtn.title).toContain("点击开启仅译文");
+
+    // Click 1 enters configured default ("translation") first, then Click 2 -> "bilingual", Click 3 -> "off".
+    toggleBtn.click();
+    await flushAsync();
+    expect(calls).toHaveLength(1);
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("translation");
+    expect(toggleBtn.title).toContain("点击切换为双语对照");
+    expect(wrap.hidden).toBe(false);
+    expect(srcEl.hidden).toBe(true);
+    expect(transEl.textContent).toBe("点击按钮后再开启。");
+
+    toggleBtn.click();
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("bilingual");
+    expect(toggleBtn.title).toContain("点击关闭");
+    expect(srcEl.hidden).toBe(false);
+    expect(srcEl.textContent).toBe("Click button to open.");
+    expect(transEl.textContent).toBe("点击按钮后再开启。");
+
+    toggleBtn.click();
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("off");
+    expect(wrap.hidden).toBe(true);
+    expect(videoArea.hasAttribute("data-pagelingo-subtitle-active")).toBe(false);
+
+    manager.dispose();
+  });
+
+  it("activates YouTube need_cc in one click when autoStart is false", async () => {
+    const moviePlayer = document.createElement("div");
+    moviePlayer.id = "movie_player";
+    moviePlayer.className = "html5-video-player";
+    const video = document.createElement("video");
+    const controls = document.createElement("div");
+    controls.className = "ytp-right-controls";
+    const ccBtn = document.createElement("button");
+    ccBtn.className = "ytp-subtitles-button";
+    ccBtn.setAttribute("aria-pressed", "false");
+    controls.append(ccBtn);
+    const captionContainer = document.createElement("div");
+    captionContainer.className = "ytp-caption-window-container";
+    moviePlayer.append(video, captionContainer, controls);
+    document.body.append(moviePlayer);
+
+    ccBtn.addEventListener("click", () => {
+      ccBtn.setAttribute("aria-pressed", "true");
+      const seg = document.createElement("span");
+      seg.className = "ytp-caption-segment";
+      seg.textContent = "One click CC activation.";
+      captionContainer.replaceChildren(seg);
+    });
+
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: false, displayMode: "bilingual" }),
+      platformFn: () => "youtube",
+      detectLanguageFn: async () => "en",
+      discoverDetailedFn: async () => ({ track: null, status: "need_cc" }),
+      provider: {
+        translateHtml: async (req) => req.html.replace("One click CC activation.", "一键开启 CC 并显示双语。"),
+      },
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    // Calm off icon initially (not loud 开CC badge when autoStart is false).
+    const toggleBtn = controls.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("off");
+    expect(toggleBtn.textContent).toBe("");
+
+    // One click turns on CC AND shows bilingual immediately.
+    toggleBtn.click();
+    await flushAsync();
+    expect(ccBtn.getAttribute("aria-pressed")).toBe("true");
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("bilingual");
+    const host = moviePlayer.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    expect(host.shadowRoot!.querySelector(".pl-sub-source")!.textContent).toBe("One click CC activation.");
+    expect(host.shadowRoot!.querySelector(".pl-sub-translation")!.textContent).toBe("一键开启 CC 并显示双语。");
+
+    manager.dispose();
+  });
+
+  it("keeps same-language Bilibili ai-zh videos silent even with autoStart: true and translates zh-Hans -> en bilingual on manual click", async () => {
+    const videoArea = document.createElement("div");
+    videoArea.className = "bpx-player-video-area";
+    const video = document.createElement("video");
+    Object.defineProperty(video, "currentTime", { value: 11.0, writable: true, configurable: true });
+    const bottomRight = document.createElement("div");
+    bottomRight.className = "bpx-player-control-bottom-right";
+    videoArea.append(video, bottomRight);
+    document.body.append(videoArea);
+
+    const calls: TranslationRequest[] = [];
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, displayMode: "bilingual" }, "translation", "zh-Hans"),
+      platformFn: () => "bilibili",
+      discoverDetailedFn: async () => ({
+        status: "ready",
+        track: {
+          platform: "bilibili",
+          videoKey: "bili:BV1D74B6bESZ:43376117699:ai-zh",
+          sourceLanguage: "zh-Hans",
+          isAsr: true,
+          hasManualTarget: false,
+          cues: [{ startTime: 10, endTime: 14, text: "可能接线确实是没有接好的" }],
+        },
+      }),
+      provider: {
+        translateHtml: async (req) => {
+          calls.push(req);
+          return req.html.replace("可能接线确实是没有接好的", "Maybe the wiring really wasn't connected well.");
+        },
+      },
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    // Even with autoStart: true, same-language Chinese video must NOT auto-overlay single-language subtitles.
+    expect(calls).toHaveLength(0);
+    expect(videoArea.hasAttribute("data-pagelingo-subtitle-active")).toBe(false);
+    const host = videoArea.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const wrap = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-wrap")!;
+    const srcEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-source")!;
+    const transEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-translation")!;
+    expect(wrap.hidden).toBe(true);
+
+    const toggleBtn = bottomRight.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("off");
+    expect(toggleBtn.title).toContain("译为 English 开启双语");
+
+    // Manual click activates default bilingual mode by translating zh-Hans -> en!
+    toggleBtn.click();
+    await flushAsync();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.sourceLanguage).toBe("zh-Hans");
+    expect(calls[0]?.targetLanguage).toBe("en");
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("bilingual");
+    expect(toggleBtn.title).toContain("译为 English");
+    expect(wrap.hidden).toBe(false);
+    expect(srcEl.hidden).toBe(false);
+    expect(srcEl.textContent).toBe("可能接线确实是没有接好的");
+    expect(transEl.hidden).toBe(false);
+    expect(transEl.textContent).toBe("Maybe the wiring really wasn't connected well.");
+
+    // Next click -> translation-only (English), next click -> off.
+    toggleBtn.click();
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("translation");
+    expect(srcEl.hidden).toBe(true);
+    expect(transEl.textContent).toBe("Maybe the wiring really wasn't connected well.");
+
+    toggleBtn.click();
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("off");
+    expect(wrap.hidden).toBe(true);
+
+    manager.dispose();
+  });
+
+  it("does not pre-copy target-language manual captions onto translatedText in Bilibili discovery so manual click can translate zh-Hans -> en", async () => {
+    const result = await discoverBilibiliSubtitleDetailed(
+      { targetLanguage: "zh-Hans", preferManualCaptions: true, filterSoundEffects: true, mergeAsrSegments: false },
+      {
+        href: "https://www.bilibili.com/video/BV1onlyzh123/?cid=9988",
+        fetchText: async (url) => {
+          if (url.includes("/x/web-interface/nav")) return JSON.stringify({ code: 0, data: {} });
+          if (url.includes("/x/player/wbi/v2")) {
+            return JSON.stringify({
+              code: 0,
+              data: {
+                subtitle: {
+                  subtitles: [{ lan: "zh-CN", subtitle_url: "//aisubtitle.hdslb.com/bfs/subtitle/only-zh.json", type: 0 }],
+                },
+              },
+            });
+          }
+          if (url.includes("only-zh.json")) {
+            return JSON.stringify({ body: [{ from: 1, to: 3, content: "纯中文人工字幕" }] });
+          }
+          throw new Error(`Unexpected URL: ${url}`);
+        },
+      },
+    );
+
+    expect(result.status).toBe("ready");
+    expect(result.track?.sourceLanguage).toBe("zh-Hans");
+    expect(result.track?.hasManualTarget).toBe(false);
+    expect(result.track?.cues[0]?.text).toBe("纯中文人工字幕");
+    expect(result.track?.cues[0]?.translatedText).toBeUndefined();
+  });
+
+  it("falls back to zh-Hans on manual click when targetLanguage is en and video only has English subtitles", async () => {
+    const container = document.createElement("div");
+    const video = document.createElement("video");
+    Object.defineProperty(video, "currentTime", { value: 2.0, writable: true, configurable: true });
+    container.append(video);
+    document.body.append(container);
+
+    const calls: TranslationRequest[] = [];
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, displayMode: "bilingual" }, "translation", "en"),
+      platformFn: () => "html5",
+      discoverDetailedFn: async () => ({
+        status: "ready",
+        track: {
+          platform: "html5",
+          videoKey: "html5:en-only",
+          sourceLanguage: "en",
+          isAsr: false,
+          hasManualTarget: false,
+          cues: [{ startTime: 1, endTime: 4, text: "English only caption." }],
+        },
+      }),
+      provider: {
+        translateHtml: async (req) => {
+          calls.push(req);
+          return req.html.replace("English only caption.", "纯英文字幕的中文译文。");
+        },
+      },
+    });
+
+    await manager.start();
+    await flushAsync();
+    expect(calls).toHaveLength(0);
+
+    const toggleBtn = container.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("off");
+    expect(toggleBtn.title).toContain("简体中文");
+
+    toggleBtn.click();
+    await flushAsync();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.sourceLanguage).toBe("en");
+    expect(calls[0]?.targetLanguage).toBe("zh-Hans");
+
+    manager.dispose();
+  });
+
+  it("shows an actionable missing-pack indicator without retrying when local Bergamot lacks the direction, and recovers on manual reopen", async () => {
+    const container = document.createElement("div");
+    const video = document.createElement("video");
+    Object.defineProperty(video, "currentTime", { value: 2.0, writable: true, configurable: true });
+    container.append(video);
+    document.body.append(container);
+
+    let attempts = 0;
+    let packInstalled = false;
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: false, displayMode: "bilingual" }, "translation", "zh-Hans"),
+      platformFn: () => "html5",
+      retryDelaysMs: [15],
+      discoverDetailedFn: async () => ({
+        status: "ready",
+        track: {
+          platform: "html5",
+          videoKey: "html5:zh-missing-pack",
+          sourceLanguage: "zh-Hans",
+          isAsr: false,
+          hasManualTarget: false,
+          cues: [{ startTime: 1, endTime: 4, text: "需要反向语言包的中文句子" }],
+        },
+      }),
+      provider: {
+        translateHtml: async () => {
+          attempts += 1;
+          if (!packInstalled) throw new Error("当前本地模型不支持 简体中文 → English");
+          return "Chinese sentence translated after installing reverse pack.";
+        },
+      },
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    const toggleBtn = container.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    toggleBtn.click(); // off -> bilingual (triggers zh-Hans -> en)
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(attempts).toBe(1); // Fatal missing-pack error does NOT spam auto-retries.
+    const host = container.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const statusEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-status")!;
+    const transEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-translation")!;
+    expect(statusEl.hidden).toBe(false);
+    expect(statusEl.dataset.status).toBe("missing-pack");
+    expect(statusEl.textContent).toContain("简体中文 → English");
+
+    // After installing reverse pack or switching engine, toggling off -> bilingual re-attempts cleanly.
+    packInstalled = true;
+    toggleBtn.click(); // bilingual -> translation
+    toggleBtn.click(); // translation -> off
+    toggleBtn.click(); // off -> bilingual
+    await flushAsync();
+
+    expect(attempts).toBe(2);
+    expect(statusEl.hidden).toBe(true);
+    expect(transEl.textContent).toBe("Chinese sentence translated after installing reverse pack.");
+
+    manager.dispose();
+  });
+});
+
 

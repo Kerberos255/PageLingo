@@ -14,6 +14,7 @@ import {
 import { RuntimeMessageProvider } from "../providers/runtime-message-provider";
 import {
   DEFAULT_SETTINGS,
+  languageLabel,
   loadSettings,
   normalizeDetectedLanguage,
   type PageLingoSettings,
@@ -52,21 +53,42 @@ const SUBTITLE_LOOKAHEAD_CUES = 18;
 const MAX_LANGUAGE_SAMPLE_CUES = 10;
 const MAX_LIVE_TRANSLATION_CACHE = 400;
 const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000, 12_000];
-const FATAL_SUBTITLE_ERROR_RE = /数据权限|请填写 API Key|请填写模型名称|必须使用 HTTPS|HTTP (?:401|402|403)\b/u;
+const MISSING_PACK_ERROR_RE = /当前本地模型不支持|语言包尚未下载/u;
+const FATAL_SUBTITLE_ERROR_RE = /数据权限|请填写 API Key|请填写模型名称|必须使用 HTTPS|HTTP (?:401|402|403)\b|当前本地模型不支持|语言包尚未下载/u;
 
 export type EffectiveSubtitleMode = "bilingual" | "translation" | "off";
 
-type ActiveTranslationStatus = "none" | "translating" | "retrying";
+type ActiveTranslationStatus = "none" | "translating" | "retrying" | "missing-pack";
 
 interface SubtitleTranslationFailure {
   attempts: number;
   retryAfter: number;
   fatal: boolean;
+  missingPack: boolean;
 }
 
 function isFatalSubtitleTranslationError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
   return FATAL_SUBTITLE_ERROR_RE.test(message);
+}
+
+function isMissingLanguagePackError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return MISSING_PACK_ERROR_RE.test(message);
+}
+
+/** Secondary target language when user manually clicks translate on a same-language video. */
+function resolveFallbackTargetLanguage(sourceLanguage: string): string {
+  return sourceLanguage === "en" ? "zh-Hans" : "en";
+}
+
+function guessFallbackScriptLanguage(sample: string): string {
+  const hanMatches = sample.match(/\p{Script=Han}/gu);
+  const letterMatches = sample.match(/\p{Letter}/gu);
+  if (hanMatches && letterMatches && letterMatches.length > 0 && hanMatches.length / letterMatches.length >= 0.3) {
+    return "zh-Hans";
+  }
+  return "en";
 }
 
 export interface VideoSubtitleControllerOptions {
@@ -519,6 +541,14 @@ function buildShadowStyles(platform: VideoPlatform): string {
     .pl-sub-status[data-status="retrying"]::before {
       background: #fbbf24;
     }
+    .pl-sub-status[data-status="missing-pack"] {
+      animation: none;
+      opacity: 0.92;
+    }
+    .pl-sub-status[data-status="missing-pack"]::before {
+      background: #f59e0b;
+      animation: none;
+    }
     .pl-sub-box[data-learning="true"] {
       pointer-events: auto;
       cursor: pointer;
@@ -581,22 +611,50 @@ function createBrandIconElement(doc: Document): HTMLElement | SVGSVGElement {
   return svg;
 }
 
+function nextCycleMode(
+  current: EffectiveSubtitleMode,
+  preferred: Exclude<EffectiveSubtitleMode, "off"> = "bilingual",
+): EffectiveSubtitleMode {
+  if (current === "off") return preferred;
+  const alternate: Exclude<EffectiveSubtitleMode, "off"> = preferred === "bilingual" ? "translation" : "bilingual";
+  if (current === preferred) return alternate;
+  return "off";
+}
+
 function toggleLabelForMode(
   mode: EffectiveSubtitleMode,
+  preferred: Exclude<EffectiveSubtitleMode, "off"> = "bilingual",
   translating = false,
+  fallbackTargetLabel: string | null = null,
 ): { shortText: string; ariaLabel: string; modeAttr: string } {
   const busyHint = translating ? " · 正在翻译字幕…" : "";
+  const next = nextCycleMode(mode, preferred);
+  const nextAction = next === "bilingual" ? "切换为双语对照" : next === "translation" ? "切换为仅译文" : "关闭";
   if (mode === "bilingual") {
-    return { shortText: "双语", ariaLabel: `PageLingo 字幕：双语对照${busyHint}（点击切换为仅译文）`, modeAttr: "bilingual" };
+    const targetTag = fallbackTargetLabel ? `（译为 ${fallbackTargetLabel}）` : "";
+    return {
+      shortText: "双语",
+      ariaLabel: `PageLingo 字幕：双语对照${targetTag}${busyHint}（点击${nextAction}）`,
+      modeAttr: "bilingual",
+    };
   }
   if (mode === "translation") {
-    return { shortText: "译文", ariaLabel: `PageLingo 字幕：仅译文${busyHint}（点击关闭）`, modeAttr: "translation" };
+    const targetTag = fallbackTargetLabel ? `（译为 ${fallbackTargetLabel}）` : "";
+    return {
+      shortText: "译文",
+      ariaLabel: `PageLingo 字幕：仅译文${targetTag}${busyHint}（点击${nextAction}）`,
+      modeAttr: "translation",
+    };
   }
-  return { shortText: "", ariaLabel: "PageLingo 字幕：已关闭（点击开启双语）", modeAttr: "off" };
+  const startLabel = preferred === "bilingual" ? "双语" : "仅译文";
+  const openHint = fallbackTargetLabel ? `译为 ${fallbackTargetLabel} 开启${startLabel}` : `开启${startLabel}`;
+  return { shortText: "", ariaLabel: `PageLingo 字幕：已关闭（点击${openHint}）`, modeAttr: "off" };
 }
 
 function toggleLabelForUnavailable(
   session: AttachedVideoSession,
+  autoStart: boolean,
+  preferred: Exclude<EffectiveSubtitleMode, "off">,
 ): { shortText: string; ariaLabel: string; modeAttr: string } {
   if (session.generatingAi) {
     return {
@@ -612,7 +670,16 @@ function toggleLabelForUnavailable(
       modeAttr: "loading",
     };
   }
+  const passiveOff = !autoStart && session.overrideMode === null;
+  const startLabel = preferred === "bilingual" ? "双语" : "仅译文";
   if (session.discoveryStatus === "need_login") {
+    if (passiveOff) {
+      return {
+        shortText: "",
+        ariaLabel: `PageLingo 字幕：已关闭（登录 B 站后点击可开启${startLabel}）`,
+        modeAttr: "off",
+      };
+    }
     return {
       shortText: "需登录",
       ariaLabel: "登录 B 站后可读取 CC / AI 字幕（点击重新检测）",
@@ -620,6 +687,13 @@ function toggleLabelForUnavailable(
     };
   }
   if (session.discoveryStatus === "need_cc") {
+    if (passiveOff) {
+      return {
+        shortText: "",
+        ariaLabel: `PageLingo 字幕：已关闭（点击开启 YouTube 原生 CC 并开启${startLabel}）`,
+        modeAttr: "off",
+      };
+    }
     return {
       shortText: "开CC",
       ariaLabel: "点击开启 YouTube 原生 CC 字幕并翻译（或按 C 键）",
@@ -627,6 +701,13 @@ function toggleLabelForUnavailable(
     };
   }
   if (session.aiReady) {
+    if (passiveOff) {
+      return {
+        shortText: "",
+        ariaLabel: `PageLingo 字幕：已关闭（当前无软字幕，点击可生成 AI 字幕并开启${startLabel}）`,
+        modeAttr: "off",
+      };
+    }
     return {
       shortText: "AI字幕",
       ariaLabel: "当前视频暂无软字幕；点击生成 AI 字幕并翻译",
@@ -638,12 +719,6 @@ function toggleLabelForUnavailable(
     ariaLabel: "PageLingo 字幕：当前视频暂无软字幕（点击重新检测）",
     modeAttr: "idle",
   };
-}
-
-function nextCycleMode(current: EffectiveSubtitleMode): EffectiveSubtitleMode {
-  if (current === "bilingual") return "translation";
-  if (current === "translation") return "off";
-  return "bilingual";
 }
 
 export class VideoSubtitleManager {
@@ -740,10 +815,21 @@ export class VideoSubtitleManager {
       || prev.builtinGlossaryEnabled !== next.builtinGlossaryEnabled
       || JSON.stringify(prev.glossaryCollections) !== JSON.stringify(next.glossaryCollections);
 
+    const modeConfigChanged =
+      prev.videoSubtitle.displayMode !== next.videoSubtitle.displayMode
+      || prev.videoSubtitle.autoStart !== next.videoSubtitle.autoStart
+      || prev.displayMode !== next.displayMode;
+
     for (const session of this.#sessions.values()) {
+      if (modeConfigChanged) {
+        session.overrideMode = null;
+      }
       this.#applyOverlayStyles(session);
       this.#syncToggleButton(session);
       this.#syncNativeCaptionSuppression(session);
+      if (this.#effectiveMode(session) === "off") {
+        this.#clearRetryTimer(session);
+      }
       if (needRediscover) {
         void this.#discoverSessionTrack(session, true);
       } else if (needRetranslate) {
@@ -751,6 +837,13 @@ export class VideoSubtitleManager {
         this.#ensureWindowTranslated(session);
       } else {
         this.#renderCue(session, true);
+        if (this.#effectiveMode(session) !== "off") {
+          if (session.track) {
+            this.#ensureWindowTranslated(session);
+          } else if (session.liveDomMode && session.liveSourceText) {
+            void this.#translateLiveDomCaption(session, session.liveSourceText);
+          }
+        }
       }
     }
   }
@@ -959,14 +1052,45 @@ export class VideoSubtitleManager {
     }
   }
 
-  #effectiveMode(session: AttachedVideoSession): EffectiveSubtitleMode {
-    if (!this.#settings.videoSubtitle.enabled) return "off";
-    if (session.overrideMode) return session.overrideMode;
+  #preferredDisplayMode(): Exclude<EffectiveSubtitleMode, "off"> {
     const configured = this.#settings.videoSubtitle.displayMode;
     if (configured === "follow") {
       return this.#settings.displayMode === "bilingual" ? "bilingual" : "translation";
     }
     return configured;
+  }
+
+  #isSameLanguageTrack(session: AttachedVideoSession): boolean {
+    const configuredTarget = normalizeDetectedLanguage(this.#settings.targetLanguage) ?? this.#settings.targetLanguage;
+    const sourceLanguage = normalizeDetectedLanguage(session.sourceLanguage) ?? session.sourceLanguage;
+    return Boolean(sourceLanguage && configuredTarget && sourceLanguage === configuredTarget);
+  }
+
+  #resolveTranslationPair(
+    session: AttachedVideoSession,
+  ): { sourceLanguage: string; targetLanguage: string; isFallbackTarget: boolean } | null {
+    const configuredTarget = normalizeDetectedLanguage(this.#settings.targetLanguage) ?? this.#settings.targetLanguage;
+    const sourceLanguage = normalizeDetectedLanguage(session.sourceLanguage) ?? session.sourceLanguage ?? "en";
+    if (sourceLanguage !== configuredTarget) {
+      return { sourceLanguage, targetLanguage: configuredTarget, isFallbackTarget: false };
+    }
+    // Same-language video stays silent automatically; manual button activation translates into a fallback language (e.g. zh -> en).
+    if (session.overrideMode === "bilingual" || session.overrideMode === "translation") {
+      return {
+        sourceLanguage,
+        targetLanguage: resolveFallbackTargetLanguage(sourceLanguage),
+        isFallbackTarget: true,
+      };
+    }
+    return null;
+  }
+
+  #effectiveMode(session: AttachedVideoSession): EffectiveSubtitleMode {
+    if (!this.#settings.videoSubtitle.enabled) return "off";
+    if (session.overrideMode) return session.overrideMode;
+    if (!this.#settings.videoSubtitle.autoStart) return "off";
+    if (this.#isSameLanguageTrack(session)) return "off";
+    return this.#preferredDisplayMode();
   }
 
   #attachVideo(
@@ -1331,18 +1455,18 @@ export class VideoSubtitleManager {
 
     const signal = session.abortController.signal;
     if (!session.sourceLanguage) {
-      session.sourceLanguage = (await this.#detectLanguage(text)) ?? "en";
+      session.sourceLanguage = (await this.#detectLanguage(text)) ?? guessFallbackScriptLanguage(text);
       if (signal.aborted || this.#disposed || session.track) return;
     }
 
-    const targetLanguage = normalizeDetectedLanguage(this.#settings.targetLanguage) ?? this.#settings.targetLanguage;
-    const sourceLanguage = normalizeDetectedLanguage(session.sourceLanguage) ?? session.sourceLanguage ?? "en";
-    if (sourceLanguage === targetLanguage) {
-      session.liveFailed.delete(text);
-      session.liveTranslations.set(text, text);
-      if (session.liveSourceText === text) this.#renderLiveDomCaption(session);
+    const pair = this.#resolveTranslationPair(session);
+    if (!pair) {
+      this.#syncNativeCaptionSuppression(session);
+      this.#updateToggleButtonState(session);
+      this.#renderLiveDomCaption(session);
       return;
     }
+    const { sourceLanguage, targetLanguage } = pair;
 
     const terminology: TerminologyEntry[] = parseTerminology(
       this.#settings.glossaryCollections,
@@ -1495,9 +1619,10 @@ export class VideoSubtitleManager {
   #syncToggleButton(session: AttachedVideoSession): void {
     const controlsTarget = resolvePlatformControlsTarget(session.container, session.platform);
     const hasKnownPlayer = isKnownPlatformPlayerContainer(session.container, session.platform) || Boolean(controlsTarget);
+    const showButton = this.#settings.videoSubtitle.showPlayerButton || !this.#settings.videoSubtitle.autoStart;
     const shouldShow =
       this.#settings.videoSubtitle.enabled
-      && this.#settings.videoSubtitle.showPlayerButton
+      && showButton
       && (Boolean(session.track) || session.liveDomMode || hasKnownPlayer);
 
     if (!shouldShow) {
@@ -1544,7 +1669,9 @@ export class VideoSubtitleManager {
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        const preferred = this.#preferredDisplayMode();
         if (!session.track && !session.liveDomMode) {
+          session.overrideMode = preferred;
           if (session.platform === "youtube" && session.discoveryStatus === "need_cc") {
             const ccButton = session.container.querySelector<HTMLButtonElement>(".ytp-subtitles-button");
             if (ccButton && ccButton.getAttribute("aria-pressed") !== "true") {
@@ -1570,7 +1697,7 @@ export class VideoSubtitleManager {
           return;
         }
         const prevMode = this.#effectiveMode(session);
-        const next = nextCycleMode(prevMode);
+        const next = nextCycleMode(prevMode, preferred);
         session.overrideMode = next;
         if (next === "off") {
           this.#clearRetryTimer(session);
@@ -1605,14 +1732,18 @@ export class VideoSubtitleManager {
     const button = session.toggleButton;
     if (!button) return;
     const mode = this.#effectiveMode(session);
+    const preferred = this.#preferredDisplayMode();
     const isTranslating = Boolean(
       (session.track || session.liveDomMode)
       && mode !== "off"
       && (session.inFlight.size > 0 || session.liveInFlight.size > 0),
     );
+    const fallbackTargetLabel = this.#isSameLanguageTrack(session)
+      ? languageLabel(resolveFallbackTargetLanguage(normalizeDetectedLanguage(session.sourceLanguage) ?? session.sourceLanguage ?? "en"))
+      : null;
     const { shortText, ariaLabel, modeAttr } = (session.track || session.liveDomMode)
-      ? toggleLabelForMode(mode, isTranslating)
-      : toggleLabelForUnavailable(session);
+      ? toggleLabelForMode(mode, preferred, isTranslating, fallbackTargetLabel)
+      : toggleLabelForUnavailable(session, this.#settings.videoSubtitle.autoStart, preferred);
     button.dataset.pagelingoSubMode = modeAttr;
     button.dataset.pagelingoSubTranslating = isTranslating ? "true" : "false";
     button.setAttribute("aria-label", ariaLabel);
@@ -1638,10 +1769,10 @@ export class VideoSubtitleManager {
 
   #clearNonFatalFailures(session: AttachedVideoSession): void {
     for (const [index, fail] of session.failed.entries()) {
-      if (!fail.fatal) session.failed.delete(index);
+      if (!fail.fatal || fail.missingPack) session.failed.delete(index);
     }
     for (const [text, fail] of session.liveFailed.entries()) {
-      if (!fail.fatal) session.liveFailed.delete(text);
+      if (!fail.fatal || fail.missingPack) session.liveFailed.delete(text);
     }
   }
 
@@ -1659,6 +1790,7 @@ export class VideoSubtitleManager {
     error: unknown,
   ): SubtitleTranslationFailure {
     const fatal = isFatalSubtitleTranslationError(error);
+    const missingPack = isMissingLanguagePackError(error);
     const attempts = (map.get(key)?.attempts ?? 0) + 1;
     const delayMs = !fatal && attempts <= this.#retryDelaysMs.length
       ? this.#retryDelaysMs[attempts - 1]!
@@ -1667,6 +1799,7 @@ export class VideoSubtitleManager {
       attempts,
       retryAfter: Number.isFinite(delayMs) ? this.#now() + delayMs : Number.POSITIVE_INFINITY,
       fatal,
+      missingPack,
     };
     map.set(key, failure);
     return failure;
@@ -1701,6 +1834,7 @@ export class VideoSubtitleManager {
   #activeTranslationStatusForCue(session: AttachedVideoSession, index: number): ActiveTranslationStatus {
     if (session.inFlight.has(index)) return "translating";
     const failure = session.failed.get(index);
+    if (failure?.missingPack) return "missing-pack";
     if (failure && this.#isRetryPending(failure, this.#now())) return "retrying";
     return "none";
   }
@@ -1708,6 +1842,7 @@ export class VideoSubtitleManager {
   #activeTranslationStatusForLive(session: AttachedVideoSession, text: string): ActiveTranslationStatus {
     if (session.liveInFlight.has(text)) return "translating";
     const failure = session.liveFailed.get(text);
+    if (failure?.missingPack) return "missing-pack";
     if (failure && this.#isRetryPending(failure, this.#now())) return "retrying";
     return "none";
   }
@@ -1721,6 +1856,14 @@ export class VideoSubtitleManager {
     }
     session.statusEl.hidden = false;
     session.statusEl.dataset.status = status;
+    if (status === "missing-pack") {
+      const pair = this.#resolveTranslationPair(session);
+      const dirLabel = pair
+        ? `${languageLabel(pair.sourceLanguage)} → ${languageLabel(pair.targetLanguage)}`
+        : "该方向";
+      session.statusEl.textContent = `缺少 ${dirLabel} 离线语言包（请下载反向包或切换引擎）`;
+      return;
+    }
     session.statusEl.textContent = status === "retrying" ? "重试翻译中…" : "翻译中…";
   }
 
@@ -1792,7 +1935,7 @@ export class VideoSubtitleManager {
 
     if (!session.sourceLanguage && !track.hasManualTarget) {
       const sample = session.cues.slice(0, MAX_LANGUAGE_SAMPLE_CUES).map((c) => c.text).join(" ");
-      session.sourceLanguage = (await this.#detectLanguage(sample)) ?? "en";
+      session.sourceLanguage = (await this.#detectLanguage(sample)) ?? guessFallbackScriptLanguage(sample);
       if (this.#disposed || version !== session.discoverVersion) return;
     }
 
@@ -1943,9 +2086,9 @@ export class VideoSubtitleManager {
     const mode = this.#effectiveMode(session);
     if (mode === "off" || !session.track || session.cues.length === 0) return;
 
-    const targetLanguage = normalizeDetectedLanguage(this.#settings.targetLanguage) ?? this.#settings.targetLanguage;
-    const sourceLanguage = normalizeDetectedLanguage(session.sourceLanguage) ?? session.sourceLanguage ?? "en";
-    if (sourceLanguage === targetLanguage) return;
+    const pair = this.#resolveTranslationPair(session);
+    if (!pair) return;
+    const { sourceLanguage, targetLanguage } = pair;
 
     const currentTime = readMediaCurrentTime(session.video, session.container);
     let anchor = findActiveCueIndex(session.cues, currentTime);
