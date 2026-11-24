@@ -1,4 +1,4 @@
-# AMO Reviewer Notes — PageLingo 1.1.1
+# AMO Reviewer Notes — PageLingo 1.1.2
 
 ## Purpose
 
@@ -23,7 +23,7 @@ PageLingo does not download or execute remote JavaScript or WebAssembly.
 - Bergamot JavaScript and WebAssembly are bundled with the extension.
 - ONNX Runtime Web code and WebAssembly are bundled at build time from the pinned npm dependency.
 - Mozilla PDF.js (`pdfjs-dist` 5.4.624), its same-origin worker (`vendor/pdfjs/pdf.worker.mjs`), CMap tables, and standard fonts are bundled at build time for the local document reader (`reader.html`). Build-time hardening hardcodes `isEvalSupported()` to `false` and disables dynamic `import()` fallbacks so `web-ext lint` passes with zero errors, warnings, or notices.
-- Translation model files and multilingual PP-OCRv5 OCR model files downloaded at runtime are data files only. They are verified by expected byte size and SHA-256 before use.
+- Translation model files, `PP-OCRv6_small` / optional `PP-OCRv5` multilingual OCR model files, and the on-demand `PP-DocLayout-M` document layout model downloaded at runtime are data files only. They are verified by expected byte size and SHA-256 before use.
 - The model updater changes model data only; it never updates extension JavaScript or WebAssembly.
 
 ## Data transmission
@@ -51,11 +51,11 @@ Translated HTML is structure-checked and is then parsed through PageLingo's allo
 
 ## Local PDF & document reader
 
-`reader.html` parses local or user-selected online PDF, Markdown, HTML, EPUB, DOCX, and TXT files inside the extension origin using bundled `pdfjs-dist`, native `DecompressionStream("deflate-raw")`, and `DOMParser` (zero `innerHTML`). Online documents are fetched via `fetch-document-bytes` only when explicitly initiated by the user (HTTPS/HTTP, capped at 64 MB).
+`reader.html` parses local or user-selected online PDF, Markdown, HTML, EPUB, DOCX, and TXT files inside the extension origin using bundled `pdfjs-dist`, native `DecompressionStream("deflate-raw")`, and `DOMParser` (zero `innerHTML`). Optional scanned-PDF OCR downloads pinned `PP-DocLayout-M` and `PP-OCRv6_small` ONNX data files locally inside the extension's WASM worker. Online documents are fetched via `fetch-document-bytes` only when explicitly initiated by the user (HTTPS/HTTP, capped at 64 MB).
 
 ## Video soft-subtitle translation
 
-Disabled by default. When explicitly enabled by the user, the content script discovers soft subtitle tracks on supported players (YouTube, Bilibili, HTML5 `<track>`) and asks the background script to fetch the HTTPS subtitle track payload (`fetch-subtitle-track`) for translation through the selected engine. No remote code is fetched or executed.
+Disabled by default (and auto-display defaults to off even after enabling). When enabled by the user, the content script mounts a quick toggle button on supported players (YouTube, Bilibili, HTML5 `<track>`) and reads soft subtitle track payloads via same-origin/background fetch (`fetch-subtitle-track`) for translation through the selected engine. No audio is captured and no remote code is fetched or executed.
 
 ## Permissions
 
@@ -80,7 +80,7 @@ Key review references:
 - `pdfjs-dist` 5.4.624: Apache-2.0, pinned by `package-lock.json`.
 - `onnxruntime-web` 1.30.0: MIT, pinned by `package-lock.json`.
 - `paddleocr` 1.2.0: MIT, pinned by `package-lock.json`.
-- PP-OCRv5 ONNX model data (shared detector + 5 recognition language packs: CJK/EN/JA, Latin, Korean, Cyrillic, Thai): PaddlePaddle and RapidOCR publish the model assets as Apache-2.0; model payloads are downloaded as data and integrity-pinned by exact byte size and SHA-256.
+- PaddleOCR ONNX model data (`PP-OCRv6_small` unified 50-language default pack, optional `PP-OCRv5` Korean/Cyrillic/Thai extension packs, and on-demand `PP-DocLayout-M` layout detector): Apache-2.0; downloaded as data files only and integrity-pinned by exact byte size and SHA-256.
 - `fzstd` 0.1.1: MIT.
 
 PageLingo does not relicense third-party code or model assets under its PolyForm license.

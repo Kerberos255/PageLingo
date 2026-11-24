@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.1.2 — 2026-11-25
+
+### Added
+
+- **Scanned-PDF OCR & upgraded document reader (`reader.html`)**:
+  - Upgraded local OCR to `PP-OCRv6_small` (50 languages in one default pack: CJK, English, Japanese, and 46 Latin scripts, alongside optional Korean, Cyrillic, and Thai extension packs).
+  - Added on-demand scanned-PDF OCR powered by `PP-DocLayout-M` layout detection + `PP-OCRv6_small`.
+  - Added an **in-place overlay reading mode** alongside side-by-side view, two-tier PDF table and figure preservation (HiDPI snapshots for dense numeric/formula tables and translatable HTML tables for prose tables), upgraded PDF formula cropping and 2D math layout, and native MathML rendering for Markdown, DOCX, EPUB, and HTML.
+- **Redesigned video soft-subtitle workflow**:
+  - Added an explicit **Auto-show foreign subtitles** option (off by default): players display a calm on-demand quick toggle button (`off → default mode → alternate mode → off`) without interfering with playback until clicked, with per-video temporary overrides separate from global defaults.
+  - Added same-language auto-skip with on-demand secondary-language bilingual fallback when the user manually clicks the player toggle (for example, Chinese-only videos translate into CN/EN bilingual on click), plus clear missing offline language-pack hints.
+  - Added lightweight in-overlay translating and cooldown-retry status indicators with exponential backoff for transient translation errors.
+  - Added a top-level dismiss button to inline selection translation blocks and kept page/selection context menu actions directly at top level.
+
+### Fixed
+
+- **Video player & multi-language track selection**:
+  - Ranked YouTube and Bilibili subtitle tracks using original-language signals (audio track metadata, ASR language, original track labels, title script, and active player track) instead of selecting the alphabetically first track (such as `ar`).
+  - Hardened YouTube PO-token recovery, live DOM caption bridging, Shorts targeting, Bilibili `bpx-player` / `<bwp-video>` / WBI subtitle discovery, universal HTML5 player controls (`Video.js`, `Plyr`, `Shaka`, `JW Player`, `DPlayer`, `ArtPlayer`, `xgplayer`, async HLS `TextTrack`s, fullscreen reparenting), and Firefox Xray compartment safety.
+- **Webpage translation accuracy & edge cases**:
+  - Normalized standalone terminal ASCII punctuation (`.` / `!` / `?`) after inline links and tags to fullwidth punctuation in Chinese translations while preserving version numbers, code dots, and leading list ordinals.
+  - Fixed unmatched cross-slot CJK brackets (`《》`, `〈〉`, `「」`, `『』`), cross-boundary inline wrappers, and dropped closing em-dash predicates in local Bergamot translations.
+  - Bypassed blanket page-level `translate="no"` wrappers while keeping localized exclusions, and prevented missed form labels, icon buttons, prose placeholders, and worker stalls.
+- **Settings & Popup ergonomics**:
+  - Scoped all toggle switches and checkboxes in Settings and Popup strictly to the switch control itself so clicking or selecting label text no longer toggles settings accidentally.
+
 ## 1.1.1 — 2026-11-23
 
 ### Performance
