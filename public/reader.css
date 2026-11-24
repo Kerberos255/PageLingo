@@ -270,6 +270,7 @@ body {
 }
 
 .pdf-page-shell {
+  flex: 0 0 auto;
   position: relative;
   background: #ffffff;
   border-radius: 8px;
@@ -397,6 +398,34 @@ body {
   user-select: text;
 }
 
+.reader-formula.is-snapshot {
+  padding: 8px 12px;
+  background: #ffffff;
+  border-color: var(--line);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.reader-formula-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  .reader-formula.is-snapshot {
+    background: #1c1b19;
+  }
+  .reader-formula-canvas {
+    filter: invert(0.91) hue-rotate(180deg);
+  }
+}
+
+.reader-formula math {
+  font-size: 1.08em;
+}
+
 .reader-inline-math {
   display: inline;
   padding: 1px 5px;
@@ -406,6 +435,21 @@ body {
   font-family: "Cambria Math", "STIX Two Math", "DejaVu Serif", Georgia, serif;
   font-size: 0.94em;
   color: inherit;
+  white-space: nowrap;
+}
+
+.reader-inline-math sup,
+.reader-inline-math sub {
+  font-size: 0.72em;
+  line-height: 0;
+}
+
+.reader-doc-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 12px auto;
+  border-radius: 6px;
 }
 
 /* Non-PDF Document Workspace */

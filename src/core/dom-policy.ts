@@ -95,7 +95,7 @@ const BLANKET_CHROME_TAGS = new Set(["HEADER", "NAV", "FOOTER", "ASIDE"]);
 const blanketNoTranslateCache = new WeakMap();
 
 function isSkippedForBlanketMeasure(el) {
-  if (SKIP_TAG_SET.has(el.tagName)) return true;
+  if (SKIP_TAG_SET.has(el.tagName.toUpperCase())) return true;
   if (
     el.hasAttribute("data-flt-generated") ||
     el.hasAttribute("hidden") ||
@@ -367,7 +367,7 @@ export function isHiddenInsideClosedDetails(element: Element): boolean {
 }
 
 function isFastSkippedElement(element: Element): boolean {
-  const tag = element.tagName;
+  const tag = element.tagName.toUpperCase();
   if (SKIP_TAG_SET.has(tag)) return true;
   if (
     element.hasAttribute("data-flt-generated") ||
@@ -411,19 +411,26 @@ export function inspectElementHidden(
       current.getAttribute("role") === "tooltip" ||
       isHiddenInsideClosedDetails(current)
     ) { status = 1; break; }
-    const style = view.getComputedStyle(current);
-    if (
-      style.display === "none" ||
-      style.contentVisibility === "hidden" ||
-      isScreenReaderOnlyStyle(style)
-    ) { status = 1; break; }
-    const opacity = style.opacity;
-    if (
-      style.visibility === "hidden" ||
-      style.visibility === "collapse" ||
-      opacity === "0" ||
-      (opacity && opacity !== "1" && Number.parseFloat(opacity) === 0)
-    ) { status = 2; break; }
+    let style: CSSStyleDeclaration | null = null;
+    try {
+      style = view.getComputedStyle(current);
+    } catch {
+      style = null;
+    }
+    if (style) {
+      if (
+        style.display === "none" ||
+        style.contentVisibility === "hidden" ||
+        isScreenReaderOnlyStyle(style)
+      ) { status = 1; break; }
+      const opacity = style.opacity;
+      if (
+        style.visibility === "hidden" ||
+        style.visibility === "collapse" ||
+        opacity === "0" ||
+        (opacity && opacity !== "1" && Number.parseFloat(opacity) === 0)
+      ) { status = 2; break; }
+    }
     if (current === stopAtAncestor || current === current.ownerDocument.documentElement) break;
     current = parentAcrossShadow(current);
   }

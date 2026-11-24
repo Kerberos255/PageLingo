@@ -1,7 +1,7 @@
 import * as pdfjsLib from "pdfjs-dist";
 import { PageTranslator } from "./core/page-translator";
 import { buildBilingualRulesCss } from "./core/bilingual-style";
-import { parseTerminology } from "./core/rich-segment";
+import { parseTerminology, sourceFingerprint } from "./core/rich-segment";
 import { RuntimeMessageProvider } from "./providers/runtime-message-provider";
 import { sendRuntimeMessage } from "./shared/runtime-message";
 import { detectForeignLanguageFromSample, extractForeignTextSample, fragmentAlreadyInTargetScript } from "./shared/mixed-language";
@@ -126,7 +126,52 @@ function highlightSyncedBlock(blockId: string, scrollTarget: "canvas" | "text" |
   }
 }
 
-function renderPdfBlockElement(block: PdfLayoutBlock): HTMLElement {
+function cropFormulaSnapshot(
+  sourceCanvas: HTMLCanvasElement,
+  box: PdfLayoutBlock["box"],
+  renderScale: number,
+  dpr: number,
+  clipBounds?: { minY?: number; maxY?: number },
+): HTMLCanvasElement | null {
+  if (!sourceCanvas.width || !sourceCanvas.height) return null;
+  const padX = 8;
+  const padY = 4;
+  const maxCssW = sourceCanvas.width / dpr;
+  const maxCssH = sourceCanvas.height / dpr;
+  const minCssY = clipBounds?.minY !== undefined ? Math.max(0, clipBounds.minY * renderScale) : 0;
+  const maxCssY = clipBounds?.maxY !== undefined ? Math.min(maxCssH, clipBounds.maxY * renderScale) : maxCssH;
+  const cssX = Math.max(0, box.x * renderScale - padX);
+  const cssY = Math.max(minCssY, box.y * renderScale - padY);
+  const cssBottom = Math.min(maxCssY, (box.y + box.height) * renderScale + padY);
+  const cssW = Math.min(maxCssW - cssX, box.width * renderScale + padX * 2);
+  const cssH = cssBottom - cssY;
+  if (cssW < 8 || cssH < 6) return null;
+
+  const srcX = Math.max(0, Math.floor(cssX * dpr));
+  const srcY = Math.max(0, Math.floor(cssY * dpr));
+  const srcW = Math.min(sourceCanvas.width - srcX, Math.ceil(cssW * dpr));
+  const srcH = Math.min(sourceCanvas.height - srcY, Math.ceil(cssH * dpr));
+  if (srcW < 8 || srcH < 6) return null;
+
+  const crop = document.createElement("canvas");
+  crop.className = "reader-formula-canvas";
+  crop.width = srcW;
+  crop.height = srcH;
+  crop.style.width = `${Math.round(srcW / dpr)}px`;
+  crop.style.height = `${Math.round(srcH / dpr)}px`;
+  const ctx = crop.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(sourceCanvas, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+  return crop;
+}
+
+function renderPdfBlockElement(
+  block: PdfLayoutBlock,
+  pageCanvas?: HTMLCanvasElement,
+  renderScale = 1,
+  dpr = 1,
+  clipBounds?: { minY?: number; maxY?: number },
+): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "pdf-block-wrap";
   wrap.dataset.blockId = block.id;
@@ -136,7 +181,15 @@ function renderPdfBlockElement(block: PdfLayoutBlock): HTMLElement {
     const formula = document.createElement("div");
     formula.className = "reader-formula";
     formula.setAttribute("translate", "no");
-    formula.textContent = block.plainText;
+    formula.title = block.plainText;
+    formula.setAttribute("aria-label", block.plainText);
+    const snapshot = pageCanvas ? cropFormulaSnapshot(pageCanvas, block.box, renderScale, dpr, clipBounds) : null;
+    if (snapshot) {
+      formula.classList.add("is-snapshot");
+      formula.append(snapshot);
+    } else {
+      formula.textContent = block.plainText;
+    }
     wrap.append(formula);
     return wrap;
   }
@@ -158,7 +211,23 @@ function renderPdfBlockElement(block: PdfLayoutBlock): HTMLElement {
       mathCode.className = "reader-inline-math";
       mathCode.setAttribute("translate", "no");
       mathCode.setAttribute("data-flt-fixed", "formula");
-      mathCode.textContent = seg.text;
+      if (seg.parts && seg.parts.some((p) => p.script)) {
+        for (const part of seg.parts) {
+          if (part.script === "sup") {
+            const sup = document.createElement("sup");
+            sup.textContent = part.text;
+            mathCode.append(sup);
+          } else if (part.script === "sub") {
+            const sub = document.createElement("sub");
+            sub.textContent = part.text;
+            mathCode.append(sub);
+          } else {
+            mathCode.append(document.createTextNode(part.text));
+          }
+        }
+      } else {
+        mathCode.textContent = seg.text;
+      }
       el.append(mathCode);
     } else {
       el.append(document.createTextNode(seg.text));
@@ -256,9 +325,24 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
         });
       }
     }
+    const enrichedStyles: Record<string, PdfFontStyleInfo> = {};
+    for (const [fontKey, style] of Object.entries(textContent.styles as Record<string, PdfFontStyleInfo>)) {
+      let realFontName = style?.realFontName;
+      if (!realFontName) {
+        try {
+          const obj = page.commonObjs.has(fontKey)
+            ? (page.commonObjs.get(fontKey) as { name?: string } | null)
+            : null;
+          if (obj && typeof obj.name === "string") realFontName = obj.name;
+        } catch {
+          // Ignore unavailable font metadata objects.
+        }
+      }
+      enrichedStyles[fontKey] = { ...style, ...(realFontName ? { realFontName } : {}) };
+    }
     const blocks = extractPdfPageBlocks(
       rawItems,
-      textContent.styles as Record<string, PdfFontStyleInfo>,
+      enrichedStyles,
       baseViewport.width,
       baseViewport.height,
       pageNum,
@@ -277,7 +361,8 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
     pageHead.append(pageLabel, pageStats);
     pageCard.append(pageHead);
 
-    for (const block of blocks) {
+    for (let bi = 0; bi < blocks.length; bi += 1) {
+      const block = blocks[bi]!;
       totalBlocks += 1;
       if (block.kind === "formula") totalFormulas += 1;
       else totalFormulas += block.segments.filter((s) => s.kind === "math").length;
@@ -292,7 +377,34 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
       hit.addEventListener("click", () => highlightSyncedBlock(block.id, "text"));
       hitLayer.append(hit);
 
-      pageCard.append(renderPdfBlockElement(block));
+      let clipBounds: { minY?: number; maxY?: number } | undefined;
+      if (block.kind === "formula") {
+        let minY: number | undefined;
+        let maxY: number | undefined;
+        for (let pi = bi - 1; pi >= 0; pi -= 1) {
+          const prev = blocks[pi]!;
+          if (prev.kind === "formula") continue;
+          if (prev.column !== block.column && prev.column !== "full" && block.column !== "full") continue;
+          const prevBottom = prev.box.y + prev.box.height + Math.max(1.5, prev.fontSize * 0.22);
+          if (prevBottom <= block.box.y + block.box.height - 4) {
+            minY = prevBottom;
+            break;
+          }
+        }
+        for (let ni = bi + 1; ni < blocks.length; ni += 1) {
+          const next = blocks[ni]!;
+          if (next.kind === "formula") continue;
+          if (next.column !== block.column && next.column !== "full" && block.column !== "full") continue;
+          const nextTop = next.box.y - 1.5;
+          if (nextTop >= block.box.y + 4) {
+            maxY = nextTop;
+            break;
+          }
+        }
+        clipBounds = { ...(minY !== undefined ? { minY } : {}), ...(maxY !== undefined ? { maxY } : {}) };
+      }
+
+      pageCard.append(renderPdfBlockElement(block, canvas, renderScale, dpr, clipBounds));
     }
 
     if (blocks.length === 0) {
@@ -462,7 +574,7 @@ async function runTranslation(): Promise<void> {
       terminology,
       shouldTranslateRoot: (root: HTMLElement) => {
         if (root.closest(".reader-formula, pre, .pdf-text-page-head")) return false;
-        const text = (root.textContent ?? "").replace(/\s+/g, " ").trim();
+        const text = sourceFingerprint(root, { excludeNestedRoots: true }).replace(/\s+/g, " ").trim();
         if (!text || fragmentAlreadyInTargetScript(text, targetLanguage)) return false;
         return true;
       },

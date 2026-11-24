@@ -116,7 +116,7 @@ export function clearFixedTextRecord(record: FixedTextRecord): void {
 const BILINGUAL_STRIP_TAGS = new Set([
   "UL", "OL", "DL", "TABLE", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE",
   "BUTTON", "INPUT", "SELECT", "TEXTAREA", "IFRAME", "OBJECT", "EMBED",
-  "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO", "RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME",
+  "SVG", "CANVAS", "VIDEO", "AUDIO", "RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME",
 ]);
 
 function isExcludedBilingualChild(
@@ -125,7 +125,7 @@ function isExcludedBilingualChild(
   hiddenElements: ReadonlySet<Element> | undefined,
   visibilityCache: WeakMap<Element, boolean> | undefined,
 ): boolean {
-  if (BILINGUAL_STRIP_TAGS.has(source.tagName)) return true;
+  if (BILINGUAL_STRIP_TAGS.has(source.tagName.toUpperCase())) return true;
   if (
     source.hasAttribute("data-flt-generated") ||
     source.hasAttribute("hidden") ||
@@ -142,6 +142,13 @@ function isExcludedBilingualChild(
   return isElementEffectivelyHidden(source, visibilityCache, root);
 }
 
+function stripUnsafeCloneAttributes(element: Element): void {
+  for (const attr of Array.from(element.attributes)) {
+    if (attr.name === "id" || attr.name.toLowerCase().startsWith("on")) element.removeAttribute(attr.name);
+  }
+  for (const child of Array.from(element.children)) stripUnsafeCloneAttributes(child);
+}
+
 function bilingualFragment(root: HTMLElement, record: FixedTextRecord): DocumentFragment {
   const clone = root.cloneNode(true) as HTMLElement;
   const translated = new Map(record.edits.map(edit => [edit.node, edit.translated]));
@@ -153,6 +160,10 @@ function bilingualFragment(root: HTMLElement, record: FixedTextRecord): Document
       const element = target as HTMLElement;
       if (source !== root && isExcludedBilingualChild(source as Element, root, record.hiddenElements, visibilityCache)) {
         removed.push(element); return;
+      }
+      if (element.tagName.toUpperCase() === "MATH") {
+        stripUnsafeCloneAttributes(element);
+        return;
       }
       // Clone application-owned markup, never model markup. Avoid duplicate IDs and handlers.
       for (const attr of Array.from(element.attributes)) {

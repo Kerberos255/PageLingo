@@ -105,11 +105,13 @@ function serializeChildren(parent, root, links, opaque, textSlots, trace, collap
             continue;
         }
         const tag = element.tagName;
-        if (textSlots && !OPAQUE_TAGS.has(tag) && (isProtectedFilePathLink(element)
+        const upperTag = tag.toUpperCase();
+        if (textSlots && !OPAQUE_TAGS.has(upperTag) && (upperTag === "MATH"
+            || isProtectedFilePathLink(element)
             || (isTranslationDisabled(element) && !element.querySelector('[translate="yes" i],[translate=""]')))) {
             const index = opaque.length;
             const source = element.textContent ?? "";
-            opaque.push({tagName: tag, text: source});
+            opaque.push({tagName: upperTag, text: source});
             html += `<code>__FLT_OPAQUE_${index}__</code>`;
             trace?.push({kind: "opaque", node: element, source, opaqueIndex: index});
             continue;

@@ -1,4 +1,5 @@
 import { parseHtmlDocument } from "../shared/html-parser";
+import { MATHML_NS, latexToMathMl, ommlToMathMl } from "./math-renderer";
 import { ZipArchive } from "./zip-reader";
 
 export interface ParsedDocumentTocItem {
@@ -22,7 +23,7 @@ const SAFE_HTML_TAGS = new Set([
   "BLOCKQUOTE", "PRE", "CODE", "KBD", "SAMP", "VAR",
   "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TH", "TD", "CAPTION",
   "A", "SPAN", "STRONG", "B", "EM", "I", "U", "S", "DEL", "INS", "MARK", "SMALL", "SUB", "SUP", "ABBR", "Q", "CITE", "TIME", "BR", "HR",
-  "FIGURE", "FIGCAPTION", "DETAILS", "SUMMARY",
+  "FIGURE", "FIGCAPTION", "DETAILS", "SUMMARY", "IMG",
   "MATH", "MI", "MO", "MN", "MS", "MTEXT", "MROW", "MFRAC", "MSQRT", "MROOT", "MSUP", "MSUB", "MSUBSUP", "MUNDER", "MOVER", "MUNDEROVER", "MTABLE", "MTR", "MTD", "MFENCED", "MPADDED", "MSPACE", "SEMANTICS", "ANNOTATION",
 ]);
 
@@ -32,7 +33,50 @@ const MATHML_TAGS = new Set([
   "MTD", "MFENCED", "MPADDED", "MSPACE", "SEMANTICS", "ANNOTATION",
 ]);
 
-const MATHML_NS = "http://www.w3.org/1998/Math/MathML";
+const SAFE_IMAGE_EXT_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+};
+
+const BLOCK_LATEX_ENV_RE = /^\\begin\{(equation\*?|align\*?|aligned|gather\*?|multline\*?|cases|dcases|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix)\}/;
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
+function imageMimeForPath(filePath: string): string | null {
+  const clean = filePath.split(/[?#]/)[0] ?? "";
+  const ext = clean.includes(".") ? clean.slice(clean.lastIndexOf(".") + 1).toLowerCase() : "";
+  return SAFE_IMAGE_EXT_MIME[ext] ?? null;
+}
+
+function safeImageSrc(raw: string | null): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/^data:image\/(?:png|jpeg|jpg|gif|webp|avif);base64,[A-Za-z0-9+/=\s]+$/i.test(trimmed)) {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed, "https://pagelingo.invalid/");
+    if ((parsed.protocol === "https:" || parsed.protocol === "http:") && parsed.origin !== "https://pagelingo.invalid") {
+      return trimmed;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 function safeHref(raw: string | null): string | null {
   if (!raw) return null;
@@ -57,10 +101,65 @@ function isProtectedMathElement(el: Element): boolean {
   return /\b(?:katex|katex-display|MathJax|math-inline|math-display|equation)\b/i.test(cls);
 }
 
+function createDisplayFormulaBox(doc: Document, mathEl: Element, latexSource?: string): HTMLElement {
+  const block = doc.createElement("div");
+  block.className = "reader-formula";
+  block.setAttribute("translate", "no");
+  if (latexSource) block.setAttribute("data-latex", latexSource);
+  block.append(mathEl);
+  return block;
+}
+
+function createInlineFormulaSpan(doc: Document, mathEl: Element, latexSource?: string): HTMLElement {
+  const span = doc.createElement("span");
+  span.className = "reader-inline-math";
+  span.setAttribute("translate", "no");
+  span.setAttribute("data-flt-fixed", "formula");
+  if (latexSource) span.setAttribute("data-latex", latexSource);
+  span.append(mathEl);
+  return span;
+}
+
+function sanitizeMathChild(doc: Document, source: Node): Node | null {
+  if (source.nodeType === Node.TEXT_NODE) {
+    return doc.createTextNode(source.textContent ?? "");
+  }
+  if (source.nodeType !== Node.ELEMENT_NODE) return null;
+  const el = source as Element;
+  const tag = el.tagName.toUpperCase();
+  // Drop raw TeX <annotation> children when cloning native MathML so browsers don't show duplicate TeX text.
+  if (tag === "ANNOTATION") return null;
+  if (!MATHML_TAGS.has(tag)) return doc.createTextNode(el.textContent ?? "");
+  const out = doc.createElementNS(MATHML_NS, tag.toLowerCase());
+  for (const attrName of ["mathvariant", "display", "stretchy", "linethickness", "columnalign", "rowalign"]) {
+    const val = el.getAttribute(attrName);
+    if (val) out.setAttribute(attrName, val);
+  }
+  for (const child of Array.from(el.childNodes)) {
+    const imported = sanitizeMathChild(doc, child);
+    if (imported) out.append(imported);
+  }
+  return out;
+}
+
+function cloneSafeMathMl(doc: Document, mathSource: Element): Element {
+  const mathEl = doc.createElementNS(MATHML_NS, "math");
+  mathEl.setAttribute("translate", "no");
+  mathEl.setAttribute("data-flt-fixed", "formula");
+  const display = mathSource.getAttribute("display");
+  if (display === "block" || display === "inline") mathEl.setAttribute("display", display);
+  for (const child of Array.from(mathSource.childNodes)) {
+    const imported = sanitizeMathChild(doc, child);
+    if (imported) mathEl.append(imported);
+  }
+  return mathEl;
+}
+
 function sanitizeImportNode(
   doc: Document,
   source: Node,
   state: { formulaCount: number },
+  resolveImage?: (rawSrc: string) => string | null,
 ): Node | null {
   if (source.nodeType === Node.TEXT_NODE) {
     return doc.createTextNode(source.textContent ?? "");
@@ -75,39 +174,58 @@ function sanitizeImportNode(
   if (isProtectedMathElement(el)) {
     state.formulaCount += 1;
     if (tag === "MATH") {
-      const mathEl = doc.createElementNS(MATHML_NS, "math");
-      mathEl.setAttribute("translate", "no");
-      mathEl.setAttribute("data-flt-fixed", "formula");
-      for (const child of Array.from(el.childNodes)) {
-        const imported = sanitizeMathChild(doc, child);
-        if (imported) mathEl.append(imported);
+      return cloneSafeMathMl(doc, el);
+    }
+    const cls = typeof el.className === "string" ? el.className : "";
+    const isDisplay = /\b(?:display|block|equation)\b/i.test(cls)
+      || el.getAttribute("display") === "block"
+      || el.getAttribute("display") === "true";
+
+    // Prefer TeX annotation (KaTeX / MathJax) -> crisp native MathML, or embedded native <math>
+    const texAnnotation = el.querySelector('annotation[encoding*="tex" i]')?.textContent?.trim()
+      ?? el.querySelector("annotation")?.textContent?.trim();
+    if (texAnnotation) {
+      const mathEl = latexToMathMl(doc, texAnnotation, isDisplay);
+      return isDisplay
+        ? createDisplayFormulaBox(doc, mathEl, texAnnotation)
+        : createInlineFormulaSpan(doc, mathEl, texAnnotation);
+    }
+
+    const nestedMath = el.querySelector("math");
+    if (nestedMath) {
+      const mathEl = cloneSafeMathMl(doc, nestedMath);
+      if (isDisplay) {
+        mathEl.setAttribute("display", "block");
+        return createDisplayFormulaBox(doc, mathEl);
       }
-      return mathEl;
+      return createInlineFormulaSpan(doc, mathEl);
     }
-    const annotation = el.querySelector("annotation")?.textContent?.trim();
-    const formulaText = annotation || (el.textContent ?? "").replace(/\s+/g, " ").trim();
+
+    const formulaText = (el.textContent ?? "").replace(/\s+/g, " ").trim();
     if (!formulaText) return null;
-    const isDisplay = /\b(?:display|block|equation)\b/i.test(typeof el.className === "string" ? el.className : "")
-      || el.getAttribute("display") === "block";
-    if (isDisplay) {
-      const block = doc.createElement("div");
-      block.className = "reader-formula";
-      block.setAttribute("translate", "no");
-      block.textContent = formulaText;
-      return block;
-    }
-    const code = doc.createElement("code");
-    code.className = "reader-inline-math";
-    code.setAttribute("translate", "no");
-    code.setAttribute("data-flt-fixed", "formula");
-    code.textContent = formulaText;
-    return code;
+    const mathEl = latexToMathMl(doc, formulaText, isDisplay);
+    return isDisplay
+      ? createDisplayFormulaBox(doc, mathEl, formulaText)
+      : createInlineFormulaSpan(doc, mathEl, formulaText);
+  }
+
+  if (tag === "IMG") {
+    const rawSrc = el.getAttribute("src");
+    const resolved = rawSrc ? (resolveImage?.(rawSrc) ?? safeImageSrc(rawSrc)) : null;
+    if (!resolved) return null;
+    const img = doc.createElement("img");
+    img.src = resolved;
+    const alt = el.getAttribute("alt");
+    if (alt) img.alt = alt;
+    img.className = "reader-doc-image";
+    img.loading = "lazy";
+    return img;
   }
 
   if (!SAFE_HTML_TAGS.has(tag)) {
     const frag = doc.createDocumentFragment();
     for (const child of Array.from(el.childNodes)) {
-      const imported = sanitizeImportNode(doc, child, state);
+      const imported = sanitizeImportNode(doc, child, state, resolveImage);
       if (imported) frag.append(imported);
     }
     return frag;
@@ -138,26 +256,33 @@ function sanitizeImportNode(
   }
 
   for (const child of Array.from(el.childNodes)) {
-    const imported = sanitizeImportNode(doc, child, state);
+    const imported = sanitizeImportNode(doc, child, state, resolveImage);
     if (imported) out.append(imported);
   }
   return out;
 }
 
-function sanitizeMathChild(doc: Document, source: Node): Node | null {
-  if (source.nodeType === Node.TEXT_NODE) {
-    return doc.createTextNode(source.textContent ?? "");
+/** Distinguishes real inline LaTeX `$x^2 + 1$` from currency spans like `$100 and $200`. */
+function isLikelyCurrencyBetweenDollars(inner: string, fullText: string, matchStart: number, matchEnd: number): boolean {
+  const trimmed = inner.trim();
+  if (!trimmed) return true;
+  // Backslash command or explicit math operator/script strongly indicates LaTeX
+  if (/[\\^_{}=<>±×÷∑∫∂∇α-ωΑ-Ω]/.test(trimmed)) return false;
+  // Trailing digit right after closing `$` (e.g. `$100 and $200` -> after closing `$` is `200`)
+  const charAfter = fullText[matchEnd] ?? "";
+  if (/[0-9]/.test(charAfter)) return true;
+  // Preceded by word/digit without space (e.g. `US$10`)
+  const charBefore = matchStart > 0 ? fullText[matchStart - 1]! : "";
+  if (/[A-Za-z0-9]/.test(charBefore)) return true;
+  // Starts with currency digits followed by prose words (e.g. `100 per month and `)
+  if (/^\d[\d,.]*(?:\s*(?:k|m|b|million|billion|usd|eur|gbp|per|to|and|or|for|in|at|of|with|each|a|the)\b|\s+[a-z]{2,})/i.test(trimmed)) {
+    return true;
   }
-  if (source.nodeType !== Node.ELEMENT_NODE) return null;
-  const el = source as Element;
-  const tag = el.tagName.toUpperCase();
-  if (!MATHML_TAGS.has(tag)) return doc.createTextNode(el.textContent ?? "");
-  const out = doc.createElementNS(MATHML_NS, tag.toLowerCase());
-  for (const child of Array.from(el.childNodes)) {
-    const imported = sanitizeMathChild(doc, child);
-    if (imported) out.append(imported);
+  // Multi-word lowercase English prose inside `$...$` with no math operators
+  if (/\b[a-z]{3,}\s+[a-z]{3,}\b/.test(trimmed) && !/[+\-*/()[\]|]/.test(trimmed)) {
+    return true;
   }
-  return out;
+  return false;
 }
 
 function appendInlineMarkdown(
@@ -166,30 +291,48 @@ function appendInlineMarkdown(
   text: string,
   state: { formulaCount: number },
 ): void {
-  // Tokenize inline math ($...$, \(...\)), inline code (`...`), links [label](url), bold **...**, italic *...*
-  const tokenRe = /(\\\([\s\S]+?\\\)|\$(?!\s)(?:\\\$|[^$\n])+?(?<!\s)\$|`[^`\n]+`|\[[^\]]+\]\([^)]+\)|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g;
+  // Tokenize inline math ($...$, \(...\)), inline code (`...`), images ![alt](url), links [label](url), bold **...**, italic *...*
+  const tokenRe = /(\\\([\s\S]+?\\\)|\$(?!\s)(?:\\\$|[^$\n])+?(?<!\s)\$|`[^`\n]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
 
   while ((match = tokenRe.exec(text)) !== null) {
+    const raw = match[0];
+    if (raw.startsWith("$") && raw.endsWith("$")) {
+      const inner = raw.slice(1, -1);
+      if (isLikelyCurrencyBetweenDollars(inner, text, match.index, match.index + raw.length)) {
+        // Rewind regex right past the opening '$' so a later valid `$math$` on the same line still matches
+        tokenRe.lastIndex = match.index + 1;
+        continue;
+      }
+    }
+
     if (match.index > cursor) {
       parent.append(doc.createTextNode(text.slice(cursor, match.index)));
     }
-    const raw = match[0];
     if ((raw.startsWith("$") && raw.endsWith("$")) || (raw.startsWith("\\(") && raw.endsWith("\\)"))) {
       const inner = raw.startsWith("$") ? raw.slice(1, -1).trim() : raw.slice(2, -2).trim();
-      const code = doc.createElement("code");
-      code.className = "reader-inline-math";
-      code.setAttribute("translate", "no");
-      code.setAttribute("data-flt-fixed", "formula");
-      code.textContent = inner;
-      parent.append(code);
+      const mathEl = latexToMathMl(doc, inner, false);
+      parent.append(createInlineFormulaSpan(doc, mathEl, inner));
       state.formulaCount += 1;
     } else if (raw.startsWith("`") && raw.endsWith("`")) {
       const code = doc.createElement("code");
       code.setAttribute("translate", "no");
       code.textContent = raw.slice(1, -1);
       parent.append(code);
+    } else if (raw.startsWith("![")) {
+      const imgMatch = raw.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+      const safeSrc = imgMatch ? safeImageSrc(imgMatch[2] ?? "") : null;
+      if (imgMatch && safeSrc) {
+        const img = doc.createElement("img");
+        img.src = safeSrc;
+        img.alt = imgMatch[1] ?? "";
+        img.className = "reader-doc-image";
+        img.loading = "lazy";
+        parent.append(img);
+      } else {
+        parent.append(doc.createTextNode(raw));
+      }
     } else if (raw.startsWith("[")) {
       const linkMatch = raw.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
       if (linkMatch) {
@@ -209,11 +352,11 @@ function appendInlineMarkdown(
       }
     } else if (raw.startsWith("**") && raw.endsWith("**")) {
       const strong = doc.createElement("strong");
-      strong.textContent = raw.slice(2, -2);
+      appendInlineMarkdown(doc, strong, raw.slice(2, -2), state);
       parent.append(strong);
     } else if (raw.startsWith("*") && raw.endsWith("*")) {
       const em = doc.createElement("em");
-      em.textContent = raw.slice(1, -1);
+      appendInlineMarkdown(doc, em, raw.slice(1, -1), state);
       parent.append(em);
     }
     cursor = match.index + raw.length;
@@ -288,11 +431,31 @@ export function parseMarkdownDocument(
           i += 1;
         }
       }
-      const formula = doc.createElement("div");
-      formula.className = "reader-formula";
-      formula.setAttribute("translate", "no");
-      formula.textContent = mathLines.join("\n").trim();
-      fragment.append(formula);
+      const latexSource = mathLines.join("\n").trim();
+      const mathEl = latexToMathMl(doc, latexSource, true);
+      fragment.append(createDisplayFormulaBox(doc, mathEl, latexSource));
+      state.formulaCount += 1;
+      continue;
+    }
+
+    // Standalone LaTeX math environment (\begin{align}...\end{align}, \begin{equation}..., etc.)
+    const envMatch = trimmed.match(BLOCK_LATEX_ENV_RE);
+    if (envMatch) {
+      const envName = envMatch[1]!;
+      const endMarker = `\\end{${envName}}`;
+      const envLines: string[] = [line];
+      i += 1;
+      if (!trimmed.includes(endMarker)) {
+        while (i < lines.length) {
+          const nextLine = lines[i] ?? "";
+          envLines.push(nextLine);
+          i += 1;
+          if (nextLine.includes(endMarker)) break;
+        }
+      }
+      const latexSource = envLines.join("\n").trim();
+      const mathEl = latexToMathMl(doc, latexSource, true);
+      fragment.append(createDisplayFormulaBox(doc, mathEl, latexSource));
       state.formulaCount += 1;
       continue;
     }
@@ -399,6 +562,7 @@ export function parseMarkdownDocument(
       if (
         !next
         || /^(?:#{1,6}\s|```|~~~|\$\$|\\\[|>|[-*+]\s|\d+\.\s|(?:[-*_]\s*){3,}$)/.test(next)
+        || BLOCK_LATEX_ENV_RE.test(next)
       ) {
         break;
       }
@@ -440,8 +604,9 @@ export function parseHtmlFileDocument(
 }
 
 function resolveZipPath(baseFile: string, relativePath: string): string {
+  const cleanRel = relativePath.split(/[?#]/)[0] ?? "";
   const baseDir = baseFile.includes("/") ? baseFile.slice(0, baseFile.lastIndexOf("/") + 1) : "";
-  const combined = (baseDir + relativePath).split("/");
+  const combined = (cleanRel.startsWith("/") ? cleanRel.slice(1) : baseDir + cleanRel).split("/");
   const stack: string[] = [];
   for (const seg of combined) {
     if (!seg || seg === ".") continue;
@@ -449,6 +614,23 @@ function resolveZipPath(baseFile: string, relativePath: string): string {
     else stack.push(seg);
   }
   return stack.join("/");
+}
+
+async function readZipImageDataUrl(zip: ZipArchive, entryPath: string, cache: Map<string, string | null>): Promise<string | null> {
+  if (cache.has(entryPath)) return cache.get(entryPath) ?? null;
+  const mime = imageMimeForPath(entryPath);
+  if (!mime) {
+    cache.set(entryPath, null);
+    return null;
+  }
+  const bytes = await zip.readBytes(entryPath);
+  if (!bytes || bytes.byteLength === 0 || bytes.byteLength > 8 * 1024 * 1024) {
+    cache.set(entryPath, null);
+    return null;
+  }
+  const url = `data:${mime};base64,${bytesToBase64(bytes)}`;
+  cache.set(entryPath, url);
+  return url;
 }
 
 export async function parseEpubDocument(
@@ -485,6 +667,7 @@ export async function parseEpubDocument(
   const fragment = doc.createDocumentFragment();
   const toc: ParsedDocumentTocItem[] = [];
   const state = { formulaCount: 0 };
+  const imageCache = new Map<string, string | null>();
 
   let chapterNum = 0;
   for (const idref of spineIds) {
@@ -494,16 +677,28 @@ export async function parseEpubDocument(
     const chapterHtml = await zip.readText(entryPath);
     if (!chapterHtml) continue;
     const parsedChapter = parseHtmlDocument(chapterHtml);
+
+    // Preload any local chapter images referenced by <img> so sanitization stays synchronous.
+    const chapterImages = new Map<string, string>();
+    for (const imgEl of Array.from(parsedChapter.body.querySelectorAll("img[src]"))) {
+      const rawSrc = imgEl.getAttribute("src") ?? "";
+      if (!rawSrc || /^https?:|^data:/i.test(rawSrc)) continue;
+      const imgEntry = resolveZipPath(entryPath, decodeURIComponent(rawSrc));
+      const dataUrl = await readZipImageDataUrl(zip, imgEntry, imageCache);
+      if (dataUrl) chapterImages.set(rawSrc, dataUrl);
+    }
+
     const section = doc.createElement("section");
     section.className = "reader-chapter";
     const sectionId = `epub-ch-${++chapterNum}`;
     section.id = sectionId;
 
+    const resolveImage = (rawSrc: string) => chapterImages.get(rawSrc) ?? safeImageSrc(rawSrc);
     for (const child of Array.from(parsedChapter.body.childNodes)) {
-      const imported = sanitizeImportNode(doc, child, state);
+      const imported = sanitizeImportNode(doc, child, state, resolveImage);
       if (imported) section.append(imported);
     }
-    if (!(section.textContent ?? "").trim()) continue;
+    if (!(section.textContent ?? "").trim() && !section.querySelector("img,math")) continue;
     const firstHeading = section.querySelector("h1, h2, h3");
     const label = (firstHeading?.textContent ?? "").replace(/\s+/g, " ").trim() || `第 ${chapterNum} 节`;
     toc.push({ id: sectionId, label, level: 1 });
@@ -513,44 +708,14 @@ export async function parseEpubDocument(
   return { title, kind: "epub", fragment, toc, formulaCount: state.formulaCount };
 }
 
-function extractOfficeMathText(node: Element): string {
-  const parts: string[] = [];
-  const walk = (el: Element): void => {
-    const local = el.localName;
-    if (local === "t") {
-      parts.push(el.textContent ?? "");
-      return;
+function findBlipEmbedId(el: Element): string | null {
+  for (const node of Array.from(el.getElementsByTagName("*"))) {
+    if (node.localName !== "blip") continue;
+    for (const attr of Array.from(node.attributes)) {
+      if (attr.localName === "embed" || attr.name === "r:embed") return attr.value;
     }
-    if (local === "f") {
-      const num = Array.from(el.children).find((c) => c.localName === "num");
-      const den = Array.from(el.children).find((c) => c.localName === "den");
-      parts.push("(");
-      if (num) walk(num);
-      parts.push(")/(");
-      if (den) walk(den);
-      parts.push(")");
-      return;
-    }
-    if (local === "sSup") {
-      const e = Array.from(el.children).find((c) => c.localName === "e");
-      const sup = Array.from(el.children).find((c) => c.localName === "sup");
-      if (e) walk(e);
-      parts.push("^");
-      if (sup) walk(sup);
-      return;
-    }
-    if (local === "sSub") {
-      const e = Array.from(el.children).find((c) => c.localName === "e");
-      const sub = Array.from(el.children).find((c) => c.localName === "sub");
-      if (e) walk(e);
-      parts.push("_");
-      if (sub) walk(sub);
-      return;
-    }
-    for (const child of Array.from(el.children)) walk(child);
-  };
-  walk(node);
-  return parts.join("").replace(/\s+/g, " ").trim();
+  }
+  return null;
 }
 
 export async function parseDocxDocument(
@@ -567,6 +732,23 @@ export async function parseDocxDocument(
   const body = Array.from(xmlDoc.getElementsByTagName("*")).find((el) => el.localName === "body");
   if (!body) throw new Error("无法解析 DOCX 正文结构");
 
+  // Load image relationships (word/_rels/document.xml.rels) for embedded figures & equation pictures
+  const relImages = new Map<string, string>();
+  const imageCache = new Map<string, string | null>();
+  const relsXml = await zip.readText("word/_rels/document.xml.rels");
+  if (relsXml) {
+    const relsDoc = parser.parseFromString(relsXml, "application/xml");
+    for (const rel of Array.from(relsDoc.getElementsByTagName("*")).filter((el) => el.localName === "Relationship")) {
+      const id = rel.getAttribute("Id");
+      const target = rel.getAttribute("Target");
+      const type = rel.getAttribute("Type") ?? "";
+      if (!id || !target || !type.toLowerCase().includes("image")) continue;
+      const entryPath = resolveZipPath("word/document.xml", target);
+      const dataUrl = await readZipImageDataUrl(zip, entryPath, imageCache);
+      if (dataUrl) relImages.set(id, dataUrl);
+    }
+  }
+
   const fragment = doc.createDocumentFragment();
   const toc: ParsedDocumentTocItem[] = [];
   const state = { formulaCount: 0 };
@@ -574,26 +756,24 @@ export async function parseDocxDocument(
   let headingIdx = 0;
 
   const renderParagraph = (pEl: Element, container: DocumentFragment | HTMLElement): void => {
-    const pStyle = Array.from(pEl.getElementsByTagName("*"))
-      .find((el) => el.localName === "pStyle")
-      ?.getAttribute("w:val") ?? "";
+    const pPr = Array.from(pEl.children).find((c) => c.localName === "pPr");
+    const pStyle = pPr
+      ? (Array.from(pPr.children).find((c) => c.localName === "pStyle")?.getAttribute("w:val") ?? "")
+      : "";
     const headingMatch = pStyle.match(/^Heading([1-6])$/i) ?? pStyle.match(/^([1-6])$/);
     const isTitle = /^Title$/i.test(pStyle);
+    const isList = Boolean(pPr && Array.from(pPr.children).some((c) => c.localName === "numPr"));
 
-    // Check if paragraph contains a display Office Math block (m:oMathPara)
+    // Check if paragraph contains only display Office Math blocks (m:oMathPara)
     const directChildren = Array.from(pEl.children);
     const hasOnlyDisplayMath = directChildren.some((c) => c.localName === "oMathPara")
       && !directChildren.some((c) => c.localName === "r" && (c.textContent ?? "").trim().length > 0);
     if (hasOnlyDisplayMath) {
       for (const child of directChildren) {
         if (child.localName === "oMathPara") {
-          const mathText = extractOfficeMathText(child);
-          if (mathText) {
-            const box = doc.createElement("div");
-            box.className = "reader-formula";
-            box.setAttribute("translate", "no");
-            box.textContent = mathText;
-            container.append(box);
+          const mathEl = ommlToMathMl(doc, child, true);
+          if (mathEl) {
+            container.append(createDisplayFormulaBox(doc, mathEl));
             state.formulaCount += 1;
           }
         }
@@ -603,51 +783,66 @@ export async function parseDocxDocument(
 
     const level = isTitle ? 1 : headingMatch ? Number.parseInt(headingMatch[1]!, 10) : 0;
     const target = doc.createElement(level > 0 ? `h${Math.min(6, level)}` : "p");
+    if (isList && level === 0) target.className = "pdf-list-item";
+
+    const appendRunElement = (runEl: Element, host: HTMLElement): void => {
+      const embedId = findBlipEmbedId(runEl);
+      if (embedId && relImages.has(embedId)) {
+        const img = doc.createElement("img");
+        img.src = relImages.get(embedId)!;
+        img.className = "reader-doc-image";
+        img.loading = "lazy";
+        host.append(img);
+      }
+
+      const text = Array.from(runEl.getElementsByTagName("*"))
+        .filter((el) => el.localName === "t" || el.localName === "tab" || el.localName === "br")
+        .map((el) => (el.localName === "tab" ? " " : el.localName === "br" ? "\n" : (el.textContent ?? "")))
+        .join("");
+      if (!text) return;
+
+      const rPr = Array.from(runEl.children).find((c) => c.localName === "rPr");
+      const isBold = Boolean(rPr && Array.from(rPr.children).some((c) => c.localName === "b" && c.getAttribute("w:val") !== "0" && c.getAttribute("w:val") !== "false"));
+      const isItalic = Boolean(rPr && Array.from(rPr.children).some((c) => c.localName === "i" && c.getAttribute("w:val") !== "0" && c.getAttribute("w:val") !== "false"));
+      if (isBold && isItalic) {
+        const strong = doc.createElement("strong");
+        const em = doc.createElement("em");
+        em.textContent = text;
+        strong.append(em);
+        host.append(strong);
+      } else if (isBold) {
+        const strong = doc.createElement("strong");
+        strong.textContent = text;
+        host.append(strong);
+      } else if (isItalic) {
+        const em = doc.createElement("em");
+        em.textContent = text;
+        host.append(em);
+      } else {
+        host.append(doc.createTextNode(text));
+      }
+    };
 
     for (const child of directChildren) {
       if (child.localName === "oMath" || child.localName === "oMathPara") {
-        const mathText = extractOfficeMathText(child);
-        if (mathText) {
-          const code = doc.createElement("code");
-          code.className = "reader-inline-math";
-          code.setAttribute("translate", "no");
-          code.setAttribute("data-flt-fixed", "formula");
-          code.textContent = mathText;
-          target.append(code);
+        const mathEl = ommlToMathMl(doc, child, false);
+        if (mathEl) {
+          target.append(createInlineFormulaSpan(doc, mathEl));
           state.formulaCount += 1;
         }
       } else if (child.localName === "r") {
-        const text = Array.from(child.getElementsByTagName("*"))
-          .filter((el) => el.localName === "t" || el.localName === "tab")
-          .map((el) => el.localName === "tab" ? " " : (el.textContent ?? ""))
-          .join("");
-        if (!text) continue;
-        const rPr = Array.from(child.children).find((c) => c.localName === "rPr");
-        const isBold = Boolean(rPr && Array.from(rPr.children).some((c) => c.localName === "b"));
-        const isItalic = Boolean(rPr && Array.from(rPr.children).some((c) => c.localName === "i"));
-        if (isBold) {
-          const strong = doc.createElement("strong");
-          strong.textContent = text;
-          target.append(strong);
-        } else if (isItalic) {
-          const em = doc.createElement("em");
-          em.textContent = text;
-          target.append(em);
-        } else {
-          target.append(doc.createTextNode(text));
-        }
+        appendRunElement(child, target);
       } else if (child.localName === "hyperlink") {
-        const text = (child.textContent ?? "").trim();
-        if (text) {
-          const span = doc.createElement("span");
-          span.textContent = text;
-          target.append(span);
+        const span = doc.createElement("span");
+        for (const sub of Array.from(child.children)) {
+          if (sub.localName === "r") appendRunElement(sub, span);
         }
+        if ((span.textContent ?? "").trim()) target.append(span);
       }
     }
 
     const plain = (target.textContent ?? "").replace(/\s+/g, " ").trim();
-    if (!plain) return;
+    if (!plain && !target.querySelector("img,math")) return;
     if (level > 0) {
       const id = `doc-h-${++headingIdx}`;
       target.id = id;
@@ -667,6 +862,9 @@ export async function parseDocxDocument(
         const tr = doc.createElement("tr");
         for (const cell of Array.from(row.children).filter((c) => c.localName === "tc")) {
           const td = doc.createElement("td");
+          const tcPr = Array.from(cell.children).find((c) => c.localName === "tcPr");
+          const gridSpan = tcPr ? Array.from(tcPr.children).find((c) => c.localName === "gridSpan")?.getAttribute("w:val") : null;
+          if (gridSpan && /^\d+$/.test(gridSpan) && Number(gridSpan) > 1) td.setAttribute("colspan", gridSpan);
           for (const p of Array.from(cell.children).filter((c) => c.localName === "p")) {
             renderParagraph(p, td);
           }
