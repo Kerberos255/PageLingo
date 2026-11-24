@@ -64,8 +64,8 @@ globalThis.__PAGELINGO_BUILTIN_GLOSSARY__ = Object.freeze({
     "Douyin", "Vimeo", "SoundCloud",
 
     // Gaming and interactive entertainment.
-    "PlayStation", "Xbox", "Nintendo", "Epic Games", "Unreal Engine",
-    "Roblox", "Minecraft", "Fortnite", "Riot Games", "League of Legends",
+    "PlayStation", "Xbox", "Nintendo", "Steam", "itch.io", "Epic Games", "Unreal Engine",
+    "Godot", "Roblox", "Minecraft", "Fortnite", "Riot Games", "League of Legends",
     "Valorant", "Genshin Impact", "HoYoverse",
 
     // Travel, hospitality, and transportation.

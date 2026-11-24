@@ -1,5 +1,6 @@
 const SAMPLE_SKIP_TAGS = new Set([
-  "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "MATH", "CANVAS", "CODE", "PRE",
+  "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT", "OPTION",
+  "SVG", "MATH", "CANVAS", "CODE", "PRE",
 ]);
 
 export function sourceTextSample(
@@ -23,7 +24,8 @@ export function sourceTextSample(
           SAMPLE_SKIP_TAGS.has(el.tagName) ||
           el.getAttribute("data-flt-generated") === "translation" ||
           el.hasAttribute("hidden") ||
-          el.getAttribute("aria-hidden") === "true"
+          el.getAttribute("aria-hidden") === "true" ||
+          (el.hasAttribute("contenteditable") && el.getAttribute("contenteditable") !== "false")
         ) {
           return NodeFilter.FILTER_REJECT;
         }

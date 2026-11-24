@@ -62,6 +62,17 @@ export function fragmentAlreadyInTargetScript(text: string, targetLanguage: stri
       return true;
     }
     if (stats.han >= 3 && stats.han / stats.letters >= 0.42) return true;
+    // Short bilingual titles/labels that already provide an explicit Chinese side
+    // (such as "PROJECT: DRYWELL / 焦土泵站" or "Settings | 设置").
+    if (
+      stats.han >= 2 &&
+      stats.kana === 0 &&
+      stats.letters <= 48 &&
+      /(?:[\/|｜]|(?:\s[-–—·]\s))/.test(text) &&
+      /\p{Script=Han}{2,}/u.test(text)
+    ) {
+      return true;
+    }
     return false;
   }
 

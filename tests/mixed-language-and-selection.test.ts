@@ -22,6 +22,7 @@ describe("mixed-language webpage detection (webmail CN/EN)", () => {
     expect(fragmentAlreadyInTargetScript("回复全部", "zh-Hans")).toBe(true);
     expect(fragmentAlreadyInTargetScript("收件箱", "zh-Hans")).toBe(true);
     expect(fragmentAlreadyInTargetScript("今天 (2 封)", "zh-Hans")).toBe(true);
+    expect(fragmentAlreadyInTargetScript("PROJECT: DRYWELL / 焦土泵站", "zh-Hans")).toBe(true);
     expect(fragmentAlreadyInTargetScript("Thanks for submitting your PageLingo add-on to addons.mozilla.org!", "zh-Hans")).toBe(false);
     expect(fragmentAlreadyInTargetScript("Mozilla Add-ons: PageLingo has been submitted", "zh-Hans")).toBe(false);
     // Japanese with kana must NOT be treated as Chinese

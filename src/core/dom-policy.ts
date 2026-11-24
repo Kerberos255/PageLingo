@@ -80,10 +80,146 @@ export function isTranslationControl(element) {
 export function isTranslationRootElement(element) {
   return ROOT_TAGS.has(element.tagName) || isTranslationControl(element);
 }
+const SKIP_TAG_SET = new Set([
+  "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT", "OPTION",
+  "PRE", "CODE", "KBD", "SAMP", "VAR", "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO",
+  "TOOL-TIP", "RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME",
+]);
+const BLANKET_WRAPPER_TAGS = new Set(["DIV", "SECTION", "ARTICLE", "FORM"]);
+const BLANKET_LANDMARK_TAGS = new Set(["FORM", "H1", "H2", "H3", "H4", "H5", "H6", "NAV", "HEADER"]);
+const BLANKET_PROSE_UI_TAGS = new Set([
+  "P", "LI", "LABEL", "DT", "DD", "TD", "TH", "BLOCKQUOTE",
+  "FIGCAPTION", "LEGEND", "SUMMARY", "BUTTON", "H1", "H2", "H3", "H4", "H5", "H6",
+]);
+const BLANKET_CHROME_TAGS = new Set(["HEADER", "NAV", "FOOTER", "ASIDE"]);
+const blanketNoTranslateCache = new WeakMap();
+
+function isSkippedForBlanketMeasure(el) {
+  if (SKIP_TAG_SET.has(el.tagName)) return true;
+  if (
+    el.hasAttribute("data-flt-generated") ||
+    el.hasAttribute("hidden") ||
+    el.hasAttribute("inert") ||
+    el.getAttribute("aria-hidden") === "true" ||
+    el.getAttribute("role") === "tooltip"
+  ) {
+    return true;
+  }
+  return el.hasAttribute("contenteditable") && el.getAttribute("contenteditable") !== "false";
+}
+
+// Many web apps (such as itch.io's project editor, SPA shells, and dashboard views)
+// put translate="no" on <html>, <body>, <main>, or the whole page/form wrapper solely
+// to prevent browser built-in translators from wrapping text nodes in <font> tags and
+// breaking React/editor reconciliation. Honor localized translate="no" exclusions
+// (inline spans, paragraphs, code/log blocks, widgets, contenteditable editors), while
+// bypassing page-wide blanket wrappers that hold the primary UI/prose view.
+function isBlanketNoTranslateContainer(element) {
+  if (!element || typeof element.tagName !== "string") return false;
+  if (element.hasAttribute("contenteditable") && element.getAttribute("contenteditable") !== "false") {
+    return false;
+  }
+  const tag = element.tagName;
+  if (tag === "HTML" || tag === "BODY" || tag === "MAIN" || element.getAttribute("role") === "main") {
+    return true;
+  }
+  if (!BLANKET_WRAPPER_TAGS.has(tag)) return false;
+  if (isTranslationControl(element) || element.closest(SKIP_SELECTOR)) return false;
+  const doc = element.ownerDocument;
+  const body = doc?.body;
+  if (!body || !body.contains(element)) return false;
+
+  const childCount = element.childElementCount;
+  const cached = blanketNoTranslateCache.get(element);
+  if (cached && cached.childCount === childCount) return cached.blanket;
+
+  const NodeFilterRef = doc.defaultView?.NodeFilter ?? NodeFilter;
+  let hasLandmark = tag === "FORM";
+  let proseOrUiBlocks = 0;
+  let insideChars = 0;
+  const CHAR_CAP = 4096;
+
+  const insideWalker = doc.createTreeWalker(element, NodeFilterRef.SHOW_ELEMENT | NodeFilterRef.SHOW_TEXT, {
+    acceptNode(node) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node;
+        if (
+          el !== element &&
+          (isSkippedForBlanketMeasure(el) || el.getAttribute("translate")?.toLowerCase() === "no")
+        ) {
+          return NodeFilterRef.FILTER_REJECT;
+        }
+        return NodeFilterRef.FILTER_ACCEPT;
+      }
+      return NodeFilterRef.FILTER_ACCEPT;
+    },
+  });
+
+  let cur = insideWalker.nextNode();
+  while (cur) {
+    if (cur.nodeType === Node.ELEMENT_NODE) {
+      const el = cur;
+      const elTag = el.tagName;
+      if (!hasLandmark && (BLANKET_LANDMARK_TAGS.has(elTag) || el.getAttribute("role") === "tablist")) {
+        hasLandmark = true;
+      }
+      if (BLANKET_PROSE_UI_TAGS.has(elTag)) {
+        proseOrUiBlocks += 1;
+      }
+    } else if (insideChars < CHAR_CAP) {
+      insideChars += (cur.textContent ?? "").replace(/\s+/g, "").length;
+    }
+    if (((hasLandmark && proseOrUiBlocks >= 3) || proseOrUiBlocks >= 6) && insideChars >= CHAR_CAP) {
+      break;
+    }
+    cur = insideWalker.nextNode();
+  }
+
+  let blanket = false;
+  if (insideChars > 0 && ((hasLandmark && proseOrUiBlocks >= 3) || proseOrUiBlocks >= 6)) {
+    let outsideChars = 0;
+    const outsideWalker = doc.createTreeWalker(body, NodeFilterRef.SHOW_ELEMENT | NodeFilterRef.SHOW_TEXT, {
+      acceptNode(node) {
+        if (node === element) return NodeFilterRef.FILTER_REJECT;
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node;
+          if (isSkippedForBlanketMeasure(el)) return NodeFilterRef.FILTER_REJECT;
+          if (!el.contains(element)) {
+            const role = el.getAttribute("role");
+            if (
+              BLANKET_CHROME_TAGS.has(el.tagName) ||
+              role === "banner" ||
+              role === "navigation" ||
+              role === "contentinfo"
+            ) {
+              return NodeFilterRef.FILTER_REJECT;
+            }
+          }
+          return NodeFilterRef.FILTER_SKIP;
+        }
+        return NodeFilterRef.FILTER_ACCEPT;
+      },
+    });
+    let outNode = outsideWalker.nextNode();
+    while (outNode) {
+      outsideChars += (outNode.textContent ?? "").replace(/\s+/g, "").length;
+      if (outsideChars > insideChars) break;
+      outNode = outsideWalker.nextNode();
+    }
+    blanket = insideChars >= outsideChars;
+  }
+
+  blanketNoTranslateCache.set(element, { childCount, blanket });
+  return blanket;
+}
+
 export function isTranslationDisabled(element) {
   for (let current = element; current; current = parentAcrossShadow(current)) {
     const value = current.getAttribute("translate")?.toLowerCase();
-    if (value === "no") return true;
+    if (value === "no") {
+      if (isBlanketNoTranslateContainer(current)) continue;
+      return true;
+    }
     if (value === "yes" || value === "") return false;
   }
   return false;
@@ -224,12 +360,6 @@ function isScreenReaderOnlyStyle(style) {
     (style.clipPath && style.clipPath !== "none")
   );
 }
-const SKIP_TAG_SET = new Set([
-  "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT", "OPTION",
-  "PRE", "CODE", "KBD", "SAMP", "VAR", "SVG", "MATH", "CANVAS", "VIDEO", "AUDIO",
-  "TOOL-TIP", "RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME",
-]);
-
 export function isHiddenInsideClosedDetails(element: Element): boolean {
   const parent = element.parentElement;
   if (!parent || parent.tagName !== "DETAILS" || parent.hasAttribute("open")) return false;
@@ -337,14 +467,17 @@ export function isStandaloneShortcutLabel(value) {
   return isUnambiguousKeycapText(text);
 }
 
+const STANDALONE_PACKAGE_FILENAME = /^(?:\.\/|\/)?(?:[\p{L}\p{N}._@+~-]+\/)*[\p{L}\p{N}._@+~-]+\.(?:zip|rar|7z|tar|gz|tgz|bz2|xz|exe|msi|dmg|pkg|deb|rpm|apk|ipa|jar|swf|unity3d|pck|wasm)$/iu;
+
 export function isEligibleTextNode(node, visibilityCache = undefined, stopAtAncestor = undefined) {
   const text = node.data.trim();
   if (!text || !isEligibleTextContext(node, visibilityCache, stopAtAncestor)) return false;
-  // Pure counters/dates/version badges, standalone URLs, and explicit keycaps (Esc, F1, Ctrl+S, ⇑Q)
+  // Pure counters/dates/version badges, standalone URLs/package filenames, and explicit keycaps
   // do not need translation and translating them turns technical identifiers/shortcuts into nonsense.
   return /\p{L}/u.test(text)
     && !/^v\d+(?:\.\d+)+(?:[-+][\w.-]+)?$/i.test(text)
     && !/^https?:\/\/\S+$/iu.test(text)
+    && !STANDALONE_PACKAGE_FILENAME.test(text)
     && !isUnambiguousKeycapText(text);
 }
 var FALLBACK_CONTAINER_TAGS = new Set([

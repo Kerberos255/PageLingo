@@ -8,11 +8,6 @@ export const isAsciiWhitespaceOrEmpty = (text: string) => /^[ \t\r\n\f]*$/u.test
 // are different contracts and never become optional through this policy.
 export function canCollapseProseWhitespace(node: Text): boolean {
   if (!node.parentElement || !isEligibleTextContext(node)) return false;
-  for (let parent: Element | null = node.parentElement; parent; parent = parent.parentElement) {
-    const value = parent.getAttribute("translate")?.toLowerCase();
-    if (value === "no") return false;
-    if (value === "yes" || value === "") break;
-  }
   const style = node.ownerDocument.defaultView?.getComputedStyle(node.parentElement);
   return Boolean(style && ["normal", "nowrap"].includes(style.whiteSpace || "normal")
     && (!style.whiteSpaceCollapse || style.whiteSpaceCollapse === "collapse"));

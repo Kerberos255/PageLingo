@@ -34,4 +34,21 @@ describe("source text sampling", () => {
     expect(sample).not.toContain("style words");
     expect(sample).not.toContain("template words");
   });
+
+  it("ignores user-authored text inside textarea, select options, and contenteditable editors", () => {
+    document.body.innerHTML = `
+      <div class="main">
+        <p>Short description or tagline</p>
+        <textarea>这是一段用户在表单里填写的中文项目简介</textarea>
+        <select><option>游戏分类选项</option></select>
+        <div contenteditable="true"><p>富文本编辑器里的中文内容</p></div>
+      </div>
+    `;
+
+    const sample = sourceTextSample(document);
+    expect(sample).toContain("Short description or tagline");
+    expect(sample).not.toContain("中文项目简介");
+    expect(sample).not.toContain("游戏分类选项");
+    expect(sample).not.toContain("富文本编辑器");
+  });
 });
