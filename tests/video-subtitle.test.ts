@@ -21,7 +21,10 @@ import {
 import {
   detectVideoPlatform,
   discoverBilibiliSubtitleDetailed,
+  discoverHtml5Subtitle,
+  discoverYouTubeSubtitleDetailed,
   extractBilibiliRouteIds,
+  extractYouTubeVideoId,
   type DiscoveredSubtitleTrack,
   type FetchTrackTextOptions,
 } from "../src/video-translation/platform-adapters";
@@ -663,5 +666,388 @@ describe("Bilibili WBI signing and subtitle discovery", () => {
     );
 
     expect(result).toEqual({ track: null, status: "need_login" });
+  });
+});
+
+describe("YouTube PO-token recovery, live DOM caption bridge, and Shorts", () => {
+  it("extracts YouTube video IDs across watch, shorts, live, embed, and youtu.be URLs", () => {
+    expect(extractYouTubeVideoId("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s")).toBe("dQw4w9WgXcQ");
+    expect(extractYouTubeVideoId("https://www.youtube.com/shorts/abcDEF12345")).toBe("abcDEF12345");
+    expect(extractYouTubeVideoId("https://www.youtube.com/live/live9876543")).toBe("live9876543");
+    expect(extractYouTubeVideoId("https://youtu.be/shortLink99")).toBe("shortLink99");
+    expect(extractYouTubeVideoId("https://www.youtube.com/")).toBeNull();
+  });
+
+  it("reports need_cc on PO-token empty timedtext and recovers full track when player resource carries pot", async () => {
+    const moviePlayer = document.createElement("div");
+    moviePlayer.id = "movie_player";
+    Object.defineProperty(moviePlayer, "wrappedJSObject", {
+      value: {
+        getPlayerResponse: () => ({
+          videoDetails: { videoId: "POTVID12345" },
+          captions: {
+            playerCaptionsTracklistRenderer: {
+              captionTracks: [
+                {
+                  languageCode: "en",
+                  vssId: ".en",
+                  baseUrl: "https://www.youtube.com/api/timedtext?v=POTVID12345&lang=en&exp=xpe",
+                },
+              ],
+            },
+          },
+        }),
+      },
+      configurable: true,
+    });
+    document.body.append(moviePlayer);
+
+    const fetchMock = async (url: string): Promise<string> => {
+      const parsed = new URL(url);
+      if (parsed.searchParams.get("pot") === "LIVE_POT_TOKEN") {
+        return JSON.stringify({
+          events: [
+            { tStartMs: 1000, dDurationMs: 2500, segs: [{ utf8: "Authenticated YouTube line." }] },
+          ],
+        });
+      }
+      // Simulate YouTube PO-token empty HTTP 200 body when pot is missing.
+      return "";
+    };
+
+    const gated = await discoverYouTubeSubtitleDetailed(
+      { targetLanguage: "zh-Hans", preferManualCaptions: true, filterSoundEffects: true, mergeAsrSegments: true },
+      { href: "https://www.youtube.com/watch?v=POTVID12345", doc: document, fetchText: fetchMock, resourceUrls: [] },
+    );
+    expect(gated).toEqual({ track: null, status: "need_cc" });
+
+    const recovered = await discoverYouTubeSubtitleDetailed(
+      { targetLanguage: "zh-Hans", preferManualCaptions: true, filterSoundEffects: true, mergeAsrSegments: true },
+      {
+        href: "https://www.youtube.com/watch?v=POTVID12345",
+        doc: document,
+        fetchText: fetchMock,
+        resourceUrls: [
+          "https://www.youtube.com/api/timedtext?v=POTVID12345&lang=en&exp=xpe&pot=LIVE_POT_TOKEN&c=WEB",
+        ],
+      },
+    );
+    expect(recovered.status).toBe("ready");
+    expect(recovered.track?.cues).toEqual([
+      { startTime: 1, endTime: 3.5, text: "Authenticated YouTube line." },
+    ]);
+  });
+
+  it("shows PL 开CC on YouTube need_cc, clicks native CC button, and translates live .ytp-caption-segment DOM captions", async () => {
+    const moviePlayer = document.createElement("div");
+    moviePlayer.id = "movie_player";
+    moviePlayer.className = "html5-video-player";
+    const video = document.createElement("video");
+    const controls = document.createElement("div");
+    controls.className = "ytp-right-controls";
+    const ccBtn = document.createElement("button");
+    ccBtn.className = "ytp-subtitles-button";
+    ccBtn.setAttribute("aria-pressed", "false");
+    controls.append(ccBtn);
+
+    const captionContainer = document.createElement("div");
+    captionContainer.className = "ytp-caption-window-container";
+    moviePlayer.append(video, captionContainer, controls);
+    document.body.append(moviePlayer);
+
+    let ccClicked = 0;
+    ccBtn.addEventListener("click", () => {
+      ccClicked += 1;
+      ccBtn.setAttribute("aria-pressed", "true");
+      const seg = document.createElement("span");
+      seg.className = "ytp-caption-segment";
+      seg.textContent = "Live YouTube caption line.";
+      captionContainer.replaceChildren(seg);
+    });
+
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      platformFn: () => "youtube",
+      detectLanguageFn: async () => "en",
+      discoverDetailedFn: async () => ({ track: null, status: "need_cc" }),
+      provider: {
+        translateHtml: async (req) => req.html
+          .replace("Live YouTube caption line.", "YouTube 实时字幕行。")
+          .replace("Second live caption.", "第二条实时字幕。"),
+      },
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    const toggleBtn = controls.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    expect(toggleBtn).not.toBeNull();
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("need-cc");
+    expect(toggleBtn.textContent).toBe("PL 开CC");
+
+    // Clicking PL 开CC turns on YouTube native CC and activates live DOM caption translation.
+    toggleBtn.click();
+    await flushAsync();
+
+    expect(ccClicked).toBe(1);
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("bilingual");
+    expect(toggleBtn.textContent).toBe("PL 双语");
+    expect(moviePlayer.getAttribute("data-pagelingo-subtitle-active")).toBe("true");
+
+    const host = moviePlayer.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const srcEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-source")!;
+    const transEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-translation")!;
+    expect(srcEl.textContent).toBe("Live YouTube caption line.");
+    expect(transEl.textContent).toBe("YouTube 实时字幕行。");
+
+    // Subsequent DOM caption update translates live too.
+    captionContainer.firstElementChild!.textContent = "Second live caption.";
+    await flushAsync();
+    expect(srcEl.textContent).toBe("Second live caption.");
+    expect(transEl.textContent).toBe("第二条实时字幕。");
+
+    // Toggling to off hides overlay and restores native caption visibility.
+    toggleBtn.click(); // translation
+    expect(srcEl.hidden).toBe(true);
+    expect(transEl.textContent).toBe("第二条实时字幕。");
+    toggleBtn.click(); // off
+    expect(toggleBtn.dataset.pagelingoSubMode).toBe("off");
+    expect(moviePlayer.hasAttribute("data-pagelingo-subtitle-active")).toBe(false);
+
+    manager.dispose();
+  });
+
+  it("attaches only to #shorts-player on /shorts/ routes even if a paused #movie_player stays in DOM", async () => {
+    const prevUrl = window.location.href;
+    window.history.replaceState({}, "", "/shorts/SHORT98765");
+    try {
+      const staleWatchPlayer = document.createElement("div");
+      staleWatchPlayer.id = "movie_player";
+      staleWatchPlayer.className = "html5-video-player";
+      staleWatchPlayer.append(document.createElement("video"));
+
+      const shortsPlayer = document.createElement("div");
+      shortsPlayer.id = "shorts-player";
+      shortsPlayer.className = "html5-video-player";
+      shortsPlayer.append(document.createElement("video"));
+
+      document.body.append(staleWatchPlayer, shortsPlayer);
+
+      const manager = new VideoSubtitleManager({
+        doc: document,
+        loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true }),
+        platformFn: () => "youtube",
+        discoverDetailedFn: async () => ({ track: null, status: "no_subtitles" }),
+      });
+
+      await manager.start();
+      await flushAsync();
+
+      expect(manager.getActiveSessionCount()).toBe(1);
+      expect(staleWatchPlayer.querySelector('[data-flt-generated="video-subtitle-control"]')).toBeNull();
+      const shortsToggle = shortsPlayer.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]');
+      expect(shortsToggle).not.toBeNull();
+      expect(shortsToggle?.classList.contains("pagelingo-sub-toggle-floating")).toBe(true);
+
+      manager.dispose();
+    } finally {
+      window.history.replaceState({}, "", prevUrl);
+    }
+  });
+});
+
+describe("Universal HTML5 async TextTracks, major player frameworks, and fullscreen preservation", () => {
+  function makeMockTextTrack(initialMode: TextTrackMode = "disabled", language = "en") {
+    const listeners = new Map<string, Set<EventListener>>();
+    const cueArray: Array<{ startTime: number; endTime: number; text: string }> = [];
+    const track = {
+      kind: "subtitles",
+      language,
+      label: language.toUpperCase(),
+      mode: initialMode,
+      get cues() {
+        return cueArray as unknown as TextTrackCueList;
+      },
+      addEventListener(type: string, fn: EventListener) {
+        if (!listeners.has(type)) listeners.set(type, new Set());
+        listeners.get(type)!.add(fn);
+      },
+      removeEventListener(type: string, fn: EventListener) {
+        listeners.get(type)?.delete(fn);
+      },
+      emitCueChange() {
+        for (const fn of listeners.get("cuechange") ?? []) fn(new Event("cuechange"));
+      },
+      pushCue(startTime: number, endTime: number, text: string) {
+        cueArray.push({ startTime, endTime, text });
+      },
+    };
+    return track;
+  }
+
+  it("waits for async disabled TextTracks to populate cues and merges incremental HLS cues on cuechange", async () => {
+    const vjs = document.createElement("div");
+    vjs.className = "video-js";
+    const video = document.createElement("video");
+    Object.defineProperty(video, "currentTime", { value: 1.5, writable: true, configurable: true });
+    const controlBar = document.createElement("div");
+    controlBar.className = "vjs-control-bar";
+    const playBtn = document.createElement("button");
+    playBtn.className = "vjs-play-control";
+    const fsBtn = document.createElement("button");
+    fsBtn.className = "vjs-fullscreen-control";
+    controlBar.append(playBtn, fsBtn);
+    vjs.append(video, controlBar);
+
+    // Unstyled decorative <video> without tracks must NOT get a quick toggle button.
+    const heroBox = document.createElement("div");
+    heroBox.append(document.createElement("video"));
+    document.body.append(vjs, heroBox);
+
+    const mockTrack = makeMockTextTrack("disabled", "en");
+    const trackListListeners = new Map<string, Set<EventListener>>();
+    const mockTrackList = Object.assign([mockTrack], {
+      addEventListener(type: string, fn: EventListener) {
+        if (!trackListListeners.has(type)) trackListListeners.set(type, new Set());
+        trackListListeners.get(type)!.add(fn);
+      },
+      removeEventListener(type: string, fn: EventListener) {
+        trackListListeners.get(type)?.delete(fn);
+      },
+    });
+    Object.defineProperty(video, "textTracks", { value: mockTrackList, configurable: true });
+
+    // Simulate Coursera / HLS.js populating cues asynchronously ~30ms after mode switches to hidden.
+    let modeSetterTriggered = false;
+    let currentMode: TextTrackMode = "disabled";
+    Object.defineProperty(mockTrack, "mode", {
+      get: () => currentMode,
+      set: (next: TextTrackMode) => {
+        currentMode = next;
+        if (next === "hidden" && !modeSetterTriggered) {
+          modeSetterTriggered = true;
+          setTimeout(() => {
+            mockTrack.pushCue(1, 3, "First HLS segment.");
+            mockTrack.emitCueChange();
+          }, 25);
+        }
+      },
+    });
+
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      platformFn: () => "html5",
+      discoverDetailedFn: async (v, opts) => {
+        const track = await discoverHtml5Subtitle(v, opts, { waitTimeoutMs: 400 });
+        return track ? { track, status: "ready" } : { track: null, status: "no_subtitles" };
+      },
+      provider: {
+        translateHtml: async (req) => req.html
+          .replace("First HLS segment.", "第一段 HLS 字幕。")
+          .replace("Second HLS segment.", "第二段 HLS 字幕。"),
+      },
+    });
+
+    await manager.start();
+    await new Promise((resolve) => setTimeout(resolve, 90));
+
+    // Video.js inline toggle mounted inside .vjs-control-bar right BEFORE .vjs-fullscreen-control!
+    const vjsToggle = controlBar.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    expect(vjsToggle).not.toBeNull();
+    expect(vjsToggle.classList.contains("pagelingo-sub-toggle-html5")).toBe(true);
+    expect(vjsToggle.nextElementSibling).toBe(fsBtn);
+    expect(vjsToggle.dataset.pagelingoSubMode).toBe("bilingual");
+
+    // Decorative <video> outside known players has NO stray button.
+    expect(heroBox.querySelector('[data-flt-generated="video-subtitle-control"]')).toBeNull();
+
+    const host = vjs.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const transEl = host.shadowRoot!.querySelector<HTMLDivElement>(".pl-sub-translation")!;
+    expect(transEl.textContent).toBe("第一段 HLS 字幕。");
+
+    // Later HLS chunk arrives via cuechange and is merged + translated automatically.
+    mockTrack.pushCue(5, 8, "Second HLS segment.");
+    mockTrack.emitCueChange();
+    video.currentTime = 6.0;
+    video.dispatchEvent(new Event("timeupdate"));
+    await flushAsync();
+
+    expect(transEl.textContent).toBe("第二段 HLS 字幕。");
+
+    manager.dispose();
+  });
+
+  it("mounts Plyr controls before fullscreen button and reparents overlay when an inner wrapper enters fullscreen", async () => {
+    // Outer known player (.vp-player) contains an inner wrapper that enters fullscreen.
+    const vpPlayer = document.createElement("div");
+    vpPlayer.className = "vp-player";
+    const innerFs = document.createElement("div");
+    innerFs.className = "inner-stage";
+    const video = document.createElement("video");
+    Object.defineProperty(video, "currentTime", { value: 1.5, writable: true, configurable: true });
+    innerFs.append(video);
+    vpPlayer.append(innerFs);
+
+    const plyr = document.createElement("div");
+    plyr.className = "plyr";
+    const plyrVideo = document.createElement("video");
+    const plyrControls = document.createElement("div");
+    plyrControls.className = "plyr__controls";
+    const plyrFs = document.createElement("button");
+    plyrFs.setAttribute("data-plyr", "fullscreen");
+    plyrControls.append(plyrFs);
+    plyr.append(plyrVideo, plyrControls);
+
+    document.body.append(vpPlayer, plyr);
+
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      loadSettingsFn: async () => makeSettings({ enabled: true, showPlayerButton: true, displayMode: "bilingual" }),
+      platformFn: () => "html5",
+      discoverDetailedFn: async (v) => v === video
+        ? {
+          status: "ready",
+          track: {
+            platform: "html5",
+            videoKey: "fs:test",
+            sourceLanguage: "en",
+            isAsr: false,
+            hasManualTarget: true,
+            cues: [{ startTime: 1, endTime: 3, text: "Fullscreen line.", translatedText: "全屏字幕。" }],
+          },
+        }
+        : { track: null, status: "no_subtitles" },
+    });
+
+    await manager.start();
+    await flushAsync();
+
+    // Plyr player gets inline button right before [data-plyr="fullscreen"] even with no subtitles yet.
+    const plyrToggle = plyrControls.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    expect(plyrToggle).not.toBeNull();
+    expect(plyrToggle.nextElementSibling).toBe(plyrFs);
+    expect(plyrToggle.textContent).toBe("PL 无字幕");
+
+    // Before fullscreen: overlay host and floating toggle live inside .vp-player.
+    const host = vpPlayer.querySelector<HTMLDivElement>('[data-flt-generated="video-subtitle"]')!;
+    const floatingToggle = vpPlayer.querySelector<HTMLButtonElement>('[data-flt-generated="video-subtitle-control"]')!;
+    expect(host.parentElement).toBe(vpPlayer);
+    expect(floatingToggle.parentElement).toBe(vpPlayer);
+
+    // Enter fullscreen on innerFs (descendant of vpPlayer): overlay and floating button reparent into innerFs.
+    Object.defineProperty(document, "fullscreenElement", { value: innerFs, configurable: true });
+    document.dispatchEvent(new Event("fullscreenchange"));
+    expect(host.parentElement).toBe(innerFs);
+    expect(innerFs.querySelector('[data-flt-generated="video-subtitle-control"]')).not.toBeNull();
+
+    // Exit fullscreen: overlay and floating button restore cleanly back to vpPlayer.
+    Object.defineProperty(document, "fullscreenElement", { value: null, configurable: true });
+    document.dispatchEvent(new Event("fullscreenchange"));
+    expect(host.parentElement).toBe(vpPlayer);
+    expect(vpPlayer.querySelector('[data-flt-generated="video-subtitle-control"]')?.parentElement).toBe(vpPlayer);
+
+    manager.dispose();
   });
 });

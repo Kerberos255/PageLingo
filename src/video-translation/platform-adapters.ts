@@ -15,7 +15,7 @@ import {
 
 export type VideoPlatform = "youtube" | "bilibili" | "html5";
 export type VideoMediaElement = HTMLVideoElement | HTMLElement;
-export type SubtitleDiscoveryStatus = "ready" | "no_subtitles" | "need_login" | "error";
+export type SubtitleDiscoveryStatus = "ready" | "no_subtitles" | "need_login" | "need_cc" | "error";
 
 export interface DiscoveredSubtitleTrack {
   platform: VideoPlatform;
@@ -27,6 +27,8 @@ export interface DiscoveredSubtitleTrack {
   hasManualTarget: boolean;
   /** Optional cleanup when hiding native HTML5 TextTrack. */
   restoreNativeTrack?: () => void;
+  /** Backing HTML5 TextTrack for streaming/incremental HLS cue updates. */
+  liveTextTrack?: TextTrack;
 }
 
 export interface SubtitleDiscoveryResult {
@@ -87,6 +89,13 @@ interface YouTubeCaptionTrack {
   vssId?: string;
 }
 
+export interface YouTubeDiscoverDeps {
+  href?: string;
+  doc?: Document;
+  fetchText?: (url: string, options?: FetchTrackTextOptions) => Promise<string>;
+  resourceUrls?: string[];
+}
+
 function extractBalancedJsonObject(source: string, marker: string): string | null {
   const markerIndex = source.indexOf(marker);
   if (markerIndex < 0) return null;
@@ -125,17 +134,107 @@ function extractYouTubeTracksFromPlayerResponse(response: unknown): { videoId: s
   return { videoId, tracks };
 }
 
-function currentYouTubeVideoId(): string | null {
-  const url = new URL(location.href);
+export function extractYouTubeVideoId(href = location.href): string | null {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  if (url.hostname.toLowerCase() === "youtu.be") {
+    const seg = url.pathname.replace(/^\/+/, "").split("/")[0];
+    return seg || null;
+  }
   const v = url.searchParams.get("v");
   if (v) return v;
   const shorts = url.pathname.match(/^\/(?:shorts|embed|live)\/([^/?#]+)/);
   return shorts?.[1] ?? null;
 }
 
-async function fetchYouTubeCaptionTracks(videoId: string): Promise<YouTubeCaptionTrack[]> {
-  // 1. Fast path: inspect inline scripts in the current document when videoId matches.
-  for (const script of Array.from(document.scripts)) {
+function readLiveYouTubePlayerTracks(videoId: string, doc: Document, href: string): YouTubeCaptionTrack[] | null {
+  const isShorts = (() => {
+    try {
+      return new URL(href).pathname.startsWith("/shorts/");
+    } catch {
+      return false;
+    }
+  })();
+
+  const selectors = isShorts ? ["#shorts-player", "#movie_player"] : ["#movie_player", "#shorts-player"];
+  for (const selector of selectors) {
+    const player = doc.querySelector(selector) as
+      | (HTMLElement & {
+        getPlayerResponse?: () => unknown;
+        wrappedJSObject?: { getPlayerResponse?: () => unknown };
+      })
+      | null;
+    if (!player) continue;
+    try {
+      const target = player.wrappedJSObject ?? player;
+      if (typeof target.getPlayerResponse === "function") {
+        const parsed = extractYouTubeTracksFromPlayerResponse(target.getPlayerResponse());
+        if (parsed && (!parsed.videoId || parsed.videoId === videoId)) {
+          return parsed.tracks;
+        }
+      }
+    } catch {
+      // Fall through to next source.
+    }
+  }
+
+  const view = doc.defaultView as
+    | (Window & {
+      ytInitialPlayerResponse?: unknown;
+      wrappedJSObject?: { ytInitialPlayerResponse?: unknown };
+    })
+    | null;
+  if (view) {
+    try {
+      const raw = view.wrappedJSObject?.ytInitialPlayerResponse ?? view.ytInitialPlayerResponse;
+      const parsed = extractYouTubeTracksFromPlayerResponse(raw);
+      if (parsed && (!parsed.videoId || parsed.videoId === videoId)) {
+        return parsed.tracks;
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
+export function findYouTubeTimedTextResourceUrls(videoId: string, doc: Document = document): string[] {
+  const perf = doc.defaultView?.performance ?? globalThis.performance;
+  if (!perf || typeof perf.getEntriesByType !== "function") return [];
+  try {
+    const entries = perf.getEntriesByType("resource");
+    const matched: string[] = [];
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      const name = entries[i]?.name;
+      if (!name || !name.includes("/api/timedtext")) continue;
+      try {
+        const parsed = new URL(name);
+        if (parsed.searchParams.get("v") === videoId) {
+          matched.push(name);
+        }
+      } catch {}
+    }
+    return matched;
+  } catch {
+    return [];
+  }
+}
+
+async function fetchYouTubeCaptionTracks(
+  videoId: string,
+  href: string,
+  doc: Document,
+  fetchText: (url: string, options?: FetchTrackTextOptions) => Promise<string>,
+): Promise<YouTubeCaptionTrack[]> {
+  // 1. Live player API / window object (instant & always fresh after SPA navigation).
+  const live = readLiveYouTubePlayerTracks(videoId, doc, href);
+  if (live && live.length > 0) return live;
+
+  // 2. Fast path: inspect inline scripts in the current document when videoId matches.
+  for (const script of Array.from(doc.scripts)) {
     const content = script.textContent ?? "";
     if (!content.includes("captionTracks")) continue;
     const jsonText = extractBalancedJsonObject(content, "ytInitialPlayerResponse =");
@@ -148,9 +247,9 @@ async function fetchYouTubeCaptionTracks(videoId: string): Promise<YouTubeCaptio
     }
   }
 
-  // 2. SPA navigation path: fetch the current watch page HTML with session cookies.
+  // 3. SPA navigation fallback: fetch the current watch page HTML with session cookies.
   const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
-  const html = await fetchTrackText(watchUrl);
+  const html = await fetchText(watchUrl, { credentials: "include" });
   const jsonText = extractBalancedJsonObject(html, "ytInitialPlayerResponse =");
   if (!jsonText) return [];
   try {
@@ -160,26 +259,113 @@ async function fetchYouTubeCaptionTracks(videoId: string): Promise<YouTubeCaptio
   }
 }
 
-async function loadYouTubeTrackCues(track: YouTubeCaptionTrack): Promise<SubtitleCue[]> {
-  if (!track.baseUrl) return [];
-  const jsonUrl = new URL(track.baseUrl, location.href);
-  jsonUrl.searchParams.set("fmt", "json3");
-  try {
-    const raw = await fetchTrackText(jsonUrl.href);
-    const parsed = parseYouTubeJson3(JSON.parse(raw));
-    if (parsed.length > 0) return parsed;
-  } catch {
-    // Fall back to default XML timedtext format.
+function buildYouTubeTimedTextCandidates(
+  track: YouTubeCaptionTrack,
+  resourceUrls: readonly string[],
+  baseHref: string,
+): string[] {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const add = (rawUrl: string) => {
+    if (!rawUrl || seen.has(rawUrl)) return;
+    seen.add(rawUrl);
+    candidates.push(rawUrl);
+  };
+
+  const trackLang = (track.languageCode ?? "").toLowerCase();
+  const trackIsAsr = track.kind === "asr";
+
+  // 1. Prefer same-origin timedtext requests already authenticated by YouTube's own player (with pot token).
+  let capturedPot: string | null = null;
+  for (const resUrl of resourceUrls) {
+    try {
+      const parsed = new URL(resUrl);
+      const pot = parsed.searchParams.get("pot");
+      if (pot && !capturedPot) capturedPot = pot;
+      const resLang = (parsed.searchParams.get("lang") ?? "").toLowerCase();
+      const resTlang = parsed.searchParams.get("tlang");
+      const resIsAsr = parsed.searchParams.get("kind") === "asr";
+      if (!resTlang && (!trackLang || resLang === trackLang) && resIsAsr === trackIsAsr) {
+        add(resUrl);
+      }
+    } catch {}
   }
-  const xmlRaw = await fetchTrackText(track.baseUrl);
-  return parseYouTubeTimedTextXml(xmlRaw);
+
+  // 2. If another track on the same video already carried a player pot token, augment baseUrl with it.
+  if (track.baseUrl && capturedPot) {
+    try {
+      const potUrl = new URL(track.baseUrl, baseHref);
+      if (!potUrl.searchParams.get("pot")) {
+        potUrl.searchParams.set("pot", capturedPot);
+        if (!potUrl.searchParams.get("c")) potUrl.searchParams.set("c", "WEB");
+      }
+      add(potUrl.href);
+    } catch {}
+  }
+
+  // 3. Direct baseUrl (works on videos without PO-token gating).
+  if (track.baseUrl) {
+    try {
+      add(new URL(track.baseUrl, baseHref).href);
+    } catch {
+      add(track.baseUrl);
+    }
+  }
+
+  return candidates;
 }
 
-async function discoverYouTubeSubtitle(options: DiscoverTrackOptions): Promise<DiscoveredSubtitleTrack | null> {
-  const videoId = currentYouTubeVideoId();
-  if (!videoId) return null;
-  const tracks = await fetchYouTubeCaptionTracks(videoId);
-  if (!tracks.length) return null;
+async function loadYouTubeTrackCues(
+  track: YouTubeCaptionTrack,
+  resourceUrls: readonly string[],
+  baseHref: string,
+  fetchText: (url: string, options?: FetchTrackTextOptions) => Promise<string>,
+): Promise<SubtitleCue[]> {
+  const candidates = buildYouTubeTimedTextCandidates(track, resourceUrls, baseHref);
+  for (const candidateUrl of candidates) {
+    try {
+      const jsonUrl = new URL(candidateUrl, baseHref);
+      jsonUrl.searchParams.set("fmt", "json3");
+      const raw = await fetchText(jsonUrl.href, { credentials: "include" });
+      if (raw.trim().length > 0) {
+        const parsed = parseYouTubeJson3(JSON.parse(raw));
+        if (parsed.length > 0) return parsed;
+      }
+    } catch {
+      // Fall back to XML timedtext format for this candidate.
+    }
+
+    try {
+      const xmlRaw = await fetchText(candidateUrl, { credentials: "include" });
+      if (xmlRaw.trim().length > 0) {
+        const parsed = parseYouTubeTimedTextXml(xmlRaw);
+        if (parsed.length > 0) return parsed;
+      }
+    } catch {
+      // Try next candidate URL.
+    }
+  }
+  return [];
+}
+
+export async function discoverYouTubeSubtitleDetailed(
+  options: DiscoverTrackOptions,
+  deps: YouTubeDiscoverDeps = {},
+): Promise<SubtitleDiscoveryResult> {
+  const href = deps.href ?? location.href;
+  const doc = deps.doc ?? document;
+  const fetchText = deps.fetchText ?? fetchTrackText;
+
+  const videoId = extractYouTubeVideoId(href);
+  if (!videoId) return { track: null, status: "no_subtitles" };
+
+  let tracks: YouTubeCaptionTrack[];
+  try {
+    tracks = await fetchYouTubeCaptionTracks(videoId, href, doc, fetchText);
+  } catch {
+    return { track: null, status: "error" };
+  }
+  if (!tracks.length) return { track: null, status: "no_subtitles" };
 
   const targetNorm = normalizeDetectedLanguage(options.targetLanguage) ?? options.targetLanguage;
   const normalizedTracks = tracks
@@ -189,7 +375,9 @@ async function discoverYouTubeSubtitle(options: DiscoverTrackOptions): Promise<D
       lang: normalizeDetectedLanguage(track.languageCode) ?? null,
       isAsr: track.kind === "asr",
     }));
-  if (!normalizedTracks.length) return null;
+  if (!normalizedTracks.length) return { track: null, status: "no_subtitles" };
+
+  const resourceUrls = deps.resourceUrls ?? findYouTubeTimedTextResourceUrls(videoId, doc);
 
   const manualTarget = options.preferManualCaptions
     ? normalizedTracks.find((item) => !item.isAsr && item.lang === targetNorm)
@@ -201,53 +389,67 @@ async function discoverYouTubeSubtitle(options: DiscoverTrackOptions): Promise<D
     ?? normalizedTracks[0]!;
 
   if (manualTarget && sourceTrack === manualTarget) {
-    const targetCues = prepareSubtitleCues(await loadYouTubeTrackCues(manualTarget.track), {
+    const rawTargetCues = await loadYouTubeTrackCues(manualTarget.track, resourceUrls, href, fetchText);
+    const targetCues = prepareSubtitleCues(rawTargetCues, {
       filterSoundEffects: options.filterSoundEffects,
       mergeAsr: false,
     });
-    if (!targetCues.length) return null;
+    if (!targetCues.length) return { track: null, status: "need_cc" };
     return {
-      platform: "youtube",
-      videoKey: `yt:${videoId}:${manualTarget.track.vssId ?? manualTarget.lang ?? "target"}`,
-      sourceLanguage: targetNorm,
-      isAsr: false,
-      hasManualTarget: true,
-      cues: targetCues.map((c) => ({ ...c, translatedText: c.text })),
+      status: "ready",
+      track: {
+        platform: "youtube",
+        videoKey: `yt:${videoId}:${manualTarget.track.vssId ?? manualTarget.lang ?? "target"}`,
+        sourceLanguage: targetNorm,
+        isAsr: false,
+        hasManualTarget: true,
+        cues: targetCues.map((c) => ({ ...c, translatedText: c.text })),
+      },
     };
   }
 
-  const rawSourceCues = await loadYouTubeTrackCues(sourceTrack.track);
+  const rawSourceCues = await loadYouTubeTrackCues(sourceTrack.track, resourceUrls, href, fetchText);
   const sourceCues = prepareSubtitleCues(rawSourceCues, {
     filterSoundEffects: options.filterSoundEffects,
     mergeAsr: sourceTrack.isAsr && options.mergeAsrSegments,
   });
-  if (!sourceCues.length) return null;
+  if (!sourceCues.length) {
+    // Caption tracks exist in playerResponse, but direct timedtext returned empty (typically PO Token exp=xpe).
+    // Turning on YouTube native CC lets the player authorize timedtext or stream live captions into DOM.
+    return { track: null, status: "need_cc" };
+  }
 
   if (manualTarget) {
-    const rawTargetCues = await loadYouTubeTrackCues(manualTarget.track);
+    const rawTargetCues = await loadYouTubeTrackCues(manualTarget.track, resourceUrls, href, fetchText);
     const targetCues = prepareSubtitleCues(rawTargetCues, {
       filterSoundEffects: options.filterSoundEffects,
       mergeAsr: false,
     });
     if (targetCues.length > 0) {
       return {
-        platform: "youtube",
-        videoKey: `yt:${videoId}:${sourceTrack.track.vssId ?? sourceTrack.lang ?? "src"}->manual`,
-        sourceLanguage: sourceTrack.lang,
-        isAsr: sourceTrack.isAsr,
-        hasManualTarget: true,
-        cues: alignManualTargetCues(sourceCues, targetCues),
+        status: "ready",
+        track: {
+          platform: "youtube",
+          videoKey: `yt:${videoId}:${sourceTrack.track.vssId ?? sourceTrack.lang ?? "src"}->manual`,
+          sourceLanguage: sourceTrack.lang,
+          isAsr: sourceTrack.isAsr,
+          hasManualTarget: true,
+          cues: alignManualTargetCues(sourceCues, targetCues),
+        },
       };
     }
   }
 
   return {
-    platform: "youtube",
-    videoKey: `yt:${videoId}:${sourceTrack.track.vssId ?? sourceTrack.lang ?? "src"}`,
-    sourceLanguage: sourceTrack.lang,
-    isAsr: sourceTrack.isAsr,
-    hasManualTarget: false,
-    cues: sourceCues,
+    status: "ready",
+    track: {
+      platform: "youtube",
+      videoKey: `yt:${videoId}:${sourceTrack.track.vssId ?? sourceTrack.lang ?? "src"}`,
+      sourceLanguage: sourceTrack.lang,
+      isAsr: sourceTrack.isAsr,
+      hasManualTarget: false,
+      cues: sourceCues,
+    },
   };
 }
 
@@ -709,7 +911,7 @@ export async function discoverBilibiliSubtitleDetailed(
 /* Universal HTML5 <video><track> WebVTT Discovery                            */
 /* -------------------------------------------------------------------------- */
 
-function readInMemoryTextTrackCues(track: TextTrack): SubtitleCue[] {
+export function readTextTrackCues(track: TextTrack): SubtitleCue[] {
   const cues: SubtitleCue[] = [];
   const list = track.cues;
   if (!list) return cues;
@@ -721,10 +923,55 @@ function readInMemoryTextTrackCues(track: TextTrack): SubtitleCue[] {
   return cues;
 }
 
-async function discoverHtml5Subtitle(
+async function waitForTextTrackCues(
+  video: VideoMediaElement,
+  track: TextTrack,
+  timeoutMs = 1200,
+): Promise<SubtitleCue[]> {
+  const immediate = readTextTrackCues(track);
+  if (immediate.length > 0 || timeoutMs <= 0) return immediate;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    const trackEl = Array.from(video.querySelectorAll<HTMLTrackElement>("track"))
+      .find((el) => el.track === track) ?? null;
+
+    const finish = (cues: SubtitleCue[]) => {
+      if (settled) return;
+      settled = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      try { track.removeEventListener("cuechange", check); } catch {}
+      if (trackEl) trackEl.removeEventListener("load", check);
+      resolve(cues);
+    };
+
+    const check = () => {
+      const cues = readTextTrackCues(track);
+      if (cues.length > 0) finish(cues);
+    };
+
+    try { track.addEventListener("cuechange", check); } catch {}
+    if (trackEl) trackEl.addEventListener("load", check);
+    pollTimer = setInterval(check, 120);
+    timeoutTimer = setTimeout(() => finish(readTextTrackCues(track)), timeoutMs);
+  });
+}
+
+export interface Html5DiscoverDeps {
+  fetchText?: (url: string, options?: FetchTrackTextOptions) => Promise<string>;
+  waitTimeoutMs?: number;
+}
+
+export async function discoverHtml5Subtitle(
   video: VideoMediaElement,
   options: DiscoverTrackOptions,
+  deps: Html5DiscoverDeps = {},
 ): Promise<DiscoveredSubtitleTrack | null> {
+  const fetchText = deps.fetchText ?? fetchTrackText;
+  const waitTimeoutMs = deps.waitTimeoutMs ?? 1200;
   const targetNorm = normalizeDetectedLanguage(options.targetLanguage) ?? options.targetLanguage;
   const trackElements = Array.from(video.querySelectorAll<HTMLTrackElement>("track"))
     .filter((el) => !el.kind || el.kind === "subtitles" || el.kind === "captions");
@@ -743,85 +990,129 @@ async function discoverHtml5Subtitle(
       ? srcCandidates.find((c) => c.lang === targetNorm)
       : undefined;
     const chosen = srcCandidates.find((c) => c.lang !== targetNorm) ?? srcCandidates[0]!;
-    const rawVtt = await fetchTrackText(chosen.el.src);
-    const sourceCues = prepareSubtitleCues(parseWebVtt(rawVtt), {
-      filterSoundEffects: options.filterSoundEffects,
-      mergeAsr: false,
-    });
-    if (sourceCues.length > 0) {
-      const previousModes = nativeTextTracks.map((track) => ({ track, mode: track.mode }));
-      for (const item of previousModes) {
-        if (item.track.mode === "showing") item.track.mode = "hidden";
-      }
-      const restoreNativeTrack = () => {
+    try {
+      const rawVtt = await fetchText(chosen.el.src);
+      const sourceCues = prepareSubtitleCues(parseWebVtt(rawVtt), {
+        filterSoundEffects: options.filterSoundEffects,
+        mergeAsr: false,
+      });
+      if (sourceCues.length > 0) {
+        const previousModes = nativeTextTracks.map((track) => ({ track, mode: track.mode }));
         for (const item of previousModes) {
-          try { item.track.mode = item.mode; } catch {}
+          if (item.track.mode === "showing") item.track.mode = "hidden";
         }
-      };
-
-      if (manualTarget && manualTarget !== chosen) {
-        try {
-          const targetVtt = await fetchTrackText(manualTarget.el.src);
-          const targetCues = prepareSubtitleCues(parseWebVtt(targetVtt), {
-            filterSoundEffects: options.filterSoundEffects,
-            mergeAsr: false,
-          });
-          if (targetCues.length > 0) {
-            return {
-              platform: "html5",
-              videoKey: `html5:${chosen.el.src}->manual`,
-              sourceLanguage: chosen.lang,
-              isAsr: false,
-              hasManualTarget: true,
-              cues: alignManualTargetCues(sourceCues, targetCues),
-              restoreNativeTrack,
-            };
+        const restoreNativeTrack = () => {
+          for (const item of previousModes) {
+            try { item.track.mode = item.mode; } catch {}
           }
-        } catch {}
-      }
+        };
 
-      return {
-        platform: "html5",
-        videoKey: `html5:${chosen.el.src}`,
-        sourceLanguage: chosen.lang,
-        isAsr: false,
-        hasManualTarget: false,
-        cues: sourceCues,
-        restoreNativeTrack,
-      };
+        if (manualTarget && manualTarget === chosen) {
+          return {
+            platform: "html5",
+            videoKey: `html5:${chosen.el.src}:target`,
+            sourceLanguage: targetNorm,
+            isAsr: false,
+            hasManualTarget: true,
+            cues: sourceCues.map((c) => ({ ...c, translatedText: c.text })),
+            restoreNativeTrack,
+          };
+        }
+
+        if (manualTarget && manualTarget !== chosen) {
+          try {
+            const targetVtt = await fetchText(manualTarget.el.src);
+            const targetCues = prepareSubtitleCues(parseWebVtt(targetVtt), {
+              filterSoundEffects: options.filterSoundEffects,
+              mergeAsr: false,
+            });
+            if (targetCues.length > 0) {
+              return {
+                platform: "html5",
+                videoKey: `html5:${chosen.el.src}->manual`,
+                sourceLanguage: chosen.lang,
+                isAsr: false,
+                hasManualTarget: true,
+                cues: alignManualTargetCues(sourceCues, targetCues),
+                restoreNativeTrack,
+              };
+            }
+          } catch {}
+        }
+
+        return {
+          platform: "html5",
+          videoKey: `html5:${chosen.el.src}`,
+          sourceLanguage: chosen.lang,
+          isAsr: false,
+          hasManualTarget: false,
+          cues: sourceCues,
+          restoreNativeTrack,
+        };
+      }
+    } catch {
+      // Fall through to in-memory video.textTracks discovery.
     }
   }
 
-  // 2. Fallback: read JS-populated TextTracks directly from video.textTracks (e.g. HLS.js/Coursera).
+  // 2. Fallback: read JS-populated TextTracks from video.textTracks (e.g. HLS.js / Shaka / Coursera / Udemy / Vimeo).
   const textTracks = nativeTextTracks.filter(
-    (t) => t.kind === "subtitles" || t.kind === "captions",
+    (t) => !t.kind || t.kind === "subtitles" || t.kind === "captions",
   );
   if (!textTracks.length) return null;
 
-  const loaded = textTracks.find((t) => (t.cues?.length ?? 0) > 0) ?? textTracks[0]!;
-  const previousMode = loaded.mode;
-  if (loaded.mode === "disabled") loaded.mode = "hidden";
-  const rawCues = readInMemoryTextTrackCues(loaded);
-  const cues = prepareSubtitleCues(rawCues, {
-    filterSoundEffects: options.filterSoundEffects,
-    mergeAsr: false,
-  });
-  if (!cues.length) {
-    try { loaded.mode = previousMode; } catch {}
-    return null;
+  const normalized = textTracks.map((track) => ({
+    track,
+    lang: normalizeDetectedLanguage(track.language) ?? null,
+    hasCues: (track.cues?.length ?? 0) > 0,
+  }));
+  const ordered = [
+    ...normalized.filter((t) => t.hasCues && t.lang !== targetNorm),
+    ...normalized.filter((t) => t.hasCues && t.lang === targetNorm),
+    ...normalized.filter((t) => !t.hasCues && t.lang !== targetNorm),
+    ...normalized.filter((t) => !t.hasCues && t.lang === targetNorm),
+  ];
+
+  for (const candidate of ordered) {
+    const track = candidate.track;
+    const previousMode = track.mode;
+    if (track.mode === "disabled") {
+      try { track.mode = "hidden"; } catch {}
+    }
+    const rawCues = await waitForTextTrackCues(video, track, waitTimeoutMs);
+    const cues = prepareSubtitleCues(rawCues, {
+      filterSoundEffects: options.filterSoundEffects,
+      mergeAsr: false,
+    });
+    if (!cues.length) {
+      try { track.mode = previousMode; } catch {}
+      continue;
+    }
+
+    const previousModes = nativeTextTracks.map((t) => ({ track: t, mode: t === track ? previousMode : t.mode }));
+    for (const item of previousModes) {
+      if (item.track === track || item.track.mode === "showing") {
+        try { item.track.mode = "hidden"; } catch {}
+      }
+    }
+
+    return {
+      platform: "html5",
+      videoKey: `html5-track:${location.href}:${track.language || track.label || "default"}`,
+      sourceLanguage: candidate.lang,
+      isAsr: false,
+      hasManualTarget: false,
+      cues,
+      liveTextTrack: track,
+      restoreNativeTrack: () => {
+        for (const item of previousModes) {
+          try { item.track.mode = item.mode; } catch {}
+        }
+      },
+    };
   }
-  loaded.mode = "hidden";
-  return {
-    platform: "html5",
-    videoKey: `html5-track:${location.href}:${loaded.language || loaded.label || "default"}`,
-    sourceLanguage: normalizeDetectedLanguage(loaded.language) ?? null,
-    isAsr: false,
-    hasManualTarget: false,
-    cues,
-    restoreNativeTrack: () => {
-      try { loaded.mode = previousMode; } catch {}
-    },
-  };
+
+  return null;
 }
 
 export async function discoverVideoSubtitlesDetailed(
@@ -830,13 +1121,11 @@ export async function discoverVideoSubtitlesDetailed(
 ): Promise<SubtitleDiscoveryResult> {
   const platform = detectVideoPlatform();
   if (platform === "youtube") {
-    try {
-      const yt = await discoverYouTubeSubtitle(options);
-      if (yt) return { track: yt, status: "ready" };
-    } catch {
-      const html5 = await discoverHtml5Subtitle(video, options);
-      return html5 ? { track: html5, status: "ready" } : { track: null, status: "error" };
-    }
+    const yt = await discoverYouTubeSubtitleDetailed(options);
+    if (yt.track) return yt;
+    const html5 = await discoverHtml5Subtitle(video, options);
+    if (html5) return { track: html5, status: "ready" };
+    return yt;
   } else if (platform === "bilibili") {
     const bili = await discoverBilibiliSubtitleDetailed(options);
     if (bili.track) return bili;
@@ -860,7 +1149,44 @@ const BILIBILI_PLAYER_CONTAINER_SELECTOR =
   ".bpx-player-video-area, .bilibili-player-area, .bilibili-player-video-wrap, .bpx-player-primary-area, .bpx-player-container";
 const BILIBILI_CONTROLS_SELECTOR =
   ".bpx-player-control-bottom-right, .bilibili-player-video-control-bottom-right, .squirtle-controller-wrap-right";
-const YOUTUBE_PLAYER_CONTAINER_SELECTOR = "#movie_player, .html5-video-player";
+const YOUTUBE_PLAYER_CONTAINER_SELECTOR = "#movie_player, #shorts-player, .html5-video-player";
+const HTML5_PLAYER_CONTAINER_SELECTOR = [
+  ".video-js",
+  ".plyr",
+  ".vp-player",
+  ".player[data-player-id]",
+  ".vp-video-wrapper",
+  '[data-purpose="video-player"]',
+  ".shaka-video-container",
+  ".jwplayer",
+  ".dplayer",
+  ".art-video-player",
+  ".xgplayer",
+  '[data-testid="video-player"]',
+].join(", ");
+
+export interface PlatformControlsTarget {
+  element: HTMLElement;
+  mountKind: "youtube" | "bilibili" | "html5-inline";
+  placement: "prepend" | "append" | "before-fullscreen";
+  fullscreenSelector?: string;
+}
+
+const HTML5_CONTROLS_SPECS: ReadonlyArray<{
+  selector: string;
+  placement: "prepend" | "append" | "before-fullscreen";
+  fullscreenSelector?: string;
+}> = [
+  { selector: ".vjs-control-bar", placement: "before-fullscreen", fullscreenSelector: ".vjs-fullscreen-control" },
+  { selector: ".plyr__controls", placement: "before-fullscreen", fullscreenSelector: '[data-plyr="fullscreen"]' },
+  { selector: ".shaka-controls-button-panel", placement: "before-fullscreen", fullscreenSelector: ".shaka-fullscreen-button" },
+  { selector: ".jw-button-container", placement: "before-fullscreen", fullscreenSelector: ".jw-icon-fullscreen" },
+  { selector: ".dplayer-icons-right", placement: "prepend" },
+  { selector: ".art-controls-right", placement: "prepend" },
+  { selector: ".vp-controls .vp-controls-wrapper, .vp-controls", placement: "append" },
+  { selector: '[data-purpose="video-controls"]', placement: "append" },
+  { selector: ".xgplayer-controls", placement: "append" },
+];
 
 /** Locate the nearest player container that stays active in fullscreen mode. */
 export function resolvePlayerContainer(video: VideoMediaElement, platform: VideoPlatform): HTMLElement | null {
@@ -872,10 +1198,14 @@ export function resolvePlayerContainer(video: VideoMediaElement, platform: Video
     const player = video.closest<HTMLElement>(BILIBILI_PLAYER_CONTAINER_SELECTOR);
     if (player) return player;
   }
+  if (platform === "html5") {
+    const player = video.closest<HTMLElement>(HTML5_PLAYER_CONTAINER_SELECTOR);
+    if (player) return player;
+  }
   return video.parentElement;
 }
 
-/** True when container is a recognized main video player (not a hover preview thumbnail). */
+/** True when container is a recognized main video player (not a hover preview thumbnail or decorative video). */
 export function isKnownPlatformPlayerContainer(container: HTMLElement, platform: VideoPlatform): boolean {
   if (platform === "youtube") {
     return container.matches(YOUTUBE_PLAYER_CONTAINER_SELECTOR)
@@ -884,22 +1214,47 @@ export function isKnownPlatformPlayerContainer(container: HTMLElement, platform:
   if (platform === "bilibili") {
     return container.matches(BILIBILI_PLAYER_CONTAINER_SELECTOR);
   }
-  return false;
+  return container.matches(HTML5_PLAYER_CONTAINER_SELECTOR);
 }
 
-/** Locate the platform's bottom-right control bar for mounting the quick toggle button inline. */
+/** Locate the platform's control bar and insertion strategy for mounting the quick toggle button inline. */
+export function resolvePlatformControlsTarget(
+  container: HTMLElement,
+  platform: VideoPlatform,
+): PlatformControlsTarget | null {
+  if (platform === "youtube") {
+    // Shorts player does not show the classic .ytp-right-controls bar; let it use floating pill cleanly.
+    if (container.id === "shorts-player") return null;
+    const yt = container.querySelector<HTMLElement>(".ytp-right-controls");
+    return yt ? { element: yt, mountKind: "youtube", placement: "prepend" } : null;
+  }
+  if (platform === "bilibili") {
+    const direct = container.querySelector<HTMLElement>(BILIBILI_CONTROLS_SELECTOR);
+    const outer = direct
+      ? null
+      : container.closest<HTMLElement>(".bpx-player-container, .bpx-player-primary-area, .bilibili-player-area")
+        ?.querySelector<HTMLElement>(BILIBILI_CONTROLS_SELECTOR) ?? null;
+    const bili = direct ?? outer;
+    return bili ? { element: bili, mountKind: "bilibili", placement: "prepend" } : null;
+  }
+  for (const spec of HTML5_CONTROLS_SPECS) {
+    const found = container.querySelector<HTMLElement>(spec.selector);
+    if (found) {
+      return {
+        element: found,
+        mountKind: "html5-inline",
+        placement: spec.placement,
+        ...(spec.fullscreenSelector ? { fullscreenSelector: spec.fullscreenSelector } : {}),
+      };
+    }
+  }
+  return null;
+}
+
+/** Backwards-compatible wrapper returning only the matched control bar element. */
 export function resolvePlatformControlsContainer(
   container: HTMLElement,
   platform: VideoPlatform,
 ): HTMLElement | null {
-  if (platform === "youtube") {
-    return container.querySelector<HTMLElement>(".ytp-right-controls");
-  }
-  if (platform === "bilibili") {
-    const direct = container.querySelector<HTMLElement>(BILIBILI_CONTROLS_SELECTOR);
-    if (direct) return direct;
-    const outer = container.closest<HTMLElement>(".bpx-player-container, .bpx-player-primary-area, .bilibili-player-area");
-    return outer?.querySelector<HTMLElement>(BILIBILI_CONTROLS_SELECTOR) ?? null;
-  }
-  return null;
+  return resolvePlatformControlsTarget(container, platform)?.element ?? null;
 }

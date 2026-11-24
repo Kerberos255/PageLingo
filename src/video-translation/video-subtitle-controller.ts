@@ -22,22 +22,31 @@ import {
 import {
   detectVideoPlatform,
   discoverVideoSubtitlesDetailed,
+  extractYouTubeVideoId,
   isKnownPlatformPlayerContainer,
-  resolvePlatformControlsContainer,
+  readTextTrackCues,
+  resolvePlatformControlsTarget,
   resolvePlayerContainer,
   type DiscoveredSubtitleTrack,
   type DiscoverTrackOptions,
+  type PlatformControlsTarget,
   type SubtitleDiscoveryResult,
   type SubtitleDiscoveryStatus,
   type VideoMediaElement,
   type VideoPlatform,
 } from "./platform-adapters";
-import { findActiveCueIndex, type SubtitleCue } from "./subtitle-cues";
+import {
+  filterSoundEffectText,
+  findActiveCueIndex,
+  prepareSubtitleCues,
+  type SubtitleCue,
+} from "./subtitle-cues";
 
 const SUBTITLE_STYLE_ID = "pagelingo-video-subtitle-style";
 const SUBTITLE_BATCH_SIZE = 12;
 const SUBTITLE_LOOKAHEAD_CUES = 18;
 const MAX_LANGUAGE_SAMPLE_CUES = 10;
+const MAX_LIVE_TRANSLATION_CACHE = 400;
 
 export type EffectiveSubtitleMode = "bilingual" | "translation" | "off";
 
@@ -56,6 +65,7 @@ interface AttachedVideoSession {
   platform: VideoPlatform;
   container: HTMLElement;
   containerOriginalPosition: string | null;
+  fullscreenHostParent: HTMLElement | null;
   host: HTMLDivElement;
   shadow: ShadowRoot;
   wrapEl: HTMLDivElement;
@@ -63,12 +73,18 @@ interface AttachedVideoSession {
   sourceEl: HTMLDivElement;
   translationEl: HTMLDivElement;
   toggleButton: HTMLButtonElement | null;
-  toggleMountKind: "youtube" | "bilibili" | "floating" | null;
+  toggleMountKind: "youtube" | "bilibili" | "html5-inline" | "floating" | null;
   overrideMode: EffectiveSubtitleMode | null;
   track: DiscoveredSubtitleTrack | null;
   discoveryStatus: SubtitleDiscoveryStatus | "idle";
   cues: SubtitleCue[];
   sourceLanguage: string | null;
+  liveDomMode: boolean;
+  liveSourceText: string;
+  liveTranslations: Map<string, string>;
+  liveInFlight: Set<string>;
+  liveFailed: Set<string>;
+  boundTextTracks: WeakSet<TextTrack>;
   lastUrl: string;
   lastSrc: string;
   lastCueIndex: number;
@@ -122,6 +138,65 @@ function readMediaSrc(video: VideoMediaElement): string {
   return video.getAttribute("src") ?? "";
 }
 
+function readYouTubeLiveCaptionText(container: HTMLElement, filterSfx: boolean): string {
+  const captionRoot = container.querySelector<HTMLElement>(".ytp-caption-window-container");
+  if (!captionRoot) return "";
+  const segments = Array.from(captionRoot.querySelectorAll<HTMLElement>(".ytp-caption-segment"));
+  const raw = segments.length > 0
+    ? segments.map((seg) => seg.textContent ?? "").join(" ")
+    : (captionRoot.textContent ?? "");
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return filterSfx ? filterSoundEffectText(normalized).replace(/\s+/g, " ").trim() : normalized;
+}
+
+function mutationTouchesYouTubeCaptions(mutations: readonly MutationRecord[]): boolean {
+  for (const record of mutations) {
+    const target = record.target;
+    const el = target.nodeType === 1 ? (target as Element) : target.parentElement;
+    if (el?.closest?.(".ytp-caption-window-container")) return true;
+    for (const node of Array.from(record.addedNodes)) {
+      if (node.nodeType === 1) {
+        const added = node as Element;
+        if (
+          added.classList.contains("ytp-caption-window-container")
+          || added.classList.contains("ytp-caption-segment")
+          || Boolean(added.querySelector?.(".ytp-caption-window-container, .ytp-caption-segment"))
+        ) {
+          return true;
+        }
+      }
+    }
+    for (const node of Array.from(record.removedNodes)) {
+      if (node.nodeType === 1) {
+        const removed = node as Element;
+        if (
+          removed.classList.contains("ytp-caption-window-container")
+          || removed.classList.contains("ytp-caption-segment")
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function insertToggleInControls(button: HTMLButtonElement, target: PlatformControlsTarget): void {
+  if (target.placement === "prepend") {
+    target.element.prepend(button);
+    return;
+  }
+  if (target.placement === "before-fullscreen" && target.fullscreenSelector) {
+    const fsBtn = target.element.querySelector(target.fullscreenSelector);
+    if (fsBtn && fsBtn.parentElement === target.element) {
+      target.element.insertBefore(button, fsBtn);
+      return;
+    }
+  }
+  target.element.append(button);
+}
+
 function htmlToPlainText(doc: Document, html: string): string {
   const Parser = doc.defaultView?.DOMParser ?? globalThis.DOMParser;
   if (typeof Parser === "function") {
@@ -154,7 +229,16 @@ function ensureDocumentSubtitleStyle(doc: Document): void {
     [data-pagelingo-subtitle-active="true"] .ytp-caption-window-container,
     [data-pagelingo-subtitle-active="true"] .bpx-player-subtitle-wrap,
     [data-pagelingo-subtitle-active="true"] .bpx-player-subtitle-panel-text,
-    [data-pagelingo-subtitle-active="true"] .bilibili-player-video-subtitle {
+    [data-pagelingo-subtitle-active="true"] .bilibili-player-video-subtitle,
+    [data-pagelingo-subtitle-active="true"] .vjs-text-track-display,
+    [data-pagelingo-subtitle-active="true"] .plyr__captions,
+    [data-pagelingo-subtitle-active="true"] .vp-captions,
+    [data-pagelingo-subtitle-active="true"] [data-purpose="captions-cue-text"],
+    [data-pagelingo-subtitle-active="true"] .shaka-text-container,
+    [data-pagelingo-subtitle-active="true"] .jw-captions,
+    [data-pagelingo-subtitle-active="true"] .dplayer-subtitle,
+    [data-pagelingo-subtitle-active="true"] .art-subtitle,
+    [data-pagelingo-subtitle-active="true"] .xgplayer-texttrack {
       opacity: 0 !important;
       pointer-events: none !important;
     }
@@ -214,6 +298,13 @@ function ensureDocumentSubtitleStyle(doc: Document): void {
       margin-right: 6px !important;
       padding: 0 2px !important;
     }
+    .pagelingo-sub-toggle-html5 {
+      height: 28px !important;
+      line-height: 28px !important;
+      margin: 0 4px !important;
+      padding: 0 2px !important;
+      align-self: center !important;
+    }
     .pagelingo-sub-toggle-inline:hover {
       opacity: 1 !important;
     }
@@ -237,6 +328,10 @@ function ensureDocumentSubtitleStyle(doc: Document): void {
     [data-pagelingo-sub-mode="need-login"] .pagelingo-sub-toggle-badge {
       background: rgba(245, 158, 11, 0.28) !important;
       color: #fef3c7 !important;
+    }
+    [data-pagelingo-sub-mode="need-cc"] .pagelingo-sub-toggle-badge {
+      background: rgba(56, 189, 248, 0.28) !important;
+      color: #e0f2fe !important;
     }
   `;
   (doc.head ?? doc.documentElement).append(style);
@@ -347,6 +442,13 @@ function toggleLabelForUnavailable(
       shortText: "PL 需登录",
       ariaLabel: "B 站软字幕 / AI 字幕接口需要登录账号；登录后点击重新检测",
       modeAttr: "need-login",
+    };
+  }
+  if (session.discoveryStatus === "need_cc") {
+    return {
+      shortText: "PL 开CC",
+      ariaLabel: "YouTube 需开启播放器原生 CC 字幕以授权字幕轨道；点击开启并翻译（或按 C 键）",
+      modeAttr: "need-cc",
     };
   }
   if (session.discoveryStatus === "error") {
@@ -542,13 +644,18 @@ export class VideoSubtitleManager {
     }
     if (this.#routeListeners.length === 0) {
       const onRoute = () => this.#handlePossibleNavigation();
+      const onFullscreen = () => this.#syncFullscreenMounts();
       view.addEventListener("popstate", onRoute, { passive: true });
       view.addEventListener("hashchange", onRoute, { passive: true });
       view.addEventListener("yt-navigate-finish", onRoute as EventListener, { passive: true });
+      this.#doc.addEventListener("fullscreenchange", onFullscreen, { passive: true });
+      this.#doc.addEventListener("webkitfullscreenchange", onFullscreen as EventListener, { passive: true });
       this.#routeListeners.push(
         () => view.removeEventListener("popstate", onRoute),
         () => view.removeEventListener("hashchange", onRoute),
         () => view.removeEventListener("yt-navigate-finish", onRoute as EventListener),
+        () => this.#doc.removeEventListener("fullscreenchange", onFullscreen),
+        () => this.#doc.removeEventListener("webkitfullscreenchange", onFullscreen as EventListener),
       );
     }
     const platform = this.#platformFn();
@@ -561,6 +668,31 @@ export class VideoSubtitleManager {
           this.#handlePossibleNavigation();
         }
       }, 500);
+    }
+  }
+
+  #syncFullscreenMounts(): void {
+    const fsEl = (this.#doc.fullscreenElement
+      ?? (this.#doc as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement) as HTMLElement | null;
+
+    for (const session of this.#sessions.values()) {
+      const needReparent = Boolean(
+        fsEl
+        && fsEl !== session.container
+        && fsEl.contains(session.video)
+        && !fsEl.contains(session.container),
+      );
+      if (needReparent && fsEl) {
+        if (session.fullscreenHostParent !== fsEl) {
+          session.fullscreenHostParent = fsEl;
+          fsEl.append(session.host);
+          this.#syncToggleButton(session);
+        }
+      } else if (session.fullscreenHostParent) {
+        session.fullscreenHostParent = null;
+        session.container.append(session.host);
+        this.#syncToggleButton(session);
+      }
     }
   }
 
@@ -588,28 +720,53 @@ export class VideoSubtitleManager {
     }
   }
 
+  #activeYouTubePlayerId(href: string): "shorts-player" | "movie_player" | null {
+    let pathname = "";
+    try {
+      pathname = new URL(href).pathname;
+    } catch {
+      return null;
+    }
+    if (pathname.startsWith("/shorts/") && this.#doc.querySelector("#shorts-player")) {
+      return "shorts-player";
+    }
+    if ((pathname === "/watch" || pathname.startsWith("/live/")) && this.#doc.querySelector("#movie_player")) {
+      return "movie_player";
+    }
+    return null;
+  }
+
   #scanVideos(): void {
     if (!this.#settings.videoSubtitle.enabled || this.#disposed) return;
     const platform = this.#platformFn();
+    const href = this.#doc.defaultView?.location.href ?? location.href;
     const selector = platform === "bilibili" ? "video, bwp-video" : "video";
     const videos = new Set(Array.from(this.#doc.querySelectorAll<VideoMediaElement>(selector)));
+    const youtubeActivePlayerId = platform === "youtube" ? this.#activeYouTubePlayerId(href) : null;
     const hasMainPlatformPlayer =
       (platform === "bilibili" && Boolean(this.#doc.querySelector(".bpx-player-video-area, .bpx-player-container, .bilibili-player-area")))
-      || (platform === "youtube" && Boolean(this.#doc.querySelector("#movie_player")));
+      || (platform === "youtube" && Boolean(this.#doc.querySelector("#movie_player, #shorts-player")));
 
     for (const existing of Array.from(this.#sessions.keys())) {
-      if (!videos.has(existing) || !existing.isConnected) {
+      const session = this.#sessions.get(existing);
+      const isInactiveYouTubePlayer = Boolean(
+        platform === "youtube"
+        && youtubeActivePlayerId
+        && session
+        && (session.container.id === "movie_player" || session.container.id === "shorts-player")
+        && session.container.id !== youtubeActivePlayerId,
+      );
+      if (!videos.has(existing) || !existing.isConnected || isInactiveYouTubePlayer) {
         this.#detachVideo(existing);
       }
     }
 
     for (const video of videos) {
       if (!this.#sessions.has(video)) {
-        this.#attachVideo(video, platform, hasMainPlatformPlayer);
+        this.#attachVideo(video, platform, hasMainPlatformPlayer, youtubeActivePlayerId);
       } else {
         const session = this.#sessions.get(video)!;
         this.#syncToggleButton(session);
-        const href = this.#doc.defaultView?.location.href ?? location.href;
         const src = readMediaSrc(video);
         if (session.lastUrl !== href || (src && session.lastSrc && src !== session.lastSrc)) {
           session.lastUrl = href;
@@ -631,10 +788,23 @@ export class VideoSubtitleManager {
     return configured;
   }
 
-  #attachVideo(video: VideoMediaElement, platform: VideoPlatform, hasMainPlatformPlayer: boolean): void {
+  #attachVideo(
+    video: VideoMediaElement,
+    platform: VideoPlatform,
+    hasMainPlatformPlayer: boolean,
+    youtubeActivePlayerId: "shorts-player" | "movie_player" | null,
+  ): void {
     const container = resolvePlayerContainer(video, platform);
     if (!container) return;
     if (hasMainPlatformPlayer && !isKnownPlatformPlayerContainer(container, platform)) return;
+    if (
+      platform === "youtube"
+      && youtubeActivePlayerId
+      && (container.id === "movie_player" || container.id === "shorts-player")
+      && container.id !== youtubeActivePlayerId
+    ) {
+      return;
+    }
     for (const existing of this.#sessions.values()) {
       if (existing.container === container) return;
     }
@@ -679,6 +849,7 @@ export class VideoSubtitleManager {
       platform,
       container,
       containerOriginalPosition,
+      fullscreenHostParent: null,
       host,
       shadow,
       wrapEl,
@@ -692,6 +863,12 @@ export class VideoSubtitleManager {
       discoveryStatus: "idle",
       cues: [],
       sourceLanguage: null,
+      liveDomMode: false,
+      liveSourceText: "",
+      liveTranslations: new Map(),
+      liveInFlight: new Set(),
+      liveFailed: new Set(),
+      boundTextTracks: new WeakSet(),
       lastUrl: view.location?.href ?? "",
       lastSrc: readMediaSrc(video),
       lastCueIndex: -2,
@@ -725,7 +902,8 @@ export class VideoSubtitleManager {
         void this.#discoverSessionTrack(session, true);
       }
     };
-    const onAddTrack = () => {
+    const onTextTrackListChange = () => {
+      this.#bindTextTrackListeners(session);
       if (!session.track) void this.#discoverSessionTrack(session, false);
     };
 
@@ -738,18 +916,221 @@ export class VideoSubtitleManager {
       () => video.removeEventListener("loadedmetadata", onLoadedMetadata),
     );
     if (isNativeHtmlVideo(video) && video.textTracks && typeof video.textTracks.addEventListener === "function") {
-      video.textTracks.addEventListener("addtrack", onAddTrack);
-      session.listeners.push(() => video.textTracks.removeEventListener("addtrack", onAddTrack));
+      video.textTracks.addEventListener("addtrack", onTextTrackListChange);
+      video.textTracks.addEventListener("change", onTextTrackListChange);
+      session.listeners.push(
+        () => video.textTracks.removeEventListener("addtrack", onTextTrackListChange),
+        () => video.textTracks.removeEventListener("change", onTextTrackListChange),
+      );
+      this.#bindTextTrackListeners(session);
     }
     if (!isNativeHtmlVideo(video)) {
       const bwpSyncTimer = setInterval(onTimeUpdate, 200);
       session.listeners.push(() => clearInterval(bwpSyncTimer));
     }
 
+    if (platform === "youtube") {
+      this.#bindYouTubeFallbackObservers(session, view);
+    }
+
     this.#sessions.set(video, session);
     this.#applyOverlayStyles(session);
+    this.#syncFullscreenMounts();
     this.#syncToggleButton(session);
     void this.#discoverSessionTrack(session, false);
+  }
+
+  #bindTextTrackListeners(session: AttachedVideoSession): void {
+    if (!isNativeHtmlVideo(session.video) || !session.video.textTracks) return;
+    for (const track of Array.from(session.video.textTracks)) {
+      if (track.kind && track.kind !== "subtitles" && track.kind !== "captions") continue;
+      if (session.boundTextTracks.has(track)) continue;
+      session.boundTextTracks.add(track);
+      const onCueChange = () => this.#handleTextTrackCueChange(session, track);
+      try {
+        track.addEventListener("cuechange", onCueChange);
+        session.listeners.push(() => {
+          try { track.removeEventListener("cuechange", onCueChange); } catch {}
+        });
+      } catch {}
+    }
+  }
+
+  #handleTextTrackCueChange(session: AttachedVideoSession, track: TextTrack): void {
+    if (this.#disposed || !this.#sessions.has(session.video)) return;
+    if (!session.track) {
+      if ((track.cues?.length ?? 0) > 0) {
+        void this.#discoverSessionTrack(session, false);
+      }
+      return;
+    }
+    if (session.track.liveTextTrack !== track) return;
+    const rawCues = readTextTrackCues(track);
+    const prepared = prepareSubtitleCues(rawCues, {
+      filterSoundEffects: this.#settings.videoSubtitle.filterSoundEffects,
+      mergeAsr: false,
+    });
+    if (prepared.length === 0) return;
+
+    const existingKeys = new Set(session.cues.map((c) => `${c.startTime.toFixed(2)}|${c.text}`));
+    let added = false;
+    for (const cue of prepared) {
+      const key = `${cue.startTime.toFixed(2)}|${cue.text}`;
+      if (!existingKeys.has(key)) {
+        existingKeys.add(key);
+        session.cues.push({ ...cue });
+        added = true;
+      }
+    }
+    if (added) {
+      session.cues.sort((a, b) => a.startTime - b.startTime || a.endTime - b.endTime);
+      session.lastCueIndex = -2;
+      this.#renderCue(session, true);
+      this.#ensureWindowTranslated(session);
+    }
+  }
+
+  #bindYouTubeFallbackObservers(session: AttachedVideoSession, view: Window): void {
+    // 1. Watch for YouTube's own player loading a pot-authorized /api/timedtext resource.
+    const PerfObserverCtor = (view as Window & { PerformanceObserver?: typeof PerformanceObserver }).PerformanceObserver
+      ?? globalThis.PerformanceObserver;
+    if (typeof PerfObserverCtor === "function") {
+      let timedTextRetryTimer: ReturnType<typeof setTimeout> | null = null;
+      try {
+        const perfObserver = new PerfObserverCtor((list) => {
+          if (this.#disposed || session.track || !this.#sessions.has(session.video)) return;
+          const currentHref = this.#doc.defaultView?.location.href ?? location.href;
+          const activeVideoId = extractYouTubeVideoId(currentHref);
+          const matched = list.getEntries().some((entry) => {
+            if (!entry.name.includes("/api/timedtext")) return false;
+            if (!activeVideoId) return true;
+            try {
+              return new URL(entry.name).searchParams.get("v") === activeVideoId;
+            } catch {
+              return false;
+            }
+          });
+          if (!matched) return;
+          if (timedTextRetryTimer) clearTimeout(timedTextRetryTimer);
+          timedTextRetryTimer = setTimeout(() => {
+            timedTextRetryTimer = null;
+            if (!this.#disposed && !session.track && this.#sessions.has(session.video)) {
+              void this.#discoverSessionTrack(session, false);
+            }
+          }, 180);
+        });
+        perfObserver.observe({ entryTypes: ["resource"] });
+        session.listeners.push(() => {
+          if (timedTextRetryTimer) clearTimeout(timedTextRetryTimer);
+          try { perfObserver.disconnect(); } catch {}
+        });
+      } catch {}
+    }
+
+    // 2. Fallback live DOM caption bridge for PO-token videos & YouTube live streams when CC is active.
+    const captionObserver = new MutationObserver((mutations) => {
+      if (this.#disposed || session.track || !this.#sessions.has(session.video)) return;
+      if (!mutationTouchesYouTubeCaptions(mutations)) return;
+      this.#syncLiveYouTubeCaption(session);
+    });
+    captionObserver.observe(session.container, { childList: true, subtree: true, characterData: true });
+    session.listeners.push(() => captionObserver.disconnect());
+  }
+
+  #syncLiveYouTubeCaption(session: AttachedVideoSession): void {
+    if (session.platform !== "youtube" || session.track || this.#disposed) return;
+    const text = readYouTubeLiveCaptionText(session.container, this.#settings.videoSubtitle.filterSoundEffects);
+    if (!text) {
+      if (session.liveDomMode) {
+        session.liveSourceText = "";
+        session.wrapEl.hidden = true;
+      }
+      return;
+    }
+
+    if (!session.liveDomMode) {
+      session.liveDomMode = true;
+      this.#syncToggleButton(session);
+      this.#syncNativeCaptionSuppression(session);
+    }
+    if (text !== session.liveSourceText) {
+      session.liveSourceText = text;
+      session.boxEl.dataset.revealed = "false";
+    }
+    this.#renderLiveDomCaption(session);
+    void this.#translateLiveDomCaption(session, text);
+  }
+
+  #renderLiveDomCaption(session: AttachedVideoSession): void {
+    const mode = this.#effectiveMode(session);
+    if (mode === "off" || !session.liveDomMode || !session.liveSourceText) {
+      session.wrapEl.hidden = true;
+      return;
+    }
+    const translated = session.liveTranslations.get(session.liveSourceText) ?? "";
+    this.#renderCaptionTexts(session, session.liveSourceText, translated, mode);
+  }
+
+  async #translateLiveDomCaption(session: AttachedVideoSession, text: string): Promise<void> {
+    const mode = this.#effectiveMode(session);
+    if (mode === "off" || !session.liveDomMode || session.track || !text) return;
+    if (session.liveTranslations.has(text) || session.liveInFlight.has(text) || session.liveFailed.has(text)) return;
+
+    const signal = session.abortController.signal;
+    if (!session.sourceLanguage) {
+      session.sourceLanguage = (await this.#detectLanguage(text)) ?? "en";
+      if (signal.aborted || this.#disposed || session.track) return;
+    }
+
+    const targetLanguage = normalizeDetectedLanguage(this.#settings.targetLanguage) ?? this.#settings.targetLanguage;
+    const sourceLanguage = normalizeDetectedLanguage(session.sourceLanguage) ?? session.sourceLanguage ?? "en";
+    if (sourceLanguage === targetLanguage) {
+      session.liveTranslations.set(text, text);
+      if (session.liveSourceText === text) this.#renderLiveDomCaption(session);
+      return;
+    }
+
+    const terminology: TerminologyEntry[] = parseTerminology(
+      this.#settings.glossaryCollections,
+      sourceLanguage,
+      targetLanguage,
+      this.#settings.builtinGlossaryEnabled,
+    );
+    const engineId = this.#settings.videoSubtitle.engineId !== "follow"
+      ? this.#settings.videoSubtitle.engineId
+      : undefined;
+
+    session.liveInFlight.add(text);
+    const escaped = escapeHtml(text);
+    const protectedResult = protectTerminologyHtml(this.#doc, escaped, terminology) as { html: string; replacements: string[] };
+    const termHints = terminologyForText(terminology, text);
+
+    try {
+      const translatedHtml = await this.#provider.translateHtml({
+        html: protectedResult.html,
+        sourceLanguage,
+        targetLanguage,
+        ...(termHints.length ? { terminology: termHints } : {}),
+        ...(engineId ? { engineId } : {}),
+        signal,
+      });
+      session.liveInFlight.delete(text);
+      if (signal.aborted || this.#disposed || session.track) return;
+      let restored = restoreTerminologyHtml(this.#doc, translatedHtml, protectedResult.replacements) as string;
+      restored = applyTerminologyCorrectionsHtml(this.#doc, restored, text, terminology) as string;
+      const plain = htmlToPlainText(this.#doc, restored);
+      if (plain) {
+        if (session.liveTranslations.size >= MAX_LIVE_TRANSLATION_CACHE) {
+          const oldest = session.liveTranslations.keys().next().value;
+          if (typeof oldest === "string") session.liveTranslations.delete(oldest);
+        }
+        session.liveTranslations.set(text, plain);
+        if (session.liveSourceText === text) this.#renderLiveDomCaption(session);
+      }
+    } catch {
+      session.liveInFlight.delete(text);
+      if (!signal.aborted) session.liveFailed.add(text);
+    }
   }
 
   #detachVideo(video: VideoMediaElement): void {
@@ -765,6 +1146,7 @@ export class VideoSubtitleManager {
     session.toggleButton?.remove();
     session.toggleButton = null;
     session.host.remove();
+    session.fullscreenHostParent = null;
     if (session.containerOriginalPosition !== null) {
       session.container.style.position = session.containerOriginalPosition;
     }
@@ -780,12 +1162,12 @@ export class VideoSubtitleManager {
   }
 
   #syncToggleButton(session: AttachedVideoSession): void {
-    const controls = resolvePlatformControlsContainer(session.container, session.platform);
-    const hasPlatformPlayer = isKnownPlatformPlayerContainer(session.container, session.platform) || Boolean(controls);
+    const controlsTarget = resolvePlatformControlsTarget(session.container, session.platform);
+    const hasKnownPlayer = isKnownPlatformPlayerContainer(session.container, session.platform) || Boolean(controlsTarget);
     const shouldShow =
       this.#settings.videoSubtitle.enabled
       && this.#settings.videoSubtitle.showPlayerButton
-      && (Boolean(session.track) || ((session.platform === "youtube" || session.platform === "bilibili") && hasPlatformPlayer));
+      && (Boolean(session.track) || session.liveDomMode || hasKnownPlayer);
 
     if (!shouldShow) {
       session.toggleButton?.remove();
@@ -794,13 +1176,10 @@ export class VideoSubtitleManager {
       return;
     }
 
-    const desiredKind: "youtube" | "bilibili" | "floating" =
-      session.platform === "youtube" && controls
-        ? "youtube"
-        : session.platform === "bilibili" && controls
-          ? "bilibili"
-          : "floating";
-    const targetParent = desiredKind === "floating" ? session.container : controls!;
+    const desiredKind: "youtube" | "bilibili" | "html5-inline" | "floating" =
+      controlsTarget ? controlsTarget.mountKind : "floating";
+    const floatingHost = session.fullscreenHostParent ?? session.container;
+    const targetParent = desiredKind === "floating" ? floatingHost : controlsTarget!.element;
 
     if (
       !session.toggleButton
@@ -816,7 +1195,9 @@ export class VideoSubtitleManager {
         ? "pagelingo-sub-toggle-floating"
         : desiredKind === "youtube"
           ? "ytp-button pagelingo-sub-toggle-inline"
-          : "pagelingo-sub-toggle-inline pagelingo-sub-toggle-bilibili";
+          : desiredKind === "bilibili"
+            ? "pagelingo-sub-toggle-inline pagelingo-sub-toggle-bilibili"
+            : "pagelingo-sub-toggle-inline pagelingo-sub-toggle-html5";
 
       const badge = this.#doc.createElement("span");
       badge.className = "pagelingo-sub-toggle-badge";
@@ -828,7 +1209,22 @@ export class VideoSubtitleManager {
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (!session.track) {
+        if (!session.track && !session.liveDomMode) {
+          if (session.platform === "youtube" && session.discoveryStatus === "need_cc") {
+            const ccButton = session.container.querySelector<HTMLButtonElement>(".ytp-subtitles-button");
+            if (ccButton && ccButton.getAttribute("aria-pressed") !== "true") {
+              ccButton.click();
+            }
+            this.#syncLiveYouTubeCaption(session);
+            const signal = session.abortController.signal;
+            setTimeout(() => {
+              if (!signal.aborted && !this.#disposed && !session.track && this.#sessions.has(session.video)) {
+                this.#syncLiveYouTubeCaption(session);
+                void this.#discoverSessionTrack(session, false);
+              }
+            }, 350);
+            return;
+          }
           if (!session.discovering) {
             void this.#discoverSessionTrack(session, true);
           }
@@ -838,12 +1234,19 @@ export class VideoSubtitleManager {
         session.overrideMode = next;
         this.#updateToggleButtonState(session);
         this.#syncNativeCaptionSuppression(session);
-        this.#renderCue(session, true);
-        if (next !== "off") this.#ensureWindowTranslated(session);
+        if (session.track) {
+          this.#renderCue(session, true);
+          if (next !== "off") this.#ensureWindowTranslated(session);
+        } else if (session.liveDomMode) {
+          this.#renderLiveDomCaption(session);
+          if (next !== "off" && session.liveSourceText) {
+            void this.#translateLiveDomCaption(session, session.liveSourceText);
+          }
+        }
       });
 
-      if (desiredKind === "floating") session.container.append(button);
-      else targetParent.prepend(button);
+      if (desiredKind === "floating") targetParent.append(button);
+      else insertToggleInControls(button, controlsTarget!);
 
       session.toggleButton = button;
       session.toggleMountKind = desiredKind;
@@ -855,7 +1258,7 @@ export class VideoSubtitleManager {
   #updateToggleButtonState(session: AttachedVideoSession): void {
     const button = session.toggleButton;
     if (!button) return;
-    const { shortText, ariaLabel, modeAttr } = session.track
+    const { shortText, ariaLabel, modeAttr } = (session.track || session.liveDomMode)
       ? toggleLabelForMode(this.#effectiveMode(session))
       : toggleLabelForUnavailable(session);
     button.dataset.pagelingoSubMode = modeAttr;
@@ -866,7 +1269,7 @@ export class VideoSubtitleManager {
   }
 
   #syncNativeCaptionSuppression(session: AttachedVideoSession): void {
-    const active = Boolean(session.track && this.#effectiveMode(session) !== "off");
+    const active = Boolean((session.track || session.liveDomMode) && this.#effectiveMode(session) !== "off");
     if (active) {
       session.container.setAttribute("data-pagelingo-subtitle-active", "true");
       if (session.platform === "html5" && isNativeHtmlVideo(session.video) && session.video.textTracks) {
@@ -891,13 +1294,21 @@ export class VideoSubtitleManager {
     session.abortController = new AbortController();
     session.inFlight.clear();
     session.failed.clear();
+    session.liveTranslations.clear();
+    session.liveInFlight.clear();
+    session.liveFailed.clear();
     if (!session.track?.hasManualTarget) {
       for (const cue of session.cues) {
         delete cue.translatedText;
       }
     }
     session.lastCueIndex = -2;
-    this.#renderCue(session, true);
+    if (session.track) {
+      this.#renderCue(session, true);
+    } else if (session.liveDomMode) {
+      this.#renderLiveDomCaption(session);
+      if (session.liveSourceText) void this.#translateLiveDomCaption(session, session.liveSourceText);
+    }
   }
 
   async #discoverSessionTrack(session: AttachedVideoSession, forceReset: boolean): Promise<void> {
@@ -912,6 +1323,12 @@ export class VideoSubtitleManager {
       this.#restoreNativeCaptions(session);
       session.track = null;
       session.discoveryStatus = "idle";
+      session.liveDomMode = false;
+      session.liveSourceText = "";
+      session.liveTranslations.clear();
+      session.liveInFlight.clear();
+      session.liveFailed.clear();
+      session.sourceLanguage = null;
       session.cues = [];
       session.inFlight.clear();
       session.failed.clear();
@@ -938,14 +1355,24 @@ export class VideoSubtitleManager {
         session.discoveryStatus = discovered.status === "ready" ? "no_subtitles" : discovered.status;
         session.cues = [];
         session.discovering = false;
-        this.#syncToggleButton(session);
-        this.#syncNativeCaptionSuppression(session);
-        session.wrapEl.hidden = true;
+        if (session.platform === "youtube") {
+          this.#syncLiveYouTubeCaption(session);
+        }
+        if (!session.liveDomMode) {
+          this.#syncToggleButton(session);
+          this.#syncNativeCaptionSuppression(session);
+          session.wrapEl.hidden = true;
+        }
         return;
       }
 
       session.track = discovered.track;
       session.discoveryStatus = "ready";
+      session.liveDomMode = false;
+      session.liveSourceText = "";
+      session.liveTranslations.clear();
+      session.liveInFlight.clear();
+      session.liveFailed.clear();
       session.cues = discovered.track.cues.map((cue) => ({ ...cue }));
       session.sourceLanguage = discovered.track.sourceLanguage;
       session.inFlight.clear();
@@ -959,6 +1386,7 @@ export class VideoSubtitleManager {
       }
 
       session.discovering = false;
+      this.#bindTextTrackListeners(session);
       this.#syncToggleButton(session);
       this.#syncNativeCaptionSuppression(session);
       this.#renderCue(session, true);
@@ -969,9 +1397,14 @@ export class VideoSubtitleManager {
         session.discoveryStatus = "error";
         session.cues = [];
         session.discovering = false;
-        this.#syncToggleButton(session);
-        this.#syncNativeCaptionSuppression(session);
-        session.wrapEl.hidden = true;
+        if (session.platform === "youtube") {
+          this.#syncLiveYouTubeCaption(session);
+        }
+        if (!session.liveDomMode) {
+          this.#syncToggleButton(session);
+          this.#syncNativeCaptionSuppression(session);
+          session.wrapEl.hidden = true;
+        }
       }
     } finally {
       if (version === session.discoverVersion) {
@@ -1052,7 +1485,16 @@ export class VideoSubtitleManager {
 
   #renderCue(session: AttachedVideoSession, force: boolean): void {
     const mode = this.#effectiveMode(session);
-    if (mode === "off" || !session.track || session.cues.length === 0) {
+    if (mode === "off") {
+      session.wrapEl.hidden = true;
+      session.lastCueIndex = -1;
+      return;
+    }
+    if (!session.track || session.cues.length === 0) {
+      if (session.liveDomMode) {
+        this.#renderLiveDomCaption(session);
+        return;
+      }
       session.wrapEl.hidden = true;
       session.lastCueIndex = -1;
       return;
@@ -1071,8 +1513,15 @@ export class VideoSubtitleManager {
     }
 
     const cue = session.cues[index]!;
-    const sourceText = cue.text;
-    const translatedText = cue.translatedText ?? "";
+    this.#renderCaptionTexts(session, cue.text, cue.translatedText ?? "", mode);
+  }
+
+  #renderCaptionTexts(
+    session: AttachedVideoSession,
+    sourceText: string,
+    translatedText: string,
+    mode: Exclude<EffectiveSubtitleMode, "off">,
+  ): void {
     const sameText = Boolean(translatedText && translatedText.trim() === sourceText.trim());
 
     if (mode === "translation") {
