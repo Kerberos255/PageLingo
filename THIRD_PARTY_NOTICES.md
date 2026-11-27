@@ -28,13 +28,14 @@ Translation model payloads are not redistributed in this repository or extension
 
 ## ONNX Runtime Web
 
-PageLingo bundles the ONNX Runtime Web WASM runtime used by the optional image OCR worker.
+PageLingo bundles the ONNX Runtime Web WASM runtime used by the optional image and scanned-PDF OCR worker (`image-ocr-worker.js`).
 
 - Project: Microsoft ONNX Runtime
 - Package: `onnxruntime-web` 1.30.0
+- npm release archive: https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.30.0.tgz
 - Source: https://github.com/microsoft/onnxruntime
 - License: MIT
-- Runtime code and WASM are bundled with the extension; no executable code is loaded remotely.
+- Unminified `dist/ort.wasm.mjs` is bundled into `image-ocr-worker.js`, and the unmodified official `dist/ort-wasm-simd-threaded.mjs` and `dist/ort-wasm-simd-threaded.wasm` files are copied to `vendor/onnxruntime/`. No executable code is loaded remotely.
 
 MIT License
 
@@ -64,6 +65,7 @@ PageLingo uses the `paddleocr` browser/runtime library to run the PP-OCR detecti
 
 - Project: paddleocr.js by X3ZvaWQ
 - Package: `paddleocr` 1.2.0
+- npm release archive: https://registry.npmjs.org/paddleocr/-/paddleocr-1.2.0.tgz
 - Source: https://github.com/x3zvawq/paddleocr.js
 - License: MIT
 - Package author metadata: x3zvawq
@@ -112,6 +114,7 @@ PageLingo bundles Mozilla's PDF.js library, its same-origin Web Worker (`pdf.wor
 
 - Project: Mozilla PDF.js
 - Package: `pdfjs-dist` 5.4.624
+- npm release archive: https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-5.4.624.tgz
 - Source: https://github.com/mozilla/pdf.js
 - License: Apache-2.0
 
@@ -121,6 +124,8 @@ PageLingo bundles `fzstd` to decompress Mozilla's Zstandard-compressed Firefox t
 
 - Project: fzstd
 - Package: `fzstd` 0.1.1
+- npm release archive: https://registry.npmjs.org/fzstd/-/fzstd-0.1.1.tgz
+- Source: https://github.com/101arrowz/fzstd
 - Copyright: Copyright (c) 2020 Arjun Barrett
 - License: MIT
 

@@ -1,6 +1,6 @@
 {
   "name": "pagelingo",
-  "version": "1.1.2",
+  "version": "1.1.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
     "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
+    "fzstd": "0.1.1",
     "onnxruntime-web": "1.30.0",
     "paddleocr": "1.2.0",
     "pdfjs-dist": "5.4.624"
@@ -20,7 +21,6 @@
   "devDependencies": {
     "@types/firefox-webext-browser": "^143.0.0",
     "esbuild": "^0.25.0",
-    "fzstd": "^0.1.1",
     "jsdom": "^26.0.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0",

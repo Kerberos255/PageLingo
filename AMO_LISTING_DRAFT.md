@@ -1,4 +1,4 @@
-# AMO Listing Draft — PageLingo 1.1.2
+# AMO Listing Draft — PageLingo 1.1.5
 
 This file is a submission draft, not runtime configuration.
 
@@ -97,7 +97,7 @@ PageLingo uses TypeScript plus esbuild bundling, so submit matching source code 
 Recommended release source archive after tagging the release:
 
 ```bash
-git archive --format=zip --prefix=pagelingo-1.1.2-source/ --output pagelingo-1.1.2-source.zip v1.1.2
+git archive --format=zip --prefix=pagelingo-1.1.5-source/ --output pagelingo-1.1.5-source.zip v1.1.5
 ```
 
 The archive should contain the tracked source tree, lockfile, build tools, bundled Bergamot source/runtime material, licenses, and build instructions. Do not include `node_modules/`, `dist/`, browser profiles, caches, credentials, or local artifacts.

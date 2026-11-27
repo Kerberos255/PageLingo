@@ -29,12 +29,6 @@ import {
   type FetchTrackTextOptions,
 } from "../src/video-translation/platform-adapters";
 import {
-  getBilibiliMixinKey,
-  md5Hex,
-  resetBilibiliWbiCacheForTests,
-  signBilibiliWbiParams,
-} from "../src/video-translation/bilibili-wbi";
-import {
   registerAiSubtitleProvider,
   type AiSubtitleRequest,
 } from "../src/video-translation/ai-subtitle-provider";
@@ -43,7 +37,6 @@ import { VideoSubtitleManager } from "../src/video-translation/video-subtitle-co
 afterEach(() => {
   document.body.replaceChildren();
   document.getElementById("pagelingo-video-subtitle-style")?.remove();
-  resetBilibiliWbiCacheForTests();
   registerAiSubtitleProvider(null);
 });
 
@@ -525,19 +518,7 @@ describe("VideoSubtitleManager end-to-end overlay controller", () => {
   });
 });
 
-describe("Bilibili WBI signing and subtitle discovery", () => {
-  it("computes standard MD5 and matches the official Bilibili WBI reference signature vector", () => {
-    expect(md5Hex("")).toBe("d41d8cd98f00b204e9800998ecf8427e");
-    expect(md5Hex("hello world")).toBe("5eb63bbbe01eeed093cb22bb8f5acdc3");
-
-    const imgKey = "7cd084941338484aae1ad9425b84077c";
-    const subKey = "4932caff0ff746eab6f01bf08b70ac45";
-    expect(getBilibiliMixinKey(imgKey, subKey)).toBe("ea1db124af3c7062474693fa704f4ff8");
-    expect(
-      signBilibiliWbiParams({ foo: "114", bar: "514", zab: 1919810 }, imgKey, subKey, 1702204169),
-    ).toBe("bar=514&foo=114&wts=1702204169&zab=1919810&w_rid=8f6f2b5b3d485fe1886cec6a0be8c5d4");
-  });
-
+describe("Bilibili subtitle discovery", () => {
   it("parses all Bilibili watch URLs including multi-part, av, bangumi, playlist, and embed player", () => {
     expect(extractBilibiliRouteIds("https://www.bilibili.com/")).toBeNull();
     expect(extractBilibiliRouteIds("https://www.bilibili.com/video/BV1xx411c7mD/?p=3")).toEqual({
@@ -563,7 +544,7 @@ describe("Bilibili WBI signing and subtitle discovery", () => {
     });
   });
 
-  it("ignores stale SPA __INITIAL_STATE__, resolves ?p=2 cid via view API, signs /x/player/wbi/v2, and fetches CDN subtitle with credentials omit", async () => {
+  it("ignores stale SPA __INITIAL_STATE__, resolves ?p=2 cid via view API, queries /x/player/wbi/v2 directly, and fetches CDN subtitle with credentials omit", async () => {
     // Stale SSR script from previous video before SPA navigation!
     const staleScript = document.createElement("script");
     staleScript.textContent = `window.__INITIAL_STATE__={"videoData":{"bvid":"BV1OLDVIDEO1","aid":111,"cid":11101}};`;
@@ -596,23 +577,10 @@ describe("Bilibili WBI signing and subtitle discovery", () => {
               },
             });
           }
-          if (url === "https://api.bilibili.com/x/web-interface/nav") {
-            return JSON.stringify({
-              code: 0,
-              data: {
-                wbi_img: {
-                  img_url: "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
-                  sub_url: "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png",
-                },
-              },
-            });
-          }
           if (url.startsWith("https://api.bilibili.com/x/player/wbi/v2?")) {
             const u = new URL(url);
             expect(u.searchParams.get("bvid")).toBe("BV1NEWVIDEO2");
             expect(u.searchParams.get("cid")).toBe("22202");
-            expect(u.searchParams.get("w_rid")).toMatch(/^[a-f0-9]{32}$/);
-            expect(u.searchParams.get("wts")).toMatch(/^\d+$/);
             return JSON.stringify({
               code: 0,
               data: {

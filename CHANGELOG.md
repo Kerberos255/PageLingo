@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.5 — 2026-11-25
+
+### Changed
+
+- **Unminified, UTF-8, review-transparent extension build**:
+  - Enabled `charset: "utf8"` and `legalComments: "inline"` in `tools/build.mjs` so built scripts preserve readable UTF-8 strings (eliminating Unicode `\uXXXX` escape sequences) and keep upstream third-party license and version headers intact.
+  - Switched `image-ocr-worker.js` to an ES module Web Worker bundling the official unminified `onnxruntime-web/dist/ort.wasm.mjs` runtime and statically importing the unmodified official `vendor/onnxruntime/ort-wasm-simd-threaded.mjs` Emscripten glue alongside `ort-wasm-simd-threaded.wasm` (replacing the pre-minified `ort.wasm.bundle.min.mjs` inline bundle).
+  - Removed custom Bilibili WBI key-permutation/MD5 query signing (`bilibili-wbi.ts`), querying Bilibili subtitle metadata directly with player subtitle resource-capture fallback.
+  - Formatted compressed rules in `public/settings.css` into standard multi-line CSS, moved runtime-bundled `fzstd` into `package.json` `dependencies`, and expanded third-party source provenance in `AMO_REVIEW_NOTES.md`, `BUILDING.md`, and `THIRD_PARTY_NOTICES.md`.
+
 ## 1.1.2 — 2026-11-25
 
 ### Added

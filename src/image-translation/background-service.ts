@@ -84,7 +84,7 @@ class ImageOcrWorkerClient {
 
   private ensureWorker(): Worker {
     if (this.worker) return this.worker;
-    const worker = new Worker(browser.runtime.getURL("image-ocr-worker.js"));
+    const worker = new Worker(browser.runtime.getURL("image-ocr-worker.js"), { type: "module" });
     worker.addEventListener("message", (event: MessageEvent<WorkerMessage>) => {
       const message = event.data;
       const pending = this.pending.get(message.id);

@@ -2,7 +2,6 @@
 
 import { normalizeDetectedLanguage } from "../shared/settings";
 import { sendRuntimeMessage } from "../shared/runtime-message";
-import { fetchBilibiliWbiKeys, signBilibiliWbiParams } from "./bilibili-wbi";
 import {
   alignManualTargetCues,
   parseBilibiliSubtitleJson,
@@ -1047,13 +1046,11 @@ export async function discoverBilibiliSubtitleDetailed(
   if (ids.bvid) baseParams.bvid = ids.bvid;
   if (ids.aid) baseParams.aid = ids.aid;
 
-  const endpoints: string[] = [];
-  const wbiKeys = await fetchBilibiliWbiKeys((url) => fetchText(url, { credentials: "include" }));
-  if (wbiKeys) {
-    const signed = signBilibiliWbiParams(baseParams, wbiKeys.imgKey, wbiKeys.subKey);
-    endpoints.push(`https://api.bilibili.com/x/player/wbi/v2?${signed}`);
-  }
-  endpoints.push(`https://api.bilibili.com/x/player/wbi/v2?${new URLSearchParams(baseParams)}`);
+  const query = new URLSearchParams(baseParams).toString();
+  const endpoints = [
+    `https://api.bilibili.com/x/player/wbi/v2?${query}`,
+    `https://api.bilibili.com/x/player/v2?${query}`,
+  ];
 
   let subtitles: BilibiliSubtitleItem[] = [];
   let apiSucceeded = false;
