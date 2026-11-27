@@ -304,8 +304,74 @@ export function normalizeBilingualStyle(value: unknown): BilingualStyleSettings 
     };
 }
 
-export async function loadSettings(): Promise<PageLingoSettings> {
-    const stored = await browser.storage.local.get();
+export const SETTINGS_STORAGE_KEYS = [
+    "displayMode",
+    "autoTranslateEnabled",
+    "targetLanguage",
+    "neverTranslateSites",
+    "excludedSites",
+    "alwaysTranslateSites",
+    "neverTranslateLanguages",
+    "alwaysTranslateLanguages",
+    "modelUpdatePolicy",
+    "imageTranslationEnabled",
+    "imageOcrProfileId",
+    "selectionQuickTranslateButton",
+    "terminologyText",
+    "builtinGlossaryEnabled",
+    "glossaryCollections",
+    "videoSubtitle",
+    "bilingualStyle",
+] as const;
+
+const SETTINGS_STORAGE_KEY_SET = new Set<string>(SETTINGS_STORAGE_KEYS);
+let cachedSettings: PageLingoSettings | null = null;
+let cachedSettingsPromise: Promise<PageLingoSettings> | null = null;
+let settingsCacheVersion = 0;
+let storageChangeListenerBound = false;
+
+function cloneSettings(settings: PageLingoSettings): PageLingoSettings {
+    return {
+        ...settings,
+        neverTranslateSites: [...settings.neverTranslateSites],
+        alwaysTranslateSites: [...settings.alwaysTranslateSites],
+        neverTranslateLanguages: [...settings.neverTranslateLanguages],
+        alwaysTranslateLanguages: [...settings.alwaysTranslateLanguages],
+        glossaryCollections: settings.glossaryCollections.map((collection) => ({
+            ...collection,
+            entries: collection.entries.map((entry) => ({ ...entry })),
+        })),
+        videoSubtitle: { ...settings.videoSubtitle },
+        bilingualStyle: { ...settings.bilingualStyle },
+    };
+}
+
+export function invalidateSettingsCache(): void {
+    settingsCacheVersion += 1;
+    cachedSettings = null;
+    cachedSettingsPromise = null;
+}
+
+function ensureSettingsChangeListener(): boolean {
+    const onChanged = typeof browser !== "undefined" ? browser.storage?.onChanged : undefined;
+    if (!onChanged || typeof onChanged.addListener !== "function") return false;
+    if (!storageChangeListenerBound) {
+        storageChangeListenerBound = true;
+        onChanged.addListener((changes, areaName) => {
+            if (areaName !== "local") return;
+            for (const key of Object.keys(changes)) {
+                if (SETTINGS_STORAGE_KEY_SET.has(key)) {
+                    invalidateSettingsCache();
+                    return;
+                }
+            }
+        });
+    }
+    return true;
+}
+
+async function readSettingsFromStorage(): Promise<PageLingoSettings> {
+    const stored = await browser.storage.local.get([...SETTINGS_STORAGE_KEYS]);
     const legacyExcludedSites = normalizeExcludedSites(stored.excludedSites);
     const glossaryCollections = normalizeGlossaryCollections(stored.glossaryCollections, stored.terminologyText);
     if (!Array.isArray(stored.glossaryCollections) && glossaryCollections.length) {
@@ -333,6 +399,27 @@ export async function loadSettings(): Promise<PageLingoSettings> {
     };
 }
 
+export async function loadSettings(): Promise<PageLingoSettings> {
+    const canCache = ensureSettingsChangeListener();
+    if (canCache && cachedSettings) {
+        return cloneSettings(cachedSettings);
+    }
+    if (canCache && cachedSettingsPromise) {
+        return cloneSettings(await cachedSettingsPromise);
+    }
+    const versionAtStart = settingsCacheVersion;
+    const promise = readSettingsFromStorage().then((resolved) => {
+        if (canCache && settingsCacheVersion === versionAtStart) {
+            cachedSettings = resolved;
+        }
+        return resolved;
+    }).finally(() => {
+        if (cachedSettingsPromise === promise) cachedSettingsPromise = null;
+    });
+    if (canCache) cachedSettingsPromise = promise;
+    return cloneSettings(await promise);
+}
+
 function normalizeStoredImageOcrProfileId(value: unknown): string {
     if (typeof value !== "string") return DEFAULT_SETTINGS.imageOcrProfileId;
     const trimmed = value.trim();
@@ -343,18 +430,22 @@ function normalizeStoredImageOcrProfileId(value: unknown): string {
 }
 
 export async function saveDisplayMode(displayMode: DisplayMode): Promise<void> {
+    invalidateSettingsCache();
     await browser.storage.local.set({ displayMode });
 }
 
 export async function saveAutoTranslateEnabled(autoTranslateEnabled: boolean): Promise<void> {
+    invalidateSettingsCache();
     await browser.storage.local.set({ autoTranslateEnabled });
 }
 
 export async function saveTargetLanguage(targetLanguage: string): Promise<void> {
+    invalidateSettingsCache();
     await browser.storage.local.set({ targetLanguage: normalizeTargetLanguage(targetLanguage) });
 }
 
 export async function saveSiteRules(neverTranslateSites: readonly string[], alwaysTranslateSites: readonly string[]): Promise<void> {
+    invalidateSettingsCache();
     await browser.storage.local.set({
         neverTranslateSites: normalizeExcludedSites(neverTranslateSites),
         alwaysTranslateSites: normalizeExcludedSites(alwaysTranslateSites),
@@ -362,6 +453,7 @@ export async function saveSiteRules(neverTranslateSites: readonly string[], alwa
 }
 
 export async function saveLanguageRules(neverTranslateLanguages: readonly string[], alwaysTranslateLanguages: readonly string[]): Promise<void> {
+    invalidateSettingsCache();
     await browser.storage.local.set({
         neverTranslateLanguages: normalizeLanguageList(neverTranslateLanguages),
         alwaysTranslateLanguages: normalizeLanguageList(alwaysTranslateLanguages),
@@ -369,33 +461,40 @@ export async function saveLanguageRules(neverTranslateLanguages: readonly string
 }
 
 export async function saveModelUpdatePolicy(modelUpdatePolicy: ModelUpdatePolicy): Promise<void> {
+    invalidateSettingsCache();
     await browser.storage.local.set({ modelUpdatePolicy: normalizeModelUpdatePolicy(modelUpdatePolicy) });
 }
 
 export async function saveImageTranslationEnabled(imageTranslationEnabled: boolean): Promise<void> {
+    invalidateSettingsCache();
     await browser.storage.local.set({ imageTranslationEnabled });
 }
 
 export async function saveImageOcrProfileId(imageOcrProfileId: string): Promise<void> {
+    invalidateSettingsCache();
     const normalized = normalizeStoredImageOcrProfileId(imageOcrProfileId);
     await browser.storage.local.set({ imageOcrProfileId: normalized });
 }
 
 export async function saveSelectionQuickTranslateButton(selectionQuickTranslateButton: boolean): Promise<void> {
+    invalidateSettingsCache();
     await browser.storage.local.set({ selectionQuickTranslateButton });
 }
 
 export async function saveBuiltinGlossaryEnabled(builtinGlossaryEnabled: boolean): Promise<void> {
+    invalidateSettingsCache();
     await browser.storage.local.set({ builtinGlossaryEnabled: builtinGlossaryEnabled !== false });
 }
 
 export async function saveGlossaryCollections(glossaryCollections: readonly GlossaryCollection[]): Promise<void> {
+    invalidateSettingsCache();
     await browser.storage.local.set({ glossaryCollections: normalizeGlossaryCollections(glossaryCollections) });
 }
 
 export async function saveVideoSubtitleSettings(videoSubtitle: Partial<VideoSubtitleSettings>): Promise<VideoSubtitleSettings> {
     const current = await loadSettings();
     const merged = normalizeVideoSubtitleSettings({ ...current.videoSubtitle, ...videoSubtitle });
+    invalidateSettingsCache();
     await browser.storage.local.set({ videoSubtitle: merged });
     return merged;
 }
@@ -403,6 +502,7 @@ export async function saveVideoSubtitleSettings(videoSubtitle: Partial<VideoSubt
 export async function saveBilingualStyle(bilingualStyle: Partial<BilingualStyleSettings>): Promise<BilingualStyleSettings> {
     const current = await loadSettings();
     const merged = normalizeBilingualStyle({ ...current.bilingualStyle, ...bilingualStyle });
+    invalidateSettingsCache();
     await browser.storage.local.set({ bilingualStyle: merged });
     return merged;
 }

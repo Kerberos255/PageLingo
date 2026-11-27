@@ -52,6 +52,7 @@ import {
   type RuntimeExternalEngineConfig,
 } from "./shared/translation-engine-settings";
 import { keepEventPageAlive } from "./shared/event-page-keepalive";
+import { fetchBoundedBytes, resolveSubtitleFetchPolicy } from "./shared/bounded-fetch";
 
 const bergamot = new BergamotClient();
 const externalCache = new ExternalTranslationCache();
@@ -192,7 +193,11 @@ async function activeExternalEngine(): Promise<RuntimeExternalEngineConfig | nul
 async function translateExternalSingleCached(
   external: RuntimeExternalEngineConfig,
   request: ParsedTranslationRequest,
+  options: { noCache?: boolean } = {},
 ): Promise<string> {
+  if (options.noCache) {
+    return keepEventPageAlive(translateWithExternalEngine(external, request), "external-translate");
+  }
   const cacheable = externalCache.isCacheable(request.html);
   const key = cacheable
     ? externalTranslationCacheKey(external, request.sourceLanguage, request.targetLanguage, request.html, request.terminology)
@@ -214,13 +219,17 @@ async function translateExternalSingleCached(
 async function translateExternalBatchCached(
   external: RuntimeExternalEngineConfig,
   requests: ParsedTranslationRequest[],
+  options: { noCache?: boolean } = {},
 ): Promise<Array<string | null>> {
+  const noCache = options.noCache === true;
   const keys = requests.map((request) =>
     externalCache.isCacheable(request.html)
       ? externalTranslationCacheKey(external, request.sourceLanguage, request.targetLanguage, request.html, request.terminology)
       : "",
   );
-  const lookupKeys = keys.filter((key, index) => Boolean(key) && !requests[index]?.bypassCache);
+  const lookupKeys = noCache
+    ? []
+    : keys.filter((key, index) => Boolean(key) && !requests[index]?.bypassCache);
   const cacheHits = lookupKeys.length > 0 ? await externalCache.getMany(lookupKeys) : new Map<string, string>();
   const results: Array<string | null> = new Array(requests.length).fill(null);
   const awaitedInFlight: Array<Promise<void>> = [];
@@ -233,7 +242,7 @@ async function translateExternalBatchCached(
     const req = requests[index]!;
     const key = keys[index]!;
     if (key) {
-      if (!req.bypassCache) {
+      if (!noCache && !req.bypassCache) {
         const hit = cacheHits.get(key);
         if (hit !== undefined) {
           results[index] = hit;
@@ -264,14 +273,16 @@ async function translateExternalBatchCached(
 
   if (toTranslate.length > 0) {
     const deferredResolvers = new Map<string, { resolve: (html: string) => void; reject: (error: Error) => void }>();
-    for (const key of dedupedKeys) {
-      let resolve!: (html: string) => void;
-      let reject!: (error: Error) => void;
-      const promise = new Promise<string>((res, rej) => { resolve = res; reject = rej; });
-      deferredResolvers.set(key, { resolve, reject });
-      externalCache.trackInFlight(key, promise);
-      // Avoid unhandled rejection warnings if no external waiter attaches.
-      void promise.catch(() => {});
+    if (!noCache) {
+      for (const key of dedupedKeys) {
+        let resolve!: (html: string) => void;
+        let reject!: (error: Error) => void;
+        const promise = new Promise<string>((res, rej) => { resolve = res; reject = rej; });
+        deferredResolvers.set(key, { resolve, reject });
+        externalCache.trackInFlight(key, promise);
+        // Avoid unhandled rejection warnings if no external waiter attaches.
+        void promise.catch(() => {});
+      }
     }
 
     try {
@@ -286,13 +297,13 @@ async function translateExternalBatchCached(
         const key = dedupedKeys[i]!;
         const html = batchResults[i] ?? null;
         const group = missGroups.get(key)!;
-        const deferred = deferredResolvers.get(key)!;
+        const deferred = deferredResolvers.get(key);
         if (typeof html === "string") {
-          externalCache.set(key, html);
+          if (!noCache) externalCache.set(key, html);
           for (const index of group.indices) results[index] = html;
-          deferred.resolve(html);
+          deferred?.resolve(html);
         } else {
-          deferred.reject(new Error("Batch item failed validation"));
+          deferred?.reject(new Error("Batch item failed validation"));
         }
       }
 
@@ -617,6 +628,8 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
   }
 
   try {
+    const isIncognito = sender.tab?.incognito === true;
+
     if (message.type === "translate-html") {
       const request = parseTranslationRequest(message.request);
       const external = await externalEngineForId(request.engineId);
@@ -624,13 +637,16 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
         if (!await hasExternalTranslationConsent(Boolean(external.apiKey))) {
           throw new Error("外部翻译引擎的数据权限已被拒绝或撤销，请在设置中重新授权");
         }
-        const html = await translateExternalSingleCached(external, request);
+        const html = await translateExternalSingleCached(external, request, { noCache: isIncognito });
         return { ok: true, html };
       }
       const overrides = await currentOverrides();
       const route = routeFor(request.sourceLanguage, request.targetLanguage, overrides);
       if (!route) throw new Error(`当前本地模型不支持 ${languageLabel(request.sourceLanguage)} → ${languageLabel(request.targetLanguage)}`);
-      const html = await bergamot.translateHtml(request.html, route, { bypassCache: request.bypassCache });
+      const html = await bergamot.translateHtml(request.html, route, {
+        bypassCache: request.bypassCache,
+        noCache: isIncognito,
+      });
       return { ok: true, html };
     }
 
@@ -659,7 +675,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
           const htmls: Array<string | null> = [];
           for (let offset = 0; offset < normalized.length; offset += size) {
             const slice = normalized.slice(offset, offset + size);
-            const translatedSlice = await translateExternalBatchCached(external, slice);
+            const translatedSlice = await translateExternalBatchCached(external, slice, { noCache: isIncognito });
             htmls.push(...translatedSlice);
           }
           return { ok: true, htmls };
@@ -675,31 +691,26 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const route = routeFor(first.sourceLanguage, first.targetLanguage, overrides);
       if (!route) throw new Error(`当前本地模型不支持 ${languageLabel(first.sourceLanguage)} → ${languageLabel(first.targetLanguage)}`);
       const bypassCache = normalized.some((request) => request.bypassCache);
-      const htmls = await bergamot.translateHtmlBatch(normalized.map((request) => request.html), route, { bypassCache });
+      const htmls = await bergamot.translateHtmlBatch(
+        normalized.map((request) => request.html),
+        route,
+        { bypassCache, noCache: isIncognito },
+      );
       return { ok: true, htmls };
     }
 
     if (message.type === "fetch-subtitle-track") {
-      const rawUrl = typeof message.url === "string" ? message.url.trim() : "";
-      if (!rawUrl) throw new Error("字幕地址无效");
-      let parsedUrl: URL;
-      try {
-        parsedUrl = new URL(rawUrl);
-      } catch {
-        throw new Error("字幕地址格式无效");
-      }
-      if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
-        throw new Error("仅支持 HTTP/HTTPS 字幕地址");
-      }
-      const credentials: RequestCredentials = message.credentials === "omit" ? "omit" : "include";
-      const signal = typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
-        ? AbortSignal.timeout(15_000)
-        : undefined;
-      const response = await fetch(parsedUrl.href, { credentials, ...(signal ? { signal } : {}) });
-      if (!response.ok) throw new Error(`获取字幕失败（HTTP ${response.status}）`);
-      const text = await response.text();
-      if (text.length > 5_000_000) throw new Error("字幕文件过大");
-      return { ok: true, text, contentType: response.headers.get("content-type") ?? "" };
+      const policy = resolveSubtitleFetchPolicy(message.url, message.credentials, isIncognito);
+      const fetched = await fetchBoundedBytes(policy.url, {
+        maxBytes: 5 * 1024 * 1024,
+        timeoutMs: 15_000,
+        credentials: policy.credentials,
+        tooLargeMessage: "字幕文件过大",
+        timeoutMessage: "获取字幕超时，请重试",
+        httpErrorPrefix: "获取字幕失败",
+      });
+      const text = new TextDecoder("utf-8").decode(fetched.bytes);
+      return { ok: true, text, contentType: fetched.contentType };
     }
 
     if (message.type === "get-translation-cache-stats") {

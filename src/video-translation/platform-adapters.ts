@@ -59,14 +59,15 @@ export function detectVideoPlatform(hostname = location.hostname): VideoPlatform
 
 async function fetchTrackText(url: string, options: FetchTrackTextOptions = {}): Promise<string> {
   const absolute = new URL(url, location.href).href;
-  const credentials = options.credentials ?? "include";
+  const directCredentials: RequestCredentials = options.credentials ?? "same-origin";
+  const proxyCredentials: "include" | "omit" = options.credentials === "include" ? "include" : "omit";
 
   // In Firefox content scripts, content.fetch executes with the page's exact Origin, Referer,
   // and Container Tab cookie jar — matching the player's own XHR on Bilibili and YouTube.
   const pageContent = (globalThis as { content?: { fetch?: typeof fetch } }).content;
   if (pageContent && typeof pageContent.fetch === "function") {
     try {
-      const pageRes = await pageContent.fetch(absolute, { credentials });
+      const pageRes = await pageContent.fetch(absolute, { credentials: directCredentials });
       if (pageRes.ok) return await pageRes.text();
     } catch {
       // Fall through to extension-privileged content-script fetch.
@@ -74,7 +75,7 @@ async function fetchTrackText(url: string, options: FetchTrackTextOptions = {}):
   }
 
   try {
-    const direct = await fetch(absolute, { credentials });
+    const direct = await fetch(absolute, { credentials: directCredentials });
     if (direct.ok) return await direct.text();
   } catch {
     // Fall back to background proxy for cross-origin CDN tracks.
@@ -82,7 +83,7 @@ async function fetchTrackText(url: string, options: FetchTrackTextOptions = {}):
   const proxied = await sendRuntimeMessage<{ ok?: boolean; text?: string; error?: string }>({
     type: "fetch-subtitle-track",
     url: absolute,
-    credentials,
+    credentials: proxyCredentials,
   });
   if (!proxied?.ok || typeof proxied.text !== "string") {
     throw new Error(proxied?.error ?? "无法获取视频字幕轨道");

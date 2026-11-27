@@ -84,6 +84,8 @@ class RouteSession {
 
   get initialized(): boolean { return this.#initialized; }
 
+  get activeRequestCount(): number { return this.#pending.size + this.#pendingBatches.size; }
+
   terminate(): void {
     this.#worker?.terminate();
     this.#worker = null;
@@ -206,53 +208,140 @@ class RouteSession {
   }
 }
 
-export class BergamotClient {
-  readonly #sessions = new Map<string, RouteSession>();
-  readonly #cache = new ShortTranslationCache();
+export interface BergamotSessionLike {
+  translateHtmlBatch(htmls: string[]): Promise<string[]>;
+  performanceStats(): BergamotPerformanceStats;
+  resetPerformanceStats(): void;
+  readonly initialized: boolean;
+  readonly activeRequestCount: number;
+  terminate(): void;
+}
 
-  #session(route: TranslationRoute, workerIndex = 0): RouteSession {
-    const key = `${route.key}\u0000${workerIndex}`;
+export interface BergamotClientOptions {
+  idleTimeoutMs?: number;
+  sessionFactory?: (route: TranslationRoute, workerIndex: number) => BergamotSessionLike;
+}
+
+export interface BergamotTranslateOptions {
+  bypassCache?: boolean;
+  noCache?: boolean;
+}
+
+const DEFAULT_BERGAMOT_IDLE_TIMEOUT_MS = 5 * 60_000;
+
+export class BergamotClient {
+  readonly #sessions = new Map<string, BergamotSessionLike>();
+  readonly #idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  readonly #cache = new ShortTranslationCache();
+  readonly #idleTimeoutMs: number;
+  readonly #sessionFactory: (route: TranslationRoute, workerIndex: number) => BergamotSessionLike;
+  #archivedPerformance: BergamotPerformanceStats = {
+    inferenceCount: 0,
+    inferenceMilliseconds: 0,
+    translatedInputs: 0,
+  };
+
+  constructor(options: BergamotClientOptions = {}) {
+    this.#idleTimeoutMs = Math.max(0, options.idleTimeoutMs ?? DEFAULT_BERGAMOT_IDLE_TIMEOUT_MS);
+    this.#sessionFactory = options.sessionFactory ?? ((route) => new RouteSession(route));
+  }
+
+  #sessionKey(route: TranslationRoute, workerIndex = 0): string {
+    return `${route.key}\u0000${workerIndex}`;
+  }
+
+  #clearIdleTimer(key: string): void {
+    const existing = this.#idleTimers.get(key);
+    if (existing !== undefined) {
+      globalThis.clearTimeout(existing);
+      this.#idleTimers.delete(key);
+    }
+  }
+
+  #scheduleSessionIdleEviction(key: string, session: BergamotSessionLike): void {
+    this.#clearIdleTimer(key);
+    if (this.#idleTimeoutMs <= 0) return;
+    const timer = globalThis.setTimeout(() => {
+      this.#idleTimers.delete(key);
+      if (this.#sessions.get(key) !== session) return;
+      if (session.activeRequestCount > 0) {
+        this.#scheduleSessionIdleEviction(key, session);
+        return;
+      }
+      const stats = session.performanceStats();
+      this.#archivedPerformance.inferenceCount += stats.inferenceCount;
+      this.#archivedPerformance.inferenceMilliseconds += stats.inferenceMilliseconds;
+      this.#archivedPerformance.translatedInputs += stats.translatedInputs;
+      this.#sessions.delete(key);
+      session.terminate();
+    }, this.#idleTimeoutMs);
+    this.#idleTimers.set(key, timer);
+  }
+
+  #session(route: TranslationRoute, workerIndex = 0): BergamotSessionLike {
+    const key = this.#sessionKey(route, workerIndex);
+    this.#clearIdleTimer(key);
     let session = this.#sessions.get(key);
     if (!session) {
-      session = new RouteSession(route);
+      session = this.#sessionFactory(route, workerIndex);
       this.#sessions.set(key, session);
     }
     return session;
   }
 
-  async #translateGroup(sources: string[], route: TranslationRoute, workerIndex = 0): Promise<string[]> {
+  async #translateGroup(
+    sources: string[],
+    route: TranslationRoute,
+    workerIndex = 0,
+  ): Promise<{ outputs: string[]; failedIndexes: Set<number> }> {
+    const key = this.#sessionKey(route, workerIndex);
     const session = this.#session(route, workerIndex);
     const prepared = sources.map(prepareBergamotFixedHtml);
+    const failedIndexes = new Set<number>();
     let translated: string[];
     try {
-      translated = await session.translateHtmlBatch(prepared);
-      if (translated.length !== sources.length) {
-        throw new Error(`Bergamot batch result length mismatch: expected ${sources.length}, got ${translated.length}`);
-      }
-    } catch (batchError) {
-      if (sources.length <= 1) throw batchError;
-      // Isolate any single malformed input that caused Bergamot's C++ HTML parser
-      // or WASM worker to fail so it cannot take down the rest of the batch.
-      translated = [];
-      for (let i = 0; i < prepared.length; i += 1) {
-        try {
-          const [single] = await session.translateHtmlBatch([prepared[i]!]);
-          translated.push(single ?? sources[i]!);
-        } catch {
-          translated.push(sources[i]!);
+      try {
+        translated = await session.translateHtmlBatch(prepared);
+        if (translated.length !== sources.length) {
+          throw new Error(`Bergamot batch result length mismatch: expected ${sources.length}, got ${translated.length}`);
+        }
+      } catch (batchError) {
+        if (sources.length <= 1) throw batchError;
+        // Isolate any single malformed input that caused Bergamot's C++ HTML parser
+        // or WASM worker to fail so it cannot take down the rest of the batch.
+        translated = [];
+        for (let i = 0; i < prepared.length; i += 1) {
+          try {
+            const [single] = await session.translateHtmlBatch([prepared[i]!]);
+            if (single === undefined) {
+              failedIndexes.add(i);
+              translated.push(sources[i]!);
+            } else {
+              translated.push(single);
+            }
+          } catch {
+            failedIndexes.add(i);
+            translated.push(sources[i]!);
+          }
         }
       }
+      const outputs = await this.#repairTranslations(sources, prepared, translated, route, session, failedIndexes);
+      return { outputs, failedIndexes };
+    } finally {
+      if (this.#sessions.get(key) === session) {
+        this.#scheduleSessionIdleEviction(key, session);
+      }
     }
-    return this.#repairTranslations(sources, prepared, translated, route, session);
   }
 
   async translateHtmlBatch(
     htmls: string[],
     route: TranslationRoute,
-    options: { bypassCache?: boolean } = {},
+    options: BergamotTranslateOptions = {},
   ): Promise<string[]> {
     if (route.sourceLanguage === route.targetLanguage || htmls.length === 0) return [...htmls];
     const bypassCache = options.bypassCache === true;
+    const noCache = options.noCache === true;
     const results = [...htmls];
     const pending: number[] = [];
     for (let index = 0; index < htmls.length; index += 1) {
@@ -266,7 +355,12 @@ export class BergamotClient {
     // Pass 1: plain sentences. Protection spans are unwrapped because Marian already
     // copies most names verbatim and the extra tags damage the surrounding sentence.
     const plans = pending.map((index) => planTermGuard(htmls[index]!));
-    const first = await this.#translateCached(pending.map((index, k) => plans[k]?.unprotected ?? htmls[index]!), route, bypassCache);
+    const first = await this.#translateCached(
+      pending.map((index, k) => plans[k]?.unprotected ?? htmls[index]!),
+      route,
+      bypassCache,
+      noCache,
+    );
     const retries: Array<{ index: number; plan: TermGuardPlan; damaged: Set<string> }> = [];
     pending.forEach((index, k) => {
       const plan = plans[k];
@@ -279,27 +373,42 @@ export class BergamotClient {
 
     // Pass 2: protect only the names that were damaged. If that shifts another name,
     // pass 3 falls back to the fully protected source.
-    const partial = await this.#translateCached(retries.map(({ index, damaged }) => protectOnly(htmls[index]!, damaged)), route, bypassCache);
+    const partial = await this.#translateCached(
+      retries.map(({ index, damaged }) => protectOnly(htmls[index]!, damaged)),
+      route,
+      bypassCache,
+      noCache,
+    );
     const full: number[] = [];
     retries.forEach(({ index, plan, damaged }, k) => {
       if (damaged.size === plan.expected.size || !damagedTerms(plan, partial[k]!, damaged).size) results[index] = partial[k]!;
       else full.push(index);
     });
     if (full.length) {
-      const protectedOutputs = await this.#translateCached(full.map((index) => htmls[index]!), route, bypassCache);
+      const protectedOutputs = await this.#translateCached(
+        full.map((index) => htmls[index]!),
+        route,
+        bypassCache,
+        noCache,
+      );
       full.forEach((index, k) => { results[index] = protectedOutputs[k]!; });
     }
     return results;
   }
 
-  async #translateCached(htmls: string[], route: TranslationRoute, bypassCache = false): Promise<string[]> {
+  async #translateCached(
+    htmls: string[],
+    route: TranslationRoute,
+    bypassCache = false,
+    noCache = false,
+  ): Promise<string[]> {
     const results = [...htmls];
     const missing = new Map<string, { html: string; indexes: number[] }>();
     for (let index = 0; index < htmls.length; index += 1) {
       const html = htmls[index] ?? "";
       if (!html.trim()) continue;
 
-      if (!bypassCache) {
+      if (!bypassCache && !noCache) {
         const cached = this.#cache.get(route.key, html);
         if (cached !== undefined) {
           results[index] = cached;
@@ -314,20 +423,39 @@ export class BergamotClient {
     if (missing.size === 0) return results;
 
     const unique = Array.from(missing.values());
-    const sources = unique.map(({html}) => html);
+    const sources = unique.map(({ html }) => html);
     // Large direct batches can use a second CPU worker while leaving capacity for page rendering.
-    const split = route.kind === "direct" && sources.length >= 12 && navigator.hardwareConcurrency >= 3 && this.#session(route).initialized
-      ? Math.ceil(sources.length / 2) : sources.length;
-    const outputs = split === sources.length
-      ? await this.#translateGroup(sources, route)
-      : (await Promise.all([
-        this.#translateGroup(sources.slice(0, split), route),
+    const primaryKey = this.#sessionKey(route, 0);
+    const primarySession = this.#sessions.get(primaryKey);
+    const split = route.kind === "direct"
+      && sources.length >= 12
+      && (globalThis.navigator?.hardwareConcurrency ?? 1) >= 3
+      && Boolean(primarySession?.initialized)
+      ? Math.ceil(sources.length / 2)
+      : sources.length;
+
+    let outputs: string[];
+    const failedIndexes = new Set<number>();
+    if (split === sources.length) {
+      const group = await this.#translateGroup(sources, route);
+      outputs = group.outputs;
+      for (const idx of group.failedIndexes) failedIndexes.add(idx);
+    } else {
+      const [left, right] = await Promise.all([
+        this.#translateGroup(sources.slice(0, split), route, 0),
         this.#translateGroup(sources.slice(split), route, 1),
-      ])).flat();
+      ]);
+      outputs = [...left.outputs, ...right.outputs];
+      for (const idx of left.failedIndexes) failedIndexes.add(idx);
+      for (const idx of right.failedIndexes) failedIndexes.add(split + idx);
+    }
+
     for (let index = 0; index < unique.length; index += 1) {
       const item = unique[index]!;
       const output = outputs[index]!;
-      this.#cache.set(route.key, item.html, output);
+      if (!noCache && !failedIndexes.has(index)) {
+        this.#cache.set(route.key, item.html, output);
+      }
       for (const outputIndex of item.indexes) results[outputIndex] = output;
     }
     return results;
@@ -336,7 +464,7 @@ export class BergamotClient {
   async translateHtml(
     html: string,
     route: TranslationRoute,
-    options: { bypassCache?: boolean } = {},
+    options: BergamotTranslateOptions = {},
   ): Promise<string> {
     if (!html.trim() || route.sourceLanguage === route.targetLanguage) return html;
     const [translated] = await this.translateHtmlBatch([html], route, options);
@@ -344,11 +472,17 @@ export class BergamotClient {
   }
 
   async #repairTranslations(
-    sources: string[], prepared: string[], translations: string[], route: TranslationRoute, session: RouteSession,
+    sources: string[],
+    prepared: string[],
+    translations: string[],
+    route: TranslationRoute,
+    session: BergamotSessionLike,
+    failedIndexes: ReadonlySet<number>,
   ): Promise<string[]> {
     const canRecoverChinese = route.sourceLanguage === "en" && (route.targetLanguage === "zh-Hans" || route.targetLanguage === "zh-Hant");
     const opaqueFallbacks: number[] = [];
     const outputs = sources.map((html, index) => {
+      if (failedIndexes.has(index)) return html;
       const raw = translations[index] ?? html;
       const usedOpaque = prepared[index] !== html;
       try {
@@ -378,14 +512,15 @@ export class BergamotClient {
 
     if (canRecoverChinese) {
       const retries = sources.flatMap((html, index) => {
+        if (failedIndexes.has(index)) return [];
         const plan = prepareBergamotFixedRetry(html, outputs[index]!);
-        return plan ? [{index, plan}] : [];
+        return plan ? [{ index, plan }] : [];
       });
       if (retries.length) {
-        for (const {index, plan} of retries) outputs[index] = plan.fallback ?? outputs[index]!;
+        for (const { index, plan } of retries) outputs[index] = plan.fallback ?? outputs[index]!;
         try {
-          const candidates = await session.translateHtmlBatch(retries.map(({plan}) => plan.html));
-          for (const [index, {index: outputIndex, plan}] of retries.entries()) {
+          const candidates = await session.translateHtmlBatch(retries.map(({ plan }) => plan.html));
+          for (const [index, { index: outputIndex, plan }] of retries.entries()) {
             const candidate = candidates[index];
             if (candidate === undefined) continue;
             outputs[outputIndex] = plan.restore(candidate) ?? outputs[outputIndex]!;
@@ -400,6 +535,7 @@ export class BergamotClient {
     // broke inline tags or edge brackets on a fixed-text segment, translate each
     // original slot in one batch and re-insert into a clean clone of the source template.
     const slotFallbacks = sources.flatMap((html, index) => {
+      if (failedIndexes.has(index)) return [];
       const plan = prepareBergamotSlotFallback(html, outputs[index]!, prepareBergamotFixedHtml, repairBergamotFixedHtml);
       return plan ? [{ index, plan }] : [];
     });
@@ -423,11 +559,15 @@ export class BergamotClient {
     return outputs;
   }
 
+  activeSessionCount(): number {
+    return this.#sessions.size;
+  }
+
   performanceStats(): BergamotPerformanceStats {
     const totals: BergamotPerformanceStats = {
-      inferenceCount: 0,
-      inferenceMilliseconds: 0,
-      translatedInputs: 0,
+      inferenceCount: this.#archivedPerformance.inferenceCount,
+      inferenceMilliseconds: this.#archivedPerformance.inferenceMilliseconds,
+      translatedInputs: this.#archivedPerformance.translatedInputs,
     };
     for (const session of this.#sessions.values()) {
       const stats = session.performanceStats();
@@ -439,6 +579,11 @@ export class BergamotClient {
   }
 
   resetPerformanceStats(): void {
+    this.#archivedPerformance = {
+      inferenceCount: 0,
+      inferenceMilliseconds: 0,
+      translatedInputs: 0,
+    };
     for (const session of this.#sessions.values()) session.resetPerformanceStats();
   }
 
@@ -451,6 +596,8 @@ export class BergamotClient {
   }
 
   reset(): void {
+    for (const timer of this.#idleTimers.values()) globalThis.clearTimeout(timer);
+    this.#idleTimers.clear();
     for (const session of this.#sessions.values()) session.terminate();
     this.#sessions.clear();
     this.#cache.clear();

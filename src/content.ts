@@ -1214,10 +1214,19 @@ function preserveTranslationAcrossRoute() {
         (!activeTranslationIsAutomatic || location.hostname.toLowerCase() === "github.com")
     );
 }
+let routeRescanInFlight = false;
+let routeRescanQueuedGeneration = -1;
+
 async function rescanAfterRouteChange(generation) {
     if (generation !== routeRescanGeneration || window.top !== window) return;
+    if (routeRescanInFlight) {
+        routeRescanQueuedGeneration = Math.max(routeRescanQueuedGeneration, generation);
+        return;
+    }
+    routeRescanInFlight = true;
     try {
         const settings = await loadSettings();
+        if (generation !== routeRescanGeneration) return;
         let currentSourceLanguage = null;
         let currentRouteLanguage = routeLocaleHint();
         if (translator && activeTranslationIsAutomatic) {
@@ -1265,6 +1274,13 @@ async function rescanAfterRouteChange(generation) {
         }
     } catch (error) {
         console.warn("[PageLingo] SPA translation rescan failed", error);
+    } finally {
+        routeRescanInFlight = false;
+        const nextGeneration = routeRescanQueuedGeneration;
+        routeRescanQueuedGeneration = -1;
+        if (nextGeneration === routeRescanGeneration) {
+            void rescanAfterRouteChange(nextGeneration);
+        }
     }
 }
 function scheduleRouteResetAndRescan() {
@@ -1296,6 +1312,9 @@ function noticePossibleRouteChange() {
 if (window.top === window) {
     window.addEventListener("popstate", () => { setTimeout(noticePossibleRouteChange, 0); }, { passive: true });
     window.addEventListener("hashchange", () => { setTimeout(noticePossibleRouteChange, 0); }, { passive: true });
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) noticePossibleRouteChange();
+    }, { passive: true });
     document.addEventListener("click", (event) => {
         const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
         if (!(target instanceof HTMLAnchorElement)) return;
@@ -1307,7 +1326,10 @@ if (window.top === window) {
             }
         } catch {}
     }, true);
-    setInterval(noticePossibleRouteChange, 400);
+    setInterval(() => {
+        if (document.hidden) return;
+        noticePossibleRouteChange();
+    }, 400);
 }
 void maybeAutoTranslate(autoTranslateGeneration);
 initializeVideoSubtitles();

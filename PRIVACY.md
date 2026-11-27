@@ -1,6 +1,6 @@
 # PageLingo Privacy Policy
 
-Last updated: 2026-11-22
+Last updated: 2026-11-28
 
 PageLingo is local-first. The default Firefox/Bergamot translation engine runs inside Firefox and does not send the text of pages you translate to PageLingo or to a translation service.
 
@@ -11,6 +11,11 @@ PageLingo does not include analytics, advertising, telemetry, tracking pixels, a
 ## Local data
 
 PageLingo stores settings, language-pack metadata, optional external-engine configuration, and user-created terminology in Firefox local extension storage. Translation and OCR model files are cached locally.
+
+In normal browsing windows, PageLingo also caches short translated text segments locally to avoid redundant translation work:
+- For the default local Firefox/Bergamot engine, short segment translations are held in temporary in-memory background cache only and cleared when the background page unloads or when you clear the cache.
+- For optional external engines, short segment translations (up to 8,000 entries, expiring after 14 days) are cached locally in Firefox IndexedDB (`pagelingo-external-translation-cache-v1`) on your device.
+- You can view the local cache entry count and clear all translation caches at any time from PageLingo Settings.
 
 API keys for external engines are stored in Firefox `browser.storage.local`. They are not written to the PageLingo source tree or logs, and are not returned to ordinary web pages.
 
@@ -50,7 +55,7 @@ Custom REST is an advanced feature. PageLingo substitutes only declared template
 
 ## Private browsing
 
-PageLingo does not intentionally persist page content from browsing sessions. Firefox controls whether the extension is allowed to operate in private windows.
+When translating inside a Firefox Private Browsing window (`tab.incognito`), PageLingo bypasses both reading and writing its shared in-memory and IndexedDB translation caches, and does not attach normal-profile cookies to background subtitle requests. Firefox controls whether the extension is allowed to operate in private windows.
 
 ## Changes
 

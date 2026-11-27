@@ -704,6 +704,7 @@ export function captureSourceLayout(root) {
     }
     return {
         display: computed.display ?? "",
+        whiteSpace: computed.whiteSpace ?? "",
         fontSize: computed.fontSize ?? "",
         lineHeight: computed.lineHeight ?? "",
         props,
@@ -752,10 +753,20 @@ export function mountTranslation(
     const layout = capturedLayout !== undefined ? capturedLayout : captureSourceLayout(root);
     applyCapturedSourceLayout(layout, node);
     const sourceDisplay = layout?.display ?? "";
+    const sourceWhiteSpace = layout?.whiteSpace ?? "";
+    const preformattedMultiLine = ["pre", "pre-wrap", "pre-line", "break-spaces"].includes(sourceWhiteSpace)
+        && (/\r?\n/.test(root.textContent ?? "") || Boolean(root.querySelector("h1,h2,h3,h4,h5,h6,p,div,ul,ol,blockquote")));
     const inlineTag = ["SPAN", "LABEL", "STRONG", "EM", "B", "I", "U", "S", "SMALL", "SUB", "SUP", "MARK", "ABBR", "CITE", "Q", "DEL", "INS"].includes(root.tagName);
     const inlineDisplays = ["inline", "inline-block", "inline-flex", "inline-grid"];
-    const inlineSource = inlineDisplays.includes(sourceDisplay) || (!sourceDisplay && inlineTag);
-    if (inlineSource) {
+    const inlineSource = !preformattedMultiLine && (inlineDisplays.includes(sourceDisplay) || (!sourceDisplay && inlineTag));
+    if (preformattedMultiLine) {
+        // Multi-line white-space: pre-wrap/pre-line spans (e.g. interactive fiction/game scenes
+        // and dialogs) must separate their bilingual translation as a block rather than gluing inline.
+        node.style.setProperty("display", "block", "important");
+        node.style.setProperty(bilingualOrder === "translation-top" ? "margin-block-end" : "margin-block-start", "0.45em", "important");
+        node.style.setProperty(bilingualOrder === "translation-top" ? "margin-block-start" : "margin-block-end", "0", "important");
+    }
+    else if (inlineSource) {
         // Computed display wins over semantic tag defaults. Only fall back to
         // "inline" when the environment cannot provide a computed display.
         const translatedDisplay = inlineDisplays.includes(sourceDisplay) ? sourceDisplay : "inline";
@@ -766,6 +777,12 @@ export function mountTranslation(
         node.style.removeProperty("margin-inline-end");
         node.style.removeProperty("padding-inline-start");
         node.style.removeProperty("padding-inline-end");
+        const parentDisplay = root.parentElement
+            ? (root.ownerDocument.defaultView?.getComputedStyle(root.parentElement)?.display ?? "")
+            : "";
+        if (parentDisplay === "flex" || parentDisplay === "inline-flex") {
+            node.style.setProperty(bilingualOrder === "translation-top" ? "margin-inline-end" : "margin-inline-start", "0.35em", "important");
+        }
     }
     else if (inlineTag && sourceDisplay && sourceDisplay !== "none" && sourceDisplay !== "contents") {
         // Semantic inline elements are often restyled as block/flex UI shells. Preserve

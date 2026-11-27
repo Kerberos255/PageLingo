@@ -11,12 +11,19 @@ import { MAX_OCR_IMAGE_SIDE } from "./ocr-models";
 import { buildPdfBlocksFromOcr, type LayoutMaskPlan } from "../reader/pdf-ocr-layout";
 import { loadSettings } from "../shared/settings";
 import { sendFrameMessage } from "../shared/main-frame-message";
+import { fetchBoundedBytes, readResponseBytesWithLimit } from "../shared/bounded-fetch";
 
 const IMAGE_MENU_ID = "pagelingo-translate-image";
 const PAGE_MENU_ID = "pagelingo-translate-page";
 const SELECTION_MENU_ID = "pagelingo-translate-selection";
 const LEGACY_RETRANSLATE_SEGMENT_MENU_ID = "pagelingo-retranslate-segment";
 const OPEN_PDF_MENU_ID = "pagelingo-open-pdf-reader";
+
+const DOCUMENT_FETCH_MAX_BYTES = 64 * 1024 * 1024;
+const DOCUMENT_FETCH_TIMEOUT_MS = 60_000;
+const IMAGE_FETCH_MAX_BYTES = 32 * 1024 * 1024;
+const IMAGE_FETCH_TIMEOUT_MS = 30_000;
+const OCR_WORKER_IDLE_TIMEOUT_MS = 3 * 60_000;
 
 interface ImageRuntimeMessage {
   type?: string;
@@ -63,7 +70,11 @@ type WorkerMessage =
   | WorkerDocumentResultMessage
   | WorkerErrorMessage;
 
-interface PendingOcr {
+interface ActiveOcrTask {
+  id: number;
+  generation: number;
+  profileId: string;
+  layoutPreset?: string;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   progress: (status: string, progress?: number) => void;
@@ -75,52 +86,148 @@ interface ContextMenuFrameInfo {
   srcUrl?: string | undefined;
 }
 
-class ImageOcrWorkerClient {
-  private worker: Worker | null = null;
+export interface OcrWorkerLike {
+  postMessage(message: unknown, transfer?: Transferable[]): void;
+  terminate(): void;
+  addEventListener(type: "message", listener: (event: MessageEvent<WorkerMessage>) => void): void;
+  addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
+}
+
+export interface ImageOcrWorkerClientOptions {
+  createWorker?: () => OcrWorkerLike;
+  recognizeTimeoutMs?: number;
+  documentTimeoutMs?: number;
+  idleTimeoutMs?: number;
+}
+
+export class ImageOcrWorkerClient {
+  private worker: OcrWorkerLike | null = null;
+  private workerGeneration = 0;
   private nextId = 1;
   private initializedProfileId = "";
   private initializedLayoutPreset = "";
-  private readonly pending = new Map<number, PendingOcr>();
+  private active: ActiveOcrTask | null = null;
+  private readonly queue: Array<() => void> = [];
+  private running = false;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly createWorkerFn: () => OcrWorkerLike;
+  private readonly recognizeTimeoutMs: number;
+  private readonly documentTimeoutMs: number;
+  private readonly idleTimeoutMs: number;
 
-  private ensureWorker(): Worker {
-    if (this.worker) return this.worker;
-    const worker = new Worker(browser.runtime.getURL("image-ocr-worker.js"), { type: "module" });
+  constructor(options: ImageOcrWorkerClientOptions = {}) {
+    this.createWorkerFn = options.createWorker
+      ?? (() => new Worker(browser.runtime.getURL("image-ocr-worker.js"), { type: "module" }));
+    this.recognizeTimeoutMs = Math.max(10, options.recognizeTimeoutMs ?? 120_000);
+    this.documentTimeoutMs = Math.max(10, options.documentTimeoutMs ?? 180_000);
+    this.idleTimeoutMs = Math.max(0, options.idleTimeoutMs ?? OCR_WORKER_IDLE_TIMEOUT_MS);
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer !== null) {
+      globalThis.clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  private scheduleIdleTeardown(): void {
+    this.clearIdleTimer();
+    if (this.idleTimeoutMs <= 0 || !this.worker || this.active || this.queue.length > 0) return;
+    const expectedGeneration = this.workerGeneration;
+    this.idleTimer = globalThis.setTimeout(() => {
+      this.idleTimer = null;
+      if (expectedGeneration !== this.workerGeneration || this.active || this.queue.length > 0) return;
+      this.destroyWorker();
+    }, this.idleTimeoutMs);
+  }
+
+  private destroyWorker(rejectActiveError?: Error): void {
+    this.clearIdleTimer();
+    this.workerGeneration += 1;
+    const oldWorker = this.worker;
+    this.worker = null;
+    this.initializedProfileId = "";
+    this.initializedLayoutPreset = "";
+    const active = this.active;
+    this.active = null;
+    if (active) {
+      globalThis.clearTimeout(active.timeoutId);
+      if (rejectActiveError) active.reject(rejectActiveError);
+    }
+    try {
+      oldWorker?.terminate();
+    } catch {
+      // Ignore worker termination failures.
+    }
+  }
+
+  private ensureWorker(): { worker: OcrWorkerLike; generation: number } {
+    if (this.worker) return { worker: this.worker, generation: this.workerGeneration };
+    const worker = this.createWorkerFn();
+    const generation = ++this.workerGeneration;
     worker.addEventListener("message", (event: MessageEvent<WorkerMessage>) => {
+      if (generation !== this.workerGeneration) return;
       const message = event.data;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
+      const active = this.active;
+      if (!active || active.id !== message.id) return;
       if (message.type === "progress") {
-        pending.progress(message.status, message.progress);
+        active.progress(message.status, message.progress);
         return;
       }
-      this.pending.delete(message.id);
-      globalThis.clearTimeout(pending.timeoutId);
+      this.active = null;
+      globalThis.clearTimeout(active.timeoutId);
       if (message.type === "error") {
         this.initializedProfileId = "";
         this.initializedLayoutPreset = "";
-        pending.reject(new Error(message.error));
+        active.reject(new Error(message.error));
         return;
       }
+      this.initializedProfileId = active.profileId;
       if (message.type === "document-result") {
-        pending.resolve({ plan: message.plan, regions: message.regions });
+        if (active.layoutPreset) this.initializedLayoutPreset = active.layoutPreset;
+        active.resolve({ plan: message.plan, regions: message.regions });
         return;
       }
-      pending.resolve(message.regions);
+      active.resolve(message.regions);
     });
     worker.addEventListener("error", (event) => {
+      if (generation !== this.workerGeneration) return;
       const error = new Error(event.message || "OCR Worker failed");
-      for (const pending of this.pending.values()) {
-        globalThis.clearTimeout(pending.timeoutId);
-        pending.reject(error);
-      }
-      this.pending.clear();
-      this.initializedProfileId = "";
-      this.initializedLayoutPreset = "";
-      this.worker?.terminate();
-      this.worker = null;
+      this.destroyWorker(error);
     });
     this.worker = worker;
-    return worker;
+    return { worker, generation };
+  }
+
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const start = () => {
+        this.running = true;
+        this.clearIdleTimer();
+        const finish = () => {
+          this.running = false;
+          const next = this.queue.shift();
+          if (next) next();
+          else this.scheduleIdleTeardown();
+        };
+        task().then(
+          (value) => {
+            finish();
+            resolve(value);
+          },
+          (error) => {
+            finish();
+            reject(error);
+          },
+        );
+      };
+      if (!this.running) start();
+      else this.queue.push(start);
+    });
+  }
+
+  hasLiveWorker(): boolean {
+    return this.worker !== null;
   }
 
   recognize(
@@ -130,43 +237,47 @@ class ImageOcrWorkerClient {
     bundle: ImageOcrBundle,
     progress: (status: string, progress?: number) => void,
   ): Promise<OcrRegion[]> {
-    const worker = this.ensureWorker();
-    const id = this.nextId++;
-    const initialize = this.initializedProfileId !== bundle.profile.id;
-    return new Promise((resolve, reject) => {
-      const timeoutId = globalThis.setTimeout(() => {
-        const pending = this.pending.get(id);
-        if (!pending) return;
-        this.pending.delete(id);
-        this.initializedProfileId = "";
-        this.initializedLayoutPreset = "";
-        pending.reject(new Error("OCR 处理超时，请重新尝试"));
-        this.worker?.terminate();
-        this.worker = null;
-      }, 120_000);
-      this.pending.set(id, {
-        resolve: resolve as (value: unknown) => void,
-        reject,
-        progress,
-        timeoutId,
+    return this.enqueue(() => {
+      const { worker, generation } = this.ensureWorker();
+      const id = this.nextId++;
+      const initialize = this.initializedProfileId !== bundle.profile.id;
+      return new Promise<OcrRegion[]>((resolve, reject) => {
+        const timeoutId = globalThis.setTimeout(() => {
+          if (generation !== this.workerGeneration || this.active?.id !== id) return;
+          this.destroyWorker(new Error("OCR 处理超时，请重新尝试"));
+        }, this.recognizeTimeoutMs);
+        this.active = {
+          id,
+          generation,
+          profileId: bundle.profile.id,
+          resolve: resolve as (value: unknown) => void,
+          reject,
+          progress,
+          timeoutId,
+        };
+        const message = {
+          type: "recognize",
+          id,
+          profileId: bundle.profile.id,
+          modelPreset: bundle.profile.modelPreset,
+          dictionaryFormat: bundle.profile.dictionaryFormat,
+          width,
+          height,
+          pixels,
+          detectionModel: initialize ? bundle.detectionModel.slice(0) : undefined,
+          recognitionModel: initialize ? bundle.recognitionModel.slice(0) : undefined,
+          dictionary: initialize ? bundle.dictionary : undefined,
+        };
+        const transfer: Transferable[] = [pixels];
+        if (message.detectionModel && message.recognitionModel) {
+          transfer.push(message.detectionModel, message.recognitionModel);
+        }
+        try {
+          worker.postMessage(message, transfer);
+        } catch (error) {
+          this.destroyWorker(error instanceof Error ? error : new Error(String(error)));
+        }
       });
-      const message = {
-        type: "recognize",
-        id,
-        profileId: bundle.profile.id,
-        modelPreset: bundle.profile.modelPreset,
-        dictionaryFormat: bundle.profile.dictionaryFormat,
-        width,
-        height,
-        pixels,
-        detectionModel: initialize ? bundle.detectionModel.slice(0) : undefined,
-        recognitionModel: initialize ? bundle.recognitionModel.slice(0) : undefined,
-        dictionary: initialize ? bundle.dictionary : undefined,
-      };
-      const transfer: Transferable[] = [pixels];
-      if (message.detectionModel && message.recognitionModel) transfer.push(message.detectionModel, message.recognitionModel);
-      worker.postMessage(message, transfer);
-      if (initialize) this.initializedProfileId = bundle.profile.id;
     });
   }
 
@@ -178,57 +289,57 @@ class ImageOcrWorkerClient {
     layoutBundle: DocLayoutBundle,
     progress: (status: string, progress?: number) => void,
   ): Promise<{ plan: LayoutMaskPlan; regions: OcrRegion[] }> {
-    const worker = this.ensureWorker();
-    const id = this.nextId++;
-    const initOcr = this.initializedProfileId !== ocrBundle.profile.id;
-    const initLayout = this.initializedLayoutPreset !== layoutBundle.asset.preset;
-    return new Promise((resolve, reject) => {
-      const timeoutId = globalThis.setTimeout(() => {
-        const pending = this.pending.get(id);
-        if (!pending) return;
-        this.pending.delete(id);
-        this.initializedProfileId = "";
-        this.initializedLayoutPreset = "";
-        pending.reject(new Error("扫描页 OCR 处理超时，请重试"));
-        this.worker?.terminate();
-        this.worker = null;
-      }, 180_000);
-      this.pending.set(id, {
-        resolve: resolve as (value: unknown) => void,
-        reject,
-        progress,
-        timeoutId,
+    return this.enqueue(() => {
+      const { worker, generation } = this.ensureWorker();
+      const id = this.nextId++;
+      const initOcr = this.initializedProfileId !== ocrBundle.profile.id;
+      const initLayout = this.initializedLayoutPreset !== layoutBundle.asset.preset;
+      return new Promise<{ plan: LayoutMaskPlan; regions: OcrRegion[] }>((resolve, reject) => {
+        const timeoutId = globalThis.setTimeout(() => {
+          if (generation !== this.workerGeneration || this.active?.id !== id) return;
+          this.destroyWorker(new Error("扫描页 OCR 处理超时，请重试"));
+        }, this.documentTimeoutMs);
+        this.active = {
+          id,
+          generation,
+          profileId: ocrBundle.profile.id,
+          layoutPreset: layoutBundle.asset.preset,
+          resolve: resolve as (value: unknown) => void,
+          reject,
+          progress,
+          timeoutId,
+        };
+        const message = {
+          type: "recognize-document-page",
+          id,
+          profileId: ocrBundle.profile.id,
+          modelPreset: ocrBundle.profile.modelPreset,
+          dictionaryFormat: ocrBundle.profile.dictionaryFormat,
+          layoutPreset: layoutBundle.asset.preset,
+          width,
+          height,
+          pixels,
+          detectionModel: initOcr ? ocrBundle.detectionModel.slice(0) : undefined,
+          recognitionModel: initOcr ? ocrBundle.recognitionModel.slice(0) : undefined,
+          dictionary: initOcr ? ocrBundle.dictionary : undefined,
+          layoutModel: initLayout ? layoutBundle.model.slice(0) : undefined,
+        };
+        const transfer: Transferable[] = [pixels];
+        if (message.detectionModel && message.recognitionModel) {
+          transfer.push(message.detectionModel, message.recognitionModel);
+        }
+        if (message.layoutModel) transfer.push(message.layoutModel);
+        try {
+          worker.postMessage(message, transfer);
+        } catch (error) {
+          this.destroyWorker(error instanceof Error ? error : new Error(String(error)));
+        }
       });
-      const message = {
-        type: "recognize-document-page",
-        id,
-        profileId: ocrBundle.profile.id,
-        modelPreset: ocrBundle.profile.modelPreset,
-        dictionaryFormat: ocrBundle.profile.dictionaryFormat,
-        layoutPreset: layoutBundle.asset.preset,
-        width,
-        height,
-        pixels,
-        detectionModel: initOcr ? ocrBundle.detectionModel.slice(0) : undefined,
-        recognitionModel: initOcr ? ocrBundle.recognitionModel.slice(0) : undefined,
-        dictionary: initOcr ? ocrBundle.dictionary : undefined,
-        layoutModel: initLayout ? layoutBundle.model.slice(0) : undefined,
-      };
-      const transfer: Transferable[] = [pixels];
-      if (message.detectionModel && message.recognitionModel) {
-        transfer.push(message.detectionModel, message.recognitionModel);
-      }
-      if (message.layoutModel) transfer.push(message.layoutModel);
-      worker.postMessage(message, transfer);
-      if (initOcr) this.initializedProfileId = ocrBundle.profile.id;
-      if (initLayout) this.initializedLayoutPreset = layoutBundle.asset.preset;
     });
   }
 
   reset(): void {
-    this.initializedProfileId = "";
-    this.initializedLayoutPreset = "";
-    this.worker?.postMessage({ type: "reset" });
+    this.destroyWorker(new Error("OCR Worker 已重置"));
   }
 }
 
@@ -331,17 +442,24 @@ export async function handleImageRuntimeMessage(
       return { ok: false, error: "仅支持通过 HTTP/HTTPS 打开在线文档，本地文件请直接拖入阅读器" };
     }
     try {
-      const response = await fetch(message.url, { cache: "force-cache", credentials: "omit" });
-      if (!response.ok) throw new Error(`文档读取失败：HTTP ${response.status}`);
-      const bytes = await response.arrayBuffer();
-      if (bytes.byteLength > 64 * 1024 * 1024) {
-        throw new Error("文档体积超过 64 MB 限制");
-      }
+      const fetched = await fetchBoundedBytes(message.url, {
+        maxBytes: DOCUMENT_FETCH_MAX_BYTES,
+        timeoutMs: DOCUMENT_FETCH_TIMEOUT_MS,
+        cache: "force-cache",
+        credentials: "omit",
+        tooLargeMessage: "文档体积超过 64 MB 限制",
+        timeoutMessage: "文档读取超时，请检查网络后重试",
+        httpErrorPrefix: "文档读取失败",
+      });
+      const bytes = fetched.bytes.buffer.slice(
+        fetched.bytes.byteOffset,
+        fetched.bytes.byteOffset + fetched.bytes.byteLength,
+      );
       return {
         ok: true,
         bytes,
-        contentType: response.headers.get("content-type") || "application/octet-stream",
-        finalUrl: response.url || message.url,
+        contentType: fetched.contentType || "application/octet-stream",
+        finalUrl: fetched.finalUrl,
       };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -353,14 +471,48 @@ export async function handleImageRuntimeMessage(
       return { ok: false, error: "不支持的图片地址" };
     }
     try {
-      const response = await fetch(message.url, { cache: "force-cache", credentials: "omit" });
-      if (!response.ok) throw new Error(`图片读取失败：HTTP ${response.status}`);
-      const source = await response.blob();
-      const image = source.type.split(";", 1)[0] === "image/svg+xml" ? await rasterizeSvg(source) : source;
+      let rawBytes: Uint8Array;
+      let contentType: string;
+      if (/^data:/i.test(message.url)) {
+        const response = await fetch(message.url, { credentials: "omit" });
+        if (!response.ok) throw new Error(`图片读取失败：HTTP ${response.status}`);
+        rawBytes = await readResponseBytesWithLimit(
+          response,
+          IMAGE_FETCH_MAX_BYTES,
+          "图片体积超过 32 MB 限制",
+        );
+        contentType = response.headers.get("content-type") || "application/octet-stream";
+      } else {
+        const fetched = await fetchBoundedBytes(message.url, {
+          maxBytes: IMAGE_FETCH_MAX_BYTES,
+          timeoutMs: IMAGE_FETCH_TIMEOUT_MS,
+          cache: "force-cache",
+          credentials: "omit",
+          tooLargeMessage: "图片体积超过 32 MB 限制",
+          timeoutMessage: "图片读取超时，请检查网络后重试",
+          httpErrorPrefix: "图片读取失败",
+        });
+        rawBytes = fetched.bytes;
+        contentType = fetched.contentType || "application/octet-stream";
+      }
+
+      const mimeType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+      if (mimeType === "image/svg+xml") {
+        const rasterized = await rasterizeSvg(new Blob([rawBytes.slice().buffer], { type: contentType }));
+        return {
+          ok: true,
+          bytes: await rasterized.arrayBuffer(),
+          contentType: rasterized.type || "image/png",
+        };
+      }
+      const bytes = rawBytes.buffer.slice(
+        rawBytes.byteOffset,
+        rawBytes.byteOffset + rawBytes.byteLength,
+      );
       return {
         ok: true,
-        bytes: await image.arrayBuffer(),
-        contentType: image.type || "application/octet-stream",
+        bytes,
+        contentType,
       };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };

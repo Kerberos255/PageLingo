@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TranslationRequest } from "../src/core/provider";
 import { isGeneratedNode } from "../src/core/dom-policy";
 import {
@@ -2230,7 +2230,68 @@ describe("multi-language YouTube and Bilibili original source track ranking", ()
       document.title = prevTitle;
     }
   });
+
+  it("skips bwp-video 200ms sync ticks while document is hidden or subtitle display mode is off", async () => {
+    vi.useFakeTimers();
+    const origHiddenDesc = Object.getOwnPropertyDescriptor(document, "hidden");
+    let hiddenFlag = true;
+    Object.defineProperty(document, "hidden", { get: () => hiddenFlag, configurable: true });
+    try {
+      const wrap = document.createElement("div");
+      wrap.className = "bpx-player-video-wrap";
+      const bwp = document.createElement("bwp-video");
+      let timeReadCount = 0;
+      Object.defineProperty(bwp, "currentTime", {
+        get: () => {
+          timeReadCount += 1;
+          return 2.0;
+        },
+        configurable: true,
+      });
+      wrap.append(bwp);
+      document.body.append(wrap);
+
+      const track: DiscoveredSubtitleTrack = {
+        platform: "bilibili",
+        videoKey: "bili:bwp-throttle",
+        sourceLanguage: "en",
+        isAsr: false,
+        hasManualTarget: false,
+        cues: [{ startTime: 1, endTime: 4, text: "BWP polling check." }],
+        restoreNativeTrack: () => {},
+      };
+
+      const manager = new VideoSubtitleManager({
+        doc: document,
+        loadSettingsFn: async () => makeSettings({ enabled: true, autoStart: true, displayMode: "bilingual" }),
+        discoverFn: async () => track,
+        platformFn: () => "bilibili",
+        provider: { translateHtml: async ({ html }) => html.replace("BWP polling check.", "BWP 轮询检查。") },
+      });
+
+      await manager.start();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const readsAfterStart = timeReadCount;
+      // While document.hidden === true, 200ms ticks must NOT poll currentTime.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(timeReadCount).toBe(readsAfterStart);
+
+      // Once visible, 200ms ticks resume cleanly.
+      hiddenFlag = false;
+      await vi.advanceTimersByTimeAsync(450);
+      expect(timeReadCount).toBeGreaterThan(readsAfterStart);
+
+      manager.dispose();
+    } finally {
+      if (origHiddenDesc) Object.defineProperty(document, "hidden", origHiddenDesc);
+      else delete (document as { hidden?: boolean }).hidden;
+      vi.useRealTimers();
+    }
+  });
 });
+
 
 
 

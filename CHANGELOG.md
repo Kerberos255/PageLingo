@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.1.6 — 2026-11-28
+
+### Security & Privacy
+
+- **Private Browsing isolation & policy alignment**:
+  - Translation requests from Firefox Private Browsing tabs (`sender.tab?.incognito`) now bypass both reading and writing shared IndexedDB (`pagelingo-external-translation-cache-v1`) and in-memory Bergamot caches, and never attach normal-profile cookies to background subtitle fetches.
+  - Updated `PRIVACY.md` to accurately document the normal-window local translation caches, retention limits, Settings clear-cache control, and Private Browsing bypass.
+- **Hardened background fetches (`src/shared/bounded-fetch.ts`)**:
+  - `fetch-subtitle-track` now requires HTTPS (or loopback HTTP for local testing), defaults to `credentials: "omit"`, grants `credentials: "include"` only to allowlisted HTTPS subtitle API hosts in non-incognito windows, and enforces a streaming 5 MB limit with timeout.
+  - `fetch-document-bytes` and `fetch-image-bytes` now enforce request timeouts (60s / 30s), upfront `Content-Length` rejection, and streaming byte limits (64 MB / 32 MB) before buffering.
+- **Zero-mutation third-party build**:
+  - Removed all post-build patching of `pdfjs-dist` and `onnxruntime-web` in `tools/build.mjs`: `vendor/pdfjs/pdf.worker.mjs` and `vendor/onnxruntime/ort-wasm-simd-threaded.{mjs,wasm}` are copied byte-for-byte unmodified from npm, `image-ocr-worker.js` configures ORT via public `ort.env.wasm.wasmPaths`, and `THIRD_PARTY_NOTICES.md` / `BUILDING.md` / `AMO_REVIEW_NOTES.md` record exact upstream Firefox Bergamot blob SHA-1/SHA-256 provenance.
+
+### Performance & Stability
+
+- **OCR Worker & model memory lifecycle**:
+  - Serialized `ImageOcrWorkerClient` requests in a FIFO queue with worker-generation guards, post-success initialization tracking, clean timeout/crash recovery onto fresh workers, and automatic idle worker termination (3 min) plus worker-side sequential message chaining.
+  - Avoided pinning tens of MB of OCR model `ArrayBuffer`s in memory during Settings status checks (`hasCachedAsset`) and added idle memory eviction (5 min) while preserving verified IndexedDB copies.
+- **PDF Reader lifecycle, memory & zoom**:
+  - Added document/render generation cancellation, explicit `PDFDocumentProxy.destroy()` and canvas backing release on document switch and `pagehide`, and reused the loaded PDF document when zooming so zoom is fast and preserves existing translations and OCR results.
+  - Allocated `overlayCanvas` lazily only when in-place overlay mode renders and freed its bitmap immediately on switch back to split mode or restore.
+  - Replaced full high-DPI bitmap `getImageData` readbacks in `canvasHasVisualInk` with a reusable 64×64 probe canvas (`src/reader/pdf-ink.ts`).
+- **Bergamot cache & worker lifecycle**:
+  - Prevented per-item fallback errors inside multi-item batches from poisoning `ShortTranslationCache` with untranslated source text, and added idle Bergamot worker eviction (5 min) while preserving cumulative telemetry.
+- **Long-lived SPA, settings & video subtitle efficiency**:
+  - Added throttled detached-DOM and disconnected shadow-root observer pruning (`pruneDetachedEntries`) and O(depth) ancestor deduplication for `MutationObserver` batches in `PageTranslator`.
+  - Coalesced concurrent `rescanAfterRouteChange` runs in `src/content.ts`, skipped hidden-tab 400ms URL polls with immediate `visibilitychange` catch-up, and updated `loadSettings()` to query explicit storage keys with a `storage.onChanged`-invalidated in-memory cache.
+  - Capped livestream `liveFailed` entries to `MAX_LIVE_TRANSLATION_CACHE` and skipped Bilibili `<bwp-video>` 200ms sync ticks when hidden or subtitles are off.
+
+### Fixed
+
+- **Bilingual layout regressions on real documentation, code, and interactive-fiction sites**:
+  - Stripped `<pre>` code blocks when cloning containers in bilingual mode so code blocks inside list items are never duplicated.
+  - Mounted bilingual labels for standalone `<a>` controls/nav links inside the original anchor (matching `<button>` controls) instead of cloning button/pill classes as extra flex siblings.
+  - Rendered multi-line `white-space: pre-wrap`/`pre-line` inline story/dialog spans as block translations in bilingual mode instead of gluing translations inline onto the final sentence.
+
 ## 1.1.5 — 2026-11-25
 
 ### Changed

@@ -37,9 +37,11 @@ The archive is written under `artifacts/` and `dist/` contains the exact unpacke
 ## Important build details
 
 - Extension JavaScript is bundled with `esbuild` from the TypeScript source in `src/` with `minify: false`, `charset: "utf8"`, and `legalComments: "inline"` (no minification, no obfuscation, human-readable UTF-8 strings, and preserved upstream license headers).
-- The bundled Bergamot JavaScript/WASM runtime comes from `vendor/bergamot/`.
-- ONNX Runtime Web (`onnxruntime-web@1.30.0`) is installed through npm: `tools/build.mjs` bundles the unminified `node_modules/onnxruntime-web/dist/ort.wasm.mjs` into the ES module worker `dist/image-ocr-worker.js` and copies the unmodified official `ort-wasm-simd-threaded.mjs` and `ort-wasm-simd-threaded.wasm` files into `dist/vendor/onnxruntime/`.
-- Mozilla PDF.js (`pdfjs-dist@5.4.624`), `paddleocr@1.2.0`, and `fzstd@0.1.1` are installed through npm and bundled without minification.
+- **Zero modifications to third-party libraries**: `tools/build.mjs` performs no post-build patching or rewriting on any third-party library.
+  - `vendor/bergamot/bergamot-translator.js` (exact match to Mozilla Firefox commit `48d55cf7ec80093903e2ef7f58b61a84a22ef716`, Git blob `4cc89e7b56dfa6d33e9b85deea3fdb9c8c11cffa`) and `bergamot-translator-v4.wasm` are copied byte-for-byte unmodified.
+  - ONNX Runtime Web (`onnxruntime-web@1.30.0`): `tools/build.mjs` resolves `onnxruntime-web/wasm` to the unmodified official unminified `node_modules/onnxruntime-web/dist/ort.wasm.mjs` and copies unmodified `ort-wasm-simd-threaded.mjs` and `ort-wasm-simd-threaded.wasm` into `dist/vendor/onnxruntime/`. `src/workers/image-ocr-worker.ts` configures them via the public `ort.env.wasm.wasmPaths` API.
+  - Mozilla PDF.js (`pdfjs-dist@5.4.624`): `node_modules/pdfjs-dist/build/pdf.worker.mjs` is copied byte-for-byte unmodified to `dist/vendor/pdfjs/pdf.worker.mjs`, and `src/reader.ts` passes `isEvalSupported: false` via PDF.js's public `getDocument()` API.
+  - `paddleocr@1.2.0` and `fzstd@0.1.1` are installed through npm and bundled unmodified without minification.
 - Translation model files and OCR model files are static data assets downloaded at runtime and verified by expected byte size and SHA-256; they are not executable extension code.
 - No remote JavaScript or WebAssembly is downloaded or executed by the extension.
 

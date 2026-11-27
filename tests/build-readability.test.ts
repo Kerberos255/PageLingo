@@ -1,23 +1,30 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
-describe("AMO build readability & provenance guards", () => {
-  it("configures esbuild for readable UTF-8 output, preserved legal comments, and unminified ORT", async () => {
+describe("AMO build readability & third-party integrity guards", () => {
+  it("configures esbuild for readable UTF-8 output, preserved legal comments, and unmodified official third-party files", async () => {
     const buildScript = await readFile(resolve(ROOT, "tools/build.mjs"), "utf8");
     expect((buildScript.match(/charset:\s*"utf8"/g) ?? []).length).toBeGreaterThanOrEqual(2);
     expect((buildScript.match(/legalComments:\s*"inline"/g) ?? []).length).toBeGreaterThanOrEqual(2);
     expect(buildScript).not.toContain('legalComments: "none"');
     expect(buildScript).toContain("node_modules/onnxruntime-web/dist/ort.wasm.mjs");
     expect(buildScript).toContain("node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs");
+    expect(buildScript).toContain('cp("node_modules/pdfjs-dist/build/pdf.worker.mjs", "dist/vendor/pdfjs/pdf.worker.mjs")');
     expect(buildScript).toContain('format: "esm"');
+    // Zero build-time patching/rewriting of third-party libraries (AMO Policy 4.8).
+    expect(buildScript).not.toContain("hardenPdfJsForMv3");
+    expect(buildScript).not.toContain(".replace(");
   });
 
-  it("spawns image-ocr-worker.js as a module Worker", async () => {
+  it("configures unmodified ORT via public wasmPaths and spawns image-ocr-worker.js as a module Worker", async () => {
     const service = await readFile(resolve(ROOT, "src/image-translation/background-service.ts"), "utf8");
     expect(service).toContain('new Worker(browser.runtime.getURL("image-ocr-worker.js"), { type: "module" })');
+
+    const worker = await readFile(resolve(ROOT, "src/workers/image-ocr-worker.ts"), "utf8");
+    expect(worker).toContain("wasmFlags.wasmPaths = { mjs: mjsUrl, wasm: wasmUrl }");
   });
 
   it("keeps public/settings.css free of single-line minified CSS blocks", async () => {
@@ -39,12 +46,12 @@ describe("AMO build readability & provenance guards", () => {
   });
 
   it("does not include custom Bilibili WBI key-permutation signing code", async () => {
-    const { access } = await import("node:fs/promises");
     await expect(access(resolve(ROOT, "src/video-translation/bilibili-wbi.ts"))).rejects.toThrow();
   });
 
   it("keeps AMO_REVIEW_NOTES.md within AMO's 3,000-character Notes to Reviewer limit", async () => {
     const notes = await readFile(resolve(ROOT, "AMO_REVIEW_NOTES.md"), "utf8");
     expect(notes.length).toBeLessThanOrEqual(2950);
+    expect(notes.replace(/\n/g, "\r\n").length).toBeLessThanOrEqual(2950);
   });
 });

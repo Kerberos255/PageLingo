@@ -1240,7 +1240,10 @@ export class VideoSubtitleManager {
       this.#bindTextTrackListeners(session);
     }
     if (!isNativeHtmlVideo(video)) {
-      const bwpSyncTimer = setInterval(onTimeUpdate, 200);
+      const bwpSyncTimer = setInterval(() => {
+        if (this.#disposed || this.#doc.hidden || this.#effectiveMode(session) === "off") return;
+        onTimeUpdate();
+      }, 200);
       session.listeners.push(() => clearInterval(bwpSyncTimer));
     }
 
@@ -1510,7 +1513,12 @@ export class VideoSubtitleManager {
         }
         session.liveTranslations.set(text, plain);
       } else {
-        const failure = this.#recordTranslationFailure(session.liveFailed, text, new Error("Empty subtitle translation"));
+        const failure = this.#recordTranslationFailure(
+          session.liveFailed,
+          text,
+          new Error("Empty subtitle translation"),
+          MAX_LIVE_TRANSLATION_CACHE,
+        );
         if (this.#isRetryPending(failure, this.#now())) {
           this.#scheduleRetry(session, failure.retryAfter);
         }
@@ -1520,7 +1528,12 @@ export class VideoSubtitleManager {
     } catch (error) {
       session.liveInFlight.delete(text);
       if (!signal.aborted && !this.#disposed && !session.track) {
-        const failure = this.#recordTranslationFailure(session.liveFailed, text, error);
+        const failure = this.#recordTranslationFailure(
+          session.liveFailed,
+          text,
+          error,
+          MAX_LIVE_TRANSLATION_CACHE,
+        );
         if (this.#isRetryPending(failure, this.#now())) {
           this.#scheduleRetry(session, failure.retryAfter);
         }
@@ -1788,6 +1801,7 @@ export class VideoSubtitleManager {
     map: Map<K, SubtitleTranslationFailure>,
     key: K,
     error: unknown,
+    maxEntries?: number,
   ): SubtitleTranslationFailure {
     const fatal = isFatalSubtitleTranslationError(error);
     const missingPack = isMissingLanguagePackError(error);
@@ -1801,6 +1815,10 @@ export class VideoSubtitleManager {
       fatal,
       missingPack,
     };
+    if (maxEntries && !map.has(key) && map.size >= maxEntries) {
+      const oldest = map.keys().next();
+      if (!oldest.done) map.delete(oldest.value);
+    }
     map.set(key, failure);
     return failure;
   }

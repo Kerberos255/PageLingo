@@ -30,6 +30,7 @@ import {
   type PdfPageBox,
   type PdfRawTextItem,
 } from "./reader/pdf-layout";
+import { canvasHasVisualInk } from "./reader/pdf-ink";
 
 // Point pdf.js worker to the locally bundled worker inside the extension (zero remote code).
 const workerSrc = typeof browser !== "undefined" && browser.runtime?.getURL
@@ -87,7 +88,7 @@ interface PdfPageRecord {
   dpr: number;
   shell: HTMLElement;
   baseCanvas: HTMLCanvasElement;
-  overlayCanvas: HTMLCanvasElement;
+  overlayCanvas: HTMLCanvasElement | null;
   hitLayer: HTMLElement;
   pageCard: HTMLElement;
   pageStatsEl: HTMLElement;
@@ -103,6 +104,11 @@ let activePdfViewMode: PdfViewMode = "split";
 let activeTranslator: PageTranslator | null = null;
 let isDocumentTranslated = false;
 let activePdfBytes: Uint8Array | null = null;
+let activePdfLoadingTask: pdfjsLib.PDFDocumentLoadingTask | null = null;
+let activePdfDoc: pdfjsLib.PDFDocumentProxy | null = null;
+let activeRenderTask: pdfjsLib.RenderTask | null = null;
+let activeDocumentGeneration = 0;
+let activePdfRenderGeneration = 0;
 let activePdfScale = 1.0;
 let activeBlockId = "";
 let activePdfPages: PdfPageRecord[] = [];
@@ -435,33 +441,6 @@ function renderPdfBlockElement(
   return wrap;
 }
 
-function canvasHasVisualInk(canvas: HTMLCanvasElement): boolean {
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx || canvas.width < 16 || canvas.height < 16) return false;
-  try {
-    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    const stepX = Math.max(1, Math.floor(canvas.width / 28));
-    const stepY = Math.max(1, Math.floor(canvas.height / 28));
-    let nonWhite = 0;
-    for (let y = stepY; y < canvas.height - stepY; y += stepY) {
-      for (let x = stepX; x < canvas.width - stepX; x += stepX) {
-        const off = (y * canvas.width + x) * 4;
-        if ((data[off + 3] ?? 255) < 32) continue;
-        const r = data[off] ?? 255;
-        const g = data[off + 1] ?? 255;
-        const b = data[off + 2] ?? 255;
-        if (r < 242 || g < 242 || b < 242) {
-          nonWhite += 1;
-          if (nonWhite >= 6) return true;
-        }
-      }
-    }
-  } catch {
-    return true;
-  }
-  return false;
-}
-
 function isVisualSnapshotBlock(block: PdfLayoutBlock): boolean {
   return block.kind === "formula"
     || block.kind === "figure"
@@ -602,10 +581,32 @@ function extractTranslatedText(container: HTMLElement, sourcePlainText: string):
   return text;
 }
 
+function releaseCanvasBacking(canvas: HTMLCanvasElement | null | undefined): void {
+  if (!canvas) return;
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
+function ensureOverlayCanvas(record: PdfPageRecord): HTMLCanvasElement {
+  let canvas = record.overlayCanvas;
+  if (!canvas) {
+    canvas = document.createElement("canvas");
+    canvas.className = "pdf-overlay-canvas";
+    record.baseCanvas.after(canvas);
+    record.overlayCanvas = canvas;
+  }
+  if (canvas.width !== record.baseCanvas.width) canvas.width = record.baseCanvas.width;
+  if (canvas.height !== record.baseCanvas.height) canvas.height = record.baseCanvas.height;
+  return canvas;
+}
+
 function clearPdfOverlayForPage(record: PdfPageRecord): void {
-  const ctx = record.overlayCanvas.getContext("2d");
-  if (ctx) ctx.clearRect(0, 0, record.overlayCanvas.width, record.overlayCanvas.height);
-  record.overlayCanvas.classList.remove("has-overlay");
+  const canvas = record.overlayCanvas;
+  if (!canvas) return;
+  canvas.classList.remove("has-overlay");
+  releaseCanvasBacking(canvas);
+  canvas.remove();
+  record.overlayCanvas = null;
 }
 
 function clearAllPdfOverlays(): void {
@@ -696,8 +697,9 @@ function renderPdfOverlayForPage(record: PdfPageRecord): void {
   }
 
   try {
+    const overlayCanvas = ensureOverlayCanvas(record);
     const imgData = baseCtx.getImageData(0, 0, record.baseCanvas.width, record.baseCanvas.height);
-    const rendered = renderTranslatedImageToCanvas(record.overlayCanvas, {
+    const rendered = renderTranslatedImageToCanvas(overlayCanvas, {
       regions,
       ocrWidth: record.baseCanvas.width,
       ocrHeight: record.baseCanvas.height,
@@ -707,7 +709,11 @@ function renderPdfOverlayForPage(record: PdfPageRecord): void {
       devicePixelRatio: 1,
       paintBaseImage: false,
     });
-    record.overlayCanvas.classList.toggle("has-overlay", rendered);
+    if (!rendered) {
+      clearPdfOverlayForPage(record);
+      return;
+    }
+    overlayCanvas.classList.add("has-overlay");
   } catch (error) {
     console.warn("[PageLingo] Failed to render PDF in-place overlay", error);
     clearPdfOverlayForPage(record);
@@ -785,6 +791,7 @@ async function createConfiguredTranslator(scope: HTMLElement): Promise<{
 }
 
 async function runOcrForPage(record: PdfPageRecord, triggerBtn?: HTMLButtonElement): Promise<boolean> {
+  const docGen = activeDocumentGeneration;
   const requestId = `pdf-ocr-p${record.pageNumber}-${Date.now()}`;
   activeOcrRequestId = requestId;
   record.ocrBtnEl.disabled = true;
@@ -805,6 +812,7 @@ async function runOcrForPage(record: PdfPageRecord, triggerBtn?: HTMLButtonEleme
       pixels: sample.pixels,
       requestId,
     });
+    if (docGen !== activeDocumentGeneration) return false;
     if (!response?.ok || !Array.isArray(response.blocks)) {
       throw new Error(response?.error ?? "扫描页 OCR 识别失败");
     }
@@ -824,14 +832,20 @@ async function runOcrForPage(record: PdfPageRecord, triggerBtn?: HTMLButtonEleme
         await activeTranslator.translateAll(record.pageCard, true);
       } else {
         const { translator } = await createConfiguredTranslator(record.pageCard);
+        if (docGen !== activeDocumentGeneration) {
+          translator.restore();
+          return false;
+        }
         activeTranslator = translator;
         await translator.translateAll(record.pageCard, true);
       }
+      if (docGen !== activeDocumentGeneration) return false;
       renderPdfOverlayForPage(record);
       setStatus(`第 ${record.pageNumber} 页已识别并翻译完成`);
     }
     return true;
   } catch (error) {
+    if (docGen !== activeDocumentGeneration) return false;
     setStatus(`第 ${record.pageNumber} 页 OCR 失败：${error instanceof Error ? error.message : String(error)}`);
     if (triggerBtn) {
       triggerBtn.disabled = false;
@@ -840,8 +854,10 @@ async function runOcrForPage(record: PdfPageRecord, triggerBtn?: HTMLButtonEleme
     return false;
   } finally {
     if (activeOcrRequestId === requestId) activeOcrRequestId = "";
-    record.ocrBtnEl.disabled = false;
-    updateBatchOcrButton();
+    if (docGen === activeDocumentGeneration) {
+      record.ocrBtnEl.disabled = false;
+      updateBatchOcrButton();
+    }
   }
 }
 
@@ -851,6 +867,7 @@ async function runOcrForAllScannedPages(): Promise<void> {
     setStatus("正在停止批量扫描页 OCR…");
     return;
   }
+  const docGen = activeDocumentGeneration;
   const targets = activePdfPages.filter((p) => p.isScanned && !p.ocrDone);
   if (targets.length === 0) return;
   batchOcrRunning = true;
@@ -859,13 +876,14 @@ async function runOcrForAllScannedPages(): Promise<void> {
 
   let succeeded = 0;
   for (let i = 0; i < targets.length; i += 1) {
-    if (batchOcrCancelRequested) break;
+    if (batchOcrCancelRequested || docGen !== activeDocumentGeneration) break;
     const record = targets[i]!;
     setStatus(`批量 OCR（${i + 1}/${targets.length}）：正在识别第 ${record.pageNumber} 页…`);
     const ok = await runOcrForPage(record);
     if (ok) succeeded += 1;
   }
 
+  if (docGen !== activeDocumentGeneration) return;
   const cancelled = batchOcrCancelRequested;
   batchOcrRunning = false;
   batchOcrCancelRequested = false;
@@ -877,9 +895,66 @@ async function runOcrForAllScannedPages(): Promise<void> {
   );
 }
 
+function isPdfRenderCancelledError(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === "object"
+    && ((error as { name?: unknown }).name === "RenderingCancelledException"
+      || String((error as { message?: unknown }).message ?? "").includes("Rendering cancelled")),
+  );
+}
+
+function computePdfPageMetrics(baseViewport: { width: number; height: number }): {
+  renderScale: number;
+  dpr: number;
+} {
+  const targetDpr = Math.min(2.5, Math.max(2, window.devicePixelRatio || 1));
+  const maxCanvasSidePx = 2400;
+  const paneBaseWidth = activePdfViewMode === "overlay"
+    ? Math.max(520, Math.min(860, (pdfCanvasPane.clientWidth || 820) - 48))
+    : Math.max(420, Math.min(720, (pdfCanvasPane.clientWidth || 600) - 44));
+  const targetCssWidth = paneBaseWidth * activePdfScale;
+  const renderScale = targetCssWidth / Math.max(1, baseViewport.width);
+  const scaledW = baseViewport.width * renderScale;
+  const scaledH = baseViewport.height * renderScale;
+  const dpr = Math.max(1, Math.min(targetDpr, maxCanvasSidePx / Math.max(1, scaledW, scaledH)));
+  return { renderScale, dpr };
+}
+
+function syncPdfPageHitBoxes(record: PdfPageRecord): void {
+  const blockById = new Map<string, PdfLayoutBlock>();
+  for (const block of record.blocks) blockById.set(block.id, block);
+  for (const hit of Array.from(record.hitLayer.querySelectorAll<HTMLElement>(".pdf-hit-box"))) {
+    const block = blockById.get(hit.dataset.blockId ?? "");
+    if (!block) continue;
+    hit.style.left = `${Math.max(0, block.box.x * record.renderScale - 2)}px`;
+    hit.style.top = `${Math.max(0, block.box.y * record.renderScale - 2)}px`;
+    hit.style.width = `${Math.max(8, block.box.width * record.renderScale + 4)}px`;
+    hit.style.height = `${Math.max(8, block.box.height * record.renderScale + 4)}px`;
+  }
+}
+
 function clearActiveDocument(): void {
+  activeDocumentGeneration += 1;
+  activePdfRenderGeneration += 1;
   batchOcrCancelRequested = true;
   batchOcrRunning = false;
+  activeOcrRequestId = "";
+  try {
+    activeRenderTask?.cancel();
+  } catch {}
+  activeRenderTask = null;
+  const prevDoc = activePdfDoc;
+  activePdfDoc = null;
+  if (prevDoc) void prevDoc.destroy().catch(() => {});
+  const prevLoading = activePdfLoadingTask;
+  activePdfLoadingTask = null;
+  if (prevLoading) void prevLoading.destroy().catch(() => {});
+
+  for (const page of activePdfPages) {
+    releaseCanvasBacking(page.baseCanvas);
+    releaseCanvasBacking(page.overlayCanvas);
+  }
   activeTranslator?.restore();
   activeTranslator = null;
   isDocumentTranslated = false;
@@ -893,8 +968,74 @@ function clearActiveDocument(): void {
   ocrAllBtn.hidden = true;
 }
 
+async function rerenderActivePdfAtCurrentScale(): Promise<void> {
+  const pdf = activePdfDoc;
+  if (!pdf || activePdfPages.length === 0) return;
+  const docGen = activeDocumentGeneration;
+  const renderGen = ++activePdfRenderGeneration;
+  try {
+    activeRenderTask?.cancel();
+  } catch {}
+  activeRenderTask = null;
+
+  zoomLabelEl.textContent = `${Math.round(activePdfScale * 100)}%`;
+  const total = activePdfPages.length;
+  for (let i = 0; i < total; i += 1) {
+    if (docGen !== activeDocumentGeneration || renderGen !== activePdfRenderGeneration) return;
+    const record = activePdfPages[i]!;
+    setStatus(`正在缩放重绘第 ${i + 1}/${total} 页（${Math.round(activePdfScale * 100)}%）…`);
+    const page = await pdf.getPage(record.pageNumber);
+    if (docGen !== activeDocumentGeneration || renderGen !== activePdfRenderGeneration) {
+      page.cleanup();
+      return;
+    }
+    const baseViewport = page.getViewport({ scale: 1.0 });
+    const { renderScale, dpr } = computePdfPageMetrics(baseViewport);
+    const viewport = page.getViewport({ scale: renderScale });
+
+    record.shell.style.width = `${Math.round(viewport.width)}px`;
+    record.shell.style.height = `${Math.round(viewport.height)}px`;
+    record.baseCanvas.width = Math.round(viewport.width * dpr);
+    record.baseCanvas.height = Math.round(viewport.height * dpr);
+    record.baseCanvas.style.width = `${Math.round(viewport.width)}px`;
+    record.baseCanvas.style.height = `${Math.round(viewport.height)}px`;
+    const ctx = record.baseCanvas.getContext("2d")!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const renderTask = page.render({ canvasContext: ctx, viewport, canvas: record.baseCanvas });
+    activeRenderTask = renderTask;
+    try {
+      await renderTask.promise;
+    } catch (error) {
+      if (isPdfRenderCancelledError(error) || docGen !== activeDocumentGeneration || renderGen !== activePdfRenderGeneration) {
+        return;
+      }
+      throw error;
+    } finally {
+      if (activeRenderTask === renderTask) activeRenderTask = null;
+      page.cleanup();
+    }
+
+    if (docGen !== activeDocumentGeneration || renderGen !== activePdfRenderGeneration) return;
+    record.renderScale = renderScale;
+    record.dpr = dpr;
+    syncPdfPageHitBoxes(record);
+    if (isDocumentTranslated && activePdfViewMode === "overlay") {
+      renderPdfOverlayForPage(record);
+    } else {
+      clearPdfOverlayForPage(record);
+    }
+  }
+
+  if (docGen === activeDocumentGeneration && renderGen === activePdfRenderGeneration) {
+    setStatus(`已缩放至 ${Math.round(activePdfScale * 100)}%（保留当前译文与 OCR 结果）`);
+  }
+}
+
 async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = false): Promise<void> {
   clearActiveDocument();
+  const docGen = activeDocumentGeneration;
+  const renderGen = activePdfRenderGeneration;
   activeKind = "pdf";
   activePdfBytes = bytes;
   docTitleEl.textContent = title;
@@ -916,28 +1057,42 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
     isEvalSupported: false,
     useSystemFonts: true,
   });
-  const pdf = await loadingTask.promise;
+  activePdfLoadingTask = loadingTask;
+
+  let pdf: pdfjsLib.PDFDocumentProxy;
+  try {
+    pdf = await loadingTask.promise;
+  } catch (error) {
+    if (docGen !== activeDocumentGeneration) return;
+    if (activePdfLoadingTask === loadingTask) activePdfLoadingTask = null;
+    throw error;
+  }
+  if (activePdfLoadingTask === loadingTask) activePdfLoadingTask = null;
+  if (docGen !== activeDocumentGeneration) {
+    void pdf.destroy().catch(() => {});
+    return;
+  }
+  activePdfDoc = pdf;
+
   const totalPages = pdf.numPages;
   const maxPages = Math.min(totalPages, 80);
   let totalBlocks = 0;
   let totalFormulas = 0;
   let totalTables = 0;
-  const targetDpr = Math.min(2.5, Math.max(2, window.devicePixelRatio || 1));
-  const maxCanvasSidePx = 2400;
 
   for (let pageNum = 1; pageNum <= maxPages; pageNum += 1) {
+    if (docGen !== activeDocumentGeneration) return;
     setStatus(`正在渲染并提取第 ${pageNum}/${maxPages} 页…`);
     const page = await pdf.getPage(pageNum);
+    if (docGen !== activeDocumentGeneration) {
+      page.cleanup();
+      return;
+    }
     const baseViewport = page.getViewport({ scale: 1.0 });
-    const paneBaseWidth = activePdfViewMode === "overlay"
-      ? Math.max(520, Math.min(860, (pdfCanvasPane.clientWidth || 820) - 48))
-      : Math.max(420, Math.min(720, (pdfCanvasPane.clientWidth || 600) - 44));
-    const targetCssWidth = paneBaseWidth * activePdfScale;
-    const renderScale = targetCssWidth / baseViewport.width;
+    const { renderScale, dpr } = computePdfPageMetrics(baseViewport);
     const viewport = page.getViewport({ scale: renderScale });
-    const dpr = Math.max(1, Math.min(targetDpr, maxCanvasSidePx / Math.max(1, viewport.width, viewport.height)));
 
-    // Left/Main pane: original PDF canvas + transparent in-place overlay canvas + hit layer
+    // Left/Main pane: original PDF canvas + hit layer (overlay canvas created lazily in overlay mode)
     const shell = document.createElement("div");
     shell.className = "pdf-page-shell";
     shell.style.width = `${Math.round(viewport.width)}px`;
@@ -950,13 +1105,28 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
     baseCanvas.style.width = `${Math.round(viewport.width)}px`;
     baseCanvas.style.height = `${Math.round(viewport.height)}px`;
     const ctx = baseCanvas.getContext("2d")!;
-    ctx.scale(dpr, dpr);
-    await page.render({ canvasContext: ctx, viewport, canvas: baseCanvas }).promise;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const renderTask = page.render({ canvasContext: ctx, viewport, canvas: baseCanvas });
+    activeRenderTask = renderTask;
+    try {
+      await renderTask.promise;
+    } catch (error) {
+      if (isPdfRenderCancelledError(error) || docGen !== activeDocumentGeneration) {
+        releaseCanvasBacking(baseCanvas);
+        page.cleanup();
+        return;
+      }
+      page.cleanup();
+      throw error;
+    } finally {
+      if (activeRenderTask === renderTask) activeRenderTask = null;
+    }
 
-    const overlayCanvas = document.createElement("canvas");
-    overlayCanvas.className = "pdf-overlay-canvas";
-    overlayCanvas.width = baseCanvas.width;
-    overlayCanvas.height = baseCanvas.height;
+    if (docGen !== activeDocumentGeneration) {
+      releaseCanvasBacking(baseCanvas);
+      page.cleanup();
+      return;
+    }
 
     const badge = document.createElement("span");
     badge.className = "pdf-page-badge";
@@ -965,11 +1135,15 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
     const hitLayer = document.createElement("div");
     hitLayer.className = "pdf-hit-layer";
 
-    shell.append(baseCanvas, overlayCanvas, hitLayer, badge);
+    shell.append(baseCanvas, hitLayer, badge);
     pdfCanvasPane.append(shell);
 
     // Extract layout-preserving, formula-protected, table-aware blocks from PDF text layer
     const textContent = await page.getTextContent();
+    if (docGen !== activeDocumentGeneration) {
+      page.cleanup();
+      return;
+    }
     const rawItems: PdfRawTextItem[] = [];
     for (const item of textContent.items) {
       if ("str" in item && typeof item.str === "string") {
@@ -998,6 +1172,8 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
       }
       enrichedStyles[fontKey] = { ...style, ...(realFontName ? { realFontName } : {}) };
     }
+    page.cleanup();
+
     const blocks = extractPdfPageBlocks(
       rawItems,
       enrichedStyles,
@@ -1034,7 +1210,7 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
       dpr,
       shell,
       baseCanvas,
-      overlayCanvas,
+      overlayCanvas: null,
       hitLayer,
       pageCard,
       pageStatsEl,
@@ -1057,6 +1233,7 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
     }
   }
 
+  if (docGen !== activeDocumentGeneration) return;
   translateBtn.disabled = false;
   restoreBtn.disabled = true;
   const scannedPages = activePdfPages.filter((p) => p.isScanned).length;
@@ -1067,7 +1244,10 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
   if (scannedPages > 0) parts.push(`${scannedPages} 页扫描图像可按需 OCR`);
   setStatus(parts.join(" · "));
 
-  if (autoTranslate && totalBlocks > 0) {
+  if (renderGen !== activePdfRenderGeneration) {
+    void rerenderActivePdfAtCurrentScale();
+  }
+  if (autoTranslate && totalBlocks > 0 && docGen === activeDocumentGeneration) {
     await runTranslation();
   }
 }
@@ -1288,18 +1468,28 @@ ocrAllBtn.addEventListener("click", () => void runOcrForAllScannedPages());
 translateBtn.addEventListener("click", () => void runTranslation());
 restoreBtn.addEventListener("click", () => restoreOriginal());
 
-zoomInBtn.addEventListener("click", () => {
-  if (!activePdfBytes) return;
-  const wasTranslated = isDocumentTranslated;
-  activePdfScale = Math.min(1.6, Number((activePdfScale + 0.15).toFixed(2)));
-  void openPdfBytes(activePdfBytes, docTitleEl.textContent || "PDF", wasTranslated);
-});
+function applyPdfZoomDelta(delta: number): void {
+  if (activeKind !== "pdf") return;
+  const nextScale = Math.max(0.7, Math.min(1.6, Number((activePdfScale + delta).toFixed(2))));
+  if (nextScale === activePdfScale) return;
+  activePdfScale = nextScale;
+  zoomLabelEl.textContent = `${Math.round(activePdfScale * 100)}%`;
+  if (activePdfDoc && activePdfPages.length > 0) {
+    void rerenderActivePdfAtCurrentScale().catch((err) => {
+      setStatus(err instanceof Error ? err.message : String(err));
+    });
+  } else if (activePdfLoadingTask) {
+    activePdfRenderGeneration += 1;
+  } else if (activePdfBytes) {
+    const wasTranslated = isDocumentTranslated;
+    void openPdfBytes(activePdfBytes, docTitleEl.textContent || "PDF", wasTranslated);
+  }
+}
 
-zoomOutBtn.addEventListener("click", () => {
-  if (!activePdfBytes) return;
-  const wasTranslated = isDocumentTranslated;
-  activePdfScale = Math.max(0.7, Number((activePdfScale - 0.15).toFixed(2)));
-  void openPdfBytes(activePdfBytes, docTitleEl.textContent || "PDF", wasTranslated);
+zoomInBtn.addEventListener("click", () => applyPdfZoomDelta(0.15));
+zoomOutBtn.addEventListener("click", () => applyPdfZoomDelta(-0.15));
+window.addEventListener("pagehide", () => {
+  clearActiveDocument();
 });
 
 // Drag & Drop support across the entire reader stage

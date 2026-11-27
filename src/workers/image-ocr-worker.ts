@@ -107,10 +107,15 @@ function progressInfo(progress: WorkerProgress): { label: string; ratio: number 
 async function ensureOrtRuntime(): Promise<void> {
   if (!ortRuntimeReady) {
     ortRuntimeReady = (async () => {
+      const mjsUrl = new URL("vendor/onnxruntime/ort-wasm-simd-threaded.mjs", globalThis.location.href).href;
       const wasmUrl = new URL("vendor/onnxruntime/ort-wasm-simd-threaded.wasm", globalThis.location.href).href;
       const response = await fetch(wasmUrl, { credentials: "same-origin" });
       if (!response.ok) throw new Error(`ONNX Runtime WASM 加载失败：HTTP ${response.status}`);
-      const wasmFlags = ort.env.wasm as typeof ort.env.wasm & { wasmBinary?: Uint8Array };
+      const wasmFlags = ort.env.wasm as typeof ort.env.wasm & {
+        wasmBinary?: Uint8Array;
+        wasmPaths?: { mjs?: string; wasm?: string };
+      };
+      wasmFlags.wasmPaths = { mjs: mjsUrl, wasm: wasmUrl };
       wasmFlags.wasmBinary = new Uint8Array(await response.arrayBuffer());
     })().catch((error) => {
       ortRuntimeReady = null;
@@ -274,15 +279,21 @@ async function recognizeDocumentPage(request: WorkerDocumentPageRequest): Promis
   }
 }
 
+let workerMessageChain: Promise<void> = Promise.resolve();
+
 scope.addEventListener("message", (event) => {
   const request = event.data;
-  if (request.type === "reset") {
-    void reset();
-    return;
-  }
-  if (request.type === "recognize-document-page") {
-    void recognizeDocumentPage(request);
-    return;
-  }
-  void recognize(request);
+  workerMessageChain = workerMessageChain.then(async () => {
+    if (request.type === "reset") {
+      await reset();
+      return;
+    }
+    if (request.type === "recognize-document-page") {
+      await recognizeDocumentPage(request);
+      return;
+    }
+    await recognize(request);
+  }).catch(() => {
+    // Individual handlers already report errors back to the parent thread.
+  });
 });

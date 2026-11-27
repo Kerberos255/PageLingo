@@ -51,10 +51,43 @@ const OCR_CACHE = "pagelingo-image-ocr-v1";
 const OCR_DB_NAME = "pagelingo-image-ocr-models-v1";
 const OCR_DB_STORE = "assets";
 const OCR_DOWNLOAD_TIMEOUT_MS = 90_000;
+const OCR_MEMORY_IDLE_MS = 5 * 60_000;
 const ocrAssetMemoryCache = new Map<string, ArrayBuffer>();
 const ocrBundlePromises = new Map<string, Promise<ImageOcrBundle>>();
 let docLayoutPromise: Promise<DocLayoutBundle> | null = null;
 let ocrDeletion: Promise<void> | null = null;
+let ocrMemoryIdleTimer: ReturnType<typeof setTimeout> | null = null;
+let activeBundleLoads = 0;
+
+function clearOcrMemoryIdleTimer(): void {
+  if (ocrMemoryIdleTimer !== null) {
+    globalThis.clearTimeout(ocrMemoryIdleTimer);
+    ocrMemoryIdleTimer = null;
+  }
+}
+
+export function clearOcrMemoryCache(): void {
+  clearOcrMemoryIdleTimer();
+  ocrAssetMemoryCache.clear();
+  ocrBundlePromises.clear();
+  docLayoutPromise = null;
+}
+
+function scheduleOcrMemoryEviction(): void {
+  clearOcrMemoryIdleTimer();
+  if (activeBundleLoads > 0 || ocrDeletion) return;
+  if (ocrAssetMemoryCache.size === 0 && ocrBundlePromises.size === 0 && !docLayoutPromise) return;
+  ocrMemoryIdleTimer = globalThis.setTimeout(() => {
+    ocrMemoryIdleTimer = null;
+    if (activeBundleLoads > 0 || ocrDeletion) {
+      scheduleOcrMemoryEviction();
+      return;
+    }
+    ocrAssetMemoryCache.clear();
+    ocrBundlePromises.clear();
+    docLayoutPromise = null;
+  }, OCR_MEMORY_IDLE_MS);
+}
 
 function cacheKey(asset: OcrModelAsset): string {
   return `https://pagelingo.invalid/image-ocr/${encodeURIComponent(asset.id)}`;
@@ -92,6 +125,22 @@ async function idbGetAsset(asset: OcrModelAsset): Promise<ArrayBuffer | null> {
     }
   } catch {
     return null;
+  }
+}
+
+async function idbHasAsset(asset: OcrModelAsset): Promise<boolean> {
+  try {
+    const db = await openOcrDb();
+    const value = await new Promise<unknown>((resolve, reject) => {
+      const tx = db.transaction(OCR_DB_STORE, "readonly");
+      const request = tx.objectStore(OCR_DB_STORE).get(asset.id);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return value instanceof ArrayBuffer && value.byteLength === asset.bytes;
+  } catch {
+    return false;
   }
 }
 
@@ -137,6 +186,25 @@ async function validateAsset(asset: OcrModelAsset, buffer: ArrayBuffer): Promise
   if (digest !== asset.sha256) {
     throw new Error(`${asset.label} SHA-256 校验失败`);
   }
+}
+
+async function hasCachedAsset(asset: OcrModelAsset): Promise<boolean> {
+  const memory = ocrAssetMemoryCache.get(asset.id);
+  if (memory instanceof ArrayBuffer && memory.byteLength === asset.bytes) return true;
+  if (await idbHasAsset(asset)) return true;
+  try {
+    const cache = await caches.open(OCR_CACHE);
+    const response = await cache.match(cacheKey(asset));
+    if (response) {
+      const buffer = await response.arrayBuffer();
+      await validateAsset(asset, buffer);
+      await idbPutAsset(asset, buffer);
+      return true;
+    }
+  } catch {
+    // Ignore damaged legacy cache.
+  }
+  return false;
 }
 
 async function cachedAsset(asset: OcrModelAsset): Promise<ArrayBuffer | null> {
@@ -201,23 +269,23 @@ export async function getImageOcrStatus(activeProfile: OcrProfile | string = DEF
   if (ocrDeletion) await ocrDeletion;
   const resolved = typeof activeProfile === "string" ? getOcrProfile(activeProfile) : activeProfile;
   const [defaultDetInstalled, docLayoutInstalled] = await Promise.all([
-    cachedAsset(SHARED_OCR_DETECTION).then(Boolean),
-    cachedAsset(DOC_LAYOUT_MODEL).then(Boolean),
+    hasCachedAsset(SHARED_OCR_DETECTION),
+    hasCachedAsset(DOC_LAYOUT_MODEL),
   ]);
   const detCache = new Map<string, boolean>([[SHARED_OCR_DETECTION.id, defaultDetInstalled]]);
   const profiles: ImageOcrProfileStatus[] = await Promise.all(
     OCR_PROFILES.map(async (profile) => {
-      const [rec, dict] = await Promise.all([cachedAsset(profile.recognition), cachedAsset(profile.dictionary)]);
+      const [rec, dict] = await Promise.all([hasCachedAsset(profile.recognition), hasCachedAsset(profile.dictionary)]);
       let detOk = detCache.get(profile.detection.id);
       if (detOk === undefined) {
-        detOk = Boolean(await cachedAsset(profile.detection));
+        detOk = await hasCachedAsset(profile.detection);
         detCache.set(profile.detection.id, detOk);
       }
       return {
         id: profile.id,
         label: profile.label,
         languagesLabel: profile.languagesLabel,
-        installed: detOk && Boolean(rec) && Boolean(dict),
+        installed: detOk && rec && dict,
         detectionInstalled: detOk,
         recognitionBytes: ocrProfileRecognitionBytes(profile),
         totalBytes: ocrProfileTotalBytes(profile),
@@ -240,10 +308,16 @@ export async function getImageOcrStatus(activeProfile: OcrProfile | string = DEF
 
 export async function getDocLayoutBundle(progress?: OcrProgress): Promise<DocLayoutBundle> {
   if (ocrDeletion) await ocrDeletion;
+  clearOcrMemoryIdleTimer();
   if (docLayoutPromise) {
     progress?.("正在准备文档版面检测模型…");
-    return docLayoutPromise;
+    try {
+      return await docLayoutPromise;
+    } finally {
+      scheduleOcrMemoryEviction();
+    }
   }
+  activeBundleLoads += 1;
   const task = (async (): Promise<DocLayoutBundle> => {
     progress?.("正在检查文档版面检测模型缓存…");
     const model = await downloadAsset(DOC_LAYOUT_MODEL, progress);
@@ -256,11 +330,15 @@ export async function getDocLayoutBundle(progress?: OcrProgress): Promise<DocLay
   } catch (error) {
     if (docLayoutPromise === task) docLayoutPromise = null;
     throw error;
+  } finally {
+    activeBundleLoads = Math.max(0, activeBundleLoads - 1);
+    scheduleOcrMemoryEviction();
   }
 }
 
 export async function deleteDocLayoutModel(): Promise<void> {
   if (ocrDeletion) return ocrDeletion;
+  clearOcrMemoryIdleTimer();
   ocrDeletion = (async () => {
     await docLayoutPromise?.catch(() => {});
     docLayoutPromise = null;
@@ -270,6 +348,7 @@ export async function deleteDocLayoutModel(): Promise<void> {
     await ocrDeletion;
   } finally {
     ocrDeletion = null;
+    scheduleOcrMemoryEviction();
   }
 }
 
@@ -278,12 +357,18 @@ export async function getImageOcrBundle(
   progress?: OcrProgress,
 ): Promise<ImageOcrBundle> {
   if (ocrDeletion) await ocrDeletion;
+  clearOcrMemoryIdleTimer();
   const profile = typeof profileOrId === "string" ? getOcrProfile(profileOrId) : profileOrId;
   const existing = ocrBundlePromises.get(profile.id);
   if (existing) {
     progress?.("正在准备 OCR 模型…");
-    return existing;
+    try {
+      return await existing;
+    } finally {
+      scheduleOcrMemoryEviction();
+    }
   }
+  activeBundleLoads += 1;
   const task = (async (): Promise<ImageOcrBundle> => {
     progress?.("正在检查 OCR 模型缓存…");
     const detectionModel = await downloadAsset(profile.detection, progress);
@@ -303,6 +388,9 @@ export async function getImageOcrBundle(
   } catch (error) {
     if (ocrBundlePromises.get(profile.id) === task) ocrBundlePromises.delete(profile.id);
     throw error;
+  } finally {
+    activeBundleLoads = Math.max(0, activeBundleLoads - 1);
+    scheduleOcrMemoryEviction();
   }
 }
 
@@ -319,6 +407,7 @@ async function deleteSingleAsset(asset: OcrModelAsset): Promise<void> {
 
 export async function deleteImageOcrModels(profileOrId: OcrProfile | string = DEFAULT_OCR_PROFILE): Promise<void> {
   if (ocrDeletion) return ocrDeletion;
+  clearOcrMemoryIdleTimer();
   const profile = typeof profileOrId === "string" ? getOcrProfile(profileOrId) : profileOrId;
   ocrDeletion = (async () => {
     await ocrBundlePromises.get(profile.id)?.catch(() => {});
@@ -331,7 +420,7 @@ export async function deleteImageOcrModels(profileOrId: OcrProfile | string = DE
     const othersInstalled = await Promise.all(
       OCR_PROFILES
         .filter((candidate) => candidate.id !== profile.id && candidate.detection.id === profile.detection.id)
-        .map(async (candidate) => Boolean(await cachedAsset(candidate.recognition))),
+        .map((candidate) => hasCachedAsset(candidate.recognition)),
     );
     if (!othersInstalled.some(Boolean)) {
       await deleteSingleAsset(profile.detection);
@@ -341,5 +430,6 @@ export async function deleteImageOcrModels(profileOrId: OcrProfile | string = DE
     await ocrDeletion;
   } finally {
     ocrDeletion = null;
+    scheduleOcrMemoryEviction();
   }
 }

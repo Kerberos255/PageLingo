@@ -130,7 +130,7 @@ export function clearFixedTextRecord(record: FixedTextRecord): void {
 }
 
 const BILINGUAL_STRIP_TAGS = new Set([
-  "UL", "OL", "DL", "TABLE", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE",
+  "PRE", "UL", "OL", "DL", "TABLE", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE",
   "BUTTON", "INPUT", "SELECT", "TEXTAREA", "IFRAME", "OBJECT", "EMBED",
   "SVG", "CANVAS", "VIDEO", "AUDIO", "RELATIVE-TIME", "TIME-AGO", "LOCAL-TIME",
 ]);
@@ -203,6 +203,10 @@ function bilingualFragment(root: HTMLElement, record: FixedTextRecord): Document
   return fragment;
 }
 
+function usesInPlaceControlBilingual(root: HTMLElement): boolean {
+  return isTranslationControl(root) || root.tagName === "A";
+}
+
 export function needsCapturedSourceLayout(
   root: HTMLElement,
   record: FixedTextRecord,
@@ -210,7 +214,7 @@ export function needsCapturedSourceLayout(
 ): boolean {
   if (mode !== "bilingual") return false;
   if (record.edits.every(edit => edit.translated.trim() === edit.source.trim())) return false;
-  return !isTranslationControl(root);
+  return !usesInPlaceControlBilingual(root);
 }
 
 export function validateFixedTextRecord(root: HTMLElement, record: FixedTextRecord): boolean {
@@ -248,9 +252,9 @@ export function applyFixedTextRecord(
     // when the translation is identical to the source text.
     record.mode = mode;
     return true;
-  } else if (isTranslationControl(root)) {
-    // Keep the original control clickable and anchor the bilingual label directly
-    // beside the text slot so leading/trailing <svg> icons stay in place.
+  } else if (usesInPlaceControlBilingual(root)) {
+    // Keep the original control or standalone link clickable and avoid cloning button/pill
+    // CSS classes or adding extra flex siblings into headers, toolbars, and nav rows.
     const node = root.ownerDocument.createElement("span");
     node.className = "flt-translation";
     node.dataset.fltGenerated = "translation";
@@ -258,11 +262,25 @@ export function applyFixedTextRecord(
     if (bilingualOrder === "translation-top") node.dataset.fltOrder = "translation-top";
     node.lang = language;
     node.setAttribute("aria-hidden", "true");
-    node.style.setProperty("display", "block", "important");
-    node.style.setProperty("margin", "0", "important");
     node.textContent = record.edits.map(edit => edit.translated.trim()).filter(Boolean).join(" ");
     const parent = record.edits[0]?.node.parentElement;
     const host = parent && record.edits.every(edit => parent.contains(edit.node)) ? parent : root;
+    const hostStyle = root.ownerDocument.defaultView?.getComputedStyle(host);
+    const hostDisplay = hostStyle?.display ?? "";
+    const hostFlexDir = hostStyle?.flexDirection ?? "";
+    const isRowFlexHost = (hostDisplay === "flex" || hostDisplay === "inline-flex") && !hostFlexDir.startsWith("column");
+    if (root.tagName === "A" && hostDisplay === "inline") {
+      node.style.setProperty("display", "inline", "important");
+      node.style.setProperty("margin", "0", "important");
+      node.style.setProperty(bilingualOrder === "translation-top" ? "margin-inline-end" : "margin-inline-start", "0.3em", "important");
+    } else if (root.tagName === "A" && isRowFlexHost) {
+      node.style.setProperty("display", "inline-block", "important");
+      node.style.setProperty("margin", "0", "important");
+      node.style.setProperty(bilingualOrder === "translation-top" ? "margin-inline-end" : "margin-inline-start", "0.35em", "important");
+    } else {
+      node.style.setProperty("display", "block", "important");
+      node.style.setProperty("margin", "0", "important");
+    }
     const directChildAnchor = (target: Node | undefined): ChildNode | null => {
       let cursor: Node | null = target ?? null;
       while (cursor && cursor.parentNode !== host) cursor = cursor.parentNode;

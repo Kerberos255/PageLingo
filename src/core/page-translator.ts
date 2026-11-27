@@ -1109,8 +1109,87 @@ export class PageTranslator {
             this.#queueVisibleScope(event.target);
         }
     };
+    #pruneTimer = null;
+    #scheduleDetachedPrune() {
+        if (this.#disposed || this.#pruneTimer !== null) return;
+        this.#pruneTimer = setTimeout(() => {
+            this.#pruneTimer = null;
+            this.pruneDetachedEntries();
+        }, 4000);
+    }
+    pruneDetachedEntries() {
+        if (this.#disposed) return 0;
+        let removed = 0;
+        for (const [root, record] of this.#records) {
+            if (root.isConnected) continue;
+            this.#records.delete(root);
+            if (record?.translationNode?.isConnected) record.translationNode.remove();
+            removed += 1;
+        }
+        for (const [root, record] of this.#fixedRecords) {
+            if (root.isConnected) continue;
+            this.#fixedRecords.delete(root);
+            if (record?.translationNode?.isConnected) record.translationNode.remove();
+            removed += 1;
+        }
+        for (const root of Array.from(this.#failures.keys())) {
+            if (!root.isConnected) {
+                this.#failures.delete(root);
+                removed += 1;
+            }
+        }
+        for (const [el, snapshot] of this.#tooltipSnapshots) {
+            if (!el.isConnected && !snapshot?.node?.isConnected) {
+                this.#tooltipSnapshots.delete(el);
+                removed += 1;
+            }
+        }
+        for (const el of Array.from(this.#placeholderSnapshots.keys())) {
+            if (!el.isConnected) {
+                this.#placeholderSnapshots.delete(el);
+                removed += 1;
+            }
+        }
+        for (const link of Array.from(this.#sourceLinkStyleSnapshots.keys())) {
+            if (!link.isConnected) {
+                this.#sourceLinkStyleSnapshots.delete(link);
+                removed += 1;
+            }
+        }
+        for (const root of Array.from(this.#deferredRoots)) {
+            if (!root.isConnected) {
+                this.#deferredRoots.delete(root);
+                this.#visibilityObserver?.unobserve(root);
+                removed += 1;
+            }
+        }
+        for (const [shadowRoot, observer] of this.#shadowObservers) {
+            if (shadowRoot.host && !shadowRoot.host.isConnected) {
+                observer.disconnect();
+                this.#shadowObservers.delete(shadowRoot);
+                this.#shadowRoots.delete(shadowRoot);
+                removed += 1;
+            }
+        }
+        for (const shadowRoot of Array.from(this.#shadowRoots)) {
+            if (shadowRoot.host && !shadowRoot.host.isConnected && !this.#shadowObservers.has(shadowRoot)) {
+                this.#shadowRoots.delete(shadowRoot);
+                removed += 1;
+            }
+        }
+        return removed;
+    }
+    #hasAncestorInSet(node, set) {
+        for (let cursor = node?.parentElement ?? null; cursor; cursor = cursor.parentElement) {
+            if (set.has(cursor)) return true;
+        }
+        return false;
+    }
     #handleMutations = (mutations) => {
         const revealed = new Set();
+        const addedElements = new Set();
+        const addedTextParents = new Set();
+        let sawRemovedNodes = false;
         for (const mutation of mutations) {
             if (isGeneratedNode(mutation.target))
                 continue;
@@ -1145,37 +1224,45 @@ export class PageTranslator {
                 const edit = owner?.edits.find(edit => edit.node === mutation.target);
                 if (edit && mutation.target.data === (owner.mode === "translation" ? edit.translated : edit.source)) continue;
                 const parent = mutation.target.parentElement;
-                if (parent) {
-                    for (const root of this.#collect(parent))
-                        this.#queue(root);
-                }
+                if (parent) addedTextParents.add(parent);
                 continue;
+            }
+            if (mutation.removedNodes && mutation.removedNodes.length > 0) {
+                sawRemovedNodes = true;
             }
             for (const added of Array.from(mutation.addedNodes)) {
                 if (isGeneratedNode(added))
                     continue;
                 if (added.nodeType === Node.TEXT_NODE) {
                     const parent = added.parentElement;
-                    if (parent) {
-                        for (const root of this.#collect(parent))
-                            this.#queue(root);
-                    }
+                    if (parent && parent.isConnected) addedTextParents.add(parent);
                 }
                 else if (added.nodeType === Node.ELEMENT_NODE) {
-                    if (added.hasAttribute?.("data-flt-source-text-wrapper"))
+                    if (!added.isConnected || added.hasAttribute?.("data-flt-source-text-wrapper"))
                         continue;
-                    if (this.#wholeSentenceContext && this.#lazyOffscreen && added.childElementCount >= 16) {
-                        void this.#queueScopeLazy(added);
-                    } else {
-                        for (const root of this.#collect(added))
-                            this.#queue(root);
-                        void this.#translatePlaceholdersInScope(added);
-                    }
+                    addedElements.add(added);
                 }
             }
         }
+        for (const added of addedElements) {
+            if (!added.isConnected || this.#hasAncestorInSet(added, addedElements)) continue;
+            if (this.#wholeSentenceContext && this.#lazyOffscreen && added.childElementCount >= 16) {
+                void this.#queueScopeLazy(added);
+            } else {
+                for (const root of this.#collect(added))
+                    this.#queue(root);
+                void this.#translatePlaceholdersInScope(added);
+            }
+        }
+        for (const parent of addedTextParents) {
+            if (!parent.isConnected || addedElements.has(parent) || this.#hasAncestorInSet(parent, addedElements)) {
+                continue;
+            }
+            for (const root of this.#collect(parent))
+                this.#queue(root);
+        }
         for (const region of revealed) {
-            if ([...revealed].some(parent => parent !== region && parent.contains(region))) continue;
+            if (!region.isConnected || this.#hasAncestorInSet(region, revealed)) continue;
             const hiddenState = inspectElementHidden(region);
             if (hiddenState === 0) {
                 this.#queueVisibleScope(region);
@@ -1183,6 +1270,9 @@ export class PageTranslator {
             }
             // Accessibility state or added nodes can appear before a CSS fade completes.
             this.#watchHiddenFade(region, hiddenState === 2);
+        }
+        if (sawRemovedNodes && (this.#records.size + this.#fixedRecords.size + this.#failures.size + this.#shadowObservers.size) > 0) {
+            this.#scheduleDetachedPrune();
         }
     };
     #observeShadowRoot(shadowRoot) {
@@ -1422,6 +1512,10 @@ export class PageTranslator {
     restore() {
         this.#failures.clear();
         this.#disposed = true;
+        if (this.#pruneTimer !== null) {
+            clearTimeout(this.#pruneTimer);
+            this.#pruneTimer = null;
+        }
         this.#syncLearningClickListener();
         this.#observer?.disconnect();
         this.#observer = null;
