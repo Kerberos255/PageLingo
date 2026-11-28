@@ -11,7 +11,7 @@ import {
     automaticTranslationLifecyclePending,
     automaticTranslationSettingsSignature,
 } from "./shared/automatic-translation-state";
-import { relativeTimeElements } from "./shared/relative-time";
+import { RelativeTimeLocalizer } from "./shared/relative-time";
 import { sourceTextSample } from "./shared/source-text-sample";
 import { MAX_OCR_IMAGE_SIDE } from "./image-translation/ocr-models";
 import { isUiMetadataText } from "./image-translation/ocr-layout";
@@ -211,47 +211,20 @@ let activeTranslationIsAutomatic = false;
 let activeTranslationSourceLanguage = null;
 let activeTranslationTargetLanguage = null;
 let activeAutomaticSettingsSignature = null;
-var relativeTimeLangSnapshots = new Map();
-var relativeTimeObserver = null;
+var relativeTimeLocalizer = new RelativeTimeLocalizer(document);
 function relativeTimeLocale(targetLanguage) {
     const normalized = normalizeDetectedLanguage(targetLanguage) ?? targetLanguage;
     if (normalized === "zh-Hans") return "zh-CN";
     if (normalized === "zh-Hant") return "zh-TW";
     return normalized;
 }
-function localizeRelativeTimeElements(targetLanguage, scope = document) {
+function startRelativeTimeLocalization(targetLanguage) {
     const locale = relativeTimeLocale(targetLanguage);
     if (!locale) return;
-    for (const element of relativeTimeElements(scope)) {
-        if (!relativeTimeLangSnapshots.has(element)) {
-            relativeTimeLangSnapshots.set(element, element.getAttribute("lang"));
-        }
-        if (element.getAttribute("lang") !== locale) element.setAttribute("lang", locale);
-    }
-}
-function startRelativeTimeLocalization(targetLanguage) {
-    relativeTimeObserver?.disconnect();
-    relativeTimeObserver = null;
-    localizeRelativeTimeElements(targetLanguage, document);
-    if (!document.body) return;
-    relativeTimeObserver = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            for (const added of Array.from(mutation.addedNodes)) {
-                if (added.nodeType !== Node.ELEMENT_NODE) continue;
-                localizeRelativeTimeElements(targetLanguage, added);
-            }
-        }
-    });
-    relativeTimeObserver.observe(document.body, { childList: true, subtree: true });
+    relativeTimeLocalizer.start(locale);
 }
 function stopRelativeTimeLocalization() {
-    relativeTimeObserver?.disconnect();
-    relativeTimeObserver = null;
-    for (const [element, lang] of relativeTimeLangSnapshots) {
-        if (lang === null) element.removeAttribute("lang");
-        else element.setAttribute("lang", lang);
-    }
-    relativeTimeLangSnapshots.clear();
+    relativeTimeLocalizer.stop();
 }
 async function translatePage(sourceLanguage, targetLanguage, expectedAutoGeneration = null, manualOverride = false, bypassCache = false) {
     const stale = () => expectedAutoGeneration !== null && expectedAutoGeneration !== autoTranslateGeneration;
@@ -897,7 +870,9 @@ async function togglePageTranslation() {
     const count = await translatePage("auto", settings.targetLanguage, null, true);
     return { translated: true, count };
 }
+let imageOverlayPositionFrame = null;
 function refreshImageOverlayPositions() {
+    imageOverlayPositionFrame = null;
     for (const [image, overlay] of imageOverlays) {
         if (!image.isConnected) {
             cleanupImageOverlay(image, overlay);
@@ -906,8 +881,16 @@ function refreshImageOverlayPositions() {
         positionImageOverlay(image, overlay);
     }
 }
-window.addEventListener("resize", refreshImageOverlayPositions, { passive: true });
-window.addEventListener("scroll", refreshImageOverlayPositions, { passive: true });
+function scheduleImageOverlayRefresh() {
+    if (imageOverlays.size === 0 || imageOverlayPositionFrame !== null) return;
+    if (typeof requestAnimationFrame === "function") {
+        imageOverlayPositionFrame = requestAnimationFrame(refreshImageOverlayPositions);
+    } else {
+        refreshImageOverlayPositions();
+    }
+}
+window.addEventListener("resize", scheduleImageOverlayRefresh, { passive: true });
+window.addEventListener("scroll", scheduleImageOverlayRefresh, { passive: true });
 browser.runtime.onMessage.addListener(async (message) => {
     if (message.type === "image-translation-progress") {
         const entry = typeof message.requestId === "string"
@@ -1262,7 +1245,7 @@ async function rescanAfterRouteChange(generation) {
             ? freezeNavigationLayout(false)
             : null;
         if (navigationHold && activeTranslationTargetLanguage) {
-            localizeRelativeTimeElements(activeTranslationTargetLanguage, document);
+            startRelativeTimeLocalization(activeTranslationTargetLanguage);
         }
         try {
             await translator.translateAll(document.body);

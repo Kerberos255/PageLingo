@@ -31,6 +31,18 @@ import {
   type PdfRawTextItem,
 } from "./reader/pdf-layout";
 import { canvasHasVisualInk } from "./reader/pdf-ink";
+import {
+  MAX_EAGER_FONT_OP_PROBES,
+  MAX_PDF_CANVAS_BUDGET_BYTES,
+  MAX_RENDERED_PDF_CANVASES,
+  PDF_LAZY_MARGIN_PX,
+  PDF_LAZY_ROOT_MARGIN,
+  PDF_TEXT_LAZY_ROOT_MARGIN,
+  canvasPixelBytes,
+  isRectNearVerticalWindow,
+  pickNextLazyPdfPage,
+  selectPdfPagesToEvict,
+} from "./reader/pdf-lazy-render";
 
 // Point pdf.js worker to the locally bundled worker inside the extension (zero remote code).
 const workerSrc = typeof browser !== "undefined" && browser.runtime?.getURL
@@ -47,6 +59,7 @@ const standardFontDataUrl = typeof browser !== "undefined" && browser.runtime?.g
   : new URL("vendor/pdfjs/standard_fonts/", location.href).href;
 
 const MAX_PDF_OCR_SIDE = 1450;
+const SIGNIFICANT_PDF_FONT_RE = /(?:cmmi|cmsy|cmex|msam|msbm|txmi|txsy|txex|pxmi|pxsy|pxex|math|symbol|stix|cambria|eufm|eurm|bold|bx\d|demi|black|heavy)/i;
 
 const stageEl = document.querySelector<HTMLElement>("#reader-stage")!;
 const emptyEl = document.querySelector<HTMLElement>("#reader-empty")!;
@@ -96,6 +109,17 @@ interface PdfPageRecord {
   blocks: PdfLayoutBlock[];
   isScanned: boolean;
   ocrDone: boolean;
+  baseRendered: boolean;
+  renderedScale: number;
+  renderedDpr: number;
+  lastUsedSeq: number;
+  isCanvasVisible: boolean;
+  needsSnapshotHydration: boolean;
+  needsScanCheck: boolean;
+  unresolvedFontKeys: string[];
+  fontRefined: boolean;
+  canvasBytes: number;
+  snapshotBytes: number;
 }
 
 let activeKind: "none" | "pdf" | "doc" = "none";
@@ -103,12 +127,13 @@ let activeDisplayMode: DisplayMode = "bilingual";
 let activePdfViewMode: PdfViewMode = "split";
 let activeTranslator: PageTranslator | null = null;
 let isDocumentTranslated = false;
-let activePdfBytes: Uint8Array | null = null;
 let activePdfLoadingTask: pdfjsLib.PDFDocumentLoadingTask | null = null;
 let activePdfDoc: pdfjsLib.PDFDocumentProxy | null = null;
 let activeRenderTask: pdfjsLib.RenderTask | null = null;
+let activeOpenGeneration = 0;
 let activeDocumentGeneration = 0;
 let activePdfRenderGeneration = 0;
+let activeTranslationGeneration = 0;
 let activePdfScale = 1.0;
 let activeBlockId = "";
 let activePdfPages: PdfPageRecord[] = [];
@@ -116,6 +141,14 @@ let activeOcrRequestId = "";
 let batchOcrRunning = false;
 let batchOcrCancelRequested = false;
 let overlaySourceCardEl: HTMLElement | null = null;
+let pdfLoadingPages = false;
+let pdfCanvasObserver: IntersectionObserver | null = null;
+let pdfTextPaneObserver: IntersectionObserver | null = null;
+const pdfPendingRenders = new Set<PdfPageRecord>();
+const pdfUrgentRenders = new Set<PdfPageRecord>();
+const pdfPageRenderWaiters = new Map<PdfPageRecord, Array<(ok: boolean) => void>>();
+let pdfRenderLoopActive = false;
+let pdfRenderSeq = 0;
 
 interface LanguageOption { code: string; label: string }
 interface CatalogResponse {
@@ -227,6 +260,8 @@ function highlightSyncedBlock(blockId: string, scrollTarget: "canvas" | "text" |
     return;
   }
   if (scrollTarget === "canvas" && hitBox) {
+    const owner = activePdfPages.find((p) => p.blocks.some((b) => b.id === blockId));
+    if (owner) void ensurePdfPageRendered(owner, true);
     hitBox.scrollIntoView({ behavior: "smooth", block: "center" });
   } else if (scrollTarget === "text" && textCard) {
     textCard.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -318,19 +353,22 @@ function renderPdfBlockElement(
   wrap.dataset.blockKind = block.kind;
   wrap.addEventListener("click", () => highlightSyncedBlock(block.id, "canvas"));
 
+  const readyCanvas = pageCanvas && pageCanvas.width > 0 && pageCanvas.height > 0 ? pageCanvas : undefined;
+
   if (block.kind === "formula") {
     const formula = document.createElement("div");
     formula.className = "reader-formula";
     formula.setAttribute("translate", "no");
     formula.title = block.plainText;
     formula.setAttribute("aria-label", block.plainText);
-    const snapshot = pageCanvas
-      ? cropRegionSnapshot(pageCanvas, block.box, renderScale, dpr, clipBounds, "formula")
+    const snapshot = readyCanvas
+      ? cropRegionSnapshot(readyCanvas, block.box, renderScale, dpr, clipBounds, "formula")
       : null;
     if (snapshot) {
       formula.classList.add("is-snapshot");
       formula.append(snapshot);
     } else {
+      if (!readyCanvas) formula.classList.add("is-snapshot-pending");
       formula.textContent = block.plainText;
     }
     wrap.append(formula);
@@ -344,13 +382,14 @@ function renderPdfBlockElement(
     const tag = document.createElement("span");
     tag.className = "reader-snapshot-tag";
     tag.textContent = "原页图表";
-    const snapshot = pageCanvas
-      ? cropRegionSnapshot(pageCanvas, block.box, renderScale, dpr, clipBounds, "figure")
+    const snapshot = readyCanvas
+      ? cropRegionSnapshot(readyCanvas, block.box, renderScale, dpr, clipBounds, "figure")
       : null;
     if (snapshot) {
       fig.append(tag, snapshot);
     } else {
-      fig.textContent = block.plainText;
+      if (!readyCanvas) fig.classList.add("is-snapshot-pending");
+      fig.append(tag, document.createTextNode(block.plainText));
     }
     wrap.append(fig);
     return wrap;
@@ -413,13 +452,14 @@ function renderPdfBlockElement(
     const tag = document.createElement("span");
     tag.className = "reader-snapshot-tag";
     tag.textContent = "原页数值/结构表格（保真保留）";
-    const snapshot = pageCanvas
-      ? cropRegionSnapshot(pageCanvas, block.box, renderScale, dpr, clipBounds, "table")
+    const snapshot = readyCanvas
+      ? cropRegionSnapshot(readyCanvas, block.box, renderScale, dpr, clipBounds, "table")
       : null;
     if (snapshot) {
       tableCard.append(tag, snapshot);
     } else {
-      tableCard.textContent = block.plainText;
+      if (!readyCanvas) tableCard.classList.add("is-snapshot-pending");
+      tableCard.append(tag, document.createTextNode(block.plainText));
     }
     wrap.append(tableCard);
     return wrap;
@@ -495,6 +535,71 @@ function updateBatchOcrButton(): void {
   }
 }
 
+function hydratePdfPageSnapshots(record: PdfPageRecord): void {
+  if (!record.needsSnapshotHydration || !record.baseRendered || record.baseCanvas.width <= 0 || record.baseCanvas.height <= 0) {
+    return;
+  }
+  for (let bi = 0; bi < record.blocks.length; bi += 1) {
+    const block = record.blocks[bi]!;
+    if (!isVisualSnapshotBlock(block)) continue;
+    const wrap = record.pageCard.querySelector<HTMLElement>(`.pdf-block-wrap[data-block-id="${CSS.escape(block.id)}"]`);
+    if (!wrap) continue;
+    const clipBounds = computeClipBoundsForBlock(record.blocks, bi);
+    if (block.kind === "formula") {
+      const formula = wrap.querySelector<HTMLElement>(".reader-formula");
+      if (!formula) continue;
+      const snapshot = cropRegionSnapshot(record.baseCanvas, block.box, record.renderScale, record.dpr, clipBounds, "formula");
+      if (snapshot) {
+        formula.replaceChildren(snapshot);
+        formula.classList.add("is-snapshot");
+        formula.classList.remove("is-snapshot-pending");
+      }
+    } else if (block.kind === "figure") {
+      const fig = wrap.querySelector<HTMLElement>(".reader-figure-snapshot");
+      if (!fig) continue;
+      const snapshot = cropRegionSnapshot(record.baseCanvas, block.box, record.renderScale, record.dpr, clipBounds, "figure");
+      if (snapshot) {
+        const tag = document.createElement("span");
+        tag.className = "reader-snapshot-tag";
+        tag.textContent = "原页图表";
+        fig.replaceChildren(tag, snapshot);
+        fig.classList.remove("is-snapshot-pending");
+      }
+    } else if (block.kind === "table") {
+      const tableCard = wrap.querySelector<HTMLElement>(".reader-table-snapshot");
+      if (!tableCard) continue;
+      const snapshot = cropRegionSnapshot(record.baseCanvas, block.box, record.renderScale, record.dpr, clipBounds, "table");
+      if (snapshot) {
+        const tag = document.createElement("span");
+        tag.className = "reader-snapshot-tag";
+        tag.textContent = "原页数值/结构表格（保真保留）";
+        tableCard.replaceChildren(tag, snapshot);
+        tableCard.classList.remove("is-snapshot-pending");
+      }
+    }
+  }
+  record.needsSnapshotHydration = false;
+  record.snapshotBytes = measurePageCardSnapshotBytes(record.pageCard);
+  if (!record.needsScanCheck) pdfTextPaneObserver?.unobserve(record.pageCard);
+}
+
+function finalizePdfPageScanCheck(record: PdfPageRecord): void {
+  if (!record.needsScanCheck || record.ocrDone || !record.baseRendered || record.baseCanvas.width <= 0 || record.baseCanvas.height <= 0) {
+    return;
+  }
+  record.needsScanCheck = false;
+  const hasInk = canvasHasVisualInk(record.baseCanvas);
+  record.isScanned = hasInk;
+  const note = record.pageCard.querySelector<HTMLElement>(".pdf-scanned-card p");
+  if (note) {
+    note.textContent = hasInk
+      ? "本页未检出可用文字层（疑似扫描图像页）。可启用本地版面与文字识别提取正文，并自动保留原页公式、表格与图表。"
+      : "本页未检出文字内容。";
+  }
+  if (!record.needsSnapshotHydration) pdfTextPaneObserver?.unobserve(record.pageCard);
+  updateBatchOcrButton();
+}
+
 function populatePdfPageBlocks(record: PdfPageRecord, blocks: PdfLayoutBlock[]): void {
   record.blocks = blocks;
   record.hitLayer.replaceChildren();
@@ -505,11 +610,15 @@ function populatePdfPageBlocks(record: PdfPageRecord, blocks: PdfLayoutBlock[]):
   // Clear stale overlay pixels until re-rendered
   clearPdfOverlayForPage(record);
 
+  const canvasReady = record.baseRendered && record.baseCanvas.width > 0 && record.baseCanvas.height > 0;
   const totalTextChars = blocks
     .filter((b) => !isVisualSnapshotBlock(b))
     .reduce((sum, b) => sum + b.plainText.replace(/\s+/g, "").length, 0);
-  const looksScanned = !record.ocrDone && totalTextChars < 16 && canvasHasVisualInk(record.baseCanvas);
+  const candidateScanned = !record.ocrDone && totalTextChars < 16;
+  const looksScanned = candidateScanned && (canvasReady ? canvasHasVisualInk(record.baseCanvas) : true);
   record.isScanned = looksScanned;
+  record.needsScanCheck = candidateScanned && !canvasReady;
+  record.needsSnapshotHydration = !canvasReady && blocks.some(isVisualSnapshotBlock);
 
   const pageFormulas = blocks.filter((b) => b.kind === "formula" || b.segments.some((s) => s.kind === "math")).length;
   const pageTables = blocks.filter((b) => b.kind === "table").length;
@@ -536,7 +645,9 @@ function populatePdfPageBlocks(record: PdfPageRecord, blocks: PdfLayoutBlock[]):
     record.hitLayer.append(hit);
 
     const clipBounds = computeClipBoundsForBlock(blocks, bi);
-    record.pageCard.append(renderPdfBlockElement(block, record.baseCanvas, record.renderScale, record.dpr, clipBounds));
+    record.pageCard.append(
+      renderPdfBlockElement(block, canvasReady ? record.baseCanvas : undefined, record.renderScale, record.dpr, clipBounds),
+    );
   }
 
   if (looksScanned || blocks.length === 0) {
@@ -544,7 +655,7 @@ function populatePdfPageBlocks(record: PdfPageRecord, blocks: PdfLayoutBlock[]):
     card.className = "pdf-scanned-card";
     const note = document.createElement("p");
     note.textContent = looksScanned
-      ? "本页未检出可用文字层（疑似扫描图像页）。可启用本地版面检测（PP-DocLayout-M）+ PP-OCRv6 识别正文，并自动保留原页公式、表格与图表。"
+      ? "本页未检出可用文字层（疑似扫描图像页）。可启用本地版面与文字识别提取正文，并自动保留原页公式、表格与图表。"
       : "本页未检出文字内容。";
     const actionBtn = document.createElement("button");
     actionBtn.type = "button";
@@ -557,7 +668,35 @@ function populatePdfPageBlocks(record: PdfPageRecord, blocks: PdfLayoutBlock[]):
     record.pageCard.append(card);
   }
 
+  record.snapshotBytes = measurePageCardSnapshotBytes(record.pageCard);
+
+  if (pdfTextPaneObserver) {
+    if (record.needsSnapshotHydration || record.needsScanCheck) {
+      pdfTextPaneObserver.observe(record.pageCard);
+    } else {
+      pdfTextPaneObserver.unobserve(record.pageCard);
+    }
+  }
+
   updateBatchOcrButton();
+}
+
+function measurePageCardSnapshotBytes(pageCard: HTMLElement): number {
+  let bytes = 0;
+  for (const canvas of Array.from(pageCard.querySelectorAll<HTMLCanvasElement>("canvas.reader-formula-canvas"))) {
+    bytes += canvasPixelBytes(canvas);
+  }
+  return bytes;
+}
+
+function updateRecordCanvasBytes(record: PdfPageRecord): void {
+  record.canvasBytes = canvasPixelBytes(record.baseCanvas) + canvasPixelBytes(record.overlayCanvas);
+}
+
+function totalPdfSnapshotBytes(): number {
+  let bytes = 0;
+  for (const page of activePdfPages) bytes += page.snapshotBytes;
+  return bytes;
 }
 
 function extractTranslatedText(container: HTMLElement, sourcePlainText: string): string | null {
@@ -597,6 +736,7 @@ function ensureOverlayCanvas(record: PdfPageRecord): HTMLCanvasElement {
   }
   if (canvas.width !== record.baseCanvas.width) canvas.width = record.baseCanvas.width;
   if (canvas.height !== record.baseCanvas.height) canvas.height = record.baseCanvas.height;
+  updateRecordCanvasBytes(record);
   return canvas;
 }
 
@@ -607,6 +747,7 @@ function clearPdfOverlayForPage(record: PdfPageRecord): void {
   releaseCanvasBacking(canvas);
   canvas.remove();
   record.overlayCanvas = null;
+  updateRecordCanvasBytes(record);
 }
 
 function clearAllPdfOverlays(): void {
@@ -714,6 +855,7 @@ function renderPdfOverlayForPage(record: PdfPageRecord): void {
       return;
     }
     overlayCanvas.classList.add("has-overlay");
+    updateRecordCanvasBytes(record);
   } catch (error) {
     console.warn("[PageLingo] Failed to render PDF in-place overlay", error);
     clearPdfOverlayForPage(record);
@@ -726,9 +868,16 @@ function renderAllPdfOverlays(): void {
     clearAllPdfOverlays();
     return;
   }
+  let anchor: PdfPageRecord | null = null;
   for (const record of activePdfPages) {
-    renderPdfOverlayForPage(record);
+    if (record.isCanvasVisible && record.baseRendered) {
+      anchor ??= record;
+      renderPdfOverlayForPage(record);
+    } else {
+      clearPdfOverlayForPage(record);
+    }
   }
+  if (anchor) evictFarPdfCanvases(anchor);
 }
 
 function captureCanvasForOcr(baseCanvas: HTMLCanvasElement): { width: number; height: number; pixels: ArrayBuffer } {
@@ -799,8 +948,13 @@ async function runOcrForPage(record: PdfPageRecord, triggerBtn?: HTMLButtonEleme
     triggerBtn.disabled = true;
     triggerBtn.textContent = "正在识别版面与文字…";
   }
-  setStatus(`第 ${record.pageNumber} 页：准备版面检测与 PP-OCRv6 本地识别…`);
+  setStatus(`第 ${record.pageNumber} 页：准备本地版面与文字识别…`);
   try {
+    const rendered = await ensurePdfPageRendered(record, true);
+    if (docGen !== activeDocumentGeneration) return false;
+    if (!rendered || record.baseCanvas.width <= 0 || record.baseCanvas.height <= 0) {
+      throw new Error("无法渲染当前 PDF 页面用于 OCR");
+    }
     const sample = captureCanvasForOcr(record.baseCanvas);
     const response = await sendRuntimeMessage<RecognizePdfPageResponse>({
       type: "recognize-pdf-page",
@@ -818,6 +972,7 @@ async function runOcrForPage(record: PdfPageRecord, triggerBtn?: HTMLButtonEleme
     }
     record.ocrDone = true;
     record.isScanned = false;
+    record.needsScanCheck = false;
     populatePdfPageBlocks(record, response.blocks);
 
     const visualCount = response.visualCount ?? 0;
@@ -875,9 +1030,17 @@ async function runOcrForAllScannedPages(): Promise<void> {
   updateBatchOcrButton();
 
   let succeeded = 0;
+  let processed = 0;
   for (let i = 0; i < targets.length; i += 1) {
     if (batchOcrCancelRequested || docGen !== activeDocumentGeneration) break;
     const record = targets[i]!;
+    if (record.needsScanCheck) {
+      setStatus(`批量 OCR（${i + 1}/${targets.length}）：正在检查第 ${record.pageNumber} 页图像内容…`);
+      const ready = await ensurePdfPageRendered(record, true);
+      if (batchOcrCancelRequested || docGen !== activeDocumentGeneration) break;
+      if (!ready || !record.isScanned || record.ocrDone) continue;
+    }
+    processed += 1;
     setStatus(`批量 OCR（${i + 1}/${targets.length}）：正在识别第 ${record.pageNumber} 页…`);
     const ok = await runOcrForPage(record);
     if (ok) succeeded += 1;
@@ -888,10 +1051,11 @@ async function runOcrForAllScannedPages(): Promise<void> {
   batchOcrRunning = false;
   batchOcrCancelRequested = false;
   updateBatchOcrButton();
+  const totalLabel = processed > 0 ? processed : targets.length;
   setStatus(
     cancelled
-      ? `已停止批量识别（已完成 ${succeeded}/${targets.length} 页）`
-      : `扫描页批量 OCR 完成（成功 ${succeeded}/${targets.length} 页）`,
+      ? `已停止批量识别（已完成 ${succeeded}/${totalLabel} 页）`
+      : `扫描页批量 OCR 完成（成功 ${succeeded}/${totalLabel} 页）`,
   );
 }
 
@@ -934,12 +1098,421 @@ function syncPdfPageHitBoxes(record: PdfPageRecord): void {
   }
 }
 
-function clearActiveDocument(): void {
+function resolvePdfPageWaiters(record: PdfPageRecord, ok: boolean): void {
+  const waiters = pdfPageRenderWaiters.get(record);
+  if (!waiters) return;
+  pdfPageRenderWaiters.delete(record);
+  for (const resolve of waiters) resolve(ok);
+}
+
+function clearAllPdfRenderWaiters(ok: boolean): void {
+  for (const [record, waiters] of Array.from(pdfPageRenderWaiters.entries())) {
+    pdfPageRenderWaiters.delete(record);
+    for (const resolve of waiters) resolve(ok);
+  }
+}
+
+function isPdfCanvasUpToDate(record: PdfPageRecord): boolean {
+  return record.baseRendered
+    && record.baseCanvas.width > 0
+    && record.baseCanvas.height > 0
+    && record.renderedScale === record.renderScale
+    && record.renderedDpr === record.dpr;
+}
+
+function evictPdfPageCanvas(record: PdfPageRecord): void {
+  releaseCanvasBacking(record.baseCanvas);
+  clearPdfOverlayForPage(record);
+  record.baseRendered = false;
+  record.renderedScale = 0;
+  record.renderedDpr = 0;
+  record.canvasBytes = 0;
+  record.shell.classList.add("is-pending");
+}
+
+function evictFarPdfCanvases(anchor: PdfPageRecord, reserveBytes = 0, reserveSlots = 0): void {
+  const victims = selectPdfPagesToEvict(activePdfPages, anchor.pageNumber, {
+    maxRendered: Math.max(1, MAX_RENDERED_PDF_CANVASES - reserveSlots),
+    maxBytes: Math.max(0, MAX_PDF_CANVAS_BUDGET_BYTES - reserveBytes),
+    snapshotBytes: totalPdfSnapshotBytes(),
+  });
+  for (const victim of victims) {
+    evictPdfPageCanvas(victim);
+  }
+}
+
+async function extractPdfPageTextAndStyles(page: pdfjsLib.PDFPageProxy): Promise<{
+  rawItems: PdfRawTextItem[];
+  enrichedStyles: Record<string, PdfFontStyleInfo>;
+  unresolvedFontKeys: string[];
+}> {
+  const textContent = await page.getTextContent();
+  const rawItems: PdfRawTextItem[] = [];
+  for (const item of textContent.items) {
+    if ("str" in item && typeof item.str === "string") {
+      rawItems.push({
+        str: item.str,
+        transform: item.transform,
+        width: item.width,
+        height: item.height,
+        fontName: item.fontName,
+        hasEOL: item.hasEOL,
+      });
+    }
+  }
+  const enrichedStyles: Record<string, PdfFontStyleInfo> = {};
+  const unresolvedFontKeys: string[] = [];
+  for (const [fontKey, style] of Object.entries(textContent.styles as Record<string, PdfFontStyleInfo>)) {
+    let realFontName = style?.realFontName;
+    if (!realFontName) {
+      try {
+        if (page.commonObjs.has(fontKey)) {
+          const obj = page.commonObjs.get(fontKey) as { name?: string } | null;
+          if (obj && typeof obj.name === "string") realFontName = obj.name;
+        } else {
+          unresolvedFontKeys.push(fontKey);
+        }
+      } catch {
+        // Ignore unavailable font metadata objects.
+      }
+    }
+    enrichedStyles[fontKey] = { ...style, ...(realFontName ? { realFontName } : {}) };
+  }
+  return { rawItems, enrichedStyles, unresolvedFontKeys };
+}
+
+function hasSignificantNewlyResolvedFont(page: pdfjsLib.PDFPageProxy, fontKeys: readonly string[]): boolean {
+  for (const fontKey of fontKeys) {
+    try {
+      if (!page.commonObjs.has(fontKey)) continue;
+      const obj = page.commonObjs.get(fontKey) as { name?: string } | null;
+      if (obj && typeof obj.name === "string" && SIGNIFICANT_PDF_FONT_RE.test(obj.name)) {
+        return true;
+      }
+    } catch {
+      // Ignore unavailable font metadata objects.
+    }
+  }
+  return false;
+}
+
+async function renderSinglePdfPage(
+  record: PdfPageRecord,
+  docGen: number,
+  renderGen: number,
+): Promise<"rendered" | "rescaled" | "stale" | "failed"> {
+  const pdf = activePdfDoc;
+  if (!pdf || docGen !== activeDocumentGeneration) return "stale";
+  if (renderGen !== activePdfRenderGeneration) return "rescaled";
+
+  const page = await pdf.getPage(record.pageNumber);
+  if (docGen !== activeDocumentGeneration) {
+    page.cleanup();
+    return "stale";
+  }
+  if (renderGen !== activePdfRenderGeneration) {
+    page.cleanup();
+    return "rescaled";
+  }
+
+  const targetScale = record.renderScale;
+  const targetDpr = record.dpr;
+  const viewport = page.getViewport({ scale: targetScale });
+  const cssW = Math.round(viewport.width);
+  const cssH = Math.round(viewport.height);
+
+  const pixelW = Math.max(1, Math.round(viewport.width * targetDpr));
+  const pixelH = Math.max(1, Math.round(viewport.height * targetDpr));
+  if (!record.baseRendered) {
+    const incomingBytes = pixelW * pixelH * 4 * (isDocumentTranslated && activePdfViewMode === "overlay" ? 2 : 1);
+    evictFarPdfCanvases(record, incomingBytes, 1);
+  }
+
+  record.shell.style.width = `${cssW}px`;
+  record.shell.style.height = `${cssH}px`;
+  record.baseCanvas.width = pixelW;
+  record.baseCanvas.height = pixelH;
+  record.baseCanvas.style.width = `${cssW}px`;
+  record.baseCanvas.style.height = `${cssH}px`;
+  const ctx = record.baseCanvas.getContext("2d");
+  if (!ctx) {
+    evictPdfPageCanvas(record);
+    page.cleanup();
+    return "failed";
+  }
+  ctx.setTransform(targetDpr, 0, 0, targetDpr, 0, 0);
+
+  const renderTask = page.render({ canvasContext: ctx, viewport, canvas: record.baseCanvas });
+  activeRenderTask = renderTask;
+  try {
+    await renderTask.promise;
+  } catch (error) {
+    if (isPdfRenderCancelledError(error)) {
+      if (!record.baseRendered) evictPdfPageCanvas(record);
+      return docGen !== activeDocumentGeneration ? "stale" : "rescaled";
+    }
+    if (docGen !== activeDocumentGeneration) {
+      evictPdfPageCanvas(record);
+      return "stale";
+    }
+    if (renderGen !== activePdfRenderGeneration) {
+      evictPdfPageCanvas(record);
+      return "rescaled";
+    }
+    evictPdfPageCanvas(record);
+    console.warn(`[PageLingo] Failed to render PDF page ${record.pageNumber}`, error);
+    return "failed";
+  } finally {
+    if (activeRenderTask === renderTask) activeRenderTask = null;
+  }
+
+  if (docGen !== activeDocumentGeneration) {
+    evictPdfPageCanvas(record);
+    page.cleanup();
+    return "stale";
+  }
+  if (renderGen !== activePdfRenderGeneration) {
+    evictPdfPageCanvas(record);
+    page.cleanup();
+    return "rescaled";
+  }
+
+  record.baseRendered = true;
+  record.renderedScale = targetScale;
+  record.renderedDpr = targetDpr;
+  record.lastUsedSeq = ++pdfRenderSeq;
+  record.shell.classList.remove("is-pending");
+  updateRecordCanvasBytes(record);
+
+  try {
+    if (
+      !record.fontRefined
+      && !record.ocrDone
+      && record.unresolvedFontKeys.length > 0
+      && !isDocumentTranslated
+      && hasSignificantNewlyResolvedFont(page, record.unresolvedFontKeys)
+    ) {
+      const { rawItems, enrichedStyles } = await extractPdfPageTextAndStyles(page);
+      if (docGen === activeDocumentGeneration && renderGen === activePdfRenderGeneration && !isDocumentTranslated) {
+        const refinedBlocks = extractPdfPageBlocks(
+          rawItems,
+          enrichedStyles,
+          record.pageWidth,
+          record.pageHeight,
+          record.pageNumber,
+        );
+        populatePdfPageBlocks(record, refinedBlocks);
+      }
+    }
+    record.fontRefined = true;
+    record.unresolvedFontKeys = [];
+  } finally {
+    page.cleanup();
+  }
+
+  if (docGen !== activeDocumentGeneration) return "stale";
+  if (renderGen !== activePdfRenderGeneration) return "rescaled";
+
+  hydratePdfPageSnapshots(record);
+  finalizePdfPageScanCheck(record);
+  if (isDocumentTranslated && activePdfViewMode === "overlay") {
+    renderPdfOverlayForPage(record);
+  }
+  evictFarPdfCanvases(record);
+  return "rendered";
+}
+
+function pumpPdfRenderQueue(): void {
+  if (pdfRenderLoopActive) return;
+  pdfRenderLoopActive = true;
+  void (async () => {
+    try {
+      while (pdfPendingRenders.size > 0 && activePdfDoc) {
+        const docGen = activeDocumentGeneration;
+        const renderGen = activePdfRenderGeneration;
+        const paneRect = pdfCanvasPane.getBoundingClientRect();
+        const viewportCenterY = (paneRect.top + paneRect.bottom) / 2;
+
+        const beforePick = Array.from(pdfPendingRenders);
+        const next = pickNextLazyPdfPage(
+          pdfPendingRenders,
+          pdfUrgentRenders,
+          viewportCenterY,
+          (record) => {
+            const rect = record.shell.getBoundingClientRect();
+            return (rect.top + rect.bottom) / 2;
+          },
+        );
+        for (const candidate of beforePick) {
+          if (!pdfPendingRenders.has(candidate)) {
+            resolvePdfPageWaiters(candidate, isPdfCanvasUpToDate(candidate));
+          }
+        }
+        if (!next) break;
+
+        pdfPendingRenders.delete(next);
+        pdfUrgentRenders.delete(next);
+
+        if (isPdfCanvasUpToDate(next)) {
+          next.lastUsedSeq = ++pdfRenderSeq;
+          hydratePdfPageSnapshots(next);
+          finalizePdfPageScanCheck(next);
+          if (isDocumentTranslated && activePdfViewMode === "overlay" && !next.overlayCanvas) {
+            renderPdfOverlayForPage(next);
+          }
+          resolvePdfPageWaiters(next, true);
+          continue;
+        }
+
+        const outcome = await renderSinglePdfPage(next, docGen, renderGen);
+        if (outcome === "rendered") {
+          resolvePdfPageWaiters(next, true);
+        } else if (outcome === "rescaled" && docGen === activeDocumentGeneration && pdfPendingRenders.has(next)) {
+          // Keep waiters attached so they resolve after the new zoom scale renders.
+        } else {
+          resolvePdfPageWaiters(next, false);
+        }
+      }
+    } finally {
+      pdfRenderLoopActive = false;
+      if (pdfPendingRenders.size > 0 && activePdfDoc) {
+        pumpPdfRenderQueue();
+      }
+    }
+  })();
+}
+
+function ensurePdfPageRendered(record: PdfPageRecord, urgent = false): Promise<boolean> {
+  if (!activePdfDoc) return Promise.resolve(false);
+  if (isPdfCanvasUpToDate(record)) {
+    record.lastUsedSeq = ++pdfRenderSeq;
+    hydratePdfPageSnapshots(record);
+    finalizePdfPageScanCheck(record);
+    if (isDocumentTranslated && activePdfViewMode === "overlay" && !record.overlayCanvas) {
+      renderPdfOverlayForPage(record);
+    }
+    return Promise.resolve(true);
+  }
+  return new Promise<boolean>((resolve) => {
+    const existing = pdfPageRenderWaiters.get(record);
+    if (existing) existing.push(resolve);
+    else pdfPageRenderWaiters.set(record, [resolve]);
+    pdfPendingRenders.add(record);
+    if (urgent) pdfUrgentRenders.add(record);
+    pumpPdfRenderQueue();
+  });
+}
+
+function enqueueVisiblePdfPages(): PdfPageRecord[] {
+  const paneRect = pdfCanvasPane.getBoundingClientRect();
+  const hasViewport = paneRect.bottom > paneRect.top;
+  const visible: PdfPageRecord[] = [];
+  for (const record of activePdfPages) {
+    const isNear = hasViewport
+      ? isRectNearVerticalWindow(record.shell.getBoundingClientRect(), paneRect, PDF_LAZY_MARGIN_PX)
+      : record.pageNumber <= 2;
+    record.isCanvasVisible = isNear;
+    if (!isNear) continue;
+    visible.push(record);
+    if (!isPdfCanvasUpToDate(record)) {
+      pdfPendingRenders.add(record);
+    } else if (isDocumentTranslated && activePdfViewMode === "overlay" && !record.overlayCanvas) {
+      renderPdfOverlayForPage(record);
+    }
+  }
+  if (pdfPendingRenders.size > 0) pumpPdfRenderQueue();
+  return visible;
+}
+
+function setupPdfLazyObservers(): void {
+  pdfCanvasObserver?.disconnect();
+  pdfCanvasObserver = null;
+  pdfTextPaneObserver?.disconnect();
+  pdfTextPaneObserver = null;
+  if (activePdfPages.length === 0) return;
+
+  if (typeof IntersectionObserver !== "function") {
+    for (const record of activePdfPages) {
+      record.isCanvasVisible = true;
+      if (!isPdfCanvasUpToDate(record)) pdfPendingRenders.add(record);
+    }
+    pumpPdfRenderQueue();
+    return;
+  }
+
+  const recordByShell = new Map<Element, PdfPageRecord>();
+  const recordByCard = new Map<Element, PdfPageRecord>();
+  for (const record of activePdfPages) {
+    recordByShell.set(record.shell, record);
+    recordByCard.set(record.pageCard, record);
+  }
+
+  pdfCanvasObserver = new IntersectionObserver((entries) => {
+    let shouldPump = false;
+    for (const entry of entries) {
+      const record = recordByShell.get(entry.target);
+      if (!record) continue;
+      record.isCanvasVisible = entry.isIntersecting;
+      if (!entry.isIntersecting) continue;
+      if (!isPdfCanvasUpToDate(record)) {
+        pdfPendingRenders.add(record);
+        shouldPump = true;
+      } else {
+        record.lastUsedSeq = ++pdfRenderSeq;
+        if (isDocumentTranslated && activePdfViewMode === "overlay" && !record.overlayCanvas) {
+          renderPdfOverlayForPage(record);
+        }
+      }
+    }
+    if (shouldPump) pumpPdfRenderQueue();
+  }, { root: pdfCanvasPane, rootMargin: PDF_LAZY_ROOT_MARGIN });
+
+  pdfTextPaneObserver = new IntersectionObserver((entries) => {
+    let shouldPump = false;
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const record = recordByCard.get(entry.target);
+      if (!record) continue;
+      if (!record.needsSnapshotHydration && !record.needsScanCheck) {
+        pdfTextPaneObserver?.unobserve(record.pageCard);
+        continue;
+      }
+      if (!isPdfCanvasUpToDate(record)) {
+        pdfPendingRenders.add(record);
+        shouldPump = true;
+      } else {
+        hydratePdfPageSnapshots(record);
+        finalizePdfPageScanCheck(record);
+      }
+    }
+    if (shouldPump) pumpPdfRenderQueue();
+  }, { root: pdfTextPane, rootMargin: PDF_TEXT_LAZY_ROOT_MARGIN });
+
+  for (const record of activePdfPages) {
+    pdfCanvasObserver.observe(record.shell);
+    if (record.needsSnapshotHydration || record.needsScanCheck) {
+      pdfTextPaneObserver.observe(record.pageCard);
+    }
+  }
+}
+
+function clearActiveDocument(bumpOpenGeneration = true): void {
+  if (bumpOpenGeneration) activeOpenGeneration += 1;
   activeDocumentGeneration += 1;
   activePdfRenderGeneration += 1;
+  activeTranslationGeneration += 1;
+  pdfLoadingPages = false;
   batchOcrCancelRequested = true;
   batchOcrRunning = false;
   activeOcrRequestId = "";
+  pdfCanvasObserver?.disconnect();
+  pdfCanvasObserver = null;
+  pdfTextPaneObserver?.disconnect();
+  pdfTextPaneObserver = null;
+  pdfPendingRenders.clear();
+  pdfUrgentRenders.clear();
+  clearAllPdfRenderWaiters(false);
+  pdfRenderSeq = 0;
   try {
     activeRenderTask?.cancel();
   } catch {}
@@ -960,6 +1533,7 @@ function clearActiveDocument(): void {
   isDocumentTranslated = false;
   activeBlockId = "";
   activePdfPages = [];
+  translateBtn.textContent = "翻译文档";
   hideOverlaySourceCard();
   pdfCanvasPane.replaceChildren();
   pdfTextPane.replaceChildren();
@@ -979,65 +1553,60 @@ async function rerenderActivePdfAtCurrentScale(): Promise<void> {
   activeRenderTask = null;
 
   zoomLabelEl.textContent = `${Math.round(activePdfScale * 100)}%`;
-  const total = activePdfPages.length;
-  for (let i = 0; i < total; i += 1) {
-    if (docGen !== activeDocumentGeneration || renderGen !== activePdfRenderGeneration) return;
-    const record = activePdfPages[i]!;
-    setStatus(`正在缩放重绘第 ${i + 1}/${total} 页（${Math.round(activePdfScale * 100)}%）…`);
-    const page = await pdf.getPage(record.pageNumber);
-    if (docGen !== activeDocumentGeneration || renderGen !== activePdfRenderGeneration) {
-      page.cleanup();
-      return;
-    }
-    const baseViewport = page.getViewport({ scale: 1.0 });
-    const { renderScale, dpr } = computePdfPageMetrics(baseViewport);
-    const viewport = page.getViewport({ scale: renderScale });
 
-    record.shell.style.width = `${Math.round(viewport.width)}px`;
-    record.shell.style.height = `${Math.round(viewport.height)}px`;
-    record.baseCanvas.width = Math.round(viewport.width * dpr);
-    record.baseCanvas.height = Math.round(viewport.height * dpr);
-    record.baseCanvas.style.width = `${Math.round(viewport.width)}px`;
-    record.baseCanvas.style.height = `${Math.round(viewport.height)}px`;
-    const ctx = record.baseCanvas.getContext("2d")!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    const renderTask = page.render({ canvasContext: ctx, viewport, canvas: record.baseCanvas });
-    activeRenderTask = renderTask;
-    try {
-      await renderTask.promise;
-    } catch (error) {
-      if (isPdfRenderCancelledError(error) || docGen !== activeDocumentGeneration || renderGen !== activePdfRenderGeneration) {
-        return;
-      }
-      throw error;
-    } finally {
-      if (activeRenderTask === renderTask) activeRenderTask = null;
-      page.cleanup();
-    }
-
-    if (docGen !== activeDocumentGeneration || renderGen !== activePdfRenderGeneration) return;
-    record.renderScale = renderScale;
-    record.dpr = dpr;
-    syncPdfPageHitBoxes(record);
-    if (isDocumentTranslated && activePdfViewMode === "overlay") {
-      renderPdfOverlayForPage(record);
-    } else {
-      clearPdfOverlayForPage(record);
+  // Preserve urgent requests (such as an active OCR page) while dropping stale non-urgent scale renders.
+  const retainedUrgent = new Set(pdfUrgentRenders);
+  for (const stale of Array.from(pdfPendingRenders)) {
+    if (!retainedUrgent.has(stale)) {
+      pdfPendingRenders.delete(stale);
+      resolvePdfPageWaiters(stale, false);
     }
   }
+
+  for (const record of activePdfPages) {
+    const { renderScale, dpr } = computePdfPageMetrics({
+      width: record.pageWidth,
+      height: record.pageHeight,
+    });
+    const cssW = Math.round(record.pageWidth * renderScale);
+    const cssH = Math.round(record.pageHeight * renderScale);
+    record.renderScale = renderScale;
+    record.dpr = dpr;
+    record.shell.style.width = `${cssW}px`;
+    record.shell.style.height = `${cssH}px`;
+    record.baseCanvas.style.width = `${cssW}px`;
+    record.baseCanvas.style.height = `${cssH}px`;
+    evictPdfPageCanvas(record);
+    syncPdfPageHitBoxes(record);
+  }
+
+  for (const urgent of retainedUrgent) {
+    pdfPendingRenders.add(urgent);
+    pdfUrgentRenders.add(urgent);
+  }
+
+  const visiblePages = enqueueVisiblePdfPages();
+  const targets = visiblePages.length > 0 ? visiblePages : [activePdfPages[0]!];
+  setStatus(`正在缩放当前可见页（${Math.round(activePdfScale * 100)}%）…`);
+  await Promise.all(targets.map((record) => ensurePdfPageRendered(record)));
 
   if (docGen === activeDocumentGeneration && renderGen === activePdfRenderGeneration) {
     setStatus(`已缩放至 ${Math.round(activePdfScale * 100)}%（保留当前译文与 OCR 结果）`);
   }
 }
 
-async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = false): Promise<void> {
-  clearActiveDocument();
+async function openPdfBytes(
+  bytes: Uint8Array,
+  title: string,
+  autoTranslate = false,
+  expectedOpenGen?: number,
+): Promise<void> {
+  if (expectedOpenGen !== undefined && expectedOpenGen !== activeOpenGeneration) return;
+  clearActiveDocument(expectedOpenGen === undefined);
+  const openGen = expectedOpenGen ?? activeOpenGeneration;
   const docGen = activeDocumentGeneration;
   const renderGen = activePdfRenderGeneration;
   activeKind = "pdf";
-  activePdfBytes = bytes;
   docTitleEl.textContent = title;
   emptyEl.hidden = true;
   docWorkspaceEl.hidden = true;
@@ -1050,7 +1619,7 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
   setStatus(`正在本地解析 PDF：${title}…`);
 
   const loadingTask = pdfjsLib.getDocument({
-    data: bytes.slice(),
+    data: bytes,
     cMapUrl,
     cMapPacked: true,
     standardFontDataUrl,
@@ -1063,12 +1632,12 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
   try {
     pdf = await loadingTask.promise;
   } catch (error) {
-    if (docGen !== activeDocumentGeneration) return;
+    if (docGen !== activeDocumentGeneration || openGen !== activeOpenGeneration) return;
     if (activePdfLoadingTask === loadingTask) activePdfLoadingTask = null;
     throw error;
   }
   if (activePdfLoadingTask === loadingTask) activePdfLoadingTask = null;
-  if (docGen !== activeDocumentGeneration) {
+  if (docGen !== activeDocumentGeneration || openGen !== activeOpenGeneration) {
     void pdf.destroy().catch(() => {});
     return;
   }
@@ -1079,161 +1648,198 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
   let totalBlocks = 0;
   let totalFormulas = 0;
   let totalTables = 0;
+  let eagerFontOpProbes = 0;
+  pdfLoadingPages = true;
 
-  for (let pageNum = 1; pageNum <= maxPages; pageNum += 1) {
-    if (docGen !== activeDocumentGeneration) return;
-    setStatus(`正在渲染并提取第 ${pageNum}/${maxPages} 页…`);
-    const page = await pdf.getPage(pageNum);
-    if (docGen !== activeDocumentGeneration) {
-      page.cleanup();
-      return;
-    }
-    const baseViewport = page.getViewport({ scale: 1.0 });
-    const { renderScale, dpr } = computePdfPageMetrics(baseViewport);
-    const viewport = page.getViewport({ scale: renderScale });
+  try {
+    for (let pageNum = 1; pageNum <= maxPages; pageNum += 1) {
+      if (docGen !== activeDocumentGeneration || openGen !== activeOpenGeneration) return;
+      setStatus(
+        pageNum === 1
+          ? `正在渲染第 1/${maxPages} 页并提取目录与正文…`
+          : `正在提取第 ${pageNum}/${maxPages} 页正文结构（画布按滚动按需渲染）…`,
+      );
+      const page = await pdf.getPage(pageNum);
+      if (docGen !== activeDocumentGeneration || openGen !== activeOpenGeneration) {
+        page.cleanup();
+        return;
+      }
+      const baseViewport = page.getViewport({ scale: 1.0 });
+      const { renderScale, dpr } = computePdfPageMetrics(baseViewport);
+      const viewport = page.getViewport({ scale: renderScale });
+      const cssW = Math.round(viewport.width);
+      const cssH = Math.round(viewport.height);
 
-    // Left/Main pane: original PDF canvas + hit layer (overlay canvas created lazily in overlay mode)
-    const shell = document.createElement("div");
-    shell.className = "pdf-page-shell";
-    shell.style.width = `${Math.round(viewport.width)}px`;
-    shell.style.height = `${Math.round(viewport.height)}px`;
+      // Left/Main pane: shell with exact CSS dimensions; only page 1 renders eagerly,
+      // while pages 2..maxPages allocate and render their HiDPI canvas lazily on scroll.
+      const shell = document.createElement("div");
+      shell.className = "pdf-page-shell";
+      shell.dataset.pageNumber = String(pageNum);
+      shell.style.width = `${cssW}px`;
+      shell.style.height = `${cssH}px`;
 
-    const baseCanvas = document.createElement("canvas");
-    baseCanvas.className = "pdf-base-canvas";
-    baseCanvas.width = Math.round(viewport.width * dpr);
-    baseCanvas.height = Math.round(viewport.height * dpr);
-    baseCanvas.style.width = `${Math.round(viewport.width)}px`;
-    baseCanvas.style.height = `${Math.round(viewport.height)}px`;
-    const ctx = baseCanvas.getContext("2d")!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const renderTask = page.render({ canvasContext: ctx, viewport, canvas: baseCanvas });
-    activeRenderTask = renderTask;
-    try {
-      await renderTask.promise;
-    } catch (error) {
-      if (isPdfRenderCancelledError(error) || docGen !== activeDocumentGeneration) {
+      const baseCanvas = document.createElement("canvas");
+      baseCanvas.className = "pdf-base-canvas";
+      baseCanvas.style.width = `${cssW}px`;
+      baseCanvas.style.height = `${cssH}px`;
+
+      let baseRendered = false;
+      if (pageNum === 1) {
+        baseCanvas.width = Math.max(1, Math.round(viewport.width * dpr));
+        baseCanvas.height = Math.max(1, Math.round(viewport.height * dpr));
+        const ctx = baseCanvas.getContext("2d")!;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const renderTask = page.render({ canvasContext: ctx, viewport, canvas: baseCanvas });
+        activeRenderTask = renderTask;
+        try {
+          await renderTask.promise;
+          baseRendered = true;
+        } catch (error) {
+          if (isPdfRenderCancelledError(error) || docGen !== activeDocumentGeneration || openGen !== activeOpenGeneration) {
+            releaseCanvasBacking(baseCanvas);
+            page.cleanup();
+            return;
+          }
+          page.cleanup();
+          throw error;
+        } finally {
+          if (activeRenderTask === renderTask) activeRenderTask = null;
+        }
+      } else {
+        baseCanvas.width = 0;
+        baseCanvas.height = 0;
+        shell.classList.add("is-pending");
+      }
+
+      if (docGen !== activeDocumentGeneration || openGen !== activeOpenGeneration) {
         releaseCanvasBacking(baseCanvas);
         page.cleanup();
         return;
       }
-      page.cleanup();
-      throw error;
-    } finally {
-      if (activeRenderTask === renderTask) activeRenderTask = null;
-    }
 
-    if (docGen !== activeDocumentGeneration) {
-      releaseCanvasBacking(baseCanvas);
-      page.cleanup();
-      return;
-    }
+      const badge = document.createElement("span");
+      badge.className = "pdf-page-badge";
+      badge.textContent = `${pageNum} / ${totalPages}`;
 
-    const badge = document.createElement("span");
-    badge.className = "pdf-page-badge";
-    badge.textContent = `${pageNum} / ${totalPages}`;
+      const hitLayer = document.createElement("div");
+      hitLayer.className = "pdf-hit-layer";
 
-    const hitLayer = document.createElement("div");
-    hitLayer.className = "pdf-hit-layer";
+      shell.append(baseCanvas, hitLayer, badge);
+      pdfCanvasPane.append(shell);
 
-    shell.append(baseCanvas, hitLayer, badge);
-    pdfCanvasPane.append(shell);
-
-    // Extract layout-preserving, formula-protected, table-aware blocks from PDF text layer
-    const textContent = await page.getTextContent();
-    if (docGen !== activeDocumentGeneration) {
-      page.cleanup();
-      return;
-    }
-    const rawItems: PdfRawTextItem[] = [];
-    for (const item of textContent.items) {
-      if ("str" in item && typeof item.str === "string") {
-        rawItems.push({
-          str: item.str,
-          transform: item.transform,
-          width: item.width,
-          height: item.height,
-          fontName: item.fontName,
-          hasEOL: item.hasEOL,
-        });
+      // Extract layout-preserving, formula-protected, table-aware blocks from PDF text layer.
+      // Because page 1 already rendered, shared document fonts are warm in page.commonObjs.
+      // When a later text page introduces a brand-new font key (e.g. a unique math font on page 2),
+      // fetch its operator list without rasterizing a canvas so realFontName is known before translation.
+      let extracted = await extractPdfPageTextAndStyles(page);
+      if (docGen !== activeDocumentGeneration || openGen !== activeOpenGeneration) {
+        page.cleanup();
+        return;
       }
-    }
-    const enrichedStyles: Record<string, PdfFontStyleInfo> = {};
-    for (const [fontKey, style] of Object.entries(textContent.styles as Record<string, PdfFontStyleInfo>)) {
-      let realFontName = style?.realFontName;
-      if (!realFontName) {
+      if (
+        !baseRendered
+        && extracted.rawItems.length > 0
+        && extracted.unresolvedFontKeys.length > 0
+        && eagerFontOpProbes < MAX_EAGER_FONT_OP_PROBES
+      ) {
+        eagerFontOpProbes += 1;
         try {
-          const obj = page.commonObjs.has(fontKey)
-            ? (page.commonObjs.get(fontKey) as { name?: string } | null)
-            : null;
-          if (obj && typeof obj.name === "string") realFontName = obj.name;
+          await page.getOperatorList();
+          if (docGen !== activeDocumentGeneration || openGen !== activeOpenGeneration) {
+            page.cleanup();
+            return;
+          }
+          extracted = await extractPdfPageTextAndStyles(page);
         } catch {
-          // Ignore unavailable font metadata objects.
+          // Keep initial text styles if operator list lookup fails.
         }
       }
-      enrichedStyles[fontKey] = { ...style, ...(realFontName ? { realFontName } : {}) };
+      if (docGen !== activeDocumentGeneration || openGen !== activeOpenGeneration) {
+        page.cleanup();
+        return;
+      }
+      page.cleanup();
+
+      const { rawItems, enrichedStyles, unresolvedFontKeys } = extracted;
+      const blocks = extractPdfPageBlocks(
+        rawItems,
+        enrichedStyles,
+        baseViewport.width,
+        baseViewport.height,
+        pageNum,
+      );
+
+      const pageCard = document.createElement("section");
+      pageCard.className = "pdf-text-page";
+      pageCard.dataset.pageNumber = String(pageNum);
+      const pageHead = document.createElement("div");
+      pageHead.className = "pdf-text-page-head";
+      const pageLabel = document.createElement("span");
+      pageLabel.textContent = `第 ${pageNum} 页`;
+      const headRight = document.createElement("div");
+      headRight.className = "pdf-page-head-right";
+      const pageStatsEl = document.createElement("span");
+      const ocrBtnEl = document.createElement("button");
+      ocrBtnEl.type = "button";
+      ocrBtnEl.className = "pdf-page-ocr-btn";
+      ocrBtnEl.textContent = "版面 OCR";
+      ocrBtnEl.title = "使用本地版面与文字识别重新提取本页内容";
+      headRight.append(pageStatsEl, ocrBtnEl);
+      pageHead.append(pageLabel, headRight);
+      pageCard.append(pageHead);
+      pdfTextPane.append(pageCard);
+
+      const record: PdfPageRecord = {
+        pageNumber: pageNum,
+        pageWidth: baseViewport.width,
+        pageHeight: baseViewport.height,
+        renderScale,
+        dpr,
+        shell,
+        baseCanvas,
+        overlayCanvas: null,
+        hitLayer,
+        pageCard,
+        pageStatsEl,
+        ocrBtnEl,
+        blocks: [],
+        isScanned: false,
+        ocrDone: false,
+        baseRendered,
+        renderedScale: baseRendered ? renderScale : 0,
+        renderedDpr: baseRendered ? dpr : 0,
+        lastUsedSeq: baseRendered ? ++pdfRenderSeq : 0,
+        isCanvasVisible: pageNum === 1,
+        needsSnapshotHydration: false,
+        needsScanCheck: false,
+        unresolvedFontKeys: baseRendered ? [] : unresolvedFontKeys,
+        fontRefined: baseRendered || unresolvedFontKeys.length === 0,
+        canvasBytes: canvasPixelBytes(baseCanvas),
+        snapshotBytes: 0,
+      };
+      ocrBtnEl.addEventListener("click", () => {
+        void runOcrForPage(record);
+      });
+      activePdfPages.push(record);
+      populatePdfPageBlocks(record, blocks);
+
+      totalBlocks += blocks.length;
+      for (const block of blocks) {
+        if (block.kind === "formula") totalFormulas += 1;
+        else if (block.kind === "table") totalTables += 1;
+        else totalFormulas += block.segments.filter((s) => s.kind === "math").length;
+      }
     }
-    page.cleanup();
-
-    const blocks = extractPdfPageBlocks(
-      rawItems,
-      enrichedStyles,
-      baseViewport.width,
-      baseViewport.height,
-      pageNum,
-    );
-
-    const pageCard = document.createElement("section");
-    pageCard.className = "pdf-text-page";
-    pageCard.dataset.pageNumber = String(pageNum);
-    const pageHead = document.createElement("div");
-    pageHead.className = "pdf-text-page-head";
-    const pageLabel = document.createElement("span");
-    pageLabel.textContent = `第 ${pageNum} 页`;
-    const headRight = document.createElement("div");
-    headRight.className = "pdf-page-head-right";
-    const pageStatsEl = document.createElement("span");
-    const ocrBtnEl = document.createElement("button");
-    ocrBtnEl.type = "button";
-    ocrBtnEl.className = "pdf-page-ocr-btn";
-    ocrBtnEl.textContent = "版面 OCR";
-    ocrBtnEl.title = "使用本地 PP-DocLayout-M + PP-OCRv6 重新识别本页版面与正文";
-    headRight.append(pageStatsEl, ocrBtnEl);
-    pageHead.append(pageLabel, headRight);
-    pageCard.append(pageHead);
-    pdfTextPane.append(pageCard);
-
-    const record: PdfPageRecord = {
-      pageNumber: pageNum,
-      pageWidth: baseViewport.width,
-      pageHeight: baseViewport.height,
-      renderScale,
-      dpr,
-      shell,
-      baseCanvas,
-      overlayCanvas: null,
-      hitLayer,
-      pageCard,
-      pageStatsEl,
-      ocrBtnEl,
-      blocks: [],
-      isScanned: false,
-      ocrDone: false,
-    };
-    ocrBtnEl.addEventListener("click", () => {
-      void runOcrForPage(record);
-    });
-    activePdfPages.push(record);
-    populatePdfPageBlocks(record, blocks);
-
-    totalBlocks += blocks.length;
-    for (const block of blocks) {
-      if (block.kind === "formula") totalFormulas += 1;
-      else if (block.kind === "table") totalTables += 1;
-      else totalFormulas += block.segments.filter((s) => s.kind === "math").length;
+  } finally {
+    if (docGen === activeDocumentGeneration) {
+      pdfLoadingPages = false;
     }
   }
 
-  if (docGen !== activeDocumentGeneration) return;
+  if (docGen !== activeDocumentGeneration || openGen !== activeOpenGeneration) return;
+  setupPdfLazyObservers();
+  enqueueVisiblePdfPages();
+
   translateBtn.disabled = false;
   restoreBtn.disabled = true;
   const scannedPages = activePdfPages.filter((p) => p.isScanned).length;
@@ -1245,17 +1851,21 @@ async function openPdfBytes(bytes: Uint8Array, title: string, autoTranslate = fa
   setStatus(parts.join(" · "));
 
   if (renderGen !== activePdfRenderGeneration) {
-    void rerenderActivePdfAtCurrentScale();
+    void rerenderActivePdfAtCurrentScale().catch((err) => {
+      if (docGen === activeDocumentGeneration) {
+        setStatus(err instanceof Error ? err.message : String(err));
+      }
+    });
   }
-  if (autoTranslate && totalBlocks > 0 && docGen === activeDocumentGeneration) {
+  if (autoTranslate && totalBlocks > 0 && docGen === activeDocumentGeneration && openGen === activeOpenGeneration) {
     await runTranslation();
   }
 }
 
-function renderParsedDocument(parsed: ParsedDocumentResult): void {
-  clearActiveDocument();
+function renderParsedDocument(parsed: ParsedDocumentResult, expectedOpenGen?: number): void {
+  if (expectedOpenGen !== undefined && expectedOpenGen !== activeOpenGeneration) return;
+  clearActiveDocument(expectedOpenGen === undefined);
   activeKind = "doc";
-  activePdfBytes = null;
   docTitleEl.textContent = parsed.title;
   emptyEl.hidden = true;
   pdfWorkspaceEl.hidden = true;
@@ -1286,84 +1896,110 @@ function renderParsedDocument(parsed: ParsedDocumentResult): void {
 }
 
 async function openFile(file: File): Promise<void> {
-  const lower = file.name.toLowerCase();
-  const buffer = await file.arrayBuffer();
-  if (lower.endsWith(".pdf") || file.type === "application/pdf") {
-    await openPdfBytes(new Uint8Array(buffer), file.name);
-    return;
-  }
-  if (lower.endsWith(".epub")) {
-    const parsed = await parseEpubDocument(document, buffer, file.name);
-    renderParsedDocument(parsed);
-    return;
-  }
-  if (lower.endsWith(".docx")) {
-    const parsed = await parseDocxDocument(document, buffer, file.name);
-    renderParsedDocument(parsed);
-    return;
-  }
-  const text = new TextDecoder("utf-8").decode(buffer);
-  if (lower.endsWith(".md") || lower.endsWith(".markdown")) {
-    renderParsedDocument(parseMarkdownDocument(document, text, file.name));
-  } else if (lower.endsWith(".html") || lower.endsWith(".htm") || file.type === "text/html") {
-    renderParsedDocument(parseHtmlFileDocument(document, text, file.name));
-  } else {
-    renderParsedDocument(parsePlainTextDocument(document, text, file.name));
+  const openGen = ++activeOpenGeneration;
+  try {
+    const lower = file.name.toLowerCase();
+    const buffer = await file.arrayBuffer();
+    if (openGen !== activeOpenGeneration) return;
+    if (lower.endsWith(".pdf") || file.type === "application/pdf") {
+      await openPdfBytes(new Uint8Array(buffer), file.name, false, openGen);
+      return;
+    }
+    if (lower.endsWith(".epub")) {
+      const parsed = await parseEpubDocument(document, buffer, file.name);
+      if (openGen !== activeOpenGeneration) return;
+      renderParsedDocument(parsed, openGen);
+      return;
+    }
+    if (lower.endsWith(".docx")) {
+      const parsed = await parseDocxDocument(document, buffer, file.name);
+      if (openGen !== activeOpenGeneration) return;
+      renderParsedDocument(parsed, openGen);
+      return;
+    }
+    const text = new TextDecoder("utf-8").decode(buffer);
+    if (lower.endsWith(".md") || lower.endsWith(".markdown")) {
+      renderParsedDocument(parseMarkdownDocument(document, text, file.name), openGen);
+    } else if (lower.endsWith(".html") || lower.endsWith(".htm") || file.type === "text/html") {
+      renderParsedDocument(parseHtmlFileDocument(document, text, file.name), openGen);
+    } else {
+      renderParsedDocument(parsePlainTextDocument(document, text, file.name), openGen);
+    }
+  } catch (error) {
+    if (openGen === activeOpenGeneration) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
   }
 }
 
 async function openRemoteUrl(rawUrl: string, autoTranslate = false): Promise<void> {
+  const openGen = ++activeOpenGeneration;
   setStatus(`正在读取在线文档：${rawUrl}…`);
-  const response = await sendRuntimeMessage<{
-    ok?: boolean;
-    bytes?: ArrayBuffer;
-    contentType?: string;
-    finalUrl?: string;
-    error?: string;
-  }>({ type: "fetch-document-bytes", url: rawUrl });
+  try {
+    const response = await sendRuntimeMessage<{
+      ok?: boolean;
+      bytes?: ArrayBuffer;
+      contentType?: string;
+      finalUrl?: string;
+      error?: string;
+    }>({ type: "fetch-document-bytes", url: rawUrl });
+    if (openGen !== activeOpenGeneration) return;
 
-  if (!response?.ok || !(response.bytes instanceof ArrayBuffer)) {
-    throw new Error(response?.error ?? "无法读取在线文档");
-  }
-  const finalUrl = response.finalUrl || rawUrl;
-  const pathname = (() => {
-    try { return new URL(finalUrl).pathname; } catch { return finalUrl; }
-  })();
-  const fileName = decodeURIComponent(pathname.split("/").filter(Boolean).pop() || "在线文档");
-  const ct = (response.contentType || "").toLowerCase();
-  const bytes = new Uint8Array(response.bytes);
-  const looksPdf = ct.includes("application/pdf")
-    || /\.pdf$/i.test(pathname)
-    || (bytes.length >= 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46);
+    if (!response?.ok || !(response.bytes instanceof ArrayBuffer)) {
+      throw new Error(response?.error ?? "无法读取在线文档");
+    }
+    const finalUrl = response.finalUrl || rawUrl;
+    const pathname = (() => {
+      try { return new URL(finalUrl).pathname; } catch { return finalUrl; }
+    })();
+    const fileName = decodeURIComponent(pathname.split("/").filter(Boolean).pop() || "在线文档");
+    const ct = (response.contentType || "").toLowerCase();
+    const bytes = new Uint8Array(response.bytes);
+    const looksPdf = ct.includes("application/pdf")
+      || /\.pdf$/i.test(pathname)
+      || (bytes.length >= 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46);
 
-  if (looksPdf) {
-    await openPdfBytes(bytes, fileName, autoTranslate);
-    return;
+    if (looksPdf) {
+      await openPdfBytes(bytes, fileName, autoTranslate, openGen);
+      return;
+    }
+    if (/\.epub$/i.test(pathname) || ct.includes("application/epub+zip")) {
+      const parsed = await parseEpubDocument(document, response.bytes, fileName);
+      if (openGen !== activeOpenGeneration) return;
+      renderParsedDocument(parsed, openGen);
+      if (autoTranslate && openGen === activeOpenGeneration) await runTranslation();
+      return;
+    }
+    if (/\.docx$/i.test(pathname) || ct.includes("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) {
+      const parsed = await parseDocxDocument(document, response.bytes, fileName);
+      if (openGen !== activeOpenGeneration) return;
+      renderParsedDocument(parsed, openGen);
+      if (autoTranslate && openGen === activeOpenGeneration) await runTranslation();
+      return;
+    }
+    const text = new TextDecoder("utf-8").decode(bytes);
+    if (ct.includes("text/html") || /\.html?$/i.test(pathname)) {
+      renderParsedDocument(parseHtmlFileDocument(document, text, fileName), openGen);
+    } else if (/\.md$|\.markdown$/i.test(pathname)) {
+      renderParsedDocument(parseMarkdownDocument(document, text, fileName), openGen);
+    } else {
+      renderParsedDocument(parsePlainTextDocument(document, text, fileName), openGen);
+    }
+    if (autoTranslate && openGen === activeOpenGeneration) await runTranslation();
+  } catch (error) {
+    if (openGen === activeOpenGeneration) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
   }
-  if (/\.epub$/i.test(pathname) || ct.includes("application/epub+zip")) {
-    renderParsedDocument(await parseEpubDocument(document, response.bytes, fileName));
-    if (autoTranslate) await runTranslation();
-    return;
-  }
-  if (/\.docx$/i.test(pathname) || ct.includes("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) {
-    renderParsedDocument(await parseDocxDocument(document, response.bytes, fileName));
-    if (autoTranslate) await runTranslation();
-    return;
-  }
-  const text = new TextDecoder("utf-8").decode(bytes);
-  if (ct.includes("text/html") || /\.html?$/i.test(pathname)) {
-    renderParsedDocument(parseHtmlFileDocument(document, text, fileName));
-  } else if (/\.md$|\.markdown$/i.test(pathname)) {
-    renderParsedDocument(parseMarkdownDocument(document, text, fileName));
-  } else {
-    renderParsedDocument(parsePlainTextDocument(document, text, fileName));
-  }
-  if (autoTranslate) await runTranslation();
 }
 
 async function runTranslation(): Promise<void> {
   const scope = activeKind === "pdf" ? pdfTextPane : activeKind === "doc" ? docContentEl : null;
   if (!scope) return;
+
+  const docGen = activeDocumentGeneration;
+  const transGen = ++activeTranslationGeneration;
+  const isStale = (): boolean => docGen !== activeDocumentGeneration || transGen !== activeTranslationGeneration;
 
   translateBtn.disabled = true;
   translateBtn.textContent = "翻译中…";
@@ -1371,9 +2007,18 @@ async function runTranslation(): Promise<void> {
 
   try {
     activeTranslator?.restore();
+    activeTranslator = null;
     const { translator, sourceLanguage, targetLanguage } = await createConfiguredTranslator(scope);
+    if (isStale()) {
+      translator.restore();
+      return;
+    }
     activeTranslator = translator;
     const count = await translator.translateAll(scope, true);
+    if (isStale()) {
+      translator.restore();
+      return;
+    }
     isDocumentTranslated = count > 0;
     restoreBtn.disabled = count === 0;
     if (activeKind === "pdf" && activePdfViewMode === "overlay") {
@@ -1384,20 +2029,27 @@ async function runTranslation(): Promise<void> {
       `翻译完成（${languageLabel(sourceLanguage)} → ${languageLabel(targetLanguage)}）：已翻译 ${count} 个段落${failed > 0 ? `；${failed} 段保留原文` : ""}`,
     );
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : String(error));
+    if (!isStale()) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
   } finally {
-    translateBtn.disabled = false;
-    translateBtn.textContent = "翻译文档";
+    if (!isStale()) {
+      translateBtn.disabled = false;
+      translateBtn.textContent = "翻译文档";
+    }
   }
 }
 
 function restoreOriginal(): void {
+  activeTranslationGeneration += 1;
   activeTranslator?.restore();
   activeTranslator = null;
   isDocumentTranslated = false;
   clearAllPdfOverlays();
   hideOverlaySourceCard();
   restoreBtn.disabled = true;
+  translateBtn.disabled = pdfLoadingPages;
+  translateBtn.textContent = "翻译文档";
   setStatus("已恢复文档原文");
 }
 
@@ -1420,7 +2072,7 @@ openSettingsBtn.addEventListener("click", () => {
 });
 fileInputEl.addEventListener("change", () => {
   const file = fileInputEl.files?.[0];
-  if (file) void openFile(file).catch((err) => setStatus(err instanceof Error ? err.message : String(err)));
+  if (file) void openFile(file);
   fileInputEl.value = "";
 });
 
@@ -1428,7 +2080,7 @@ urlFormEl.addEventListener("submit", (e) => {
   e.preventDefault();
   const value = urlInputEl.value.trim();
   if (!value) return;
-  void openRemoteUrl(value).catch((err) => setStatus(err instanceof Error ? err.message : String(err)));
+  void openRemoteUrl(value);
 });
 
 for (const btn of modeButtons) {
@@ -1452,12 +2104,15 @@ for (const btn of pdfViewButtons) {
       if (activePdfViewMode === "overlay") {
         if (isDocumentTranslated) {
           renderAllPdfOverlays();
+          enqueueVisiblePdfPages();
           setStatus("已切换原位覆盖视图（公式、表格与图表像素原样保留，点击段落可查看原文）");
         } else {
+          enqueueVisiblePdfPages();
           setStatus("已切换原位覆盖视图 · 点击「翻译文档」即可在原页覆盖译文（公式与图表原样保留）");
         }
       } else {
         clearAllPdfOverlays();
+        enqueueVisiblePdfPages();
         setStatus("已切换双栏对照视图");
       }
     }
@@ -1474,15 +2129,15 @@ function applyPdfZoomDelta(delta: number): void {
   if (nextScale === activePdfScale) return;
   activePdfScale = nextScale;
   zoomLabelEl.textContent = `${Math.round(activePdfScale * 100)}%`;
-  if (activePdfDoc && activePdfPages.length > 0) {
-    void rerenderActivePdfAtCurrentScale().catch((err) => {
-      setStatus(err instanceof Error ? err.message : String(err));
-    });
-  } else if (activePdfLoadingTask) {
+  if (pdfLoadingPages || activePdfLoadingTask) {
     activePdfRenderGeneration += 1;
-  } else if (activePdfBytes) {
-    const wasTranslated = isDocumentTranslated;
-    void openPdfBytes(activePdfBytes, docTitleEl.textContent || "PDF", wasTranslated);
+  } else if (activePdfDoc && activePdfPages.length > 0) {
+    const docGen = activeDocumentGeneration;
+    void rerenderActivePdfAtCurrentScale().catch((err) => {
+      if (docGen === activeDocumentGeneration) {
+        setStatus(err instanceof Error ? err.message : String(err));
+      }
+    });
   }
 }
 
@@ -1504,7 +2159,7 @@ stageEl.addEventListener("drop", (e) => {
   e.preventDefault();
   stageEl.classList.remove("drag-active");
   const file = e.dataTransfer?.files?.[0];
-  if (file) void openFile(file).catch((err) => setStatus(err instanceof Error ? err.message : String(err)));
+  if (file) void openFile(file);
 });
 dropzoneEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
@@ -1551,9 +2206,7 @@ async function initReader(): Promise<void> {
   const targetUrl = params.get("url");
   if (targetUrl && /^https?:\/\//i.test(targetUrl)) {
     urlInputEl.value = targetUrl;
-    await openRemoteUrl(targetUrl, true).catch((err) => {
-      setStatus(err instanceof Error ? err.message : String(err));
-    });
+    await openRemoteUrl(targetUrl, true);
   }
 }
 

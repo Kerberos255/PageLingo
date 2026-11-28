@@ -30,7 +30,7 @@ export interface BilingualStyleSettings {
 }
 export interface GlossaryEntry { source:string; target:string; mode:"protect"|"replace"; caseSensitive?:boolean }
 export interface GlossaryCollection { id:string; name:string; enabled:boolean; entries:GlossaryEntry[] }
-export interface PageLingoSettings { displayMode:DisplayMode; autoTranslateEnabled:boolean; targetLanguage:string; neverTranslateSites:string[]; alwaysTranslateSites:string[]; neverTranslateLanguages:string[]; alwaysTranslateLanguages:string[]; modelUpdatePolicy:ModelUpdatePolicy; imageTranslationEnabled:boolean; imageOcrProfileId:string; selectionQuickTranslateButton:boolean; terminologyText:string; builtinGlossaryEnabled:boolean; glossaryCollections:GlossaryCollection[]; videoSubtitle:VideoSubtitleSettings; bilingualStyle:BilingualStyleSettings }
+export interface PageLingoSettings { displayMode:DisplayMode; autoTranslateEnabled:boolean; targetLanguage:string; neverTranslateSites:string[]; alwaysTranslateSites:string[]; neverTranslateLanguages:string[]; alwaysTranslateLanguages:string[]; modelUpdatePolicy:ModelUpdatePolicy; imageTranslationEnabled:boolean; imageOcrProfileId:string; selectionQuickTranslateButton:boolean; builtinGlossaryEnabled:boolean; glossaryCollections:GlossaryCollection[]; videoSubtitle:VideoSubtitleSettings; bilingualStyle:BilingualStyleSettings }
 
 export const VIDEO_SUBTITLE_COLORS = ["#ffffff", "#fde047", "#fdba74", "#7dd3fc"] as const;
 export const BILINGUAL_TRANSLATION_COLORS = ["inherit", "#2563eb", "#b45309", "#0f766e", "#6b7280"] as const;
@@ -72,7 +72,6 @@ export const DEFAULT_SETTINGS: PageLingoSettings = {
     imageTranslationEnabled: false,
     imageOcrProfileId: "pp-ocrv6-small",
     selectionQuickTranslateButton: false,
-    terminologyText: "",
     builtinGlossaryEnabled: true,
     glossaryCollections: [],
     videoSubtitle: { ...DEFAULT_VIDEO_SUBTITLE_SETTINGS },
@@ -391,7 +390,6 @@ async function readSettingsFromStorage(): Promise<PageLingoSettings> {
         imageTranslationEnabled: stored.imageTranslationEnabled === true,
         imageOcrProfileId: normalizeStoredImageOcrProfileId(stored.imageOcrProfileId),
         selectionQuickTranslateButton: stored.selectionQuickTranslateButton === true,
-        terminologyText: typeof stored.terminologyText === "string" ? stored.terminologyText : "",
         builtinGlossaryEnabled: stored.builtinGlossaryEnabled !== false,
         glossaryCollections,
         videoSubtitle: normalizeVideoSubtitleSettings(stored.videoSubtitle),

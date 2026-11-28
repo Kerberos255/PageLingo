@@ -331,6 +331,24 @@ body {
   overflow: hidden;
 }
 
+.pdf-page-shell.is-pending {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.pdf-page-shell.is-pending::after {
+  content: "滚动至此处按需渲染原页…";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  z-index: 1;
+}
+
 .pdf-page-shell canvas {
   display: block;
 }

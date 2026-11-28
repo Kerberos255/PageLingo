@@ -1120,17 +1120,28 @@ export class PageTranslator {
     pruneDetachedEntries() {
         if (this.#disposed) return 0;
         let removed = 0;
+        const detachedRoots = [];
         for (const [root, record] of this.#records) {
             if (root.isConnected) continue;
+            this.#clearDisplayMode(root);
+            record?.translationNode?.remove();
             this.#records.delete(root);
-            if (record?.translationNode?.isConnected) record.translationNode.remove();
+            detachedRoots.push(root);
             removed += 1;
         }
         for (const [root, record] of this.#fixedRecords) {
             if (root.isConnected) continue;
-            this.#fixedRecords.delete(root);
-            if (record?.translationNode?.isConnected) record.translationNode.remove();
+            this.#clearFixedRecord(root, record);
+            detachedRoots.push(root);
             removed += 1;
+        }
+        for (const root of detachedRoots) {
+            for (const wrapper of Array.from(root.querySelectorAll("[data-flt-source-text-wrapper]"))) {
+                wrapper.replaceWith(...Array.from(wrapper.childNodes));
+            }
+            if (root.hasAttribute("data-flt-source-text-wrapper")) {
+                root.replaceWith(...Array.from(root.childNodes));
+            }
         }
         for (const root of Array.from(this.#failures.keys())) {
             if (!root.isConnected) {
@@ -1140,19 +1151,25 @@ export class PageTranslator {
         }
         for (const [el, snapshot] of this.#tooltipSnapshots) {
             if (!el.isConnected && !snapshot?.node?.isConnected) {
+                if (snapshot?.node && snapshot.node.data === snapshot.translatedText) {
+                    snapshot.node.data = snapshot.originalText;
+                }
                 this.#tooltipSnapshots.delete(el);
                 removed += 1;
             }
         }
-        for (const el of Array.from(this.#placeholderSnapshots.keys())) {
+        for (const [el, snapshot] of this.#placeholderSnapshots) {
             if (!el.isConnected) {
+                if (el.getAttribute("placeholder") === snapshot.translatedText) {
+                    el.setAttribute("placeholder", snapshot.originalText);
+                }
                 this.#placeholderSnapshots.delete(el);
                 removed += 1;
             }
         }
         for (const link of Array.from(this.#sourceLinkStyleSnapshots.keys())) {
             if (!link.isConnected) {
-                this.#sourceLinkStyleSnapshots.delete(link);
+                this.#restoreSourceLinkDisplay(link);
                 removed += 1;
             }
         }
@@ -1166,6 +1183,7 @@ export class PageTranslator {
         for (const [shadowRoot, observer] of this.#shadowObservers) {
             if (shadowRoot.host && !shadowRoot.host.isConnected) {
                 observer.disconnect();
+                shadowRoot.querySelector('style[data-flt-generated="style"]')?.remove();
                 this.#shadowObservers.delete(shadowRoot);
                 this.#shadowRoots.delete(shadowRoot);
                 removed += 1;
@@ -1173,6 +1191,7 @@ export class PageTranslator {
         }
         for (const shadowRoot of Array.from(this.#shadowRoots)) {
             if (shadowRoot.host && !shadowRoot.host.isConnected && !this.#shadowObservers.has(shadowRoot)) {
+                shadowRoot.querySelector('style[data-flt-generated="style"]')?.remove();
                 this.#shadowRoots.delete(shadowRoot);
                 removed += 1;
             }
@@ -1550,13 +1569,13 @@ export class PageTranslator {
             translationNode.remove();
         }
         for (const snapshot of this.#tooltipSnapshots.values()) {
-            if (snapshot.node?.isConnected && snapshot.node.data === snapshot.translatedText) {
+            if (snapshot.node && snapshot.node.data === snapshot.translatedText) {
                 snapshot.node.data = snapshot.originalText;
             }
         }
         this.#tooltipSnapshots.clear();
         for (const [element, snapshot] of this.#placeholderSnapshots.entries()) {
-            if (element?.isConnected && element.getAttribute("placeholder") === snapshot.translatedText) {
+            if (element && element.getAttribute("placeholder") === snapshot.translatedText) {
                 element.setAttribute("placeholder", snapshot.originalText);
             }
         }
@@ -1580,12 +1599,29 @@ export class PageTranslator {
             }
         }
         this.#shadowRoots.clear();
-        for (const [link, styleAttribute] of this.#sourceLinkStyleSnapshots) {
-            if (styleAttribute === null) link.removeAttribute("style");
-            else link.setAttribute("style", styleAttribute);
-            link.removeAttribute("data-flt-source-link-hidden");
+        for (const link of Array.from(this.#sourceLinkStyleSnapshots.keys())) {
+            this.#restoreSourceLinkDisplay(link);
         }
         this.#sourceLinkStyleSnapshots.clear();
+    }
+    #restoreSourceLinkDisplay(link) {
+        const snapshot = this.#sourceLinkStyleSnapshots.get(link);
+        this.#sourceLinkStyleSnapshots.delete(link);
+        if (
+            snapshot &&
+            link.style.getPropertyValue("display") === "none" &&
+            link.style.getPropertyPriority("display") === "important"
+        ) {
+            if (snapshot.displayValue) {
+                link.style.setProperty("display", snapshot.displayValue, snapshot.displayPriority);
+            } else {
+                link.style.removeProperty("display");
+            }
+            if (!snapshot.hadStyleAttr && !link.getAttribute("style")?.trim()) {
+                link.removeAttribute("style");
+            }
+        }
+        link.removeAttribute("data-flt-source-link-hidden");
     }
     #applyDisplayMode(root, translationNode, capturedLayout = null) {
         if (!this.#sourceHadClassAttribute.has(root)) {
@@ -1615,7 +1651,13 @@ export class PageTranslator {
             return;
         }
         if (root.tagName === "A") {
-            if (!this.#sourceLinkStyleSnapshots.has(root)) this.#sourceLinkStyleSnapshots.set(root, root.getAttribute("style"));
+            if (!this.#sourceLinkStyleSnapshots.has(root)) {
+                this.#sourceLinkStyleSnapshots.set(root, {
+                    hadStyleAttr: root.hasAttribute("style"),
+                    displayValue: root.style.getPropertyValue("display"),
+                    displayPriority: root.style.getPropertyPriority("display"),
+                });
+            }
             root.dataset.fltSourceLinkHidden = "true";
             root.style.setProperty("display", "none", "important");
             translationNode.dataset.fltDisplayMode = "translation";
@@ -1635,9 +1677,8 @@ export class PageTranslator {
             root.style.removeProperty("--pagelingo-source-line-height");
         }
         if (root.tagName === "A" && this.#sourceLinkStyleSnapshots.has(root)) {
-            const styleAttribute = this.#sourceLinkStyleSnapshots.get(root);
-            if (styleAttribute === null) root.removeAttribute("style");
-            else root.setAttribute("style", styleAttribute);
+            this.#restoreSourceLinkDisplay(root);
+            return;
         }
         root.removeAttribute("data-flt-source-link-hidden");
     }

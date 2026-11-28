@@ -164,11 +164,11 @@ class RouteSession {
           this.#worker = null;
           this.#ready = null;
           this.#initialized = false;
+          for (const pending of this.#pending.values()) pending.reject(error);
+          this.#pending.clear();
+          for (const pending of this.#pendingBatches.values()) pending.reject(error);
+          this.#pendingBatches.clear();
         }
-        for (const pending of this.#pending.values()) pending.reject(error);
-        this.#pending.clear();
-        for (const pending of this.#pendingBatches.values()) pending.reject(error);
-        this.#pendingBatches.clear();
       }
     });
 
@@ -180,16 +180,20 @@ class RouteSession {
         this.#worker = null;
         this.#ready = null;
         this.#initialized = false;
+        for (const pending of this.#pending.values()) pending.reject(error);
+        this.#pending.clear();
+        for (const pending of this.#pendingBatches.values()) pending.reject(error);
+        this.#pendingBatches.clear();
       }
-      for (const pending of this.#pending.values()) pending.reject(error);
-      this.#pending.clear();
-      for (const pending of this.#pendingBatches.values()) pending.reject(error);
-      this.#pendingBatches.clear();
     });
 
     try {
       const models: WorkerModelBundle[] = [];
       for (const pair of this.#route.models) models.push(await loadModelPair(pair));
+      if (this.#worker !== worker) {
+        worker.terminate();
+        throw new Error("Bergamot session reset");
+      }
       const transfer = models.flatMap((model) => model.files.map((file) => file.buffer));
       const message: BergamotWorkerRequest = {
         type: "initialize",
@@ -198,11 +202,18 @@ class RouteSession {
       };
       worker.postMessage(message, transfer);
       await readySignal;
+      if (this.#worker !== worker) {
+        worker.terminate();
+        throw new Error("Bergamot session reset");
+      }
       this.#initialized = true;
     } catch (error) {
       worker.terminate();
-      this.#worker = null;
-      this.#ready = null;
+      if (this.#worker === worker) {
+        this.#worker = null;
+        this.#ready = null;
+        this.#initialized = false;
+      }
       throw error;
     }
   }

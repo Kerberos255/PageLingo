@@ -287,7 +287,10 @@ async function translateExternalBatchCached(
 
     try {
       const batchResults = toTranslate.length === 1
-        ? [await translateWithExternalEngine(external, toTranslate[0]!).catch((error) => {
+        ? [await keepEventPageAlive(
+            translateWithExternalEngine(external, toTranslate[0]!),
+            "external-batch",
+          ).catch((error) => {
             if (isFatalExternalError(error)) throw error;
             return null;
           })]
@@ -613,7 +616,9 @@ initializeImageTranslation();
 
 browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) => {
   const imageTask = handleImageRuntimeMessage(message, sender);
-  const busyImageTask = message.type === "recognize-image" || message.type === "download-image-ocr-models";
+  const busyImageTask = message.type === "recognize-image"
+    || message.type === "recognize-pdf-page"
+    || message.type === "download-image-ocr-models";
   const imageResponse = await (busyImageTask ? keepEventPageAlive(imageTask, "image-ocr") : imageTask);
   if (imageResponse !== undefined) return imageResponse;
 
@@ -825,7 +830,9 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
       const overrides = await currentOverrides();
       const pairs = modelPairsForLanguage(language, overrides);
       if (pairs.length === 0) throw new Error("No stable Firefox model is available for this language");
-      for (const pair of pairs) if (!await isModelPairCached(pair)) await installLatestPair(pair);
+      await keepEventPageAlive((async () => {
+        for (const pair of pairs) if (!await isModelPairCached(pair)) await installLatestPair(pair);
+      })(), "download-language-pack");
       return { ok: true, pack: await packInfo(language) };
     }
 
@@ -846,7 +853,7 @@ browser.runtime.onMessage.addListener(async (message: RuntimeMessage, sender) =>
     if (message.type === "update-language-pack") {
       const language = asLanguage(message.language);
       if (!language || language === "en") throw new Error("Invalid language pack");
-      await updateLanguagePack(language);
+      await keepEventPageAlive(updateLanguagePack(language), "update-language-pack");
       return { ok: true, pack: await packInfo(language), catalog: await languageCatalog() };
     }
   } catch (error) {

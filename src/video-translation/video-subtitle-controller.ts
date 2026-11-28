@@ -907,12 +907,43 @@ export class VideoSubtitleManager {
     this.#doc.getElementById(SUBTITLE_STYLE_ID)?.remove();
   }
 
+  #shouldScanForMutations(mutations: MutationRecord[], selector: string, includeBwp: boolean): boolean {
+    const hasSessions = this.#sessions.size > 0;
+    for (const mutation of mutations) {
+      const target = mutation.target;
+      if (target instanceof Element && target.hasAttribute("data-flt-generated")) continue;
+
+      if (hasSessions) {
+        if (mutation.removedNodes.length > 0) return true;
+        if (target instanceof Node) {
+          for (const session of this.#sessions.values()) {
+            if (session.container.contains(target)) return true;
+          }
+        }
+      }
+
+      for (const node of Array.from(mutation.addedNodes)) {
+        if (!(node instanceof Element)) continue;
+        if (node.hasAttribute("data-flt-generated")) continue;
+        const tag = node.tagName.toUpperCase();
+        if (tag === "VIDEO" || (includeBwp && tag === "BWP-VIDEO")) return true;
+        if (node.childElementCount > 0 && node.querySelector(selector)) return true;
+      }
+    }
+    return false;
+  }
+
   #startObservers(): void {
     const view = this.#doc.defaultView ?? window;
     this.#lastObservedHref = view.location?.href ?? "";
+    const platform = this.#platformFn();
+    const includeBwp = platform === "bilibili";
+    const videoSelector = includeBwp ? "video, bwp-video" : "video";
     if (!this.#mutationObserver && this.#doc.body) {
-      this.#mutationObserver = new MutationObserver(() => {
-        this.#scheduleScan();
+      this.#mutationObserver = new MutationObserver((mutations) => {
+        if (this.#shouldScanForMutations(mutations, videoSelector, includeBwp)) {
+          this.#scheduleScan();
+        }
       });
       this.#mutationObserver.observe(this.#doc.body, { childList: true, subtree: true });
     }
@@ -932,10 +963,9 @@ export class VideoSubtitleManager {
         () => this.#doc.removeEventListener("webkitfullscreenchange", onFullscreen as EventListener),
       );
     }
-    const platform = this.#platformFn();
     if (!this.#routePollTimer && (platform === "bilibili" || platform === "youtube")) {
       this.#routePollTimer = setInterval(() => {
-        if (!this.#settings.videoSubtitle.enabled || this.#disposed) return;
+        if (!this.#settings.videoSubtitle.enabled || this.#disposed || this.#doc.hidden) return;
         const currentHref = this.#doc.defaultView?.location.href ?? location.href;
         if (currentHref !== this.#lastObservedHref) {
           this.#lastObservedHref = currentHref;

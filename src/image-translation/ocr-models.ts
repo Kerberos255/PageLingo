@@ -32,7 +32,7 @@ export const MAX_OCR_IMAGE_SIDE = 2200;
  */
 export const SHARED_OCR_V6_DETECTION: OcrModelAsset = {
   id: "pp-ocrv6-small-det",
-  label: "PP-OCRv6 文字检测模型",
+  label: "通用文字检测模型",
   url: "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/resolve/main/inference.onnx",
   bytes: 9_880_512,
   sha256: "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e",
@@ -44,7 +44,7 @@ export const SHARED_OCR_V6_DETECTION: OcrModelAsset = {
  */
 export const SHARED_OCR_V5_DETECTION: OcrModelAsset = {
   id: "pp-ocrv5-mobile-det",
-  label: "扩展语系文字检测模型（v5）",
+  label: "扩展语系文字检测模型",
   url: "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx/resolve/main/inference.onnx",
   bytes: 4_826_518,
   sha256: "a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d",
@@ -61,7 +61,7 @@ export const SHARED_OCR_DETECTION: OcrModelAsset = SHARED_OCR_V6_DETECTION;
 export const DOC_LAYOUT_MODEL: DocLayoutModelAsset = {
   id: "pp-doclayout-m",
   preset: "PP-DocLayout-M",
-  label: "文档版面检测模型（PP-DocLayout-M）",
+  label: "文档版面检测模型",
   url: "https://huggingface.co/X3ZvaWQ/paddleocr-js-onnx/resolve/main/pp_doclayout_m/PP-DocLayout-M_infer.onnx",
   bytes: 23_496_395,
   sha256: "c5032bdae772887e9de4d2e955c05c42ac7f38c8c8eb6bdc1b4560dc5cf1c786",
@@ -69,21 +69,21 @@ export const DOC_LAYOUT_MODEL: DocLayoutModelAsset = {
 
 export const DEFAULT_OCR_PROFILE: OcrProfile = {
   id: "pp-ocrv6-small",
-  label: "多语种通用 · PP-OCRv6（默认）",
+  label: "多语种通用（默认）",
   languagesLabel: "简体中文、繁體中文、English、日语及 46 种拉丁语系（法/德/西/葡/意/越/印尼/土耳其等）",
   modelPreset: "PP-OCRv6_small",
   dictionaryFormat: "paddle-yml",
   detection: SHARED_OCR_V6_DETECTION,
   recognition: {
     id: "pp-ocrv6-small-rec",
-    label: "PP-OCRv6 多语种文字识别模型",
+    label: "多语种文字识别模型",
     url: "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.onnx",
     bytes: 21_159_378,
     sha256: "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
   },
   dictionary: {
     id: "pp-ocrv6-small-yml",
-    label: "PP-OCRv6 多语种字符字典",
+    label: "多语种字符字典",
     url: "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.yml",
     bytes: 150_579,
     sha256: "ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1",

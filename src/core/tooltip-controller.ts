@@ -111,7 +111,7 @@ export class TooltipController {
 
   #onTrigger = (event: Event): void => {
     const target = event.target instanceof Element ? event.target : null;
-    if (!target || this.#disposed) return;
+    if (!target || this.#disposed || target.closest("[data-flt-generated]")) return;
     const trigger = target.closest("[aria-describedby],[aria-controls]") ?? target;
     if (event.type === "pointerover" && event instanceof MouseEvent) {
       const related = event.relatedTarget;
@@ -139,16 +139,18 @@ export class TooltipController {
 
     // Existing tooltip nodes are often revealed by class/style changes. Do not observe those
     // attributes; re-check only the current trigger's explicit references for a few moments.
-    for (const delay of [50, 150, 350]) {
-      this.#probeTimers.push(setTimeout(() => {
-        void this.#inspectReferences(references, generation).then((translated) => {
-          if (translated) this.#finishWatch(generation);
-        });
-      }, delay));
+    if (references.length > 0) {
+      for (const delay of [50, 150, 350]) {
+        this.#probeTimers.push(setTimeout(() => {
+          void this.#inspectReferences(references, generation).then((translated) => {
+            if (translated) this.#finishWatch(generation);
+          });
+        }, delay));
+      }
     }
     this.#timer = setTimeout(() => this.#finishWatch(generation), this.#timeoutMs);
 
-    if (await this.#inspectReferences(references, generation)) {
+    if (references.length > 0 && await this.#inspectReferences(references, generation)) {
       this.#finishWatch(generation);
     }
   }

@@ -218,16 +218,35 @@ export function effectivePair(sourceLanguage: string, targetLanguage: string, ov
   return overrides[modelPairKey(sourceLanguage, targetLanguage)] ?? getModelPair(sourceLanguage, targetLanguage);
 }
 
-export async function fetchLatestPairs(keys: readonly string[]): Promise<Map<string, BergamotModelPair>> {
+export async function fetchLatestPairs(
+  keys: readonly string[],
+  timeoutMs = 15_000,
+): Promise<Map<string, BergamotModelPair>> {
   const wanted = new Set(keys.filter((key) => listModelPairs().some((pair) => pair.key === key)));
   if (wanted.size === 0) return new Map();
 
-  const [registryResponse, remoteResponse] = await Promise.all([fetch(REGISTRY_URL), fetch(REMOTE_SETTINGS_URL)]);
-  if (!registryResponse.ok) throw new Error(`Mozilla model registry HTTP ${registryResponse.status}`);
-  if (!remoteResponse.ok) throw new Error(`Firefox Remote Settings HTTP ${remoteResponse.status}`);
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  let registry: RegistryResponse;
+  let remote: RemoteResponse;
+  try {
+    const [registryResponse, remoteResponse] = await Promise.all([
+      fetch(REGISTRY_URL, { signal: controller.signal }),
+      fetch(REMOTE_SETTINGS_URL, { signal: controller.signal }),
+    ]);
+    if (!registryResponse.ok) throw new Error(`Mozilla model registry HTTP ${registryResponse.status}`);
+    if (!remoteResponse.ok) throw new Error(`Firefox Remote Settings HTTP ${remoteResponse.status}`);
 
-  const registry = await registryResponse.json() as RegistryResponse;
-  const remote = await remoteResponse.json() as RemoteResponse;
+    registry = await registryResponse.json() as RegistryResponse;
+    remote = await remoteResponse.json() as RemoteResponse;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("Model update check timed out");
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
   const records = remote.data ?? [];
   const grouped = new Map<string, RegistryEntry[]>();
   for (const entries of Object.values(registry.models ?? {})) {

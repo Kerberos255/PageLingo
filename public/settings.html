@@ -164,9 +164,9 @@
           </div>
           <div id="glossary-editor" class="setting-card glossary-editor-panel" hidden>
             <div class="glossary-editor-head"><div><strong id="glossary-editor-title">新建术语库</strong><span>每行一个术语。只写原词表示“保留原文”；写“原词 = 译法”表示“指定译法”。</span></div><button id="close-glossary-editor" type="button" class="ghost-button">关闭</button></div>
-            <label class="glossary-field"><span>名称</span><input id="glossary-name" type="text" maxlength="80" placeholder="例如：OpenClaw 项目术语" /></label>
-            <label class="glossary-field"><span>术语</span><textarea id="glossary-entries" class="terminology-editor" rows="12" spellcheck="false" placeholder="例如：&#10;Slack&#10;OpenClaw&#10;Gateway = 网关&#10;Control UI = 控制界面"></textarea></label>
-            <div class="glossary-legend"><span><b>Slack</b> → 保留原文</span><span><b>Gateway = 网关</b> → 指定译法</span></div>
+            <label class="glossary-field"><span>名称</span><input id="glossary-name" type="text" maxlength="80" placeholder="例如：技术文档术语" /></label>
+            <label class="glossary-field"><span>术语</span><textarea id="glossary-entries" class="terminology-editor" rows="12" spellcheck="false" placeholder="例如：&#10;TypeScript&#10;WebAssembly&#10;Gateway = 网关&#10;Control UI = 控制界面"></textarea></label>
+            <div class="glossary-legend"><span><b>TypeScript</b> → 保留原文</span><span><b>Gateway = 网关</b> → 指定译法</span></div>
             <div class="glossary-editor-actions"><button id="delete-glossary" type="button" class="danger-button" hidden>删除术语库</button><span></span><button id="cancel-glossary" type="button" class="ghost-button">取消</button><button id="save-glossary" type="button" class="primary-inline">保存</button></div>
           </div>
         </section>
@@ -190,13 +190,13 @@
           <div class="setting-card stack-card">
             <div class="setting-row"><strong id="label-image-translation">启用图片翻译</strong><label class="switch"><input id="image-translation-enabled" type="checkbox" aria-labelledby="label-image-translation" /><i aria-hidden="true"></i></label></div>
             <label class="setting-row" for="image-ocr-profile-select">
-              <span><strong>当前识别语种包</strong><small>所有语种包共享同一套 4.8 MB 通用文字检测模型，按需下载对应识别包即可</small></span>
+              <span><strong>当前识别语种包</strong><small>图片文字识别在本地运行，按需下载对应语种包即可</small></span>
               <select id="image-ocr-profile-select"></select>
             </label>
             <div class="ocr-status-row"><div><strong>当前模型状态</strong><small id="image-ocr-status" role="status">正在读取模型状态…</small></div><button id="image-ocr-action" type="button" disabled>下载模型</button></div>
           </div>
           <div class="setting-card">
-            <div class="setting-copy"><div><strong>多语种 OCR 识别包</strong><span>支持中日英（默认）、拉丁语系（法/德/西/葡/意/越等）、韩语、西里尔语系（俄/乌等）与泰语，均经 SHA-256 校验。</span></div></div>
+            <div class="setting-copy"><div><strong>多语种 OCR 识别包</strong><span>默认包已覆盖中日英及常见拉丁语系（法/德/西/葡/意/越等），韩语、俄/乌等西里尔语系和泰语可按需下载。</span></div></div>
             <div id="image-ocr-profile-list" class="pack-list"><div class="empty-state">正在读取识别包…</div></div>
           </div>
         </section>
@@ -295,7 +295,7 @@
               </div>
             </div>
           </div>
-          <p class="hint rule-priority">仅读取页面视频自带的软字幕轨道（YouTube、Bilibili 及标准 HTML5 &lt;track&gt; / WebVTT），不会录制或上传音频。</p>
+          <p class="hint rule-priority">仅读取页面视频自带的字幕轨道，不会录制或上传音频。</p>
         </section>
         <section id="engine" class="section settings-page">
           <div class="section-heading"><h2>翻译引擎</h2></div>
@@ -344,7 +344,7 @@
               <div class="engine-field" data-engine-field="model"><span>模型</span><div class="engine-model-row"><input id="engine-model" type="text" spellcheck="false" placeholder="点击「获取模型」选择或手动输入模型 ID" /><button id="get-engine-models" type="button">获取模型</button></div></div>
               <label data-engine-field="region"><span>Azure Region（可选）</span><input id="engine-region" type="text" spellcheck="false" /></label>
               <div class="engine-wide engine-checkbox" data-engine-field="llm"><input id="engine-disable-thinking" type="checkbox" checked aria-labelledby="label-engine-disable-thinking" /><span id="label-engine-disable-thinking">关闭思考模式（推荐，显著降低支持思考/推理模式模型的翻译延迟）</span></div>
-              <label class="engine-wide" data-engine-field="prompt"><span>LLM 提示词（可选）</span><textarea id="engine-prompt" rows="4" placeholder="留空使用 PageLingo 的 HTML 安全翻译提示词"></textarea></label>
+              <label class="engine-wide" data-engine-field="prompt"><span>LLM 提示词（可选）</span><textarea id="engine-prompt" rows="4" placeholder="留空则使用默认翻译提示词"></textarea></label>
               <label class="engine-wide" data-engine-field="custom"><span>请求头 JSON</span><textarea id="engine-headers-json" rows="3" spellcheck="false" placeholder='{"Authorization":"Bearer {{apiKey}}"}'></textarea></label>
               <label class="engine-wide" data-engine-field="custom"><span>请求体 JSON 模板</span><textarea id="engine-body-json" rows="5" spellcheck="false" placeholder='{"text":"{{html}}","source":"{{source}}","target":"{{target}}"}'></textarea></label>
               <label class="engine-wide" data-engine-field="custom"><span>响应路径</span><input id="engine-response-path" type="text" spellcheck="false" placeholder="data.translatedText" /></label>

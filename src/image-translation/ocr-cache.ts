@@ -234,7 +234,7 @@ async function cachedAsset(asset: OcrModelAsset): Promise<ArrayBuffer | null> {
 async function downloadAsset(asset: OcrModelAsset, progress?: OcrProgress): Promise<ArrayBuffer> {
   const cached = await cachedAsset(asset);
   if (cached) {
-    progress?.(`${asset.label} · 已缓存`);
+    progress?.(`${asset.label} · 已就绪`);
     return cached;
   }
   progress?.(`正在下载 ${asset.label}…`);
@@ -250,7 +250,7 @@ async function downloadAsset(asset: OcrModelAsset, progress?: OcrProgress): Prom
       throw new Error(`${asset.label} 下载失败：HTTP ${response.status}`);
     }
     const buffer = await response.arrayBuffer();
-    progress?.(`正在校验 ${asset.label}…`);
+    progress?.(`正在准备 ${asset.label}…`);
     await validateAsset(asset, buffer);
     await idbPutAsset(asset, buffer);
     ocrAssetMemoryCache.set(asset.id, buffer);

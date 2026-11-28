@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.1.7 — 2026-11-28
+
+### Performance & Memory
+
+- **Viewport-driven lazy PDF rendering with dual count & byte memory budgets (`src/reader/pdf-lazy-render.ts`, `src/reader.ts`)**:
+  - Opening multi-page PDFs now renders page 1 immediately while building exact-size placeholder shells for remaining pages and rasterizing canvases lazily via `IntersectionObserver` on scroll, keeping initial memory low and time-to-translate fast.
+  - Enforced dual eviction limits (`MAX_RENDERED_PDF_CANVASES = 10` and `MAX_PDF_CANVAS_BUDGET_BYTES = 96 MiB` covering base canvases, translation overlays, and right-pane cropped formula/figure/table snapshots) with pre-allocation eviction to prevent transient spikes on HiDPI displays.
+  - Removed the redundant full-PDF `activePdfBytes` fallback copy and limited overlay repaints (`renderAllPdfOverlays`) to currently visible rendered pages.
+  - Added targeted `page.getOperatorList()` font metadata discovery (capped at 12 pages with unresolved fonts, skipping scanned/shared-font pages) so unique bold/math fonts on unrendered pages are recognized before translation without offscreen canvas rasterization.
+- **Long-lived SPA, video subtitle, model loader & UI efficiency**:
+  - Added throttled detached-node pruning and ancestor deduplication to `RelativeTimeLocalizer` (`src/shared/relative-time.ts`).
+  - Filtered `VideoSubtitleManager`'s `MutationObserver` to ignore `[data-flt-generated]` and non-video DOM churn, and paused route polling while the tab is hidden.
+  - Deduplicated concurrent Bergamot model asset downloads per URL (returning isolated `ArrayBuffer` copies), parallelized per-pair asset downloads, added asset/metadata fetch timeouts (60s / 15s), and guarded against stale worker teardown races.
+  - Skipped `[data-flt-generated]` elements and empty probe timers in `TooltipController`, coalesced image overlay repositioning on scroll/resize with `requestAnimationFrame`, and added missing `keepEventPageAlive` wrappers for PDF page OCR, language-pack downloads/updates, and single-item external fallbacks.
+
+### Fixed
+
+- **PDF Reader async race conditions**:
+  - Isolated document open (`activeOpenGeneration`), loaded document (`activeDocumentGeneration`), translation (`activeTranslationGeneration`), and zoom (`activePdfRenderGeneration`) lifetimes so mid-load zooming completes all pages cleanly, slow remote URLs never overwrite a newer local document or its status bar, switching documents mid-translation never marks the new document as translated, and zooming preserves existing OCR results and translations.
+  - Verified unscrolled scanned PDF pages participate in batch OCR while blank white pages are automatically excluded via visual ink checks.
+- **Dynamic webpage restoration accuracy**:
+  - Restored detached translated entries (`#records`, `#fixedRecords`, tooltips, placeholders, source-text wrappers, and hidden links) during 4-second pruning so virtualized SPA rows reinserted later never stay stuck in translated text on restore.
+  - Narrowed hidden `<a>` link restoration (`#restoreSourceLinkDisplay`) to revert only PageLingo's `display: none !important`, preserving subsequent website style, color, layout, text, placeholder, and relative-time `lang` updates.
+
+### Changed
+
+- Removed the unused runtime `terminologyText` field from `PageLingoSettings` while keeping legacy `terminologyText` and `excludedSites` storage-key migration intact.
+- Simplified user-facing Settings, OCR, and Reader copy to remove internal model codenames and verification jargon, replaced glossary modal placeholder examples with neutral technical terms, and updated `RELEASE_CHECKLIST.md`.
+
 ## 1.1.6 — 2026-11-28
 
 ### Security & Privacy

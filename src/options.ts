@@ -525,7 +525,7 @@ async function changePack(pack: LanguagePackInfo, button: HTMLButtonElement): Pr
 async function updatePack(pack: LanguagePackInfo, button: HTMLButtonElement): Promise<void> {
     button.disabled = true;
     button.textContent = "更新中…";
-    showSaved(`正在安全更新 ${pack.label}`, 60_000);
+    showSaved(`正在更新 ${pack.label}…`, 60_000);
     try {
         const response = await sendRuntimeMessage<OptionsRuntimeResponse>({ type: "update-language-pack", language: pack.language });
         if (!response?.ok || !response.catalog)
@@ -661,12 +661,11 @@ function renderImageOcrStatus(current: ImageOcrStatus): void {
         imageOcrProfileSelect.value = activeId;
     }
 
-    const activeLabel = activeProfile?.label ?? "PP-OCRv6 Small";
-    const detNote = current.detectionInstalled ? " · 检测模型已缓存" : "";
-    const layoutNote = current.docLayoutInstalled ? " · PDF 版面模型已缓存" : "";
+    const activeLabel = activeProfile?.label ?? "多语种通用（默认）";
+    const layoutNote = current.docLayoutInstalled ? " · 含 PDF 版面识别" : "";
     imageStatus.textContent = !current.runtimeSupported
         ? "当前 Firefox 环境不支持本地文字识别"
-        : `${activeLabel} · ${current.installed ? "已下载" : "可下载"} ${formatBytes(current.totalBytes)}${detNote}${layoutNote}`;
+        : `${activeLabel} · ${current.installed ? "已下载" : "可下载"} ${formatBytes(current.totalBytes)}${layoutNote}`;
     imageOcrAction.textContent = current.installed ? "删除当前包" : "下载当前包";
     imageOcrAction.disabled = !current.installed && !current.runtimeSupported;
 
@@ -742,7 +741,7 @@ async function changeImageOcrModels(
         if (!response?.ok || !response.status)
             throw new Error(response?.error ?? (deleting ? "删除模型失败" : "下载模型失败"));
         renderImageOcrStatus(response.status);
-        showSaved(deleting ? "文字识别包已删除" : "文字识别包已下载并校验完成");
+        showSaved(deleting ? "文字识别包已删除" : "文字识别包已下载");
     }
     catch (error) {
         await refreshImageOcrStatus();

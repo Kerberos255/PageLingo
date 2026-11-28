@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PageLingo",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "description": "Local-first, layout-preserving webpage translation for Firefox.",
   "permissions": [
     "storage",

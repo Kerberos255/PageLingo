@@ -5,11 +5,12 @@ import {
   resolveSubtitleFetchPolicy,
 } from "../src/shared/bounded-fetch";
 import { BergamotClient, type BergamotSessionLike } from "../src/providers/bergamot/bergamot-client";
-import type { TranslationRoute } from "../src/providers/bergamot/model-manifest";
+import type { BergamotModelAsset, TranslationRoute } from "../src/providers/bergamot/model-manifest";
 import { ImageOcrWorkerClient, type OcrWorkerLike } from "../src/image-translation/background-service";
 import type { ImageOcrBundle } from "../src/image-translation/ocr-cache";
 import { DEFAULT_OCR_PROFILE } from "../src/image-translation/ocr-models";
 import {
+  DEFAULT_SETTINGS,
   SETTINGS_STORAGE_KEYS,
   invalidateSettingsCache,
   loadSettings,
@@ -17,6 +18,18 @@ import {
 } from "../src/shared/settings";
 import { PageTranslator } from "../src/core/page-translator";
 import { canvasHasVisualInk } from "../src/reader/pdf-ink";
+import {
+  MAX_PDF_CANVAS_BUDGET_BYTES,
+  MAX_RENDERED_PDF_CANVASES,
+  canvasPixelBytes,
+  isRectNearVerticalWindow,
+  pickNextLazyPdfPage,
+  selectPdfPagesToEvict,
+  type LazyPdfPageState,
+} from "../src/reader/pdf-lazy-render";
+import { loadModelAsset } from "../src/providers/bergamot/model-cache";
+import { fetchLatestPairs } from "../src/providers/bergamot/model-updates";
+import { VideoSubtitleManager } from "../src/video-translation/video-subtitle-controller";
 
 const EN_ZH_ROUTE: TranslationRoute = {
   kind: "direct",
@@ -586,4 +599,448 @@ describe("PageTranslator detached DOM pruning and canvasHasVisualInk probe", () 
     translator.restore();
     expect(doc.body.innerHTML).toBe(beforeHtml);
   });
+
+  it("restores detached translated nodes on prune so re-inserted SPA rows never stay stuck in translated text", async () => {
+    document.body.innerHTML = `
+      <ul id="list">
+        <li id="row-1">First live row item.</li>
+        <li id="row-2">Recycled virtualized row item.</li>
+        <li id="row-3">Edited detached row item.</li>
+      </ul>
+      <input id="search" type="text" placeholder="Search items here" />
+    `;
+    const doc = document;
+    const provider = {
+      prefersWholeSentenceHtml: async () => true,
+      async translateHtml({ html }: { html: string }) {
+        return html
+          .replace("First live row item.", "第一行列表内容。")
+          .replace("Recycled virtualized row item.", "可复用的虚拟列表行。")
+          .replace("Edited detached row item.", "待编辑的离屏列表行。")
+          .replace("Search items here", "在此搜索项目");
+      },
+    };
+    const translator = new PageTranslator(doc, provider as any, { displayMode: "translation" });
+    await translator.translateAll(doc.body);
+
+    const list = doc.getElementById("list")!;
+    const row1 = doc.getElementById("row-1")!;
+    const row2 = doc.getElementById("row-2")!;
+    const row3 = doc.getElementById("row-3")!;
+    const search = doc.getElementById("search")!;
+
+    expect(row1.textContent).toBe("第一行列表内容。");
+    expect(row2.textContent).toBe("可复用的虚拟列表行。");
+    expect(row3.textContent).toBe("待编辑的离屏列表行。");
+    expect(search.getAttribute("placeholder")).toBe("在此搜索项目");
+
+    // Detach row-2, row-3, and search input; simulate SPA mutating detached row-3 text before prune.
+    row2.remove();
+    row3.remove();
+    search.remove();
+    row3.firstChild!.nodeValue = "Updated by SPA while detached.";
+
+    const pruned = translator.pruneDetachedEntries();
+    expect(pruned).toBeGreaterThanOrEqual(3);
+
+    // Re-insert the exact same detached nodes without observer re-translation, then restore().
+    list.append(row2, row3);
+    doc.body.append(search);
+    translator.restore();
+
+    expect(row1.textContent).toBe("First live row item.");
+    // Recycled row-2 MUST NOT remain stuck in Chinese!
+    expect(row2.textContent).toBe("Recycled virtualized row item.");
+    // SPA-updated row-3 preserves the site's own text!
+    expect(row3.textContent).toBe("Updated by SPA while detached.");
+    // Recycled search input placeholder MUST NOT remain stuck in Chinese!
+    expect(search.getAttribute("placeholder")).toBe("Search items here");
+  });
+
+  it("clears display classes and nested translation nodes on detached #records elements during prune", async () => {
+    document.body.innerHTML = `
+      <ul id="list">
+        <li id="rich-row">Open <a href="/docs">documentation</a> now.</li>
+      </ul>
+    `;
+    const doc = document;
+    const provider = {
+      async translateHtml({ html }: { html: string }) {
+        return html
+          .replace("Open ", "打开")
+          .replace("documentation", "文档")
+          .replace(" now.", "。");
+      },
+    };
+    const translator = new PageTranslator(doc, provider as any, { displayMode: "translation" });
+    await translator.translateAll(doc.body);
+
+    const list = doc.getElementById("list")!;
+    const row = doc.getElementById("rich-row")!;
+    expect(row.classList.contains("flt-source-list-hidden")).toBe(true);
+    expect(row.querySelector('[data-flt-generated="translation"]')).not.toBeNull();
+
+    row.remove();
+    expect(translator.pruneDetachedEntries()).toBeGreaterThanOrEqual(1);
+
+    // Re-inserted element has clean source DOM: no hidden class, no stale nested .flt-translation, no wrapper spans.
+    list.append(row);
+    expect(row.classList.contains("flt-source-list-hidden")).toBe(false);
+    expect(row.querySelector('[data-flt-generated="translation"]')).toBeNull();
+    expect(row.querySelector("[data-flt-source-text-wrapper]")).toBeNull();
+    expect(row.textContent).toBe("Open documentation now.");
+
+    translator.restore();
+  });
+
+  it("re-translates and cleanly restores a detached-pruned-reinserted row while observing", async () => {
+    document.body.innerHTML = `<ul id="list"><li id="row">Dynamic virtual row.</li></ul>`;
+    const doc = document;
+    const provider = {
+      prefersWholeSentenceHtml: async () => true,
+      async translateHtml({ html }: { html: string }) {
+        return html.replace("Dynamic virtual row.", "动态虚拟列表行。");
+      },
+    };
+    const translator = new PageTranslator(doc, provider as any, { displayMode: "translation" });
+    await translator.translateAll(doc.body);
+    translator.observe();
+
+    const list = doc.getElementById("list")!;
+    const row = doc.getElementById("row")!;
+    expect(row.textContent).toBe("动态虚拟列表行。");
+
+    row.remove();
+    translator.pruneDetachedEntries();
+    expect(row.textContent).toBe("Dynamic virtual row.");
+
+    list.append(row);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(row.textContent).toBe("动态虚拟列表行。");
+
+    translator.restore();
+    expect(row.textContent).toBe("Dynamic virtual row.");
+  });
+
+  it("restores only display on hidden <a> links and preserves site-driven style, display, text, and placeholder updates", async () => {
+    document.body.innerHTML = `
+      <nav>
+        <a id="styled-link" href="/docs" style="display: inline-flex; color: rgb(0, 0, 255);">Documentation</a>
+        <a id="plain-link" href="/about">About us</a>
+        <a id="colored-later-link" href="/blog">Engineering blog</a>
+        <a id="detached-link" href="/pricing" style="color: rgb(10, 20, 30);">Pricing plans</a>
+      </nav>
+      <input id="filter" type="text" placeholder="Filter records" />
+    `;
+    const doc = document;
+    const provider = {
+      async translateHtml({ html }: { html: string }) {
+        return html
+          .replace("Documentation", "文档")
+          .replace("About us", "关于我们")
+          .replace("Engineering blog", "工程博客")
+          .replace("Pricing plans", "价格方案")
+          .replace("Filter records", "筛选记录");
+      },
+    };
+    const translator = new PageTranslator(doc, provider as any, { displayMode: "translation" });
+
+    const styledLink = doc.getElementById("styled-link") as HTMLAnchorElement;
+    const plainLink = doc.getElementById("plain-link") as HTMLAnchorElement;
+    const coloredLaterLink = doc.getElementById("colored-later-link") as HTMLAnchorElement;
+    const detachedLink = doc.getElementById("detached-link") as HTMLAnchorElement;
+    const filter = doc.getElementById("filter") as HTMLInputElement;
+
+    await Promise.all([
+      translator.translateRoot(styledLink),
+      translator.translateRoot(plainLink),
+      translator.translateRoot(coloredLaterLink),
+      translator.translateRoot(detachedLink),
+      translator.translateAll(filter.parentElement!),
+    ]);
+
+    expect(styledLink.style.getPropertyValue("display")).toBe("none");
+    expect(styledLink.style.getPropertyPriority("display")).toBe("important");
+    expect(plainLink.style.getPropertyValue("display")).toBe("none");
+    expect(coloredLaterLink.style.getPropertyValue("display")).toBe("none");
+    expect(detachedLink.style.getPropertyValue("display")).toBe("none");
+    expect(filter.getAttribute("placeholder")).toBe("筛选记录");
+
+    // Simulate website dynamically updating colors, opacity, display, and placeholder while translated.
+    styledLink.style.color = "rgb(220, 38, 38)";
+    styledLink.style.opacity = "0.6";
+    plainLink.style.display = "block";
+    coloredLaterLink.style.color = "rgb(1, 2, 3)";
+    detachedLink.style.color = "rgb(16, 185, 129)";
+    filter.setAttribute("placeholder", "Search updated by site");
+
+    // Detach and prune detachedLink -> removes our display:none!important while keeping site's new green color.
+    detachedLink.remove();
+    translator.pruneDetachedEntries();
+    expect(detachedLink.style.getPropertyValue("display")).toBe("");
+    expect(detachedLink.style.color).toBe("rgb(16, 185, 129)");
+    expect(detachedLink.hasAttribute("data-flt-source-link-hidden")).toBe(false);
+
+    // Restore live document -> styledLink gets original display:inline-flex back AND keeps site's red color + opacity;
+    // plainLink keeps site's display:block; coloredLaterLink loses display:none while keeping its newly added color;
+    // filter keeps site's new placeholder.
+    translator.restore();
+    expect(styledLink.style.display).toBe("inline-flex");
+    expect(styledLink.style.color).toBe("rgb(220, 38, 38)");
+    expect(styledLink.style.opacity).toBe("0.6");
+    expect(plainLink.style.display).toBe("block");
+    expect(coloredLaterLink.style.getPropertyValue("display")).toBe("");
+    expect(coloredLaterLink.style.color).toBe("rgb(1, 2, 3)");
+    expect(filter.getAttribute("placeholder")).toBe("Search updated by site");
+
+    // Also verify fixed-text mode preserves site-driven text updates on restore.
+    doc.body.innerHTML = `<p id="live-copy">Original server status.</p>`;
+    const fixedProvider = {
+      prefersWholeSentenceHtml: () => true,
+      async translateHtml({ html }: { html: string }) {
+        return html.replace("Original server status.", "原始服务器状态。");
+      },
+    };
+    const fixedTranslator = new PageTranslator(doc, fixedProvider as any, { displayMode: "translation" });
+    await fixedTranslator.translateAll(doc.body);
+    const liveCopy = doc.getElementById("live-copy")!;
+    expect(liveCopy.textContent).toBe("原始服务器状态。");
+    liveCopy.firstChild!.nodeValue = "Live updated server status.";
+    fixedTranslator.restore();
+    expect(liveCopy.textContent).toBe("Live updated server status.");
+  });
 });
+
+describe("Lazy PDF viewport scheduling and bounded canvas eviction", () => {
+  function makePage(pageNumber: number, overrides: Partial<LazyPdfPageState> = {}): LazyPdfPageState {
+    return {
+      pageNumber,
+      baseRendered: false,
+      isCanvasVisible: false,
+      lastUsedSeq: pageNumber,
+      needsSnapshotHydration: false,
+      needsScanCheck: false,
+      canvasBytes: 4 * 1024 * 1024,
+      ...overrides,
+    };
+  }
+
+  it("checks vertical proximity with preload margin and rejects zero-height containers", () => {
+    const viewport = { top: 100, bottom: 900 };
+    expect(isRectNearVerticalWindow({ top: 200, bottom: 800 }, viewport, 900)).toBe(true);
+    expect(isRectNearVerticalWindow({ top: 1750, bottom: 2500 }, viewport, 900)).toBe(true);
+    expect(isRectNearVerticalWindow({ top: 1850, bottom: 2600 }, viewport, 900)).toBe(false);
+    expect(isRectNearVerticalWindow({ top: 200, bottom: 800 }, { top: 0, bottom: 0 }, 900)).toBe(false);
+  });
+
+  it("prioritizes urgent pages, then closest visible page, and drops fast-scrolled-past non-urgent pages", () => {
+    const p2 = makePage(2, { isCanvasVisible: false });
+    const p10 = makePage(10, { isCanvasVisible: true });
+    const p11 = makePage(11, { isCanvasVisible: true });
+    const p20 = makePage(20, { isCanvasVisible: false, needsSnapshotHydration: true });
+    const p30 = makePage(30, { isCanvasVisible: false });
+
+    const pending = new Set([p2, p10, p11, p20, p30]);
+    const urgent = new Set([p30]);
+    const centers = new Map([
+      [p2, -2000],
+      [p10, 800],
+      [p11, 410],
+      [p20, 4000],
+      [p30, 8000],
+    ]);
+
+    // 1. Urgent page wins first, and stale p2 (scrolled past, non-urgent, no hydration) is pruned immediately.
+    expect(pickNextLazyPdfPage(pending, urgent, 400, (p) => centers.get(p)!)).toBe(p30);
+    expect(pending.has(p2)).toBe(false);
+
+    pending.delete(p30);
+    urgent.delete(p30);
+    // 2. Visible page closest to viewport center (p11 at 410 vs p10 at 800) wins next.
+    expect(pickNextLazyPdfPage(pending, urgent, 400, (p) => centers.get(p)!)).toBe(p11);
+
+    pending.delete(p11);
+    expect(pickNextLazyPdfPage(pending, urgent, 400, (p) => centers.get(p)!)).toBe(p10);
+
+    pending.delete(p10);
+    // 3. Page needing snapshot hydration runs as fallback.
+    expect(pickNextLazyPdfPage(pending, urgent, 400, (p) => centers.get(p)!)).toBe(p20);
+  });
+
+  it("evicts farthest non-visible canvases by both count cap and total pixel-byte budget (including snapshots)", () => {
+    expect(canvasPixelBytes({ width: 1000, height: 1500 })).toBe(6_000_000);
+    expect(canvasPixelBytes({ width: 0, height: 100 })).toBe(0);
+
+    const pages: LazyPdfPageState[] = [];
+    for (let i = 1; i <= 15; i += 1) {
+      pages.push(makePage(i, {
+        baseRendered: i <= 13,
+        isCanvasVisible: i >= 12 && i <= 13,
+        lastUsedSeq: i,
+        canvasBytes: 4 * 1024 * 1024,
+      }));
+    }
+
+    // Count cap: 13 rendered - 10 max = 3 farthest pages evicted (pages 1, 2, 3), never visible pages 12..13.
+    const countVictims = selectPdfPagesToEvict(pages, 13, { maxRendered: MAX_RENDERED_PDF_CANVASES, maxBytes: MAX_PDF_CANVAS_BUDGET_BYTES });
+    expect(countVictims.map((p) => p.pageNumber)).toEqual([1, 2, 3]);
+    expect(countVictims.some((p) => p.isCanvasVisible)).toBe(false);
+
+    // Byte budget cap: 5 HiDPI overlay pages * 30 MiB = 150 MiB (+ 16 MiB right-pane snapshots = 166 MiB > 96 MiB).
+    // Even though 5 <= 10 count cap, byte budget evicts farthest non-visible pages 1, 2, 3 (leaving visible 4 & 5 = 60 + 16 = 76 MiB).
+    const heavyOverlayPages = [1, 2, 3, 4, 5].map((num) => makePage(num, {
+      baseRendered: true,
+      isCanvasVisible: num >= 4,
+      lastUsedSeq: num,
+      canvasBytes: 30 * 1024 * 1024,
+    }));
+    const byteVictims = selectPdfPagesToEvict(heavyOverlayPages, 5, {
+      maxRendered: MAX_RENDERED_PDF_CANVASES,
+      maxBytes: MAX_PDF_CANVAS_BUDGET_BYTES,
+      snapshotBytes: 16 * 1024 * 1024,
+    });
+    expect(byteVictims.map((p) => p.pageNumber)).toEqual([1, 2, 3]);
+    expect(byteVictims.some((p) => p.isCanvasVisible)).toBe(false);
+  });
+});
+
+describe("Bergamot download dedup/timeout, VideoSubtitleManager DOM filtering, and legacy settings migration", () => {
+  it("deduplicates concurrent model asset downloads, returns isolated ArrayBuffers, and aborts on timeout", async () => {
+    const payload = new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80]);
+    const digest = await crypto.subtle.digest("SHA-256", payload);
+    const sha256 = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+    const asset = {
+      type: "vocab" as const,
+      url: "https://models.example/vocab.bin",
+      bytes: payload.byteLength,
+      sha256,
+      alignment: 64 as const,
+      compression: "none" as unknown as "zstd",
+    } satisfies BergamotModelAsset;
+
+    const cacheStore = new Map<string, Response>();
+    (globalThis as { caches?: unknown }).caches = {
+      async open() {
+        return {
+          async match(url: string) { return cacheStore.get(url)?.clone(); },
+          async put(url: string, res: Response) { cacheStore.set(url, res); },
+          async delete(url: string) { cacheStore.delete(url); },
+        };
+      },
+    };
+
+    let fetchCalls = 0;
+    let releaseFetch!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseFetch = resolve; });
+    vi.spyOn(globalThis, "fetch").mockImplementation((async () => {
+      fetchCalls += 1;
+      await gate;
+      return new Response(payload.slice(), { status: 200 });
+    }) as typeof fetch);
+
+    const p1 = loadModelAsset(asset, 5000);
+    const p2 = loadModelAsset(asset, 5000);
+    await new Promise((r) => setTimeout(r, 10));
+    releaseFetch();
+    const [buf1, buf2] = await Promise.all([p1, p2]);
+
+    expect(fetchCalls).toBe(1);
+    expect(buf1).not.toBe(buf2);
+    expect(new Uint8Array(buf1)).toEqual(payload);
+    expect(new Uint8Array(buf2)).toEqual(payload);
+
+    // Stalled model asset times out cleanly.
+    const slowAsset: BergamotModelAsset = { ...asset, url: "https://models.example/slow-vocab.bin" };
+    vi.spyOn(globalThis, "fetch").mockImplementation(((_url: unknown, init?: RequestInit) => new Promise<Response>((_res, rej) => {
+      init?.signal?.addEventListener("abort", () => rej(new DOMException("Aborted", "AbortError")));
+    })) as typeof fetch);
+    await expect(loadModelAsset(slowAsset, 30)).rejects.toThrow(/timed out/);
+
+    // Stalled metadata fetch in fetchLatestPairs also times out cleanly.
+    await expect(fetchLatestPairs(["en->zh-Hans"], 30)).rejects.toThrow(/timed out/);
+    delete (globalThis as { caches?: unknown }).caches;
+  });
+
+  it("ignores non-video and PageLingo-generated DOM churn in VideoSubtitleManager MutationObserver", async () => {
+    document.body.innerHTML = `<main id="article"><p>Plain webpage with no video.</p></main>`;
+    const querySpy = vi.spyOn(document, "querySelectorAll");
+    const manager = new VideoSubtitleManager({
+      doc: document,
+      platformFn: () => "html5",
+      loadSettingsFn: async () => ({
+        ...DEFAULT_SETTINGS,
+        videoSubtitle: {
+          ...DEFAULT_SETTINGS.videoSubtitle,
+          enabled: true,
+        },
+      }),
+    });
+
+    await manager.start();
+    const callsAfterStart = querySpy.mock.calls.filter(([sel]) => sel === "video").length;
+    expect(callsAfterStart).toBe(1);
+
+    // Insert non-video prose and PageLingo-generated translation nodes -> must NOT trigger video rescans!
+    const main = document.getElementById("article")!;
+    const p = document.createElement("p");
+    p.textContent = "Dynamic paragraph with no video.";
+    const trans = document.createElement("span");
+    trans.dataset.fltGenerated = "translation";
+    trans.textContent = "译文节点";
+    main.append(p, trans);
+
+    await new Promise((r) => setTimeout(r, 240));
+    const callsAfterNonVideoChurn = querySpy.mock.calls.filter(([sel]) => sel === "video").length;
+    expect(callsAfterNonVideoChurn).toBe(1);
+
+    // Inserting a real <video> element DOES trigger a scan.
+    const video = document.createElement("video");
+    main.append(video);
+    await new Promise((r) => setTimeout(r, 240));
+    const callsAfterVideoInsert = querySpy.mock.calls.filter(([sel]) => sel === "video").length;
+    expect(callsAfterVideoInsert).toBeGreaterThanOrEqual(2);
+
+    manager.dispose();
+  });
+
+  it("migrates legacy terminologyText and excludedSites in loadSettings without exposing terminologyText at runtime", async () => {
+    invalidateSettingsCache();
+    const store: Record<string, unknown> = {
+      excludedSites: ["Legacy.Example"],
+      terminologyText: "OpenClaw => 开放爪\nPageLingo = 译页",
+    };
+    const prevBrowser = (globalThis as { browser?: unknown }).browser;
+    (globalThis as { browser?: unknown }).browser = {
+      storage: {
+        local: {
+          async get(keys?: unknown) {
+            const list = Array.isArray(keys) ? keys : Object.keys(store);
+            const result: Record<string, unknown> = {};
+            for (const key of list) if (key in store) result[key] = store[key];
+            return result;
+          },
+          async set(patch: Record<string, unknown>) {
+            Object.assign(store, patch);
+          },
+        },
+        onChanged: { addListener() {} },
+      },
+    };
+
+    try {
+      const settings = await loadSettings();
+      expect(settings.neverTranslateSites).toEqual(["legacy.example"]);
+      expect(settings.glossaryCollections.length).toBe(1);
+      expect(settings.glossaryCollections[0]!.entries).toEqual([
+        { source: "OpenClaw", target: "开放爪", mode: "replace", caseSensitive: false },
+        { source: "PageLingo", target: "译页", mode: "replace", caseSensitive: false },
+      ]);
+      expect("terminologyText" in settings).toBe(false);
+    } finally {
+      invalidateSettingsCache();
+      (globalThis as { browser?: unknown }).browser = prevBrowser;
+    }
+  });
+});
+
+
